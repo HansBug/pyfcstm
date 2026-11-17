@@ -20,25 +20,29 @@ state "Controller" as controller <<composite>> {
     state "Idle" as controller__idle
     controller__idle : during {\n    motor = 0;\n}
     state "Running" as controller__running <<composite>> {
-        state "region 1: Safety" as controller__running__safety <<region>> #line.dashed {
-            state "Normal" as controller__running__safety__normal
-            controller__running__safety__normal : during {\n    if [fault != 0] {\n        permit = 0;\n    }\n}
-            state "Tripped" as controller__running__safety__tripped
-            [*] --> controller__running__safety__normal
-            controller__running__safety__normal --> controller__running__safety__tripped : fault != 0
-        }
-        controller__running__safety : >> during before {\n    permit = 1;\n}
+        note as controller__running__safety
+            **region 1: Safety**
+            >> during before {
+                permit = 1;
+            }
+        end note
+        state "Normal" as controller__running__safety__normal
+        controller__running__safety__normal : during {\n    if [fault != 0] {\n        permit = 0;\n    }\n}
+        state "Tripped" as controller__running__safety__tripped
+        [*] --> controller__running__safety__normal
+        controller__running__safety__normal --> controller__running__safety__tripped : fault != 0
         --
-        state "region 2: Motion" as controller__running__motion <<region>> #line.dashed {
-            state "Off" as controller__running__motion__off
-            controller__running__motion__off : during {\n    motor = 0;\n}
-            state "On" as controller__running__motion__on
-            controller__running__motion__on : during {\n    if [active("Controller.Running.Safety.Tripped")] {\n        motor = 0;\n    } else {\n        motor = 1;\n    }\n}
-            [*] --> controller__running__motion__off
-            controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
-            controller__running__motion__on --> controller__running__motion__off : active("Controller.Running.Safety.Tripped")
-            controller__running__motion__on --> controller__running__motion__off : Kick
-        }
+        note as controller__running__motion
+            **region 2: Motion**
+        end note
+        state "Off" as controller__running__motion__off
+        controller__running__motion__off : during {\n    motor = 0;\n}
+        state "On" as controller__running__motion__on
+        controller__running__motion__on : during {\n    if [active("Controller.Running.Safety.Tripped")] {\n        motor = 0;\n    } else {\n        motor = 1;\n    }\n}
+        [*] --> controller__running__motion__off
+        controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+        controller__running__motion__on --> controller__running__motion__off : active("Controller.Running.Safety.Tripped")
+        controller__running__motion__on --> controller__running__motion__off : Kick
     }
     controller__running : enter {\n    permit = 0;\n}
     controller__running --> controller__idle : Stop

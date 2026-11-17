@@ -194,12 +194,18 @@ class Region(AstExportable):
         yield from State.iter_on_during_after_aspect_recursively(self, is_abstract, with_ids)
 
     def to_plantuml(self, options=None, current_depth: int = 0, event_colors=None) -> str:
-        """Convert this region to a dashed, named PlantUML sub-box.
+        """Convert this region to the body of a PlantUML concurrent section.
 
-        The title is ``region N: Name`` where ``N`` is the one-based
-        declaration (and therefore execution) position among the owner's
-        regions. Child states, transitions and ``>> during`` aspects are drawn
-        inside the box; ``active("...")`` is shown as written.
+        PlantUML concurrent sections (separated by ``--`` inside a composite
+        state) are anonymous, so the text starts with a floating note reading
+        ``region N: Name``, where ``N`` is the one-based declaration (and
+        therefore execution) position among the owner's regions, followed by
+        the region's ``>> during`` aspects when they are shown. Child states
+        and transitions come next; ``active("...")`` is shown as written.
+
+        The result is a fragment, not a diagram: it is meant to sit inside the
+        composite drawn by :meth:`pyfcstm.model.model.State.to_plantuml`, which
+        puts ``--`` between the fragments of its regions.
 
         :param options: Detail level name, :class:`~pyfcstm.model.plantuml.PlantUMLOptions`
             or ``None`` for the defaults, defaults to ``None``.
@@ -210,7 +216,7 @@ class Region(AstExportable):
         :param event_colors: Event path to colour mapping used by the event
             colouring modes, defaults to ``None`` (no colours).
         :type event_colors: Optional[Dict[str, str]], optional
-        :return: PlantUML text of the region box without a trailing newline.
+        :return: PlantUML text of the region body without a trailing newline.
         :rtype: str
 
         Example::
@@ -219,10 +225,11 @@ class Region(AstExportable):
             >>> machine = load_state_machine_from_text(
             ...     'state Root { region Motor { state Off; [*] -> Off; } }')
             >>> print(machine.root_state.regions['Motor'].to_plantuml('minimal'))
-            state "region 1: Motor" as root__motor <<region>> #line.dashed {
-                state "Off" as root__motor__off
-                [*] --> root__motor__off
-            }
+            note as root__motor
+                **region 1: Motor**
+            end note
+            state "Off" as root__motor__off
+            [*] --> root__motor__off
         """
         from .model import _region_to_plantuml
 

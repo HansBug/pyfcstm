@@ -39,12 +39,12 @@ def test_cli_prints_the_same_text(example, level):
 
 def test_regions_keep_declaration_order_with_separator_between_them():
     text = load_state_machine_from_file(str(FIXTURES / 'controller.fcstm')).to_plantuml('full')
-    assert text.index('"region 1: Safety"') < text.index('"region 2: Motion"')
+    assert text.index('**region 1: Safety**') < text.index('**region 2: Motion**')
     assert len(re.findall(r'^\s*--$', text, re.M)) == 1
     nested = load_state_machine_from_file(str(FIXTURES / 'nested.fcstm')).to_plantuml('full')
     assert len(re.findall(r'^\s*--$', nested, re.M)) == 3
     for name in ('A', 'B', 'C', 'A1', 'A2'):
-        assert '"region ' in nested and (': %s"' % name) in nested
+        assert ': %s**' % name in nested
 
 
 def test_active_queries_are_shown_as_written_without_generated_flags():
@@ -92,7 +92,7 @@ def test_max_depth_counts_a_region_as_one_level(depth, expected_marker):
     model = load_state_machine_from_file(str(FIXTURES / 'controller.fcstm'))
     text = model.to_plantuml(PlantUMLOptions(max_depth=depth, collapsed_state_marker='...'))
     assert text.count('"..."') == expected_marker
-    assert ('"region 1: Safety"' in text) == (depth >= 2)
+    assert ('**region 1: Safety**' in text) == (depth >= 2)
     # A collapsed region must not draw links to child states it did not declare.
     assert ('controller__running__safety__normal' in text) == (depth >= 3)
 
@@ -134,7 +134,7 @@ def test_state_export_of_a_parallel_owner_is_self_contained():
     model = load_state_machine_from_file(str(FIXTURES / 'job.fcstm'))
     text = model.root_state.substates['Job'].to_plantuml('minimal')
     assert text.startswith('state "Job" as workflow__job <<composite>>')
-    assert '"region 1: A"' in text and '"region 2: B"' in text
+    assert '**region 1: A**' in text and '**region 2: B**' in text
 
 
 REGION_WITH_EFFECT = '''def int x = 0;
@@ -155,7 +155,7 @@ def test_region_transition_effects_follow_effect_mode(mode, expected):
     model = load_state_machine_from_text(REGION_WITH_EFFECT)
     text = model.to_plantuml(PlantUMLOptions(detail_level='full', transition_effect_mode=mode))
     if expected is None:
-        assert 'x = 2' not in text.split('state "Root"')[1].split('root__a : ')[0]
+        assert 'x = 2' not in text
     else:
         assert expected in text
     assert 'active("Root.A.Q")' in text
@@ -174,9 +174,23 @@ def test_variable_table_can_be_hidden_for_a_region_model():
     assert 'legend' not in text and 'DefinitionNote' not in text
 
 
-def test_region_export_works_without_stereotypes_and_standalone():
+def test_region_fragment_can_be_exported_on_its_own():
     model = load_state_machine_from_text(REGION_WITH_EFFECT)
     region = model.root_state.regions['A']
-    assert '<<region>>' in region.to_plantuml('minimal')
-    plain = region.to_plantuml(PlantUMLOptions(use_stereotypes=False))
-    assert plain.startswith('state "region 1: A" as root__a #line.dashed {')
+    assert region.to_plantuml('minimal').startswith('note as root__a\n    **region 1: A**\nend note')
+
+
+def test_region_note_carries_name_and_aspects_and_no_state_box():
+    model = load_state_machine_from_file(str(FIXTURES / 'controller.fcstm'))
+    full = model.to_plantuml('full')
+    assert ('note as controller__running__safety\n'
+            '            **region 1: Safety**\n'
+            '            >> during before {\n'
+            '                permit = 1;\n'
+            '            }\n'
+            '        end note') in full
+    assert 'state "region' not in full and '#line.dashed' not in full
+    assert 'note as controller__running__motion\n            **region 2: Motion**\n        end note' in full
+    # aspects follow the aspect options; the name note stays
+    hidden = model.to_plantuml(PlantUMLOptions(detail_level='full', show_aspect_actions=False))
+    assert '>> during before' not in hidden and '**region 1: Safety**' in hidden

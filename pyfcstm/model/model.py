@@ -1409,7 +1409,7 @@ def _plantuml_visible_actions(actions, active_paths: Dict[str, str]) -> list:
 
 
 def _write_plantuml_transitions(
-    sf, namespace, name_safe, config, event_colors, active_paths
+    sf, namespace, name_safe, config, event_colors, active_paths, prefix="    "
 ) -> None:
     """
     Print the transitions owned by a state or region as PlantUML links.
@@ -1421,6 +1421,8 @@ def _write_plantuml_transitions(
     :param config: Resolved :class:`PlantUMLOptions`.
     :param event_colors: Event path to colour mapping.
     :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param prefix: Indentation of every written line; states indent their body
+        by four spaces, regions have no enclosing braces and pass ``""``.
     :return: ``None``.
     :rtype: None
     """
@@ -1498,25 +1500,23 @@ def _write_plantuml_transitions(
                     print(f" / {effect_text}", file=tf, end="")
 
             trans_text = tf.getvalue()
-        print(indent(trans_text, prefix="    "), file=sf)
+        print(indent(trans_text, prefix=prefix), file=sf)
 
 
-def _write_plantuml_actions(
-    sf, alias: str, config, action_groups, active_paths, hide_empty: bool
-) -> None:
+def _plantuml_action_text(config, action_groups, active_paths, hide_empty: bool):
     """
-    Print the action description line of a state or region.
+    Build the action text that describes a state or region, or ``None``.
 
-    :param sf: Output stream.
-    :param alias: PlantUML alias of the described element.
     :param config: Resolved :class:`PlantUMLOptions`.
     :param action_groups: ``(enters, durings, exits, aspects)`` action lists;
         regions pass empty lists for the lifecycle groups they cannot have.
     :param active_paths: Mapping from :func:`_plantuml_active_paths`.
     :param hide_empty: Whether ``collapse_empty_states`` applies to an element
         with no user-written action.
-    :return: ``None``.
-    :rtype: None
+    :return: Creole-escaped, newline-separated action text; ``''`` when the
+        options select actions but every one is filtered out; ``None`` when
+        no action section should be written at all.
+    :rtype: Optional[str]
     """
     from .active import restore_active_statements
     from .plantuml import should_show_action, format_action_text
@@ -1530,7 +1530,7 @@ def _write_plantuml_actions(
         or (config.show_lifecycle_actions and config.show_aspect_actions and aspects)
     )
     if not should_show_actions:
-        return
+        return None
 
     def _text(item) -> str:
         if active_paths and item.operations:
@@ -1538,7 +1538,6 @@ def _write_plantuml_actions(
             item.operations = restore_active_statements(item.operations, active_paths)
         return format_action_text(item, config)
 
-    print("", file=sf)
     with io.StringIO() as tf:
         for enabled, group in (
             (config.show_enter_actions, enters),
@@ -1552,15 +1551,37 @@ def _write_plantuml_actions(
                     if should_show_action(item, config):
                         print(_text(item), file=tf)
 
-        action_text = escape_plantuml_creole(
+        return escape_plantuml_creole(
             tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
         )
-        if action_text:  # Only show if there's actual content
-            # ``json.dumps`` turns line breaks into the ``\n`` PlantUML expects;
-            # a quote inside ``active("...")`` is plain text on a description
-            # line and must not keep its JSON escape.
-            text = json.dumps(action_text)[1:-1].replace('\\"', '"')
-            print(f"{alias} : {text}", file=sf, end="")
+
+
+def _write_plantuml_actions(
+    sf, alias: str, config, action_groups, active_paths, hide_empty: bool
+) -> None:
+    """
+    Print the action description line of a state.
+
+    :param sf: Output stream.
+    :param alias: PlantUML alias of the described state.
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param action_groups: ``(enters, durings, exits, aspects)`` action lists.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param hide_empty: Whether ``collapse_empty_states`` applies to a state
+        with no user-written action.
+    :return: ``None``.
+    :rtype: None
+    """
+    action_text = _plantuml_action_text(config, action_groups, active_paths, hide_empty)
+    if action_text is None:
+        return
+    print("", file=sf)
+    if action_text:  # Only show if there's actual content
+        # ``json.dumps`` turns line breaks into the ``\n`` PlantUML expects;
+        # a quote inside ``active("...")`` is plain text on a description
+        # line and must not keep its JSON escape.
+        text = json.dumps(action_text)[1:-1].replace('\\"', '"')
+        print(f"{alias} : {text}", file=sf, end="")
 
 
 def _region_to_plantuml(
@@ -1570,11 +1591,14 @@ def _region_to_plantuml(
     event_colors: Optional[Dict[str, str]] = None,
 ) -> str:
     """
-    Render one region as a dashed, named PlantUML sub-box.
+    Render one region as the body of a PlantUML concurrent section.
 
-    The title carries the region's one-based position among its siblings
-    (``region 1: Safety``) because declaration order is execution order. See
-    :meth:`pyfcstm.model.region.Region.to_plantuml` for the public entry point.
+    PlantUML concurrent regions are anonymous, so the body starts with a
+    floating note carrying ``region N: Name`` (N is the one-based position
+    among the siblings, which is also the execution order) and, when shown,
+    the region's ``>> during`` aspects. The child states and the region's
+    transitions follow. The owner state joins the bodies of its regions with
+    the ``--`` separator; see :meth:`pyfcstm.model.region.Region.to_plantuml`.
 
     :param region: Region to render.
     :type region: pyfcstm.model.region.Region
@@ -1584,7 +1608,7 @@ def _region_to_plantuml(
     :type current_depth: int
     :param event_colors: Optional mapping of event paths to color codes.
     :type event_colors: Optional[Dict[str, str]]
-    :return: PlantUML text of the region box and, when it has any, its aspect line.
+    :return: PlantUML text of the region body without a trailing newline.
     :rtype: str
     """
     config = PlantUMLOptions.from_value(options).to_config()
@@ -1594,50 +1618,46 @@ def _region_to_plantuml(
     active_paths = _plantuml_active_paths(region)
     alias = sequence_safe(region.path)
     ordinal = list(region.parent.regions).index(region.name) + 1
-    stereotype = " <<region>>" if config.use_stereotypes else ""
 
     def _name_safe(sub_state: str) -> str:
         return sequence_safe([*region.path, sub_state])
 
+    action_text = _plantuml_action_text(
+        config,
+        ([], [], [], region.on_during_aspects),
+        active_paths,
+        hide_empty=not region.on_during_aspects,
+    )
     with io.StringIO() as sf:
-        title = json.dumps("region %d: %s" % (ordinal, region.name), ensure_ascii=False)
-        print(f"state {title} as {alias}{stereotype} #line.dashed {{", file=sf)
+        print(f"note as {alias}", file=sf)
+        print(f"    **{escape_plantuml_creole('region %d: %s' % (ordinal, region.name))}**", file=sf)
+        for line in (action_text or "").splitlines():
+            print(f"    {line}", file=sf)
+        print("end note", file=sf)
         expanded = config.max_depth is None or current_depth < config.max_depth
         if expanded:
             for state in region.substates.values():
                 print(
-                    indent(
-                        state.to_plantuml(
-                            options,
-                            current_depth=current_depth + 1,
-                            event_colors=event_colors,
-                        ),
-                        prefix="    ",
+                    state.to_plantuml(
+                        options,
+                        current_depth=current_depth + 1,
+                        event_colors=event_colors,
                     ),
                     file=sf,
                 )
-        else:
-            marker_name = json.dumps(config.collapsed_state_marker, ensure_ascii=False)
-            print(
-                f"    state {marker_name} as {sequence_safe([*region.path, '__collapsed__'])}",
-                file=sf,
-            )
-        if expanded:
             # A collapsed region declares no child states, so drawing its
             # transitions would invent undeclared nodes.
             _write_plantuml_transitions(
-                sf, region, _name_safe, config, event_colors, active_paths
+                sf, region, _name_safe, config, event_colors, active_paths, prefix=""
             )
-        print("}", file=sf, end="")
-        _write_plantuml_actions(
-            sf,
-            alias,
-            config,
-            ([], [], [], region.on_during_aspects),
-            active_paths,
-            hide_empty=not region.on_during_aspects,
-        )
-        return sf.getvalue()
+        else:
+            marker_name = json.dumps(config.collapsed_state_marker, ensure_ascii=False)
+            print(
+                f"state {marker_name} as {sequence_safe([*region.path, '__collapsed__'])}",
+                file=sf,
+                end="",
+            )
+        return sf.getvalue().rstrip("\n")
 
 
 @dataclass
@@ -2410,8 +2430,10 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to PlantUML notation.
 
-        A state that owns regions is drawn as one box holding one dashed,
-        named sub-box per region, in declaration order, separated by ``--``.
+        A state that owns regions is drawn as one composite whose regions are
+        PlantUML concurrent sections, in declaration order, separated by
+        ``--``. PlantUML sections are anonymous, so each one starts with a note
+        reading ``region N: Name`` (and the region's ``>> during`` aspects).
         Activity queries are shown as written: ``active("...")`` is restored in
         guards and operations, and the hidden flag writes that model
         construction added to ``enter`` / ``exit`` are not listed.
@@ -2432,15 +2454,17 @@ class State(AstExportable, PlantUMLExportable):
             ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }')
             >>> print(machine.root_state.to_plantuml('minimal'))
             state "Root" as root <<composite>> {
-                state "region 1: A" as root__a <<region>> #line.dashed {
-                    state "X" as root__a__x
-                    [*] --> root__a__x
-                }
+                note as root__a
+                    **region 1: A**
+                end note
+                state "X" as root__a__x
+                [*] --> root__a__x
                 --
-                state "region 2: B" as root__b <<region>> #line.dashed {
-                    state "Y" as root__b__y
-                    [*] --> root__b__y
-                }
+                note as root__b
+                    **region 2: B**
+                end note
+                state "Y" as root__b__y
+                [*] --> root__b__y
             }
         """
         options = PlantUMLOptions.from_value(options)
@@ -3260,8 +3284,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         The output is a complete ``@startuml`` / ``@enduml`` document: optional
         variable table, optional event legend, then the state tree. A state with
-        regions is drawn as one box holding a dashed, named sub-box per region
-        in declaration order, separated by ``--``. Activity queries are shown
+        regions is drawn as one composite whose regions are PlantUML concurrent
+        sections in declaration order, separated by ``--``, each introduced by
+        a ``region N: Name`` note. Activity queries are shown
         as written (``active("Root.A")``); the hidden flag variables and the
         flag writes that model construction added are not part of the output.
         Models without regions and without activity queries are exported

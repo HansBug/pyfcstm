@@ -15,37 +15,42 @@ endlegend
 
 state "Workflow" as workflow <<composite>> {
     state "Job" as workflow__job <<composite>> {
-        state "region 1: A" as workflow__job__a <<region>> #line.dashed {
-            state "Q" as workflow__job__a__q <<composite>> {
-                state "region 1: A1" as workflow__job__a__q__a1 <<region>> #line.dashed {
-                    state "Working" as workflow__job__a__q__a1__working
-                    [*] --> workflow__job__a__q__a1__working
-                    workflow__job__a__q__a1__working --> [*] : /A1Done
-                }
-                --
-                state "region 2: A2" as workflow__job__a__q__a2 <<region>> #line.dashed {
-                    state "Working" as workflow__job__a__q__a2__working
-                    [*] --> workflow__job__a__q__a2__working
-                    workflow__job__a__q__a2__working --> [*] : /A2Done
-                }
-            }
-            state "Packing" as workflow__job__a__packing
-            [*] --> workflow__job__a__q
-            workflow__job__a__q --> workflow__job__a__packing
-            workflow__job__a__packing --> [*] : /ADone
+        note as workflow__job__a
+            **region 1: A**
+        end note
+        state "Q" as workflow__job__a__q <<composite>> {
+            note as workflow__job__a__q__a1
+                **region 1: A1**
+            end note
+            state "Working" as workflow__job__a__q__a1__working
+            [*] --> workflow__job__a__q__a1__working
+            workflow__job__a__q__a1__working --> [*] : /A1Done
+            --
+            note as workflow__job__a__q__a2
+                **region 2: A2**
+            end note
+            state "Working" as workflow__job__a__q__a2__working
+            [*] --> workflow__job__a__q__a2__working
+            workflow__job__a__q__a2__working --> [*] : /A2Done
         }
+        state "Packing" as workflow__job__a__packing
+        [*] --> workflow__job__a__q
+        workflow__job__a__q --> workflow__job__a__packing
+        workflow__job__a__packing --> [*] : /ADone
         --
-        state "region 2: B" as workflow__job__b <<region>> #line.dashed {
-            state "Working" as workflow__job__b__working
-            [*] --> workflow__job__b__working
-            workflow__job__b__working --> [*] : /BDone
-        }
+        note as workflow__job__b
+            **region 2: B**
+        end note
+        state "Working" as workflow__job__b__working
+        [*] --> workflow__job__b__working
+        workflow__job__b__working --> [*] : /BDone
         --
-        state "region 3: C" as workflow__job__c <<region>> #line.dashed {
-            state "Working" as workflow__job__c__working
-            [*] --> workflow__job__c__working
-            workflow__job__c__working --> [*] : /CDone
-        }
+        note as workflow__job__c
+            **region 3: C**
+        end note
+        state "Working" as workflow__job__c__working
+        [*] --> workflow__job__c__working
+        workflow__job__c__working --> [*] : /CDone
     }
     state "AwaitPermission" as workflow__await_permission
     state "Ready" as workflow__ready

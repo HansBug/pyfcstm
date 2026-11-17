@@ -772,3 +772,49 @@ def test_forced_transitions_and_declared_events_inside_regions_are_reported():
     assert len([item for item in report.transitions if item.is_forced]) == 3
     assert [d.refs['event_qualified_name'] for d in report.diagnostics if d.code == 'W_UNUSED_EVENT'] == [
         'Root.Work.Spare']
+
+
+def test_inspect_with_verify_accepts_models_that_only_use_active_queries():
+    source = 'state Root { [*] -> A; state A; state B; state C; A -> B : if [active("Root.C")]; B -> A; }'
+    for options in ({}, {'max_complexity_tier': 'smt_undecidable_heuristic',
+                         'max_call_count_scaling': 'quadratic_in_states'}):
+        report = inspect_text(source, enable_verify=True, **options)
+        by_name = {item.algorithm_name: item for item in report.verification.algorithms}
+        assert by_name['topological_reachable_set'].result_kind == 'not_run'
+        assert by_name['topological_reachable_set'].reason_code == 'active_query_unsupported'
+        validate_against_shipped_schema(report)
+    assert report.verification.algorithms[0].reason_code == 'active_query_unsupported'
+    result = run_cli_text_verify(source)
+    assert result.exitcode == 0, result.stderr
+
+
+def run_cli_text_verify(source):
+    import tempfile
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / 'active.fcstm'
+        path.write_text(source, encoding='utf-8')
+        return simulate_entry(pyfcstmcli, ['pyfcstm', 'inspect', '-i', str(path), '--enable-verify'])
+
+
+def test_enclosing_aspects_count_as_reads_of_the_regions_inside():
+    reading = '''
+    def int x = 0; def int y = 0; def int z = 0;
+    state R {
+        >> during %s { z = x; }
+        region A { state P { during { y = 1; } } [*] -> P; }
+        region B { state Q { during { x = y + 2; } } [*] -> Q; }
+    }
+    '''
+    for aspect in ('before', 'after'):
+        found = [d for d in inspect_text(reading % aspect).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
+        assert [(d.refs['reader_region'], d.refs['target']) for d in found] == [('R.A', 'x')]
+    overwriting = '''
+    def int x = 0; def int y = 0; def int z = 0;
+    state R {
+        >> during %s { z = x; }
+        region A { state P { during { x = 1; } } [*] -> P; }
+        region B { state Q { during { x = y + 2; } } [*] -> Q; }
+    }
+    '''
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(overwriting % 'before'))
+    assert 'W_REGION_BLIND_OVERWRITE' in codes(inspect_text(overwriting % 'after'))

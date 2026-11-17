@@ -31,6 +31,10 @@ not read it (they are checked before the state's ``during`` runs), and no
 region between the two writers reads it. A read of the variable in some other
 state of the same region does not make the write non-blind, because the
 analysis cannot tell which state is active when the earlier region wrote.
+Aspects declared outside the regions (``>> during before`` / ``after`` on the
+owner or an outer state) run around every leaf inside them, so what they read
+counts as read by each region; a ``before`` aspect also counts as reading the
+old value ahead of the leaf's own actions.
 
 Example::
 
@@ -223,6 +227,7 @@ def _collect_region_access(region, defined: Set[str], root) -> _RegionAccess:
     from ...model.region import walk_namespaces
 
     access = _RegionAccess(path='.'.join(region.path))
+    before_reads = _note_inherited_aspect_reads(access, region, defined, root)
     for namespace in walk_namespaces(region):
         outgoing = _outgoing_guard_reads(namespace, defined)
         for transition in namespace.transitions:
@@ -235,9 +240,43 @@ def _collect_region_access(region, defined: Set[str], root) -> _RegionAccess:
         for action in actions:
             # The guards of a state's outgoing transitions are checked before its
             # ``during`` and aspect actions run, and before its ``exit`` runs.
-            initial = frozenset() if getattr(action, 'stage', None) == 'enter' else outgoing
+            initial = (
+                frozenset() if getattr(action, 'stage', None) == 'enter'
+                else outgoing | before_reads
+            )
             _scan_block(access, action.operations or (), defined, root, initial)
     return access
+
+
+def _note_inherited_aspect_reads(access, region, defined: Set[str], root) -> FrozenSet[str]:
+    """Record what the aspects of enclosing states and regions read for this region.
+
+    A ``>> during before`` / ``after`` action declared outside the region runs
+    around the during action of every leaf inside it, so what it reads counts
+    as read by the region. Only reads are taken over: they feed the backward
+    read information and, for ``before`` aspects, mark the old value as used
+    before the leaf's own actions run.
+
+    :param access: Accumulator of the region being collected.
+    :param region: Region whose enclosing namespaces are examined.
+    :param defined: Names of the model variables.
+    :param root: Root state, used to resolve ``active()`` queries.
+    :return: Variables read by enclosing ``before`` aspects.
+    """
+    before: Set[str] = set()
+    namespace = region.parent
+    while namespace is not None:
+        for action in namespace.on_during_aspects:
+            scratch = _RegionAccess(path='')
+            _scan_block(scratch, action.operations or (), defined, root, frozenset())
+            for name, span in scratch.reads.items():
+                access.reads.setdefault(name, span)
+            for target, span in scratch.queries.items():
+                access.queries.setdefault(target, span)
+            if action.aspect == 'before':
+                before |= set(scratch.reads)
+        namespace = namespace.parent
+    return frozenset(before)
 
 
 def _outgoing_guard_reads(namespace, defined: Set[str]) -> FrozenSet[str]:

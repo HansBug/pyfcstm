@@ -105,9 +105,6 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     """
     if machine is None:
         return []
-    from ...model.support import require_supported_model
-
-    require_supported_model(machine, 'Combo-trigger analysis')
     terms_by_origin = _combo_terms_by_origin(machine)
     diagnostics: List[ModelDiagnostic] = []
     for terms in terms_by_origin.values():
@@ -119,7 +116,9 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
 
 def _combo_terms_by_origin(machine: "StateMachine") -> Dict[str, Tuple[_ComboTerm, ...]]:
     grouped: Dict[str, Dict[int, _ComboTerm]] = {}
-    for state in machine.walk_states():
+    from ...model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             for ref in getattr(transition, "combo_origin_refs", ()):
                 if not ref.consumes_term:
@@ -419,9 +418,15 @@ def _first_hop_actions_may_write(
 ) -> bool:
     from ...dsl import INIT_STATE
 
+    from ...model.region import Region
+
     parent = transition.parent
     if parent is None:
         return False
+    if isinstance(parent, Region):
+        # A region has no lifecycle actions of its own; what runs before its
+        # first state is not tracked, so conservatively assume it may write.
+        return True
     if transition.from_state is INIT_STATE:
         return _actions_may_write_relevant(
             [

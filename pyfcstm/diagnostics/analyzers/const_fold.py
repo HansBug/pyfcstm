@@ -87,13 +87,12 @@ def collect_const_fold_warnings(
     """Collect diagnostics that depend on constant folding."""
     if machine is None:
         return []
-    from ...model.support import require_supported_model
+    from ...model.region import walk_namespaces
 
-    require_supported_model(machine, 'Constant-folding analysis')
     diagnostics: List[ModelDiagnostic] = []
     defined_vars = set(machine.defines)
     transition_indexes = _transition_indexes(machine)
-    for state in machine.walk_states():
+    for state in walk_namespaces(machine.root_state):
         state_path = _state_path(state)
         for transition in state.transitions:
             if getattr(transition, 'combo_origin_refs', ()):  # combo analyzer maps guard terms to original spans
@@ -208,7 +207,7 @@ def _compare_values(op: str, left: ConstValue, right: ConstValue) -> Optional[bo
 
 def _during_const_assign_diagnostics(state_path: str, state, defined_vars) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
-    for action in state.on_durings:
+    for action in getattr(state, 'on_durings', ()):
         if action.is_abstract or action.is_ref or action.aspect is not None:
             continue
         for stmt in action.operations:
@@ -258,7 +257,9 @@ def _expr_text(expr) -> Optional[str]:
 def _transition_indexes(machine: 'StateMachine') -> dict:
     indexes = {}
     index = 0
-    for state in machine.walk_states():
+    from ...model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             indexes[id(transition)] = index
             index += 1

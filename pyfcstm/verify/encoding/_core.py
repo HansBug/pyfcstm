@@ -42,6 +42,7 @@ from typing import (
 
 import z3
 
+from pyfcstm.model.region import walk_namespaces
 from pyfcstm.solver.domain import _translate_expr_domain
 from pyfcstm.solver.expr import (
     create_z3_vars_from_models as _solver_create_z3_vars_from_models,
@@ -314,7 +315,7 @@ def _transition_index_map(root) -> Dict[int, int]:
     """Build a parent-first transition index map for one verify run."""
     index_map: Dict[int, int] = {}
     index = 0
-    for state in root.walk_states():
+    for state in walk_namespaces(root):
         for candidate in state.transitions:
             index_map[id(candidate)] = index
             index += 1
@@ -1797,7 +1798,7 @@ def _iter_ordered_outgoing(
         if state.parent is not None:
             states_by_parent_and_name[(state.parent.path, state.name)] = state
 
-    for scope in machine.walk_states():
+    for scope in walk_namespaces(machine.root_state):
         by_source: Dict[str, List[Transition]] = {}
         for transition in scope.transitions:
             if not isinstance(transition.from_state, str):
@@ -1841,7 +1842,7 @@ def _iter_ordered_selection_domains(
     """
     for source, outgoing in _iter_ordered_outgoing(machine):
         yield source, outgoing, "state_outgoing"
-    for source in machine.walk_states():
+    for source in walk_namespaces(machine.root_state):
         initial = source.init_transitions
         # A single initial transition cannot be shadowed by a predecessor.
         # Avoid translating its trigger merely to return a no-finding result.

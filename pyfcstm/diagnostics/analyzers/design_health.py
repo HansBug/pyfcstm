@@ -19,6 +19,7 @@ from .data_flow import collect_data_flow_warnings
 from .naming import collect_naming_warnings
 from .numeric import collect_numeric_warnings
 from .redundancy import collect_redundancy_warnings
+from .region_order import collect_region_order_diagnostics
 from .structural import collect_structural_warnings
 from .thresholds import collect_threshold_warnings
 from .transition_info import collect_transition_infos
@@ -30,6 +31,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-time type hints only
         EventInfo,
         ForcedTransitionInfo,
         ModelMetrics,
+        RegionInfo,
         StateInfo,
         TransitionInfo,
         VariableInfo,
@@ -51,6 +53,7 @@ def collect_design_health_warnings(
     large_composite_threshold: int = 12,
     var_to_leaf_ratio_threshold: float = 2.0,
     machine: Optional['StateMachine'] = None,
+    regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
     """Collect design-health warning diagnostics from inspect payloads."""
     diagnostics: List[ModelDiagnostic] = []
@@ -60,6 +63,7 @@ def collect_design_health_warnings(
     events = list(events)
     actions = list(actions)
     forced_transitions = list(forced_transitions)
+    regions = list(regions)
     resolved_root_state_path = _resolve_root_state_path(states, root_state_path)
     diagnostics.extend(_unreachable_state_diagnostics(
         states,
@@ -71,6 +75,7 @@ def collect_design_health_warnings(
         transitions,
         reachability_graph,
         resolved_root_state_path,
+        regions,
     ))
     diagnostics.extend(
         collect_const_fold_warnings(machine)
@@ -86,6 +91,7 @@ def collect_design_health_warnings(
         forced_transitions,
         reachability_graph,
         root_state_path=resolved_root_state_path,
+        regions=regions,
     ))
     diagnostics.extend(collect_threshold_warnings(
         states,
@@ -93,6 +99,7 @@ def collect_design_health_warnings(
         deep_hierarchy_threshold=deep_hierarchy_threshold,
         large_composite_threshold=large_composite_threshold,
         var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+        regions=regions,
     ))
     diagnostics.extend(collect_naming_warnings(actions))
     diagnostics.extend(collect_type_warnings(variables))
@@ -100,6 +107,7 @@ def collect_design_health_warnings(
     diagnostics.extend(collect_redundancy_warnings(transitions, events, states))
     diagnostics.extend(collect_transition_infos(states, transitions))
     diagnostics.extend(collect_numeric_warnings(machine))
+    diagnostics.extend(collect_region_order_diagnostics(machine))
     return _with_suggested_fixes(diagnostics)
 
 
@@ -149,17 +157,22 @@ def _unreachable_initial_transition_diagnostics(
         transitions,
         reachability_graph,
         root_state_path,
+        regions=(),
 ) -> List[ModelDiagnostic]:
     """Keep owner-level findings for unreachable composite entry selections."""
     if not states or root_state_path is None:
         return []
     state_paths = {state.path for state in states}
+    # A region is entered with its owner, so its entry selection is as
+    # reachable as the owner state.
+    region_owner = {region.path: region.owner_path for region in regions}
     reachable = _reachable_state_paths(reachability_graph, root_state_path)
     diagnostics: List[ModelDiagnostic] = []
     for transition in transitions:
         if transition.from_path != '[*]' or '.' not in transition.to_path:
             continue
         owner_path = transition.to_path.rsplit('.', 1)[0]
+        owner_path = region_owner.get(owner_path, owner_path)
         if owner_path not in state_paths or owner_path in reachable:
             continue
         diagnostics.append(ModelDiagnostic(

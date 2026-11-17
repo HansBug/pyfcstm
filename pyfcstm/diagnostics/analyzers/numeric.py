@@ -122,9 +122,6 @@ def collect_numeric_warnings(
     """
     if machine is None:
         return []
-    from ...model.support import require_supported_model
-
-    require_supported_model(machine, 'Numeric analysis')
     var_types = {name: var_define.type for name, var_define in machine.defines.items()}
     diagnostics: List[ModelDiagnostic] = []
     for context in _iter_expression_contexts(machine):
@@ -158,7 +155,9 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
             var_name=var_name,
         )
 
-    for state in machine.walk_states():
+    from ...model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             if transition.guard is not None:
                 yield _Context(
@@ -180,16 +179,13 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
 
 
 def _iter_concrete_actions(state):
-    for collection in (
-        state.on_enters,
-        state.on_durings,
-        state.on_exits,
-        state.on_during_aspects,
-    ):
-        for action in collection:
-            if action.is_abstract or action.is_ref:
-                continue
-            yield action
+    """Yield concrete actions owned by a state or a region (aspects only)."""
+    from ...model.region import namespace_actions
+
+    for action in namespace_actions(state):
+        if action.is_abstract or action.is_ref:
+            continue
+        yield action
 
 
 def _iter_statement_expression_contexts(

@@ -266,7 +266,7 @@ def test_leaf_inside_region_cannot_own_descendant_aspect(collect):
     assert diagnostic.span is not None
 
 
-@pytest.mark.parametrize('consumer', ['simulate', 'bmc', 'plantuml', 'state_plantuml', 'diagram', 'inspect'])
+@pytest.mark.parametrize('consumer', ['simulate', 'bmc', 'plantuml', 'state_plantuml', 'diagram'])
 def test_unsupported_consumers_refuse_a_valid_region_model(consumer):
     model = load_state_machine_from_text(ORDERED)
     with pytest.raises(ModelValidationError) as caught:
@@ -280,10 +280,7 @@ def test_unsupported_consumers_refuse_a_valid_region_model(consumer):
             model.to_plantuml()
         elif consumer == 'state_plantuml':
             model.root_state.substates['Job'].to_plantuml()
-        elif consumer == 'diagram':
-            model.diagram()
         else:
-            from pyfcstm.diagnostics import inspect_model
-            inspect_model(model)
+            model.diagram()
     assert caught.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
     assert caught.value.diagnostics[0].refs['feature'] == 'region'

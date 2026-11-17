@@ -457,6 +457,16 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``effect_statement``
+   * - :ref:`I_REGION_BACKWARD_READ <diag-code-i-region-backward-read>`
+     - ``info``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`W_REGION_BLIND_OVERWRITE <diag-code-w-region-blind-overwrite>`
+     - ``warning``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
 
 
 Names, variables, types, and imports
@@ -1904,7 +1914,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant|owner_never_completes exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 
@@ -1913,7 +1923,7 @@ W_UNREACHABLE_TRANSITION
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
-**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration.
+**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration. A transition leaving a state that owns regions is reported with ``owner_never_completes`` when some region can never reach its ``[*]`` exit, because the owner's ordinary transitions run only once every region is done.
 
 **LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline. When available, ``verification_source_ids`` lists stable ``algorithm_name@verification_scope`` identifiers for that evidence; these identifiers contain no product or schema version.
 
@@ -6581,3 +6591,159 @@ Use a control variable for mutable state; keep the parameter fixed within the ru
 .. diagnostics-example E_PARAM_WRITE 3 boundary_only
 
 Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.
+
+
+.. _diag-code-i-region-backward-read:
+
+I_REGION_BACKWARD_READ
+^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta I_REGION_BACKWARD_READ severity=info emit_tier=partial_static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref I_REGION_BACKWARD_READ owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ reader_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target_kind type=str required=true enum=variable|active item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ writer_regions type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_REGION_BACKWARD_READ kind=partial_static_boundary
+
+**Registry facts.** Severity ``info``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``expression``.
+
+**Meaning.** An earlier region reads a variable, or queries with ``active()`` the activity of a state, that a later region of the same owner writes or contains. Regions run in declaration order within one cycle, so the earlier region sees the value from the previous cycle. This is the defined behavior of ordered regions; the message exists so that the order can be confirmed as intended.
+
+**LLM repair summary.** An earlier region reads something a later region produces in the same cycle, so it sees the previous cycle's value. Keep the order when that is intended; declare the producing region first when the current cycle's value is needed.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the state that owns both regions.
+   * - ``reader_region``
+     - ``str``
+     - yes
+     - Dotted path of the earlier region that reads.
+   * - ``target_kind``
+     - ``str``
+     - yes
+     - ``variable`` for a variable read, ``active`` for an ``active()`` query. (enum: ``variable``, ``active``)
+   * - ``target``
+     - ``str``
+     - yes
+     - Variable name, or the dotted path of the queried state.
+   * - ``writer_regions``
+     - ``list[str]``
+     - yes
+     - Dotted paths of the later regions that write the variable or contain the queried state.
+
+.. diagnostics-example I_REGION_BACKWARD_READ 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array. Region ``Reader`` is declared first, so ``seen = level;`` reads the value that ``Writer`` stored in the previous cycle.
+
+.. code-block:: fcstm
+
+   def int level = 0;
+   def int seen = 0;
+   state Root {
+       region Reader {
+           state Idle { during { seen = level; } }
+           [*] -> Idle;
+       }
+       region Writer {
+           state Busy { during { level = level + 1; } }
+           [*] -> Busy;
+       }
+   }
+
+.. diagnostics-example I_REGION_BACKWARD_READ 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``I_REGION_BACKWARD_READ``.
+A typical repair is ``reorder_regions`` on ``region``: declare the producing region before the reading region when the current cycle's value is needed. Keep the order and the read as they are when the one-cycle delay is intended.
+
+.. diagnostics-example I_REGION_BACKWARD_READ 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_REGION_BACKWARD_READ``.
+Do not treat this as a defect and do not reorder regions only to silence it. A read that goes the other way, from a later region to an earlier one, is the normal case and is never reported.
+
+.. _diag-code-w-region-blind-overwrite:
+
+W_REGION_BLIND_OVERWRITE
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_REGION_BLIND_OVERWRITE severity=warning emit_tier=partial_static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE variable type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_REGION_BLIND_OVERWRITE kind=partial_static_boundary
+
+**Registry facts.** Severity ``warning``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``effect_statement``.
+
+**Meaning.** A later region assigns a variable that an earlier region of the same owner also writes, without using the earlier value. The new value does not depend on the old one, no earlier statement of the same block reads it, the guard of the owning transition and the guards leaving the state do not read it, and no region in between reads it. The earlier write is lost in every cycle in which both statements run. Several regions writing one variable is otherwise fine.
+
+**LLM repair summary.** A later region overwrites a variable written by an earlier region without using the earlier value, so the earlier write has no effect. Combine with the earlier value, for example ``x = x + y;``, or give each region its own variable.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the state that owns both regions.
+   * - ``region``
+     - ``str``
+     - yes
+     - Dotted path of the later region that overwrites.
+   * - ``previous_region``
+     - ``str``
+     - yes
+     - Dotted path of the nearest earlier region that also writes the variable.
+   * - ``variable``
+     - ``str``
+     - yes
+     - Name of the overwritten variable.
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array. ``out = y + 2;`` in ``Second`` discards the value that ``First`` stored in the same cycle.
+
+.. code-block:: fcstm
+
+   def int out = 0;
+   def int y = 0;
+   state Root {
+       region First {
+           state A { during { out = 1; } }
+           [*] -> A;
+       }
+       region Second {
+           state B { during { out = y + 2; } }
+           [*] -> B;
+       }
+   }
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_REGION_BLIND_OVERWRITE``.
+A typical repair is ``use_previous_value`` on ``statement``: write ``out = out + y + 2;`` when both writes are meant to count, or ``use_separate_variables`` when the two regions are independent.
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REGION_BLIND_OVERWRITE``.
+Do not report or remove a write that is built on the earlier value (``x = x + y;``), guarded by it (``if [x > 0] { x = 0; }``), or read before it is overwritten (``z = x; x = 0;``). A read of the variable in a different state of the same region does not make the overwrite safe.

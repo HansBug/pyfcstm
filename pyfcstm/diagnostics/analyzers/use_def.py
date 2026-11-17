@@ -45,22 +45,15 @@ class UseDefGraph:
 
 def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
     """Build a conservative use-def graph from concrete actions/effects."""
-    from ...model.support import require_supported_model
+    from ...model.region import namespace_actions, walk_namespaces
 
-    require_supported_model(machine, 'Use-def analysis')
     edges: Set[Tuple[str, str]] = set()
 
-    for state in machine.walk_states():
-        for collection in (
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-        ):
-            for action in collection:
-                if getattr(action, 'is_abstract', False):
-                    continue
-                _walk_block(action.operations or [], set(), edges)
+    for state in walk_namespaces(machine.root_state):
+        for action in namespace_actions(state):
+            if getattr(action, 'is_abstract', False):
+                continue
+            _walk_block(action.operations or [], set(), edges)
 
         for transition in state.transitions:
             _walk_block(transition.effects or [], set(), edges)
@@ -126,6 +119,7 @@ def _walk_block(
 
 def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
     from ...model.expr import (
+        ActiveStateQuery,
         BinaryOp,
         Boolean,
         ConditionalOp,
@@ -154,6 +148,7 @@ def _walk_expr_collect(expr: 'Expr', out: List[str]) -> None:
     if isinstance(expr, UFunc):
         _walk_expr_collect(expr.x, out)
         return
-    if isinstance(expr, (Integer, Float, Boolean)):
+    if isinstance(expr, (Integer, Float, Boolean, ActiveStateQuery)):
+        # An ``active("path")`` query reads a state's activity, not a variable.
         return
     raise TypeError(f'unhandled Expr subclass: {type(expr).__name__}')

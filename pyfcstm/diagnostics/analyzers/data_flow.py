@@ -18,10 +18,6 @@ def collect_data_flow_warnings(
         variables: Iterable['VariableInfo'],
         machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
-    from ...model.support import require_supported_model
-
-    if machine is not None:
-        require_supported_model(machine, 'Data-flow analysis')
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
     variable_spans = {variable.name: variable.span for variable in variables}
@@ -107,9 +103,11 @@ def _guard_vars_never_change_diagnostics(
         for variable in variables
         if variable.role != 'control' or variable.written_in_states or variable.written_in_effects
     }
+    from ...model.region import walk_namespaces
+
     declared_vars = {variable.name for variable in variables}
     diagnostics: List[ModelDiagnostic] = []
-    for state in machine.walk_states():
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             if transition.guard is None:
                 continue

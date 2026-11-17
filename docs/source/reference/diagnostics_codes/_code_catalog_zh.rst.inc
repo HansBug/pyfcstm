@@ -457,6 +457,16 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``effect_statement``
+   * - :ref:`I_REGION_BACKWARD_READ <diag-code-i-region-backward-read-zh>`
+     - ``info``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`W_REGION_BLIND_OVERWRITE <diag-code-w-region-blind-overwrite-zh>`
+     - ``warning``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
 
 
 名称、变量、类型和导入
@@ -1900,7 +1910,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant|owner_never_completes exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 
@@ -1909,7 +1919,7 @@ W_UNREACHABLE_TRANSITION
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 在当前可用的分析证据下，一个已声明的转换无法被执行。``reasons`` 聚合源状态不可达、事件消费者不可达、强制展开、守卫、遮蔽和重复等原因。
+**含义。** 在当前可用的分析证据下，一个已声明的转换无法被执行。``reasons`` 聚合源状态不可达、事件消费者不可达、强制展开、守卫、遮蔽和重复等原因。离开拥有区域（region）的状态的转换，在某个区域永远到不了它的 ``[*]`` 出口时，会带上原因 ``owner_never_completes``，因为这类状态的普通转换只在所有区域都完成之后才会执行。
 
 **面向 LLM 的修复摘要。** 修改前应结合转换的源状态、触发器、守卫和声明作用域逐项核对 ``refs.reasons``。只有至少一个原因来自可选 verify 流程时，才会出现值为 ``true`` 的 ``verify_backed``。如果有来源信息，``verification_source_ids`` 会列出稳定的 ``algorithm_name@verification_scope`` 标识；这些标识不包含产品版本或 schema 版本。
 
@@ -6557,3 +6567,159 @@ E_PARAM_WRITE
 .. diagnostics-example E_PARAM_WRITE 3 boundary_only
 
 校验同样适用于嵌套条件分支和编程式构造。output 可以有多个写入者，这不属于错误。
+
+
+.. _diag-code-i-region-backward-read-zh:
+
+I_REGION_BACKWARD_READ
+^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta I_REGION_BACKWARD_READ severity=info emit_tier=partial_static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref I_REGION_BACKWARD_READ owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ reader_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target_kind type=str required=true enum=variable|active item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ writer_regions type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_REGION_BACKWARD_READ kind=partial_static_boundary
+
+**注册表事实。** 严重级别 ``info``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``expression``。
+
+**含义。** 靠前的区域（region）读取了同一所属状态下靠后区域写入的变量，或用 ``active()`` 查询了靠后区域里的状态。同一周期内各区域按声明顺序执行，所以靠前的区域读到的是上一周期的值。这是有序区域的既定行为，报出来只是为了让作者确认顺序符合本意。
+
+**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。靠前的区域读到的是上一周期的值；如果这是有意的，保持原样；如果需要本周期的值，把产生该值的区域声明在读取它的区域之前。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 同时拥有这两个区域的状态的点分路径。
+   * - ``reader_region``
+     - ``str``
+     - 是
+     - 发生读取的靠前区域的点分路径。
+   * - ``target_kind``
+     - ``str``
+     - 是
+     - ``variable`` 表示读取变量，``active`` 表示 ``active()`` 查询。（枚举：``variable``、``active``）
+   * - ``target``
+     - ``str``
+     - 是
+     - 变量名，或被查询状态的点分路径。
+   * - ``writer_regions``
+     - ``list[str]``
+     - 是
+     - 写入该变量、或包含被查询状态的靠后区域的点分路径。
+
+.. diagnostics-example I_REGION_BACKWARD_READ 1 repro_cli
+
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。区域 ``Reader`` 声明在前，所以 ``seen = level;`` 读到的是 ``Writer`` 上一周期存入的值。
+
+.. code-block:: fcstm
+
+   def int level = 0;
+   def int seen = 0;
+   state Root {
+       region Reader {
+           state Idle { during { seen = level; } }
+           [*] -> Idle;
+       }
+       region Writer {
+           state Busy { during { level = level + 1; } }
+           [*] -> Busy;
+       }
+   }
+
+.. diagnostics-example I_REGION_BACKWARD_READ 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``I_REGION_BACKWARD_READ`` 的修复方向。
+典型修复是对 ``region`` 调整顺序：需要本周期的值时，把产生该值的区域声明在读取它的区域之前；如果延迟一个周期正是本意，则保持顺序和读取不变。
+
+.. diagnostics-example I_REGION_BACKWARD_READ 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——针对 ``I_REGION_BACKWARD_READ`` 的反例边界。
+不要把它当成缺陷，也不要仅为消除提示而调换区域顺序。反方向的读取（靠后的区域读靠前的区域）是正常情况，不会被报告。
+
+.. _diag-code-w-region-blind-overwrite-zh:
+
+W_REGION_BLIND_OVERWRITE
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_REGION_BLIND_OVERWRITE severity=warning emit_tier=partial_static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE variable type=str required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_REGION_BLIND_OVERWRITE kind=partial_static_boundary
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``effect_statement``。
+
+**含义。** 靠后的区域给某个变量赋值，而同一所属状态下靠前的区域也写过它，且没有用到靠前区域写入的值：新值不依赖旧值，同一代码块里更早的语句没有读它，所在转换的守卫和离开该状态的守卫都没有读它，中间的区域也没有读它。只要两条语句在同一周期都会执行，靠前区域的写入就会被丢掉。多个区域写同一个变量本身没有问题。
+
+**面向 LLM 的修复摘要。** 靠后的区域没有用到旧值就覆盖了靠前区域写的变量，靠前的写入因此没有效果。两次写入都要生效时，让新值建立在旧值之上（例如 ``x = x + y;``）；两个区域互相独立时，各用各的变量。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 同时拥有这两个区域的状态的点分路径。
+   * - ``region``
+     - ``str``
+     - 是
+     - 执行覆盖的靠后区域的点分路径。
+   * - ``previous_region``
+     - ``str``
+     - 是
+     - 同样写入该变量的、最近的靠前区域的点分路径。
+   * - ``variable``
+     - ``str``
+     - 是
+     - 被覆盖的变量名。
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 1 repro_cli
+
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。``Second`` 里的 ``out = y + 2;`` 丢掉了 ``First`` 在同一周期存入的值。
+
+.. code-block:: fcstm
+
+   def int out = 0;
+   def int y = 0;
+   state Root {
+       region First {
+           state A { during { out = 1; } }
+           [*] -> A;
+       }
+       region Second {
+           state B { during { out = y + 2; } }
+           [*] -> B;
+       }
+   }
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``W_REGION_BLIND_OVERWRITE`` 的修复方向。
+典型修复是对语句改为使用旧值：两次写入都要生效时写成 ``out = out + y + 2;``；两个区域互相独立时，改用各自的变量。
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——针对 ``W_REGION_BLIND_OVERWRITE`` 的反例边界。
+不要报告或删除建立在旧值之上的写入（``x = x + y;``）、由旧值决定是否执行的写入（``if [x > 0] { x = 0; }``），以及先读后写的写入（``z = x; x = 0;``）。同一区域里另一个状态读取了该变量，并不能让这次覆盖变得安全。

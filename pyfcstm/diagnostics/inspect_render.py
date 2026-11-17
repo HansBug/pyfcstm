@@ -303,6 +303,18 @@ def render_inspect_human(
         )
     )
     lines.append(f"  transitions: {len(report.transitions)}")
+    regions = tuple(getattr(report, "regions", ()))
+    if regions:
+        lines.append(f"  regions: {len(regions)}")
+        for region in regions:
+            lines.append(
+                "    {path}: order {index} in {owner}; {count} states".format(
+                    path=region.path,
+                    index=region.index,
+                    owner=region.owner_path,
+                    count=len(region.substates),
+                )
+            )
     lines.append(f"  variables: {report.metrics.n_variables}")
     for variable in report.variables:
         lines.append(
@@ -453,6 +465,21 @@ def render_inspect_llm_markdown(
             elif key == "exceeded_thresholds":
                 value = ", ".join(value) or "none"
             lines.append(f"- {key}: `{value if value is not None else 'N/A'}`")
+        lines.append("")
+    regions = tuple(getattr(report, "regions", ()))
+    if regions:
+        lines.append("## Regions")
+        lines.append("")
+        lines.append("Regions of one owner run in the listed order within a cycle.")
+        for region in regions:
+            lines.append(
+                "- `{path}`: order {index} in `{owner}`; states: {states}".format(
+                    path=region.path,
+                    index=region.index,
+                    owner=region.owner_path,
+                    states=", ".join(f"`{item}`" for item in region.substates) or "none",
+                )
+            )
         lines.append("")
     lines.append("## Repair protocol")
     lines.append("")

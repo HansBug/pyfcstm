@@ -138,13 +138,6 @@ def enter_postcondition_implies_during_precondition(
         ... ).kind
         'sat'
     """
-    from pyfcstm.model.support import require_supported_model
-
-    root = state
-    while root.parent is not None:
-        root = root.parent
-    require_supported_model(root, 'Initial lifecycle analysis')
-
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_init_constraints_or_result,

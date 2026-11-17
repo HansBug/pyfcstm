@@ -6,7 +6,7 @@ from ...utils.validate import ModelDiagnostic
 from .initial_livelock import collect_initial_livelock_warnings
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..inspect import ActionInfo, ForcedTransitionInfo, StateInfo, TransitionInfo
+    from ..inspect import ActionInfo, ForcedTransitionInfo, RegionInfo, StateInfo, TransitionInfo
 
 
 def collect_structural_warnings(
@@ -16,17 +16,19 @@ def collect_structural_warnings(
     forced_transitions: Iterable['ForcedTransitionInfo'],
     reachability_graph,
     root_state_path: Optional[str] = None,
+    regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
     states = list(states)
+    regions = list(regions)
     transitions = list(transitions)
     actions = list(actions)
     forced_transitions = list(forced_transitions)
     diagnostics: List[ModelDiagnostic] = []
-    diagnostics.extend(collect_initial_livelock_warnings(states, transitions))
+    diagnostics.extend(collect_initial_livelock_warnings(states, transitions, regions))
     diagnostics.extend(_deadlock_leaf_warnings(states, transitions))
-    diagnostics.extend(_initial_unconditional_missing_warnings(states))
+    diagnostics.extend(_initial_unconditional_missing_warnings(states, regions))
     diagnostics.extend(_forced_never_expands_warnings(forced_transitions))
-    diagnostics.extend(_aspect_no_descendant_leaf_warnings(states))
+    diagnostics.extend(_aspect_no_descendant_leaf_warnings(states, regions))
     diagnostics.extend(_dead_named_action_warnings(
         states,
         actions,
@@ -36,10 +38,11 @@ def collect_structural_warnings(
     return diagnostics
 
 
-def _aspect_no_descendant_leaf_warnings(states) -> List[ModelDiagnostic]:
+def _aspect_no_descendant_leaf_warnings(states, regions=()) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
-    for state in states:
-        if not state.is_composite:
+    # A region carries only aspects, so it is judged like a composite state.
+    for state in (*states, *regions):
+        if hasattr(state, 'is_composite') and not state.is_composite:
             continue
         descendant_leaf_count = sum(
             1
@@ -58,12 +61,17 @@ def _aspect_no_descendant_leaf_warnings(states) -> List[ModelDiagnostic]:
     return diagnostics
 
 
+def _container_label(container) -> str:
+    """Name a state or region record in a diagnostic message."""
+    return 'Region' if hasattr(container, 'owner_path') else 'Composite state'
+
+
 def _aspect_no_descendant_leaf_diagnostic(state, aspect) -> ModelDiagnostic:
     return ModelDiagnostic(
         code='W_ASPECT_NO_DESCENDANT_LEAF',
         severity='warning',
         message=(
-            f'Composite state {state.path!r} declares >> during '
+            f'{_container_label(state)} {state.path!r} declares >> during '
             f'{aspect} but has no descendant non-pseudo leaf state.'
         ),
         span=state.span,
@@ -105,11 +113,14 @@ def _deadlock_leaf_refs(state) -> Dict[str, str]:
     return refs
 
 
-def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
+def _initial_unconditional_missing_warnings(states, regions=()) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
     states_by_path = {state.path: state for state in states}
-    for state in states:
-        if not state.is_composite:
+    owner_paths = {region.owner_path for region in regions}
+    for state in (*states, *regions):
+        # A state that owns regions has no entry selection of its own: each of
+        # its regions selects its own initial state.
+        if not getattr(state, 'is_composite', True) or state.path in owner_paths:
             continue
         unconditional = [
             item for item in state.initial_targets
@@ -129,7 +140,7 @@ def _initial_unconditional_missing_warnings(states) -> List[ModelDiagnostic]:
             span=state.span,
             severity='warning',
             message=(
-                f'Composite state {state.path!r} has no unconditional '
+                f'{_container_label(state)} {state.path!r} has no unconditional '
                 '[*] entry transition.'
             ),
             refs=refs,

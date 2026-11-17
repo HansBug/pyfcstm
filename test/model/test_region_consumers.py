@@ -79,54 +79,12 @@ def test_ordinary_history_within_region_remains_available_in_model():
 
 
 @pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
-@pytest.mark.parametrize('consumer', [
-    'use_def', 'combo_warnings', 'selected_verify', 'initial_completeness', 'first_during',
-])
-def test_direct_analysis_apis_refuse_unsupported_model(source, consumer):
-    model = load_state_machine_from_text(source)
-    with pytest.raises(ModelValidationError) as error:
-        if consumer == 'use_def':
-            from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
-            build_use_def_graph(model)
-        elif consumer == 'combo_warnings':
-            from pyfcstm.diagnostics.analyzers.combo import collect_combo_warnings
-            collect_combo_warnings(model)
-        elif consumer == 'selected_verify':
-            from pyfcstm.verify import REGISTRY, run_inspect_algorithms
-            run_inspect_algorithms(model, max_complexity_tier='smt_linear',
-                                   registry={'dead_guard': REGISTRY['dead_guard']})
-        elif consumer == 'initial_completeness':
-            from pyfcstm.verify import composite_init_guards_incomplete
-            composite_init_guards_incomplete(model, tuple(model.defines.values()))
-        else:
-            from pyfcstm.verify import enter_postcondition_implies_during_precondition
-            leaf = next(state for state in model.walk_states() if state.is_leaf_state)
-            enter_postcondition_implies_during_precondition(leaf, tuple(model.defines.values()))
-    assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
-
-
-@pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
-@pytest.mark.parametrize('consumer', [
-    'constant_folding', 'numeric', 'data_flow', 'event_transitions', 'shadowed_transitions',
-])
-def test_model_analyzers_refuse_incomplete_namespace_analysis(source, consumer):
-    from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
-    from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
-    from pyfcstm.diagnostics.analyzers.numeric import collect_numeric_warnings
+def test_event_transition_collection_refuses_incomplete_namespace_analysis(source):
     from pyfcstm.model import collect_event_transitions
-    from pyfcstm.verify import transition_shadowed_by_predecessor
 
     model = load_state_machine_from_text(source)
-    consumers = {
-        'constant_folding': lambda: collect_const_fold_warnings(model),
-        'numeric': lambda: collect_numeric_warnings(model),
-        'data_flow': lambda: collect_data_flow_warnings([], model),
-        'event_transitions': lambda: collect_event_transitions(model),
-        'shadowed_transitions': lambda: transition_shadowed_by_predecessor(
-            model, tuple(model.defines.values())),
-    }
     with pytest.raises(ModelValidationError) as error:
-        consumers[consumer]()
+        collect_event_transitions(model)
     assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
 
 
@@ -150,25 +108,21 @@ def test_region_history_targets_require_declared_history(edge, collect):
     assert diagnostics[0].refs['owner_path'] == 'Root.Worker.Group'
 
 
-def test_inspect_refusal_keeps_collected_errors_and_strict_build_warnings():
+def test_inspect_reports_collected_errors_and_strict_build_warnings_for_region_models():
     from pyfcstm.diagnostics import inspect_model
 
     model, diagnostics = load_state_machine_from_text(
         'state Root { region Worker { state A; } }', collect=True)
-    with pytest.raises(ModelValidationError) as error:
-        inspect_model(model, model_diagnostics=diagnostics)
-    assert error.value.diagnostics[:-1] == diagnostics
-    assert error.value.diagnostics[-1].code == 'E_UNSUPPORTED_FEATURE'
+    report = inspect_model(model, model_diagnostics=diagnostics)
+    assert [item.code for item in report.diagnostics[:len(diagnostics)]] == [
+        item.code for item in diagnostics]
+    assert [item.path for item in report.regions] == ['Root.Worker']
 
     model = load_state_machine_from_text('''state Root { region Worker {
         state Group { state A; [*] -> A; [H] -> A; }
         [*] -> Group;
     } }''')
-    with pytest.raises(ModelValidationError) as error:
-        inspect_model(model)
-    assert [item.code for item in error.value.diagnostics] == [
-        'W_HISTORY_UNUSED', 'E_UNSUPPORTED_FEATURE',
-    ]
+    assert 'W_HISTORY_UNUSED' in [item.code for item in inspect_model(model).diagnostics]
 
 
 @pytest.mark.parametrize('uses_history', [False, True])

@@ -151,9 +151,6 @@ def transition_shadowed_by_predecessor(
         z3,
     )
 
-    from pyfcstm.model.support import require_supported_model
-
-    require_supported_model(machine, 'Transition shadowing analysis')
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
@@ -440,15 +437,13 @@ def composite_init_guards_incomplete(
         z3,
     )
 
-    from pyfcstm.model.support import require_supported_model
-
-    require_supported_model(machine, 'Initial transition completeness analysis')
+    from pyfcstm.model.region import walk_namespaces
 
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
-    for state in machine.walk_states():
-        if state.is_leaf_state:
+    for state in walk_namespaces(machine.root_state):
+        if getattr(state, 'is_leaf_state', False):
             continue
 
         init_transitions = state.init_transitions

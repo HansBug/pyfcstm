@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Iterable, List
 from ...utils.validate import ModelDiagnostic
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..inspect import ModelMetrics, StateInfo
+    from ..inspect import ModelMetrics, RegionInfo, StateInfo
 
 
 def collect_threshold_warnings(
@@ -15,6 +15,7 @@ def collect_threshold_warnings(
     deep_hierarchy_threshold: int,
     large_composite_threshold: int,
     var_to_leaf_ratio_threshold: float,
+    regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
     """Collect warnings controlled by inspect-model threshold options."""
     states = list(states)
@@ -32,6 +33,7 @@ def collect_threshold_warnings(
     diagnostics.extend(_large_composite_warnings(
         states,
         large_composite_threshold,
+        regions,
     ))
     return diagnostics
 
@@ -85,10 +87,11 @@ def _deep_hierarchy_warnings(states, metrics, threshold) -> List[ModelDiagnostic
     )]
 
 
-def _large_composite_warnings(states, threshold) -> List[ModelDiagnostic]:
+def _large_composite_warnings(states, threshold, regions=()) -> List[ModelDiagnostic]:
     diagnostics: List[ModelDiagnostic] = []
-    for state in states:
-        if not state.is_composite:
+    # A region groups states like a composite does, so it counts its children.
+    for state in (*states, *regions):
+        if not getattr(state, 'is_composite', True):
             continue
         actual = len(state.substates)
         if actual <= threshold:

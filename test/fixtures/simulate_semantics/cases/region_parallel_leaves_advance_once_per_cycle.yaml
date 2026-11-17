@@ -1,0 +1,33 @@
+title: Two working regions each advance once per cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Initial entry runs each leaf first during once; later cycles run each leaf during once.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      a: 1
+      b: 10
+    delta: false
+    ended: false
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      a: 2
+      b: 20
+- cycle_count: 3
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      a: 5
+      b: 50

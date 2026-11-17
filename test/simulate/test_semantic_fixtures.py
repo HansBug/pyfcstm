@@ -42,8 +42,10 @@ EXPECTED_DELTA_STEP_SEQUENCES = {
 @pytest.mark.unittest
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
+    region_cases = [case for case in cases if "regions" in case.data["categories"]]
 
-    assert len(cases) == 250
+    assert len(cases) - len(region_cases) == 250
+    assert region_cases
     assert {case.id for case in cases}
 
 

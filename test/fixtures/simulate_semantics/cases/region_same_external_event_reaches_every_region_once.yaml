@@ -1,0 +1,23 @@
+title: One external event is visible to every region and is not retained
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: S1, R2: S2}'
+- cycle: Root.Go
+  expect:
+    configuration: 'Root.P{R1: T1, R2: T2}'
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: T1, R2: T2}'
+- cycle: Root.Go
+  expect:
+    configuration: 'Root.P{R1: U1, R2: T2}'

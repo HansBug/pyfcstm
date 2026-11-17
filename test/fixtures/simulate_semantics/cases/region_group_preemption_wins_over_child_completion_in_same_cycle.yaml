@@ -1,0 +1,28 @@
+title: Whole-group preemption wins over a child completion and exits in reverse order
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 1
+      b: 1
+      order: 0
+- cycle:
+  - Workflow.ADone
+  - Workflow.Cancel
+  expect:
+    configuration: Workflow.Idle
+    vars:
+      a: 1
+      b: 1
+      order: 213
+    ended: false

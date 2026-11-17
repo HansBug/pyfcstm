@@ -1,0 +1,19 @@
+def int g = 0;
+def int leak = 0;
+state Root {
+    [*] -> Idle;
+    state Idle;
+    state P {
+        region R1 {
+            [*] -> X;
+            state X { enter { leak = leak + 1; } during { leak = leak + 10; } }
+        }
+        region R2 {
+            [*] -> Y : if [g != 0];
+            state Y;
+        }
+    }
+    state Fallback;
+    Idle -> P :: Go;
+
+}

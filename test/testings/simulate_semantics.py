@@ -80,6 +80,7 @@ _ALLOWED_CATEGORIES = {
     "validation",
     "lifecycle",
     "history",
+    "regions",
 }
 _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 BMC_CORE_RUNNER = "bmc_core"
@@ -87,6 +88,7 @@ _ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS) | {BMC_CORE_RUNNER}
 _ALLOWED_EXPECT_FIELDS = {
     "outputs",
     "state",
+    "configuration",
     "vars",
     "ended",
     "delta",
@@ -111,10 +113,12 @@ _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "call_stage",
     "abstract_target",
     "named_ref",
+    "configuration",
 }
 _PUBLIC_EXPECT_FIELDS = {
     "outputs",
     "state",
+    "configuration",
     "vars",
     "ended",
     "delta",
@@ -332,6 +336,12 @@ def _vars_dict(runtime: Any) -> Dict[str, Any]:
     return dict(runtime.vars)
 
 
+def _runtime_configuration_text(runtime: Any) -> Optional[str]:
+    if getattr(runtime, "is_ended"):
+        return None
+    return str(getattr(runtime, "configuration"))
+
+
 def _runtime_state_path(runtime: Any) -> Optional[Tuple[str, ...]]:
     if getattr(runtime, "is_ended"):
         return None
@@ -479,6 +489,13 @@ def _assert_runtime_expectation(
         )
 
     _assert_delta_expectation(runtime, cycle_result, expect, case, field_path)
+
+    if "configuration" in expect:
+        actual_text = _runtime_configuration_text(runtime)
+        assert actual_text == expect["configuration"], (
+            "%s %s configuration mismatch: %r != %r"
+            % (case.id, field_path, actual_text, expect["configuration"])
+        )
 
     if "state" in expect:
         expected_path = _as_tuple_path(expect["state"], case, field_path + ".state")
@@ -1004,6 +1021,9 @@ def _handler_call_record(ctx: Any) -> Dict[str, Any]:
         if hasattr(ctx, name):
             value = getattr(ctx, name)
             record[name] = ".".join(value) if isinstance(value, tuple) else value
+    configuration = getattr(ctx, "configuration", None)
+    if configuration is not None:
+        record["configuration"] = str(configuration)
     return record
 
 
@@ -1552,6 +1572,13 @@ def _validate_handler_calls(
                 yaml_path,
                 "%s.handler_calls[%d].active_leaf" % (field_path, index),
             )
+        if "configuration" in item:
+            _validate_configuration_text(
+                item["configuration"],
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d].configuration" % (field_path, index),
+            )
         for field_name in ("call_stage", "abstract_target", "named_ref"):
             if (
                 field_name in item
@@ -1570,6 +1597,17 @@ def _validate_dot_state_path(
     value: Any, case_id: str, yaml_path: str, field_path: str
 ) -> None:
     _path_segments_from_dot_string(value, case_id, yaml_path, field_path)
+
+
+def _validate_configuration_text(
+    value: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s must be a non-empty configuration text" % field_path,
+        )
 
 
 def _validate_vars_mapping(
@@ -1609,6 +1647,10 @@ def _validate_expect(
     if "state" in expect:
         _validate_dot_state_path(
             expect["state"], case_id, yaml_path, field_path + ".state"
+        )
+    if "configuration" in expect:
+        _validate_configuration_text(
+            expect["configuration"], case_id, yaml_path, field_path + ".configuration"
         )
     for vars_field in ("vars", "outputs"):
         if vars_field in expect:
@@ -1929,6 +1971,17 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
+    if "regions" in categories and (
+        "generated_python_alignment" in runners
+        or "bmc_core" not in (data.get("exclude_runners") or [])
+    ):
+        # Region fixtures may only run on runners that already execute regions;
+        # every other shared consumer must opt out explicitly.
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "regions cases must exclude generated_python_alignment and bmc_core",
+        )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
     _validate_initial(data.get("initial"), case_id, yaml_path, runners)

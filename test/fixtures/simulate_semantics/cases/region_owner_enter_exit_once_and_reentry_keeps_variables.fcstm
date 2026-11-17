@@ -1,0 +1,23 @@
+def int e = 0;
+def int x = 0;
+def int a = 0;
+def int b = 0;
+state Root {
+    [*] -> Idle;
+    state Idle;
+    state P {
+        event Leave;
+        enter { e = e + 1; }
+        exit { x = x + 1; }
+        region R1 {
+            [*] -> X;
+            state X { during { a = a + 1; } }
+        }
+        region R2 {
+            [*] -> Y;
+            state Y { during { b = b + 1; } }
+        }
+    }
+    Idle -> P :: Go;
+    !P -> Idle :: Leave;
+}

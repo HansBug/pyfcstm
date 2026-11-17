@@ -14,7 +14,7 @@ The module contains:
   HTML, SVG, PNG or PDF
 * :func:`expand_svg_command` - The ``expand-svg`` command: convert a canonical
   diagram SVG into a self-contained one
-* :func:`_add_diagram_subcommand` - Register both commands on a Click group
+* ``_add_diagram_subcommand`` - Register both commands on a Click group
 
 Example::
 

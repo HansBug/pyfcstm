@@ -89,8 +89,9 @@ def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
     Inside an ``if`` block, the variables read by the enclosing conditions, and
     by the conditions of earlier branches of the same chain, also become
     sources of every assignment in the branch, because whether the assignment
-    runs depends on them. Variables that are only assigned a literal produce no
-    edge, and the graph does not distinguish declared variables from
+    runs depends on them. An assignment of a literal outside any ``if`` block
+    produces no edge, while inside an ``if`` block it still depends on the
+    branch conditions. The graph does not distinguish declared variables from
     block-local temporaries.
 
     Edges are sorted, so the result is deterministic for a given model.

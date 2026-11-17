@@ -7,7 +7,7 @@ owner state, one recursive position per region in declaration order. It is the
 position type for describing a state of a model that declares regions, and it
 can also be built for ordinary models, where it degenerates to a single path.
 Values are built with :meth:`Configuration.parse` or
-:meth:`Configuration.from_dict`; no runtime produces them by itself.
+:meth:`Configuration.from_dict`.
 
 A configuration only describes a position. It never initializes, steps or
 executes the model, and it never mutates the model it is bound to. Three

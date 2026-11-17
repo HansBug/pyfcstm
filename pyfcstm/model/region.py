@@ -290,7 +290,8 @@ def validate_region_structure(node, sink: DiagnosticSink, path=()) -> bool:
     ``history_boundary`` (a state with history whose subtree contains regions);
     plus ``E_DUPLICATE_REGION`` for repeated region names in one owner. The
     walk always recurses into every child, so with a collecting sink one call
-    reports every problem.
+    reports, for every node of the subtree, at most one ``E_REGION_STRUCTURE``
+    (the first matching reason) plus every duplicate region name.
 
     :param node: Root state or region declaration to check, with its subtree.
     :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
@@ -378,7 +379,7 @@ class Region(AstExportable):
     lifecycle actions and cannot themselves be transition endpoints.
 
     The declaration order of the regions inside one owner is preserved by the
-    model and by every export. Regions are built by
+    model and by :meth:`to_ast_node`. Regions are built by
     :func:`~pyfcstm.model.model.parse_dsl_node_to_state_machine` and reached
     through :attr:`pyfcstm.model.model.State.regions`; construct one directly
     only when assembling a model by hand.

@@ -579,10 +579,12 @@ class StateMachineCodeRenderer:
         Render a single template file.
 
         The template is read with automatic encoding detection and rendered
-        with ``model`` as its only context variable. Missing parent directories
+        with ``model`` as the only variable passed to the render call. Missing
+        parent directories
         of ``output_file`` are created, and the result is written as UTF-8 with
         ``\\n`` line endings, replacing any existing file. :meth:`render` calls
-        this method once for every ``.j2`` file in the template directory.
+        this method once for every ``.j2`` file that the ``ignores`` patterns
+        do not exclude.
 
         :param model: The state machine model to render
         :type model: pyfcstm.model.model.StateMachine

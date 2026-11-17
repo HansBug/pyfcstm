@@ -45,8 +45,8 @@ def require_supported_model(model, operation: str) -> None:
     Two features are checked: ``active()`` queries anywhere in the model
     (``feature='active'``) and any region in the subtree (``feature='region'``,
     one diagnostic per region). Problems are emitted through a strict
-    :class:`~pyfcstm.diagnostics.sink.DiagnosticSink`, so the call raises on the
-    first one and ``error.diagnostics`` holds exactly one entry. Models
+    :class:`~pyfcstm.diagnostics.sink.DiagnosticSink`, which raises at the
+    first one, so ``error.diagnostics`` holds exactly one entry. Models
     without either feature pass silently.
 
     The queries of a model are recorded on every one of its states, so a state

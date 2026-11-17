@@ -986,7 +986,9 @@ def _rebase_active_queries(node, root_name, instance_path, seen=None):
     each :class:`pyfcstm.dsl.node.ActiveStateQuery` in place.  A path that starts
     with ``/`` has the slash dropped and is prefixed by ``instance_path``; a
     path whose first segment equals ``root_name`` has that segment replaced by
-    ``instance_path``.  Any other path is left unchanged.  Each query object is
+    ``instance_path``.  Any other path is left unchanged.  Nested imports are
+    already part of the tree when this runs, so they are covered as well.  Each
+    query object is
     rewritten at most once, tracked by ``id`` in ``seen``, so a query reachable
     along several routes is not prefixed twice.  Tuples and dicts are not
     descended into.
@@ -1396,6 +1398,9 @@ def _collect_event_extra_names(
       the key a relative path resolves to; it overwrites any earlier value;
     * the bare ``(event_name,)``, again first writer wins.
 
+    For events declared directly in the module root the second and third key
+    coincide, and the overwrite rule of the second then applies.
+
     Values may be ``None`` for events declared without a display name.
     ``output`` is mutated in place.
 
@@ -1481,7 +1486,9 @@ def _rewrite_imported_state_event_paths(
     Walks ``node`` and every state and region below it.  For the event id of each
     transition and forced transition, and for each event term of each combo
     trigger, the source path is computed (an absolute id as is, a relative id
-    prefixed by the scope of the declaring state).  If that source path has an
+    prefixed by the scope of the declaring state, and a local-scope combo event
+    term additionally gets its source state name inserted).  If that source
+    path has an
     entry in ``resolved_event_mappings``, the id is rewritten in place to the
     absolute host event path of the mapping, and a
     :class:`_PendingEventRegistration` is appended to ``pending_registrations``

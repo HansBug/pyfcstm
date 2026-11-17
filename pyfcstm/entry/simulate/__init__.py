@@ -9,7 +9,7 @@ and logging modules of this sub-package.
 
 The module contains:
 
-* :func:`_add_simulate_subcommand` - Register the ``simulate`` subcommand on a
+* ``_add_simulate_subcommand`` - Register the ``simulate`` subcommand on a
   Click group
 
 Example::

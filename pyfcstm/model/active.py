@@ -191,8 +191,7 @@ def _rewrite(expression, variables):
     Each :class:`~pyfcstm.model.expr.ActiveStateQuery` becomes
     ``<variable> != 0``. Every node that has expression-valued fields is
     rebuilt with :func:`dataclasses.replace`, even when nothing below it
-    changed; only leaf nodes without such fields (and the unchanged children
-    themselves) are shared.
+    changed; only leaf nodes without such fields are returned as they are.
 
     :param expression: Expression to rewrite.
     :type expression: pyfcstm.model.expr.Expr

@@ -702,9 +702,10 @@ class _Branch:
 
     The ``stack`` has the same shape as the runtime's main stack, except that
     its bottom frame stands for the region itself. An empty list, or a lone
-    region frame that still waits for its initial transition, means the region
-    has not been initialized yet; a lone region frame in ``post_child_exit``
-    mode means the region is done.
+    region frame that is not done, means the region holds no child yet, as
+    before its initial transition ran or while the child of that transition is
+    being entered; a lone region frame in ``post_child_exit`` mode means the
+    region is done.
 
     :param region: The region this branch executes.
     :type region: pyfcstm.model.region.Region
@@ -720,14 +721,14 @@ class _Branch:
         """
         Classify the branch as ``pending``, ``live`` or ``done``.
 
-        :return: ``pending`` until the region has entered a child, ``done``
+        :return: ``pending`` while the region holds no child frame, ``done``
             once the region exited through ``[*]``, otherwise ``live``.
         :rtype: str
         """
-        if not self.stack or (len(self.stack) == 1 and self.stack[0].mode == "init_wait"):
+        if not self.stack:
             return "pending"
-        if len(self.stack) == 1 and self.stack[0].mode == "post_child_exit":
-            return "done"
+        if len(self.stack) == 1:
+            return "done" if self.stack[0].mode == "post_child_exit" else "pending"
         return "live"
 
 
@@ -1063,6 +1064,8 @@ class SimulationRuntime:
         # Per-cycle bookkeeping of aspects on scopes of a model with regions:
         # scope path -> [before already ran, after still owed].
         self._ledger: Dict[Tuple[str, ...], List[bool]] = {}
+        # Nesting depth of group initializations running inside each other.
+        self._init_depth = 0
         # Main stack of the committed execution pass, for handler snapshots.
         self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
@@ -3056,30 +3059,43 @@ class SimulationRuntime:
         :type outer: Optional[_Outer]
         :return: ``True`` if every region was initialized.
         :rtype: bool
+        :raises SimulationRuntimeDfsError: If group initializations nest deeper
+            than the structural safety limit, which means a transition keeps
+            re-entering a group without bound.
         """
-        frame = stack[-1]
-        pending = frame.plain_before_pending
-        for index, branch in enumerate(frame.branches):
-            region_frame = _Frame(branch.region, "init_wait", pending)
-            branch.stack = [region_frame]
-            run = _Run(
-                is_validation_mode=is_validation_mode, consumed_events=consumed_events
-            )
-            self._outer_chain.append(_Outer(stack, index, outer))
-            try:
-                outcome = self._advance_stack(branch.stack, vars_, d_events, run)
-            finally:
-                self._outer_chain.pop()
-            if outcome not in (_STABLE, _REGION_DONE):
-                return False
-            self._flush_after_aspects(vars_, is_validation_mode, branch.region.path)
-            # The first non-pseudo child entered anywhere in the group consumes
-            # the owner's plain ``during before`` boundary actions.
-            pending = region_frame.plain_before_pending
-        self._flush_after_aspects(vars_, is_validation_mode, frame.state.path)
-        frame.plain_before_pending = False
-        self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
-        return True
+        self._init_depth += 1
+        try:
+            if self._init_depth > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                raise SimulationRuntimeDfsError(
+                    "Group initialization nested deeper than the structural safety "
+                    f"limit ({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without converging; "
+                    "the state machine likely re-enters a group without bound."
+                )
+            frame = stack[-1]
+            pending = frame.plain_before_pending
+            for index, branch in enumerate(frame.branches):
+                region_frame = _Frame(branch.region, "init_wait", pending)
+                branch.stack = [region_frame]
+                run = _Run(
+                    is_validation_mode=is_validation_mode, consumed_events=consumed_events
+                )
+                self._outer_chain.append(_Outer(stack, index, outer))
+                try:
+                    outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+                finally:
+                    self._outer_chain.pop()
+                if outcome not in (_STABLE, _REGION_DONE):
+                    return False
+                self._flush_after_aspects(vars_, is_validation_mode, branch.region.path)
+                # The first non-pseudo child entered anywhere in the group consumes
+                # the owner's plain ``during before`` boundary actions.
+                pending = region_frame.plain_before_pending
+            self._flush_after_aspects(vars_, is_validation_mode, frame.state.path)
+            frame.plain_before_pending = False
+            self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
+            return True
+        finally:
+            self._init_depth -= 1
 
     def _finish_group_advance(
         self,
@@ -3179,11 +3195,11 @@ class SimulationRuntime:
                 continue
             self._outer_chain.append(_Outer(stack, index, self._current_outer()))
             try:
-                self._advance_stack(branch.stack, vars_, d_events, run)
+                outcome = self._advance_stack(branch.stack, vars_, d_events, run)
             finally:
                 self._outer_chain.pop()
-            # A working region rests on a stoppable leaf, and every transition
-            # it takes was checked to reach another one, so it cannot fail.
+            if outcome not in (_STABLE, _REGION_DONE):
+                return _FAILED
             self._flush_after_aspects(
                 vars_, run.is_validation_mode, branch.region.path
             )
@@ -3969,13 +3985,21 @@ class SimulationRuntime:
                 next_stack = self._clone_stack(current_stack)
                 next_vars = copy.deepcopy(current_vars)
                 self._ledger = self._copy_ledger(current_ledger)
-                if self._init_group(
-                    next_stack,
-                    next_vars,
-                    d_events,
-                    is_validation_mode=True,
-                    outer=outer,
-                ):
+                try:
+                    initialized = self._init_group(
+                        next_stack,
+                        next_vars,
+                        d_events,
+                        is_validation_mode=True,
+                        outer=outer,
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: a region's own initial
+                    # candidates loop without a stable exit. That only kills
+                    # this path; other items of the worklist may still succeed.
+                    loop_error = error
+                    continue
+                if initialized:
                     worklist.append(
                         (
                             next_stack,
@@ -4419,6 +4443,8 @@ class SimulationRuntime:
                     validate_stoppable=validate_post_child_exit,
                     force_validate=validate_post_child_exit,
                 )
+                if transition is None:
+                    return _FAILED
                 ended = self._execute_transition_on_context(
                     stack,
                     vars_,

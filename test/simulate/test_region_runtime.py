@@ -17,6 +17,7 @@ from pyfcstm.model.configuration import Configuration
 from pyfcstm.model.model import State
 from pyfcstm.simulate import (
     SimulationRuntime,
+    SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
     SimulationRuntimeTerminalStateError,
 )
@@ -835,3 +836,115 @@ def test_short_event_names_resolve_from_the_root_before_the_first_cycle():
     runtime = SimulationRuntime(model)
     runtime.cycle("Go")
     assert str(runtime.configuration) == "Root.P{R: A}"
+
+
+@pytest.mark.unittest
+def test_handler_runs_while_a_region_initial_chain_starts_with_a_pseudo_state():
+    """The owner's plain action may run between two pseudo-state hops of a region."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            [*] -> Owner;
+            state Owner {
+                during before abstract Pre;
+                region R { [*] -> P; pseudo state P; state L; P -> L; }
+            }
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    seen = []
+    runtime.register_abstract_handler(
+        "Root.Owner.Pre", lambda ctx: seen.append(str(ctx.configuration))
+    )
+    runtime.cycle()
+    assert str(runtime.configuration) == "Root.Owner{R: L}"
+    assert seen == ["Root.Owner{R: [init]}"]
+
+
+FORCED_LOOP_MODEL = """def int x = 0;
+def int y = 0;
+state Root {
+    event E2; event E3;
+    [*] -> S3;
+    state S3 {
+        region R27 { [*] -> S30; state S30 { during { y = y * 2 + 1; } } }
+        region R53 {
+            [*] -> S54;
+            state S54;
+            state S55 {
+                enter { x = x + 1; }
+                region R58 {
+                    [*] -> S59;
+                    state S59 {
+                        [*] -> S60;
+                        pseudo state S60;
+                        state S62;
+                        !* -> S62 : /E2;
+                    }
+                    S59 -> [*] : if [x % 4 == 1];
+                    S59 -> S59 : if [y % 3 == 1] effect { x = x + 1; }
+                    !* -> S59 : /E2;
+                }
+                region R65 { [*] -> S66; state S66; }
+            }
+            S54 -> S55 : if [x >= 0] effect { x = x + 1; }
+        }
+    }
+    S3 -> S3 : /E3;
+}"""
+
+
+@pytest.mark.unittest
+def test_cycle_without_a_stable_region_position_is_a_delta():
+    """A forced chain that cannot settle a region makes the whole cycle a Delta."""
+    runtime = SimulationRuntime(load_state_machine_from_text(FORCED_LOOP_MODEL))
+    runtime.cycle()
+    runtime.cycle(["Root.E2", "Root.E3"])
+    before = (str(runtime.configuration), dict(runtime.vars))
+    result = runtime.cycle(["Root.E2", "Root.E3"])
+    assert result.delta is True
+    assert (str(runtime.configuration), dict(runtime.vars)) == before
+    assert runtime.configuration.mode == "stable"
+    runtime.cycle()
+
+
+@pytest.mark.unittest
+def test_looping_region_entry_falls_back_to_the_next_candidate():
+    """An entry whose region loops without a stable exit is rejected like any dead end."""
+    source = """
+    state Root {
+        [*] -> S0;
+        pseudo state S0;
+        state S1 { BODY }
+        S0 -> S1;
+        S0 -> [*];
+    }
+    """
+    looping = "[*] -> S3; pseudo state S3; S3 -> S3;"
+    for body in (looping, "region R { " + looping + " }"):
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(source.replace("BODY", body))
+        )
+        runtime.cycle()
+        assert runtime.is_ended
+
+
+@pytest.mark.unittest
+def test_unbounded_reentry_of_a_group_reports_the_safety_limit():
+    """A transition that keeps re-entering a group ends in the documented error."""
+    source = """
+    def int x = 0;
+    state Root {
+        [*] -> S0;
+        state S0 { BODY }
+        S0 -> S0 : if [x >= 0] effect { x = x + 1; }
+    }
+    """
+    exits = "[*] -> P; pseudo state P; P -> [*];"
+    for body in (exits, "region R { " + exits + " }"):
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(source.replace("BODY", body))
+        )
+        with pytest.raises(SimulationRuntimeDfsError):
+            runtime.cycle()

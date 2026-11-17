@@ -1922,7 +1922,9 @@ def _transition_has_definite_stable_continuation(
     """
     parent = source.parent
     if transition.to_state is _dsl_nodes().EXIT_STATE:
-        return parent is not None and parent.is_root_state
+        # Finishing a region only completes that region; whether the owner then
+        # continues depends on the other regions, so it is never proven stable.
+        return parent is not None and getattr(parent, "is_root_state", False)
     if parent is None or not isinstance(transition.to_state, str):
         return False
     target = parent.substates.get(transition.to_state)

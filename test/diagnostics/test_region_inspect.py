@@ -818,3 +818,13 @@ def test_enclosing_aspects_count_as_reads_of_the_regions_inside():
     '''
     assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(overwriting % 'before'))
     assert 'W_REGION_BLIND_OVERWRITE' in codes(inspect_text(overwriting % 'after'))
+
+
+@pytest.mark.parametrize('exits', ['s -> [*]; s -> [*];', 's -> [*]; s -> [*] :: Ev;'])
+def test_verify_handles_repeated_region_exits(exits):
+    source = 'state T { [*] -> A; state A { region r { [*] -> s; state s; %s } } }' % exits
+    report = inspect_text(source, enable_verify=True, max_complexity_tier='smt_linear',
+                          smt_timeout_ms=5000)
+    by_name = {item.algorithm_name: item for item in report.verification.algorithms}
+    assert by_name['transition_shadowed_by_predecessor'].result_kind != 'not_run'
+    validate_against_shipped_schema(report)

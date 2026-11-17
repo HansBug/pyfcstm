@@ -658,3 +658,82 @@ def test_machine_that_ends_while_starting_has_no_position():
     assert runtime.is_ended
     with pytest.raises(SimulationRuntimeTerminalStateError):
         runtime.configuration
+
+
+@pytest.mark.unittest
+def test_forced_transition_of_an_ancestor_takes_a_nested_group_away():
+    """An ancestor's forced transition preempts the group and the owner's plain actions see it."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Stop;
+            [*] -> Top;
+            state Top {
+                [*] -> P;
+                state P {
+                    during before abstract Pre;
+                    during after abstract Post;
+                    region R1 { [*] -> A; state A; }
+                    region R2 { [*] -> B; state B; }
+                }
+            }
+            state Idle;
+            !Top -> Idle : /Stop;
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    seen = []
+    for name in ("Pre", "Post"):
+        runtime.register_abstract_handler(
+            "Root.Top.P." + name,
+            lambda ctx, name=name: seen.append(
+                (name, str(ctx.configuration), ctx.configuration.mode)
+            ),
+        )
+    runtime.cycle()
+    assert str(runtime.configuration) == "Root.Top.P{R1: A, R2: B}"
+    runtime.cycle("Root.Stop")
+    assert str(runtime.configuration) == "Root.Idle"
+    assert seen == [
+        ("Pre", "Root.Top.P{R1: [init], R2: [init]}", "transient"),
+        ("Post", "Root.Top.P{R1: [done], R2: [done]}", "transient"),
+    ]
+
+
+@pytest.mark.unittest
+def test_one_cycle_counts_once_however_many_regions_advance():
+    """The public counter and the history grow by one per cycle."""
+    runtime = _controller()
+    inputs = {"fault": 0, "requested": 1}
+    runtime.cycle(inputs=inputs)
+    runtime.cycle("Controller.Start", inputs=inputs)
+    for expected in range(3, 6):
+        runtime.cycle(inputs=inputs)
+        assert runtime.cycle_count == expected
+        assert len(runtime.history) == expected
+
+
+@pytest.mark.unittest
+def test_region_declaration_order_is_kept_by_export_and_reload():
+    """Exporting a model and loading it again keeps the execution order of regions."""
+    source = """
+    def int x = 0;
+    state Root {
+        [*] -> P;
+        state P {
+            region Second { [*] -> B; state B { during { x = x * 2; } } }
+            region First { [*] -> A; state A { during { x = x + 1; } } }
+        }
+    }
+    """
+    model = load_state_machine_from_text(source)
+    exported = str(model.to_ast_node())
+    reloaded = load_state_machine_from_text(exported)
+    assert list(reloaded.root_state.substates["P"].regions) == ["Second", "First"]
+    first, second = SimulationRuntime(model), SimulationRuntime(reloaded)
+    for _ in range(3):
+        first.cycle()
+        second.cycle()
+        assert first.vars == second.vars
+        assert str(first.configuration) == str(second.configuration)

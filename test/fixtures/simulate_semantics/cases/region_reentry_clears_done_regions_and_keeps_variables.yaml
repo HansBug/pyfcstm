@@ -1,0 +1,41 @@
+title: Leaving and re-entering an owner restarts finished regions without resetting variables
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 1
+      b: 1
+- cycle: Workflow.ADone
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 2
+- cycle: Workflow.Cancel
+  expect:
+    configuration: Workflow.Idle
+    vars:
+      a: 1
+      b: 2
+- cycle: Workflow.Idle.Back
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 2
+      b: 3
+- cycle: []
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 3
+      b: 4

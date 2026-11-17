@@ -699,9 +699,10 @@ class _Branch:
     Execution state of one region of a state that owns regions.
 
     The ``stack`` has the same shape as the runtime's main stack, except that
-    its bottom frame stands for the region itself. An empty list means the
-    region has not been initialized yet; a stack holding only a region frame in
-    ``post_child_exit`` mode means the region is done.
+    its bottom frame stands for the region itself. An empty list, or a lone
+    region frame that still waits for its initial transition, means the region
+    has not been initialized yet; a lone region frame in ``post_child_exit``
+    mode means the region is done.
 
     :param region: The region this branch executes.
     :type region: pyfcstm.model.region.Region
@@ -717,11 +718,11 @@ class _Branch:
         """
         Classify the branch as ``pending``, ``live`` or ``done``.
 
-        :return: ``pending`` before initialization, ``done`` once the region
-            exited through ``[*]``, otherwise ``live``.
+        :return: ``pending`` until the region has entered a child, ``done``
+            once the region exited through ``[*]``, otherwise ``live``.
         :rtype: str
         """
-        if not self.stack:
+        if not self.stack or (len(self.stack) == 1 and self.stack[0].mode == "init_wait"):
             return "pending"
         if len(self.stack) == 1 and self.stack[0].mode == "post_child_exit":
             return "done"
@@ -3221,6 +3222,8 @@ class SimulationRuntime:
                 self._record_state_trace(
                     "state_exit", state, vars_, is_validation_mode
                 )
+            # Once emptied, the region counts as done in position snapshots.
+            branch.stack[0].mode = "post_child_exit"
         self._run_owner_plain_after(frame.state, vars_, is_validation_mode)
 
     def _continuation_viable(
@@ -5180,9 +5183,13 @@ class SimulationRuntime:
         top = [frame for frame in stack if not isinstance(frame.state, Region)][-1]
         if top.branches is None:
             return top.state.is_stoppable
-        return top.mode in ("active", "after_entry") and all(
-            branch.status == "done" or SimulationRuntime._is_resting(branch.stack)
-            for branch in top.branches
+        return (
+            top.mode in ("active", "after_entry")
+            and any(branch.status == "live" for branch in top.branches)
+            and all(
+                branch.status == "done" or SimulationRuntime._is_resting(branch.stack)
+                for branch in top.branches
+            )
         )
 
     @property

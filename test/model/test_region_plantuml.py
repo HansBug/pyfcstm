@@ -93,6 +93,8 @@ def test_max_depth_counts_a_region_as_one_level(depth, expected_marker):
     text = model.to_plantuml(PlantUMLOptions(max_depth=depth, collapsed_state_marker='...'))
     assert text.count('"..."') == expected_marker
     assert ('"region 1: Safety"' in text) == (depth >= 2)
+    # A collapsed region must not draw links to child states it did not declare.
+    assert ('controller__running__safety__normal' in text) == (depth >= 3)
 
 
 def test_region_aspects_follow_aspect_options():
@@ -133,3 +135,48 @@ def test_state_export_of_a_parallel_owner_is_self_contained():
     text = model.root_state.substates['Job'].to_plantuml('minimal')
     assert text.startswith('state "Job" as workflow__job <<composite>>')
     assert '"region 1: A"' in text and '"region 2: B"' in text
+
+
+REGION_WITH_EFFECT = '''def int x = 0;
+state Root {
+    region A {
+        state P { enter abstract Boot; during { x = 1; } }
+        state Q;
+        [*] -> P;
+        P -> Q : if [active("Root.A.Q") || x > 0] effect { x = 2; }
+    }
+}'''
+
+
+@pytest.mark.parametrize('mode,expected', [
+    ('note', 'note on link'), ('inline', ' / x = 2;'), ('hide', None),
+])
+def test_region_transition_effects_follow_effect_mode(mode, expected):
+    model = load_state_machine_from_text(REGION_WITH_EFFECT)
+    text = model.to_plantuml(PlantUMLOptions(detail_level='full', transition_effect_mode=mode))
+    if expected is None:
+        assert 'x = 2' not in text.split('state "Root"')[1].split('root__a : ')[0]
+    else:
+        assert expected in text
+    assert 'active("Root.A.Q")' in text
+
+
+def test_region_without_visible_actions_has_no_description_line():
+    model = load_state_machine_from_text(REGION_WITH_EFFECT)
+    text = model.to_plantuml(PlantUMLOptions(
+        detail_level='full', show_concrete_actions=False, show_abstract_actions=False))
+    assert 'root__a__p :' not in text
+
+
+def test_variable_table_can_be_hidden_for_a_region_model():
+    model = load_state_machine_from_text(REGION_WITH_EFFECT)
+    text = model.to_plantuml(PlantUMLOptions(variable_display_mode='hide'))
+    assert 'legend' not in text and 'DefinitionNote' not in text
+
+
+def test_region_export_works_without_stereotypes_and_standalone():
+    model = load_state_machine_from_text(REGION_WITH_EFFECT)
+    region = model.root_state.regions['A']
+    assert '<<region>>' in region.to_plantuml('minimal')
+    plain = region.to_plantuml(PlantUMLOptions(use_stereotypes=False))
+    assert plain.startswith('state "region 1: A" as root__a #line.dashed {')

@@ -1596,16 +1596,14 @@ def _region_to_plantuml(
     ordinal = list(region.parent.regions).index(region.name) + 1
     stereotype = " <<region>>" if config.use_stereotypes else ""
 
-    def _name_safe(sub_state: Optional[str] = None) -> str:
-        path = [*region.path]
-        if sub_state is not None:
-            path.append(sub_state)
-        return sequence_safe(path)
+    def _name_safe(sub_state: str) -> str:
+        return sequence_safe([*region.path, sub_state])
 
     with io.StringIO() as sf:
         title = json.dumps("region %d: %s" % (ordinal, region.name), ensure_ascii=False)
         print(f"state {title} as {alias}{stereotype} #line.dashed {{", file=sf)
-        if config.max_depth is None or current_depth < config.max_depth:
+        expanded = config.max_depth is None or current_depth < config.max_depth
+        if expanded:
             for state in region.substates.values():
                 print(
                     indent(
@@ -1624,7 +1622,12 @@ def _region_to_plantuml(
                 f"    state {marker_name} as {sequence_safe([*region.path, '__collapsed__'])}",
                 file=sf,
             )
-        _write_plantuml_transitions(sf, region, _name_safe, config, event_colors, active_paths)
+        if expanded:
+            # A collapsed region declares no child states, so drawing its
+            # transitions would invent undeclared nodes.
+            _write_plantuml_transitions(
+                sf, region, _name_safe, config, event_colors, active_paths
+            )
         print("}", file=sf, end="")
         _write_plantuml_actions(
             sf,

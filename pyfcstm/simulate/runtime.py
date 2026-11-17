@@ -2746,8 +2746,9 @@ class SimulationRuntime:
 
         Starting at the frame of ``scope`` in the committed tree, the search
         follows the single active chain downwards and stops at the first state
-        that owns regions or at the active leaf. A scope that wraps one branch
-        therefore reports that branch's leaf, and a scope that wraps a whole
+        that owns several regions or at the active leaf; an owner of one region
+        is passed through, as the plain composite it behaves like. A scope that
+        wraps one branch therefore reports that branch's leaf, and a scope that wraps a whole
         group of regions reports the owner of the group, even while some of its
         regions are already done.
 
@@ -2757,10 +2758,16 @@ class SimulationRuntime:
         :rtype: Tuple[str, ...]
         """
         stack, index = self._find_frame(self._root_stack, scope)
-        while index + 1 < len(stack) and (
-            isinstance(stack[index].state, Region) or stack[index].branches is None
-        ):
-            index += 1
+        while True:
+            frame = stack[index]
+            if frame.branches is not None and len(frame.branches) == 1:
+                stack, index = frame.branches[0].stack, 0
+            elif (
+                isinstance(frame.state, Region) or frame.branches is None
+            ) and index + 1 < len(stack):
+                index += 1
+            else:
+                break
         return stack[index].state.path
 
     @staticmethod
@@ -3211,7 +3218,9 @@ class SimulationRuntime:
         """
         for branch in reversed(frame.branches):
             while len(branch.stack) > 1:
-                below = branch.stack.pop()
+                # The frame stays on the stack while its actions run, so a
+                # handler still sees the state it is leaving.
+                below = branch.stack[-1]
                 state = below.state
                 if below.branches is not None:
                     self._exit_group(below, vars_, is_validation_mode)
@@ -3221,6 +3230,7 @@ class SimulationRuntime:
                     self._execute_func(
                         on_exit, vars_, is_validation_mode=is_validation_mode
                     )
+                branch.stack.pop()
                 self._record_state_trace(
                     "state_exit", state, vars_, is_validation_mode
                 )
@@ -3412,6 +3422,7 @@ class SimulationRuntime:
         if (
             current_state.is_pseudo
             and stack
+            and not isinstance(stack[-1].state, Region)
             and stack[-1].state is current_state.parent
             and stack[-1].plain_before_pending
         ):

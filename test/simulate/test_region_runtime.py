@@ -737,3 +737,101 @@ def test_region_declaration_order_is_kept_by_export_and_reload():
         second.cycle()
         assert first.vars == second.vars
         assert str(first.configuration) == str(second.configuration)
+
+
+@pytest.mark.unittest
+def test_exit_handlers_during_a_group_exit_still_see_the_state_being_left():
+    """A handler on an exit action runs while its state is still in the configuration."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Kill;
+            [*] -> Run;
+            state Run {
+                region A {
+                    [*] -> Mid;
+                    state Mid {
+                        [*] -> L;
+                        during after abstract MidAfter;
+                        state L { exit abstract LeaveL; }
+                    }
+                }
+                region B { [*] -> S; state S; }
+            }
+            state Off;
+            !Run -> Off : /Kill;
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    seen = []
+    for name in ("Root.Run.A.Mid.L.LeaveL", "Root.Run.A.Mid.MidAfter"):
+        runtime.register_abstract_handler(
+            name, lambda ctx, name=name: seen.append(str(ctx.configuration))
+        )
+    runtime.cycle()
+    runtime.cycle("Root.Kill")
+    assert str(runtime.configuration) == "Root.Off"
+    assert seen == [
+        # Regions leave in reverse order, so B is already done when A leaves.
+        "Root.Run{A: Mid.L, B: [done]}",
+        "Root.Run{A: Mid, B: [done]}",
+    ]
+
+
+@pytest.mark.unittest
+def test_owner_plain_before_waits_for_the_first_real_child_entry():
+    """A region that finishes through pseudo states does not consume the owner's action."""
+    source = """
+    def int w = 0;
+    state Root {
+        [*] -> P;
+        state P {
+            during before { w = w + 10; }
+            %s
+        }
+    }
+    """
+    finishing = "region A { [*] -> X; pseudo state X; X -> [*]; }"
+    working = "region B { [*] -> S; state S { during { w = w + 5; } } }"
+    for body in (finishing + working, working + finishing):
+        runtime = SimulationRuntime(load_state_machine_from_text(source % body))
+        runtime.cycle()
+        assert runtime.vars["w"] == 15, body
+
+
+@pytest.mark.unittest
+def test_aspect_position_of_a_one_region_owner_matches_a_plain_composite():
+    """Wrapping one branch reports its leaf, with or without the region."""
+    template = """
+    state Root {
+        >> during before abstract Tick;
+        [*] -> P;
+        state P { %s }
+    }
+    """
+    positions = []
+    for body in ("[*] -> L; state L;", "region R { [*] -> L; state L; }"):
+        runtime = SimulationRuntime(load_state_machine_from_text(template % body))
+        runtime.register_abstract_handler(
+            "Root.Tick", lambda ctx: positions.append(ctx.get_full_state_path())
+        )
+        runtime.cycle()
+    assert positions == ["Root.P.L", "Root.P.R.L"]
+
+
+@pytest.mark.unittest
+def test_short_event_names_resolve_from_the_root_before_the_first_cycle():
+    """With no active leaf yet, a name resolves from the root as without regions."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Go;
+            [*] -> P;
+            state P { region R { [*] -> A; state A; state B; A -> B : /Go; } }
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    runtime.cycle("Go")
+    assert str(runtime.configuration) == "Root.P{R: A}"

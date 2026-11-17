@@ -342,7 +342,8 @@ class Configuration:
     def resolve_event(self, event_ref: str):
         """Resolve an event name relative to this position.
 
-        With a single active leaf the name resolves exactly as
+        With a single active leaf, or none yet before the first cycle (the root state
+        then stands in), the name resolves exactly as
         :meth:`pyfcstm.model.model.State.resolve_event` does for that leaf, so
         ``Go``, ``.Reset`` and ``/Reset`` all work. With several active leaves a
         name that depends on the position would have to be resolved once per
@@ -369,7 +370,7 @@ class Configuration:
             >>> config.resolve_event('/Reset').path_name
             'Root.Reset'
         """
-        leaves = self.leaves
+        leaves = self.leaves or (self._model.root_state,)
         if len(leaves) == 1:
             return leaves[0].resolve_event(event_ref)
         if event_ref.startswith('/'):

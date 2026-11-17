@@ -337,6 +337,41 @@ def _resolve_path_context(path: Optional[str]) -> Tuple[str, str, Optional[str]]
 
 
 def _clone_ast_node(node):
+    """Deep-copy an AST value while preserving importer-private metadata.
+
+    Lists, tuples and dicts are rebuilt (dict keys are cloned as well) and
+    dataclass nodes are reconstructed field by field through their own class.
+    The ``INIT_STATE``, ``EXIT_STATE`` and ``ALL`` sentinels are returned as the
+    same object so identity checks against them keep working, and any other
+    value (strings, numbers, ``None``) is returned as is.
+
+    Beyond the dataclass fields, three kinds of private state are carried over to
+    the clone so it behaves like the original for every later reader:
+
+    * ``_source_path``, ``_source_text`` and ``_source_declarations`` when the
+      original has them;
+    * the trusted generated combo-transition marker on a
+      :class:`pyfcstm.dsl.node.TransitionDefinition` that carries valid metadata;
+    * the generated combo pseudo-node marker on those children of a
+      :class:`pyfcstm.dsl.node.StateDefinition` or
+      :class:`pyfcstm.dsl.node.RegionDefinition` that are trusted pseudo nodes of
+      the original owner, re-bound to the cloned owner.
+
+    :param node: AST node, container of AST nodes, sentinel or plain value.
+    :type node: object
+    :return: A structurally equal copy that shares no mutable AST node with
+        ``node``.
+    :rtype: object
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model.imports import _clone_ast_node
+        >>> program = parse_with_grammar_entry('state Root;', entry_name='state_machine_dsl')
+        >>> copied = _clone_ast_node(program.root_state)
+        >>> copied is program.root_state, copied.name
+        (False, 'Root')
+    """
     if node is dsl_nodes.INIT_STATE:
         return dsl_nodes.INIT_STATE
     elif node is dsl_nodes.EXIT_STATE:
@@ -439,6 +474,36 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
+    """Expand every ``import`` statement of one parsed program in place.
+
+    The program's own region structure is validated first; when that reports an
+    error that prevents safe namespace construction, assembly stops there and
+    the program is left untouched.  Otherwise each variable definition that has
+    no ``_source_declarations`` yet gets one recording a clone of the declaration
+    as written, and :func:`_assemble_state` is run on the root state, which
+    merges imported programs into the tree and mutates ``program`` (its root
+    state, and its definitions through merging) in place.
+
+    After expansion the region structure is validated once more, because an
+    import can place a parallel descendant under a history owner.  That second
+    pass is skipped if an ``E_REGION_STRUCTURE`` or ``E_DUPLICATE_REGION``
+    diagnostic is already on the sink, so earlier errors are not repeated.
+
+    :param program: Parsed program to expand; mutated in place.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param import_base_dir: Directory against which relative import paths of this
+        program are resolved.
+    :type import_base_dir: str
+    :param import_stack: Absolute paths of the files currently being assembled,
+        outermost first; used for circular-import detection.
+    :type import_stack: List[str]
+    :param sink: Diagnostic sink that receives every problem found.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any diagnostic is emitted.
+    """
     if program.root_state is not None and validate_region_structure(program.root_state, sink):
         return
     if program.root_state is None:  # pragma: no cover
@@ -496,6 +561,48 @@ def _assemble_state(
     host_explicit_def_names,
     sink: DiagnosticSink,
 ) -> None:
+    """Expand the imports declared on one state, then recurse into its children.
+
+    For each ``import`` of ``node`` (in declaration order) the alias is checked
+    against the names already occupied by child states and regions and earlier
+    aliases (``E_IMPORT_ALIAS_CONFLICT``), the file is resolved, checked for a
+    cycle against ``import_stack``, loaded and recursively assembled, its
+    read-only variables are checked for writes, and its variable and event
+    mappings are applied and its definitions merged into ``host_program``.
+    The imported root state is then renamed to the alias, absolute event and
+    reference paths inside it are rebased under the instance path, and it is
+    collected for insertion.  An import that fails any step is skipped and the
+    next one is tried; in collect mode its diagnostics stay on the sink.
+
+    After the loop ``node.imports`` is cleared (for a
+    :class:`pyfcstm.dsl.node.StateDefinition`), every child state and region is
+    assembled recursively, and finally the imported roots are prepended to
+    ``node.substates``, ahead of the existing ones.  ``node`` and
+    ``host_program`` are mutated in place.
+
+    :param node: State or region being processed.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param current_state_path: Names from the host root state down to ``node``;
+        used for diagnostics and for rebasing imported paths.
+    :type current_state_path: Tuple[str, ...]
+    :param import_base_dir: Directory against which relative import paths of
+        this file are resolved.
+    :type import_base_dir: str
+    :param import_stack: Absolute paths of the files currently being assembled,
+        outermost first.
+    :type import_stack: List[str]
+    :param host_program: Program that receives merged definitions and events.
+    :type host_program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param host_explicit_def_names: Names of the variables that the host
+        program declared itself, before any import was merged.
+    :type host_explicit_def_names: Set[str]
+    :param sink: Diagnostic sink that receives every problem found.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any diagnostic is emitted.
+    """
     occupied_names = []
     for subnode in ast_namespace_children(node):
         if subnode.name not in occupied_names:
@@ -851,7 +958,31 @@ def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> 
 
 
 def _rebase_active_queries(node, root_name, instance_path, seen=None):
-    """Rebase every query in one imported program, including nested imports."""
+    """Rewrite ``ActiveStateQuery`` paths of an imported program to instance paths.
+
+    Walks ``node`` (AST nodes via their dataclass fields, and lists) and edits
+    each :class:`pyfcstm.dsl.node.ActiveStateQuery` in place.  A path that starts
+    with ``/`` has the slash dropped and is prefixed by ``instance_path``; a
+    path whose first segment equals ``root_name`` has that segment replaced by
+    ``instance_path``.  Any other path is left unchanged.  Each query object is
+    rewritten at most once, tracked by ``id`` in ``seen``, so a query reachable
+    along several routes is not prefixed twice.  Tuples and dicts are not
+    descended into.
+
+    :param node: AST node, list, or other value to scan.
+    :type node: object
+    :param root_name: Name of the imported root state before it is renamed to the
+        import alias.
+    :type root_name: str
+    :param instance_path: Host-side path of the imported instance, starting at
+        the host root state and ending with the import alias.
+    :type instance_path: Tuple[str, ...]
+    :param seen: Ids of queries already rewritten; a fresh set is created when
+        ``None``, defaults to ``None``.
+    :type seen: Optional[Set[int]], optional
+    :return: ``None``.
+    :rtype: None
+    """
     if seen is None:
         seen = set()
     if isinstance(node, dsl_nodes.ActiveStateQuery):
@@ -876,6 +1007,36 @@ def _rewrite_absolute_paths_for_imported_root(
     instance_prefix: Tuple[str, ...],
     preserved_absolute_event_paths: Optional[set] = None,
 ) -> None:
+    """Prefix absolute event and reference paths in an imported subtree.
+
+    An absolute path inside an imported module is rooted at the module's own
+    root state.  Once the module is mounted under the alias, such a path must be
+    prefixed with ``instance_prefix`` to keep pointing into the same instance.
+    This walks ``node`` and every state and region below it and edits, in place:
+
+    * absolute event ids of transitions and forced transitions, and of the event
+      terms of combo triggers, unless the id's path is in
+      ``preserved_absolute_event_paths``;
+    * absolute ``ref`` targets of ``enter``, ``during``, ``exit`` and
+      ``during`` aspect actions.  These are always prefixed; the preserved set
+      does not apply to them.
+
+    Relative paths are not touched.  Event paths that an event mapping already
+    redirected to a host event are expected in the preserved set, so the host
+    path is not prefixed a second time.
+
+    :param node: Root of the imported subtree.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param instance_prefix: Host-side path segments to prepend, excluding the
+        host root state name.
+    :type instance_prefix: Tuple[str, ...]
+    :param preserved_absolute_event_paths: Absolute event paths, without the
+        leading slash, that must stay as they are, defaults to ``None``
+        (nothing preserved).
+    :type preserved_absolute_event_paths: Optional[Set[Tuple[str, ...]]], optional
+    :return: ``None``.
+    :rtype: None
+    """
     preserved_absolute_event_paths = set(preserved_absolute_event_paths or set())
     for transition in node.transitions:
         if (
@@ -1148,7 +1309,37 @@ def _aggregate_declared_import_event_docs(
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
 ) -> None:
-    """Apply docs from declaration-only mappings without creating events."""
+    """Merge source-event docs into host events that a mapping only declares.
+
+    A mapping whose target event is already in ``pending_targets`` is handled by
+    the registration path, which creates or updates the host event itself, so it
+    is skipped here.  For every other mapping (one whose source event is never
+    used by a transition of the imported module) the host state owning the
+    target is located with :func:`_ensure_state_path_exists`, and if that state
+    already declares an event with the target name, the event's ``doc`` becomes
+    the :func:`pyfcstm.utils.doc.aggregate_documentation` of its current doc and
+    the mapping's source doc.  No event is created: when the host state has no
+    such event, nothing changes.  Host events are mutated in place.
+
+    :param host_root: Root state of the host program.
+    :type host_root: pyfcstm.dsl.node.StateDefinition
+    :param mappings: Resolved event mappings of the import, keyed by source path.
+    :type mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :param pending_targets: Target keys, as host state path plus event name, that
+        pending registrations already cover.
+    :type pending_targets: Set[Tuple[str, ...]]
+    :param import_item: Import statement being processed; its alias is used in
+        diagnostics.
+    :type import_item: pyfcstm.dsl.node.ImportStatement
+    :param owner_state_path: Path of the state that declares the import.
+    :type owner_state_path: Tuple[str, ...]
+    :param sink: Diagnostic sink for an invalid target state path.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and the target state path does not exist in the host.
+    """
     for mapping in mappings.values():
         if (*mapping.target_state_path, mapping.target_event_name) in pending_targets:
             continue
@@ -1172,6 +1363,30 @@ def _collect_event_extra_names(
     current_path: Tuple[str, ...],
     output: Dict[Tuple[str, ...], Optional[str]],
 ) -> None:
+    """Index the display names (``extra_name``) of source events by lookup key.
+
+    Walks ``node`` and every state and region below it, adding three keys for
+    each declared event into ``output``:
+
+    * ``(owner_state_name, event_name)``, kept if the key already exists, so the
+      first declaration visited wins;
+    * the path of the owner below the module root plus the event name, which is
+      the key a relative path resolves to; it overwrites any earlier value;
+    * the bare ``(event_name,)``, again first writer wins.
+
+    Values may be ``None`` for events declared without a display name.
+    ``output`` is mutated in place.
+
+    :param node: State or region to scan.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param output: Mapping filled in place.
+    :type output: Dict[Tuple[str, ...], Optional[str]]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     for event in node.events:
         output[(node.name, event.name)] = output.get(
@@ -1189,7 +1404,27 @@ def _collect_event_docs(
     current_path: Tuple[str, ...],
     output: Dict[Tuple[str, ...], Optional[str]],
 ) -> Dict[Tuple[str, ...], Optional[str]]:
-    """Collect source-event documentation under the same lookup keys as names."""
+    """Index source-event documentation under the keys used for display names.
+
+    Walks ``node`` and every state and region below it and, for each declared
+    event, stores its ``doc`` under the same three keys as
+    :func:`_collect_event_extra_names` (owner name plus event name, owner path
+    below the module root plus event name, and the bare event name).  Unlike the
+    display-name index, every key accumulates: the stored value is the
+    :func:`pyfcstm.utils.doc.aggregate_documentation` of the previous value and
+    the new doc, so events sharing a key contribute all their docs, in visiting
+    order and without duplicates.
+
+    :param node: State or region to scan.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param output: Mapping updated in place.
+    :type output: Dict[Tuple[str, ...], Optional[str]]
+    :return: ``output`` itself.
+    :rtype: Dict[Tuple[str, ...], Optional[str]]
+    """
     current_state_path = tuple((*current_path, node.name))
     for event in node.events:
         keys = (
@@ -1219,6 +1454,35 @@ def _rewrite_imported_state_event_paths(
     resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
     pending_registrations: List[_PendingEventRegistration],
 ) -> None:
+    """Redirect mapped event references of an imported subtree to host events.
+
+    Walks ``node`` and every state and region below it.  For the event id of each
+    transition and forced transition, and for each event term of each combo
+    trigger, the source path is computed (an absolute id as is, a relative id
+    prefixed by the scope of the declaring state).  If that source path has an
+    entry in ``resolved_event_mappings``, the id is rewritten in place to the
+    absolute host event path of the mapping, and a
+    :class:`_PendingEventRegistration` is appended to ``pending_registrations``
+    so the host event can be created or updated later.  Unmapped ids are not
+    touched; absolute ones stay rooted at the imported module until
+    :func:`_rewrite_absolute_paths_for_imported_root` rebases them.
+
+    :param node: State or region to rewrite.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param source_event_names: Display-name index built by
+        :func:`_collect_event_extra_names`.
+    :type source_event_names: Dict[Tuple[str, ...], Optional[str]]
+    :param resolved_event_mappings: Resolved event mappings keyed by source path.
+    :type resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :param pending_registrations: Registrations list extended in place, one entry
+        per rewritten event reference.
+    :type pending_registrations: List[_PendingEventRegistration]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     current_scope_path = current_state_path[1:]
 
@@ -1353,6 +1617,25 @@ def _prune_mapped_source_event_definitions(
     current_path: Tuple[str, ...],
     resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
 ) -> None:
+    """Drop event declarations that an import event mapping replaces.
+
+    Walks ``node`` and every state and region below it and rebuilds each
+    ``events`` list without the events whose source path (owner path below the
+    module root plus event name) is a key of ``resolved_event_mappings``.  Their
+    host counterparts are created or updated separately, so the imported module
+    does not also keep its own copy.  The remaining events keep their relative
+    order; ``node.events`` is reassigned to a new list on every visited node.
+
+    :param node: State or region to prune.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param resolved_event_mappings: Resolved event mappings keyed by source path.
+    :type resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     current_scope_path = current_state_path[1:]
     node.events = [
@@ -1484,6 +1767,42 @@ def _ensure_state_path_exists(
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
 ) -> dsl_nodes.StateDefinition:
+    """Find the host state or region addressed by an absolute state path.
+
+    ``state_path[0]`` must equal ``root.name``; every later segment is looked up
+    among the direct namespace children (child states, then regions) of the state
+    reached so far.  Nothing is created, despite the name: a missing state is a
+    reported error.
+
+    * A first segment that differs from the root name emits
+      ``E_IMPORT_MAPPING_INVALID`` with reason ``host_root_mismatch``, and the
+      walk then continues from ``root`` regardless.
+    * A segment with no matching child emits ``E_IMPORT_MAPPING_INVALID`` with
+      reason ``target_invalid``; in collect mode the walk then carries ``None``
+      forward, so the returned value is ``None`` when the last segment is the
+      one that failed (the annotation does not say so; see the caller guard in
+      :func:`_aggregate_declared_import_event_docs`).  If a segment other than
+      the last is missing, the next iteration dereferences that ``None`` and an
+      :exc:`AttributeError` propagates.
+    * An empty ``state_path`` emits reason ``empty_path`` and returns ``root``.
+
+    :param root: Root state of the host program.
+    :type root: pyfcstm.dsl.node.StateDefinition
+    :param state_path: Absolute state path, starting with the root name.
+    :type state_path: Tuple[str, ...]
+    :param alias: Import alias, reported in diagnostics.
+    :type alias: str
+    :param owner_state_path: Path of the state that declares the import,
+        reported in diagnostics.
+    :type owner_state_path: Tuple[str, ...]
+    :param sink: Diagnostic sink that receives ``E_IMPORT_MAPPING_INVALID``.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: The addressed state, or ``None`` after a ``target_invalid`` error
+        on the last segment in collect mode.
+    :rtype: Optional[pyfcstm.dsl.node.StateDefinition]
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any of the above diagnostics is emitted.
+    """
     # I1 explicit fallback (PR #116 re-review): emit-then-return early
     # on empty path instead of fall-throughing into ``state_path[0]``
     # IndexError that the outer safety net would have to swallow.
@@ -2140,6 +2459,23 @@ def _rewrite_state_variable_references(
     node: dsl_nodes.StateDefinition,
     source_to_target: Dict[str, str],
 ) -> None:
+    """Rename variables in every expression and operation of a state subtree.
+
+    Applies ``source_to_target`` in place to the guards and combo guard terms of
+    transitions and forced transitions, to the effect operations of ordinary
+    transitions (forced transitions have no effects rewritten), to the
+    operation blocks of concrete ``enter``, ``during``, ``exit`` and ``during``
+    aspect actions, and then recurses into every child state and region.  ``ref``
+    and abstract actions carry no operations and are skipped.
+
+    :param node: State or region whose subtree is rewritten.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param source_to_target: Mapping from original variable names to the names
+        they take in the host program.
+    :type source_to_target: Dict[str, str]
+    :return: ``None``.
+    :rtype: None
+    """
     for transition in node.transitions:
         _rewrite_transition_variables(
             transition,

@@ -17,12 +17,26 @@ from .inputs import _CommandInput, _assignments
 
 def _add_simulate_subcommand(cli: click.Group) -> click.Group:
     """
-    Add the simulate subcommand to the CLI.
+    Add the ``simulate`` subcommand to the CLI.
+
+    Registration only builds the command and attaches it to ``cli``: no model is
+    loaded and no option is validated until the command runs, so this function
+    raises nothing of its own for an ordinary :class:`click.Group`.  The
+    failures of the command itself are documented on the registered
+    ``simulate`` function.
 
     :param cli: The Click CLI group
     :type cli: click.Group
-    :return: The modified CLI group
+    :return: The same CLI group, with ``simulate`` registered
     :rtype: click.Group
+
+    Example::
+
+        >>> import click
+        >>> from pyfcstm.entry.simulate import _add_simulate_subcommand
+        >>> app = _add_simulate_subcommand(click.Group())
+        >>> sorted(app.commands)
+        ['simulate']
     """
 
     @cli.command(
@@ -66,7 +80,26 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         :type diagnostics: bool
         :param diagnostics_format: Human ``text`` or batch-only ``jsonl``.
         :type diagnostics_format: str
-        :param parameter_assignments: Repeated construction-time name=value pairs.
+        :type parameter_assignments: Tuple[str, ...]
+        :return: ``None``.  In batch mode a non-zero exit code of the batch
+            processor is turned into :class:`click.exceptions.Exit`.
+        :rtype: None
+        :raises click.UsageError: If ``--diagnostics-format jsonl`` is used
+            without batch ``--execute``, or without ``--diagnostics``.
+        :raises click.ClickException: If the DSL file cannot be read or decoded,
+            fails to parse or fails model validation (the message starts with
+            ``Failed to parse DSL file``); or if a ``--param`` assignment is
+            malformed or the runtime rejects the parameters or the input source
+            (``ValueError`` or ``SimulationRuntimeInputSourceError``).
+        :raises click.exceptions.Exit: In batch mode, if the batch processor
+            returns a non-zero exit code.
+
+        Any other exception is a bug and propagates unchanged.
+
+        Example::
+
+            $ pyfcstm simulate -i machine.fcstm
+            $ pyfcstm simulate -i machine.fcstm -e "cycle; cycle Start; current"
         """
         # Import here to avoid circular dependencies
         from ...dsl.error import GrammarParseError

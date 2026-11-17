@@ -540,6 +540,12 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
     :return: The same CLI group instance with the subcommand registered.
     :rtype: click.Group
 
+    Registration only builds the command and attaches it to ``cli``: no file is
+    read and no template or option is validated until the command runs, so this
+    function raises nothing of its own for an ordinary
+    :class:`click.Group`.  The failures of the command itself are documented on
+    the registered ``plantuml`` function.
+
     Example::
 
         >>> from click import Group

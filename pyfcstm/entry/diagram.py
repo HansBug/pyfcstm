@@ -64,6 +64,20 @@ def _load_model(input_code_file: str):
     :rtype: pyfcstm.model.model.StateMachine
     :raises pyfcstm.entry.base.ClickErrorException: If the file cannot be read,
         decoded, parsed, or assembled into a valid model.
+
+    Example::
+
+        >>> from pyfcstm.entry.base import ClickErrorException
+        >>> from pyfcstm.entry.diagram import _load_model
+        >>> with open('machine.fcstm', 'w') as handle:
+        ...     _ = handle.write('state Root;')
+        >>> _load_model('machine.fcstm').root_state.name
+        'Root'
+        >>> try:
+        ...     _load_model('missing.fcstm')
+        ... except ClickErrorException as error:
+        ...     print(error.message)
+        Input DSL file not found: missing.fcstm
     """
     try:
         from pyfcstm.model.support import require_supported_model

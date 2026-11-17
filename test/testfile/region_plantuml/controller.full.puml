@@ -33,7 +33,7 @@ state "Controller" as controller <<composite>> {
             state "Off" as controller__running__motion__off
             controller__running__motion__off : during {\n    motor = 0;\n}
             state "On" as controller__running__motion__on
-            controller__running__motion__on : during {\n    if [active(\"Controller.Running.Safety.Tripped\")] {\n        motor = 0;\n    } else {\n        motor = 1;\n    }\n}
+            controller__running__motion__on : during {\n    if [active("Controller.Running.Safety.Tripped")] {\n        motor = 0;\n    } else {\n        motor = 1;\n    }\n}
             [*] --> controller__running__motion__off
             controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
             controller__running__motion__on --> controller__running__motion__off : active("Controller.Running.Safety.Tripped")

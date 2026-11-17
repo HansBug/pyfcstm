@@ -54,10 +54,10 @@ def test_active_queries_are_shown_as_written_without_generated_flags():
         assert '__active_' not in text
     full = model.to_plantuml('full')
     assert 'active("Controller.Running.Safety.Tripped")' in full
-    # The link label is plain text; the state description is a quoted PlantUML
-    # string, so the same query appears escaped there.
-    assert full.count(': active("Controller.Running.Safety.Tripped")') == 1
-    assert full.count('active(\\"Controller.Running.Safety.Tripped\\")') == 1
+    # Once as a link label and once inside a state description; neither keeps a
+    # JSON escape, because PlantUML would draw the backslash.
+    assert full.count('active("Controller.Running.Safety.Tripped")') == 2
+    assert '\\"' not in full
     assert 'Tripped :' not in full  # generated flag writes do not describe the state
 
 

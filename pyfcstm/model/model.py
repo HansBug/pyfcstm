@@ -1556,7 +1556,10 @@ def _write_plantuml_actions(
             tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
         )
         if action_text:  # Only show if there's actual content
-            text = json.dumps(action_text).strip('"')
+            # ``json.dumps`` turns line breaks into the ``\n`` PlantUML expects;
+            # a quote inside ``active("...")`` is plain text on a description
+            # line and must not keep its JSON escape.
+            text = json.dumps(action_text)[1:-1].replace('\\"', '"')
             print(f"{alias} : {text}", file=sf, end="")
 
 

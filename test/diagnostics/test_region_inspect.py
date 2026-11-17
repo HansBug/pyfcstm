@@ -828,3 +828,17 @@ def test_verify_handles_repeated_region_exits(exits):
     by_name = {item.algorithm_name: item for item in report.verification.algorithms}
     assert by_name['transition_shadowed_by_predecessor'].result_kind != 'not_run'
     validate_against_shipped_schema(report)
+
+
+def test_enclosing_aspect_active_queries_count_for_the_regions_inside():
+    source = '''
+    def int z = 0;
+    state R {
+        >> during before { if [active("R.B.Q")] { z = 1; } }
+        region A { state P; [*] -> P; }
+        region B { state Q; [*] -> Q; }
+    }
+    '''
+    found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
+    assert [(d.refs['reader_region'], d.refs['target_kind'], d.refs['target']) for d in found] == [
+        ('R.A', 'active', 'R.B.Q')]

@@ -2904,7 +2904,7 @@ def _region_can_finish(region, transitions, graph, owners, completable) -> bool:
 
 
 def _reachability_pass(states, transitions, history_defaults, regions_of, owners, completable):
-    """One guard-agnostic closure, with only ``completable`` owners completing.
+    """One guard-agnostic _closure, with only ``completable`` owners completing.
 
     :return: The reachability mapping and a function giving the states entered
         directly when a region starts.
@@ -2945,7 +2945,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
         for region in owner_regions
     }
 
-    def add_edges(transition: TransitionInfo, targets) -> None:
+    def _add_edges(transition: TransitionInfo, targets) -> None:
         """Add ``targets`` as the entry of the transition's container, or as its edges."""
         if transition.from_path == _INIT_MARK:
             container = transition.to_path.rsplit('.', 1)[0]
@@ -2959,7 +2959,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
             adjacency[transition.from_path].update(targets)
 
     for transition in history_entries:
-        add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
+        _add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
 
     for state in states:
         if not (state.is_composite and state.initial_targets):
@@ -2969,7 +2969,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    def closure(start: str) -> set:
+    def _closure(start: str) -> set:
         """Return every state path reachable from ``start`` under this pass."""
         seen = set()
         queue = [start]
@@ -2994,7 +2994,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
         # one. These targets are root-reachable already, so only the rows of
         # the other states gain them.
         by_path = {state.path: state for state in states}
-        reached = closure(states[0].path)
+        reached = _closure(states[0].path)
         restores: Dict[Tuple[str, str], List[str]] = {}
         for transition in history_entries:
             owner, kind = transition.to_path, transition.target_history
@@ -3013,9 +3013,9 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
                         if any(path == child or path.startswith(child + '.') for path in inside)
                     ]
                 )
-            add_edges(transition, restores[(owner, kind)])
+            _add_edges(transition, restores[(owner, kind)])
 
-    mapping = {state.path: tuple(sorted(closure(state.path))) for state in states}
+    mapping = {state.path: tuple(sorted(_closure(state.path))) for state in states}
     return mapping, region_entries
 
 

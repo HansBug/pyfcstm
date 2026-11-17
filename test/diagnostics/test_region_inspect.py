@@ -842,3 +842,9 @@ def test_enclosing_aspect_active_queries_count_for_the_regions_inside():
     found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
     assert [(d.refs['reader_region'], d.refs['target_kind'], d.refs['target']) for d in found] == [
         ('R.A', 'active', 'R.B.Q')]
+
+
+def test_ordering_analyzer_accepts_a_missing_model():
+    from pyfcstm.diagnostics.analyzers.region_order import collect_region_order_diagnostics
+
+    assert collect_region_order_diagnostics(None) == []

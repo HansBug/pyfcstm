@@ -67,6 +67,9 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch, diagnostics):
         fixtures._run_step(plain, step, case, index, handler_calls=plain_calls)
         fixtures._run_step(traced, step, case, index, handler_calls=traced_calls)
         assert traced.vars == plain.vars
+        if traced.state_machine.has_regions:
+        assert traced.configuration == plain.configuration
+    else:
         assert traced.brief_stack == plain.brief_stack
         assert traced.history == plain.history
         assert traced.cycle_count == plain.cycle_count

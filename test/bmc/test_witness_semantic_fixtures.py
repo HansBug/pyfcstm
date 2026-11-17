@@ -243,7 +243,8 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
             for case in iter_semantic_cases()
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
-        ),
+        )
+        + sum(1 for case in iter_semantic_cases() if "regions" in case.data["categories"]),
         "long_term_exclude": 5,
     }
     assert len(_hard_pass_cases()) == 205

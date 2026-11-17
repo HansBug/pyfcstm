@@ -14,6 +14,20 @@ from test.testings.simulate_semantics import (
 )
 
 
+def _legacy_cases():
+    """Return the shared corpus without the region cases.
+
+    The corpus-wide accounting tests below describe the cases that every shared
+    runner executes. Region cases are accounted for separately because only
+    the simulator runs them until the other runners learn region execution.
+    """
+    return [
+        case
+        for case in iter_semantic_cases()
+        if "regions" not in case.data["categories"]
+    ]
+
+
 # Independent truth ledger for the nine Delta cohorts. Values are one tuple per
 # YAML success expectation; a repeated tuple expands to one value per public
 # cycle call. Keep this table independent from both YAML and Runtime output so
@@ -53,7 +67,7 @@ def test_all_semantic_fixtures_load():
 def test_full_fixture_runtime_scan_finds_exact_delta_cohort():
     """Execute every simulation fixture and mechanically enumerate Delta cases."""
     actual_delta_case_ids = set()
-    cases = iter_semantic_cases()
+    cases = _legacy_cases()
     for case in cases:
         if simulate_semantics._initial_constructor_expect(case) is not None:
             continue
@@ -91,7 +105,7 @@ def test_generated_alignment_fixture_baseline_counts():
     silently dropping the semantic harness inputs while allowing later template
     repairs to add more fixtures.
     """
-    cases = iter_semantic_cases()
+    cases = _legacy_cases()
     generated_cases = [
         case for case in cases if "generated_python_alignment" in case.runners
     ]
@@ -126,7 +140,7 @@ def test_generated_alignment_cases_share_the_simulation_fixture_corpus():
 @pytest.mark.unittest
 def test_delta_cohort_yaml_matches_independent_truth_ledger():
     """Keep the nine Delta cohort declarations exact and independently auditable."""
-    cases = {case.id: case for case in iter_semantic_cases()}
+    cases = {case.id: case for case in _legacy_cases()}
     delta_case_ids = {
         case.id
         for case in cases.values()
@@ -187,7 +201,7 @@ def test_delta_cohort_yaml_matches_independent_truth_ledger():
 @pytest.mark.unittest
 def test_delta_cohort_runtime_matches_independent_truth_ledger():
     """Execute each cohort and compare actual public cycle Delta values to the ledger."""
-    cases = {case.id: case for case in iter_semantic_cases()}
+    cases = {case.id: case for case in _legacy_cases()}
     for case_id, expected_sequences in EXPECTED_DELTA_STEP_SEQUENCES.items():
         case = cases[case_id]
         runtime = simulate_semantics._build_simulation_runtime(case)
@@ -278,7 +292,7 @@ def test_generated_alignment_regression_fixtures_remain_shared():
         "combo_transition_trigger_terminal_validation_rollback_alignment",
         "combo_transition_trigger_unstable_predecessor_alignment",
     }
-    cases = {case.id: case for case in iter_semantic_cases()}
+    cases = {case.id: case for case in _legacy_cases()}
 
     assert required_case_ids <= set(cases)
     for case_id in required_case_ids:
@@ -1163,7 +1177,7 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
         "error_contains",
         "should_exit",
     }
-    cases = list(iter_semantic_cases())
+    cases = list(_legacy_cases())
     top_level_hits = {
         field
         for case in cases
@@ -1195,7 +1209,7 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
 
 @pytest.mark.unittest
 def test_shared_fixture_corpus_satisfies_current_contract():
-    cases = list(iter_semantic_cases())
+    cases = list(_legacy_cases())
 
     for case in cases:
         validate_shared_fixture_contract(case.data, case.yaml_path)

@@ -191,6 +191,12 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         'hard_pass'
     """
     case = load_semantic_case(case_id)
+    if "regions" in case.data["categories"]:
+        return BmcSemanticFixturePolicy(
+            mode="temporary_exclude",
+            bucket="regions",
+            reason="Region execution is not encoded by the BMC relation yet.",
+        )
     if "variable_roles" in case.data["categories"] and is_runner_excluded(
         case, BMC_CORE_RUNNER
     ):

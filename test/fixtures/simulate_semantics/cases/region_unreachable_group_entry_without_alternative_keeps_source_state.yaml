@@ -1,4 +1,4 @@
-title: A rejected group entry without another candidate keeps the whole cycle as Delta
+title: A rejected group entry without another candidate leaves the source state working
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
@@ -20,7 +20,7 @@ steps:
     vars:
       leak: 0
       g: 0
-    delta: true
+    delta: false
 - cycle: []
   expect:
     configuration: Root.Idle

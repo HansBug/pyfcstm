@@ -133,6 +133,15 @@ class Region(AstExportable):
         self.parent_ref = None if owner is None else weakref.ref(owner)
 
     @property
+    def is_root_state(self) -> bool:
+        """Return ``False``: a region is always owned by a state.
+
+        This lets code that handles states and regions uniformly, such as the
+        simulator's transition labels, ask the question without a type check.
+        """
+        return False
+
+    @property
     def init_transitions(self) -> List['Transition']:
         """Return region initial transitions in declaration order."""
         return [edge for edge in self.transitions if edge.from_state is dsl_nodes.INIT_STATE]

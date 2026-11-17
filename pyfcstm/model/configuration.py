@@ -10,6 +10,7 @@ from enum import Enum
 from reprlib import Repr
 from typing import Tuple, TYPE_CHECKING, Union
 
+from ..utils.validate import ModelValueError
 from .region import Region, namespace_child
 
 if TYPE_CHECKING:
@@ -337,3 +338,44 @@ class Configuration:
                     return 'pending'
                 return 'done' if children[region.name] is None else 'live'
         return 'inactive'
+
+    def resolve_event(self, event_ref: str):
+        """Resolve an event name relative to this position.
+
+        With a single active leaf the name resolves exactly as
+        :meth:`pyfcstm.model.model.State.resolve_event` does for that leaf, so
+        ``Go``, ``.Reset`` and ``/Reset`` all work. With several active leaves a
+        name that depends on the position would have to be resolved once per
+        leaf; that is not supported yet, and only root-based names starting with
+        ``/`` are accepted.
+
+        :param event_ref: Event name or path as accepted by ``State.resolve_event``.
+        :type event_ref: str
+        :return: The event the name refers to.
+        :rtype: pyfcstm.model.model.Event
+        :raises pyfcstm.utils.validate.ModelValueError: If the name depends on
+            the position and several leaves are active.
+        :raises pyfcstm.utils.validate.ModelLookupError: If no such event exists.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { event Reset; state A; state B; [*] -> A; A -> B :: Go; }'
+            ... )
+            >>> config = Configuration.parse(model, 'Root.A')
+            >>> config.resolve_event('Go').path_name
+            'Root.A.Go'
+            >>> config.resolve_event('/Reset').path_name
+            'Root.Reset'
+        """
+        leaves = self.leaves
+        if len(leaves) == 1:
+            return leaves[0].resolve_event(event_ref)
+        if event_ref.startswith('/'):
+            return self._model.root_state.resolve_event(event_ref)
+        raise ModelValueError(
+            message='Position-dependent event name %s needs a single active leaf; '
+            'use the full event path or a root-based "/path".' % _ERROR_REPR.repr(event_ref)
+        )
+

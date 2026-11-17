@@ -130,7 +130,7 @@ from ..model import (
 from ..model.configuration import Configuration, _Position, _RegionInit
 from ..model.region import Region, walk_namespaces
 from .diagnostics import CycleDiagnostics, _DecisionCollector, _transition_label
-from .context import ReadOnlyExecutionContext
+from .context import ReadOnlyExecutionContext, _configuration_provider
 from .inputs import InputSourceSpec, _InputSources, _number
 from ..semantics.adapters import expression_from_model, statements_from_model
 from ..semantics.concrete import CONCRETE, normalize_persistent
@@ -1538,23 +1538,6 @@ class SimulationRuntime:
             )
         return resolved
 
-    def _relative_event_scope(self) -> State:
-        """
-        Return the state that resolves position-dependent event names.
-
-        :return: The current state of a model without regions.
-        :rtype: State
-        :raises SimulationRuntimeEventError: If the model declares regions,
-            where a position-dependent name could refer to several active
-            leaves; the full path or the root-based ``/path`` form is required.
-        """
-        if self.state_machine.has_regions:
-            raise self._event_input_error(
-                "Position-dependent event names are not supported for models "
-                "with regions yet; use the full event path."
-            )
-        return self.current_state
-
     def _resolve_event_path(self, event: str) -> Event:
         """
         Resolve a string event path using runtime-relative lookup rules.
@@ -1589,7 +1572,7 @@ class SimulationRuntime:
 
         if is_state_resolve_event_path(event):
             try:
-                return self._relative_event_scope().resolve_event(event)
+                return self.current_state.resolve_event(event)
             except (ModelValueError, ModelLookupError) as err:
                 # ModelValueError/ModelLookupError: the user-supplied
                 # state-relative path is malformed or absent from the current
@@ -1603,7 +1586,7 @@ class SimulationRuntime:
             # state-machine event path, so try current-state lookup before
             # surfacing a single public diagnostic.
             try:
-                return self._relative_event_scope().resolve_event(event)
+                return self.current_state.resolve_event(event)
             except (ModelValueError, ModelLookupError) as err:
                 # ModelValueError/ModelLookupError: the same user-supplied
                 # path also failed state-relative lookup.
@@ -2431,7 +2414,6 @@ class SimulationRuntime:
                 call_stage=call_stage,
                 abstract_target=func_path,
                 named_ref=named_ref,
-                configuration=self._call_time_configuration(),
             )
 
             # Execute all handlers in order
@@ -2720,16 +2702,16 @@ class SimulationRuntime:
             for scope in scopes:
                 self._ledger[scope.path][1] = True
 
-    def _call_time_configuration(self) -> Optional[Configuration]:
+    def _call_time_configuration(self) -> Configuration:
         """
         Snapshot the position of the committed execution tree for a handler.
 
-        :return: The configuration of the tree being executed, or ``None``
-            while no committed tree exists or it is empty.
-        :rtype: Optional[pyfcstm.model.configuration.Configuration]
+        Handlers only run while a committed pass is executing, when the tree is
+        never empty, so this is the configuration at the moment of the call.
+
+        :return: The configuration of the tree being executed.
+        :rtype: pyfcstm.model.configuration.Configuration
         """
-        if not self._root_stack:
-            return None
         return self._configuration_of(self._root_stack)
 
     def _wrapped_state_path(self, scope: Union[State, Region]) -> Tuple[str, ...]:
@@ -2745,14 +2727,10 @@ class SimulationRuntime:
 
         :param scope: State or region that declares the aspect being run.
         :type scope: Union[State, Region]
-        :return: Path of the deepest common state, or the path of ``scope``
-            when it is not part of the committed tree.
+        :return: Path of the deepest common state.
         :rtype: Tuple[str, ...]
         """
-        located = self._find_frame(self._root_stack or [], scope)
-        if located is None:
-            return scope.path
-        stack, index = located
+        stack, index = self._find_frame(self._root_stack, scope)
         while index + 1 < len(stack) and (
             isinstance(stack[index].state, Region) or stack[index].branches is None
         ):
@@ -2887,9 +2865,6 @@ class SimulationRuntime:
             exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
-        for key in [k for k in self._ledger if k[: len(state.path)] == state.path]:
-            # A state entered again within one cycle starts its aspects over.
-            del self._ledger[key]
         self._record_state_trace("state_enter", state, vars_, is_validation_mode)
         if self._is_no_outgoing_pseudo(state):
             # This source has no control edge to execute. Keep the frame so the
@@ -2951,8 +2926,6 @@ class SimulationRuntime:
             owns regions, ``True`` means every region was initialized.
         :rtype: bool
         """
-        if not stack:
-            return False
         state = stack[-1].state
         if stack[-1].branches is not None:
             return self._init_group(
@@ -2963,9 +2936,6 @@ class SimulationRuntime:
                 is_validation_mode=is_validation_mode,
                 outer=self._current_outer(),
             )
-        if not isinstance(state, Region) and state.is_leaf_state:
-            return False
-
         transition = self._select_valid_candidate(
             stack, vars_, d_events, state.init_transitions,
             self._validate_initial_transition,
@@ -3235,7 +3205,7 @@ class SimulationRuntime:
         branch_stack: List[_Frame],
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
-        outer: Optional[_Outer],
+        outer: _Outer,
     ) -> bool:
         """
         Decide whether a region that just finished may stay finished.
@@ -3253,12 +3223,10 @@ class SimulationRuntime:
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
         :param outer: Link from the region's stack to its owner.
-        :type outer: Optional[_Outer]
+        :type outer: _Outer
         :return: ``True`` if the finished region can be committed.
         :rtype: bool
         """
-        if outer is None:
-            return True
         owner_stack = self._clone_stack(outer.stack)
         owner_frame = owner_stack[-1]
         owner_frame.branches[outer.index].stack = self._clone_stack(branch_stack)
@@ -3268,12 +3236,7 @@ class SimulationRuntime:
         self._run_owner_plain_after(owner_frame.state, sim_vars, True)
         owner_frame.mode = "post_child_exit"
         return self._validation_search_reaches_stable(
-            owner_stack,
-            sim_vars,
-            d_events,
-            validate_post_child_exit=True,
-            trail=(),
-            outer=outer.parent,
+            owner_stack, sim_vars, d_events, outer=outer.parent
         )
 
     def _select_valid_candidate(self, stack, vars_, d_events, transitions, validator):
@@ -3770,8 +3733,6 @@ class SimulationRuntime:
                 sim_stack,
                 sim_vars,
                 d_events,
-                ended=ended,
-                validate_post_child_exit=True,
                 trail=(self._create_execution_signature(stack, vars_),),
             )
             sim_stack_repr = [
@@ -3788,6 +3749,44 @@ class SimulationRuntime:
             return success
         finally:
             self._ledger = saved
+
+    def _check_structural_limit(self, stack: List[_Frame]) -> None:
+        """
+        Reject a stack that nests deeper than the structural safety limit.
+
+        :param stack: Stack about to be explored.
+        :type stack: List[_Frame]
+        :return: ``None``.
+        :rtype: None
+        :raises SimulationRuntimeDfsError: If the stack is deeper than the
+            limit, which means the model nests without bound.
+        """
+        if len(self._create_structural_signature(stack)) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the structural stack-depth safety limit "
+                f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded nesting chain."
+            )
+
+    def _check_step_limit(self, steps_taken: int) -> None:
+        """
+        Reject a search that already took the maximum number of steps.
+
+        :param steps_taken: Steps spent so far by the current search.
+        :type steps_taken: int
+        :return: ``None``.
+        :rtype: None
+        :raises SimulationRuntimeDfsError: If the step budget is exhausted,
+            which means the model chains pseudo states or transitions without
+            bound.
+        """
+        if steps_taken >= self._DFS_STEP_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the step safety limit "
+                f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded pseudo-state "
+                "or transition chain."
+            )
 
     @staticmethod
     def _copy_ledger(
@@ -3809,8 +3808,6 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
         *,
-        ended: bool = False,
-        validate_post_child_exit: bool = True,
         trail: tuple = (),
         outer: Any = _UNSET,
     ) -> bool:
@@ -3830,13 +3827,7 @@ class SimulationRuntime:
         saved = self._ledger
         try:
             return self._search_stable_continuation(
-                stack,
-                vars_,
-                d_events,
-                ended=ended,
-                validate_post_child_exit=validate_post_child_exit,
-                trail=trail,
-                outer=outer,
+                stack, vars_, d_events, trail=trail, outer=outer
             )
         finally:
             self._ledger = saved
@@ -3847,8 +3838,6 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
         *,
-        ended: bool = False,
-        validate_post_child_exit: bool = True,
         trail: tuple = (),
         outer: Any = _UNSET,
     ) -> bool:
@@ -3869,15 +3858,9 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for this validation attempt.
         :type d_events: Dict[str, Event]
-        :param ended: Whether the starting context has already ended, defaults
-            to ``False``.
-        :type ended: bool, optional
-        :param validate_post_child_exit: Whether post-child-exit transitions
-            should be considered during search, defaults to ``True``.
-        :type validate_post_child_exit: bool, optional
         :param trail: Execution signatures already visited by the candidate,
-            including its source configuration.
-        :type trail: tuple
+            including its source configuration, defaults to ``()``.
+        :type trail: tuple, optional
         :param outer: Link from ``stack`` to the owner it belongs to when it is
             a region branch; ``None`` for the main stack. Defaults to the link
             of the branch currently being advanced.
@@ -3887,11 +3870,6 @@ class SimulationRuntime:
         :raises SimulationRuntimeDfsError: If all continuations fail and a
             cyclic path exists, or the worklist exceeds safety limits.
         """
-        if ended:
-            stack.clear()
-            vars_.clear()
-            return True
-
         if outer is _UNSET:
             outer = self._current_outer()
         original_ledger = self._ledger
@@ -3915,19 +3893,7 @@ class SimulationRuntime:
                 vars_.clear()
                 vars_.update(current_vars)
                 return True
-            if not current_stack:
-                stack.clear()
-                vars_.clear()
-                vars_.update(current_vars)
-                return True
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                )
+            self._check_structural_limit(current_stack)
 
             signature = self._create_execution_signature(current_stack, current_vars)
             if signature in trail:
@@ -3942,53 +3908,22 @@ class SimulationRuntime:
             # use linked ancestry if that limit grows substantially.
             next_trail = trail + (signature,)
 
-            if steps_taken >= self._DFS_STEP_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain."
-                )
+            self._check_step_limit(steps_taken)
             steps_taken += 1
 
             frame = current_stack[-1]
             state = frame.state
 
             if isinstance(state, Region):
-                if frame.mode == "post_child_exit":
-                    if self._continuation_viable(
-                        current_stack, current_vars, d_events, outer
-                    ):
-                        stack[:] = current_stack
-                        vars_.clear()
-                        vars_.update(current_vars)
-                        return True
-                    continue
-                for transition in reversed(state.init_transitions):
-                    if not self._check_candidate(
-                        current_stack, current_vars, d_events, transition, search=True,
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
-                    next_vars = copy.deepcopy(current_vars)
-                    self._ledger = self._copy_ledger(current_ledger)
-                    self._execute_initial_transition_on_context(
-                        next_stack,
-                        next_vars,
-                        transition,
-                        d_events,
-                        is_validation_mode=True,
-                        attempt_initial_transition=False,
-                    )
-                    worklist.append(
-                        (
-                            next_stack,
-                            next_vars,
-                            False,
-                            next_trail,
-                            self._ledger,
-                        )
-                    )
+                # Only a finished region can be on top of a searched stack: its
+                # initial transition already ran before the search started.
+                if self._continuation_viable(
+                    current_stack, current_vars, d_events, outer
+                ):
+                    stack[:] = current_stack
+                    vars_.clear()
+                    vars_.update(current_vars)
+                    return True
                 continue
 
             if frame.branches is not None and frame.mode == "init_wait":
@@ -4103,8 +4038,6 @@ class SimulationRuntime:
                 continue
 
             if frame.mode == "post_child_exit":
-                if not validate_post_child_exit:
-                    continue
                 for transition in reversed(state.transitions_from):
                     if not self._check_candidate(
                         current_stack, current_vars, d_events, transition, search=True,
@@ -4308,9 +4241,10 @@ class SimulationRuntime:
         if not is_validation_mode:
             self._root_stack = stack
         outcome = self._advance_stack(stack, vars_, d_events, run)
-        if outcome in (_STABLE, _ENDED):
-            self._flush_after_aspects(vars_, is_validation_mode)
         if outcome == _STABLE:
+            # Work is always followed by a stable boundary, so a cycle that
+            # ends the machine owes no aspect.
+            self._flush_after_aspects(vars_, is_validation_mode)
             return True, False
         if outcome == _ENDED:
             return True, True
@@ -4351,8 +4285,6 @@ class SimulationRuntime:
         :raises SimulationRuntimeDfsError: If the speculative search exceeds the
             step or nesting safety limits.
         """
-        max_steps = self._DFS_STEP_LIMIT
-        max_structural_depth = self._DFS_STRUCTURAL_DEPTH_LIMIT
         is_validation_mode = run.is_validation_mode
         consumed_events = run.consumed_events
         validate_post_child_exit = run.validate_post_child_exit
@@ -4368,9 +4300,6 @@ class SimulationRuntime:
                     stack_repr,
                     _safe_runtime_repr(vars_),
                 )
-            if not stack:
-                return _ENDED
-
             signature = self._create_execution_signature(stack, vars_)
             if signature in run.seen_signatures:
                 self.logger.debug(
@@ -4379,21 +4308,8 @@ class SimulationRuntime:
                 return _FAILED
             run.seen_signatures.add(signature)
 
-            structural_signature = self._create_structural_signature(stack)
-            if len(structural_signature) > max_structural_depth:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    f"({max_structural_depth}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                )
-
-            if run.steps_taken >= max_steps:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    f"({max_steps}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain."
-                )
+            self._check_structural_limit(stack)
+            self._check_step_limit(run.steps_taken)
 
             frame = stack[-1]
             state = frame.state
@@ -4401,8 +4317,6 @@ class SimulationRuntime:
             if isinstance(state, Region):
                 if frame.mode == "post_child_exit":
                     return _REGION_DONE
-                if frame.mode != "init_wait":
-                    return _FAILED
                 progressed = self._attempt_init_transition(
                     stack,
                     vars_,
@@ -4468,19 +4382,6 @@ class SimulationRuntime:
                 run.steps_taken += 1
                 continue
 
-            if frame.mode == "init_wait":
-                progressed = self._attempt_init_transition(
-                    stack,
-                    vars_,
-                    d_events,
-                    consumed_events=consumed_events,
-                    is_validation_mode=is_validation_mode,
-                )
-                run.steps_taken += 1
-                if not progressed:
-                    return _FAILED
-                continue
-
             if frame.mode == "post_child_exit":
                 transition = self._select_transition(
                     stack,
@@ -4489,8 +4390,6 @@ class SimulationRuntime:
                     validate_stoppable=validate_post_child_exit,
                     force_validate=validate_post_child_exit,
                 )
-                if transition is None:
-                    return _FAILED
                 ended = self._execute_transition_on_context(
                     stack,
                     vars_,
@@ -4504,7 +4403,17 @@ class SimulationRuntime:
                     return _ENDED
                 continue
 
-            return _FAILED
+            # A composite that is waiting for its initial transition.
+            progressed = self._attempt_init_transition(
+                stack,
+                vars_,
+                d_events,
+                consumed_events=consumed_events,
+                is_validation_mode=is_validation_mode,
+            )
+            run.steps_taken += 1
+            if not progressed:
+                return _FAILED
 
     def cycle(
         self,
@@ -4907,6 +4816,7 @@ class SimulationRuntime:
             metadata_committed = False
             self._ledger = {}
             previous_trace = self._cycle_trace
+            provider_token = _configuration_provider.set(self._call_time_configuration)
             try:
                 self._cycle_trace = trace_entries
                 if self._cycle_diagnostics is not None:
@@ -4929,6 +4839,7 @@ class SimulationRuntime:
                 )
                 metadata_committed = True
             finally:
+                _configuration_provider.reset(provider_token)
                 self._cycle_trace = previous_trace
                 if not metadata_committed:
                     self._warned_anonymous_abstracts = snapshot_warned_anonymous
@@ -5105,8 +5016,6 @@ class SimulationRuntime:
         :rtype: Union[State, pyfcstm.model.configuration.Configuration]
         :raises SimulationRuntimeTerminalStateError: If the runtime has ended
             and the active stack is empty.
-        :raises RuntimeError: If the active stack is unexpectedly empty before
-            the runtime has ended.
 
         Example::
 
@@ -5147,17 +5056,11 @@ class SimulationRuntime:
            :class:`SimulationRuntimeTerminalStateError`.
         """
         if not self.stack:
-            if self._ended:
-                raise SimulationRuntimeTerminalStateError(
-                    "Cannot access current_state: runtime has ended and the "
-                    "active stack is empty. Check is_ended before querying "
-                    "current_state, or use terminal-safe queries such as "
-                    "brief_stack or history."
-                )
-            raise RuntimeError(
-                "Cannot access current_state: runtime active stack is empty "
-                "before termination. This indicates an internal runtime "
-                "invariant failure."
+            raise SimulationRuntimeTerminalStateError(
+                "Cannot access current_state: runtime has ended and the "
+                "active stack is empty. Check is_ended before querying "
+                "current_state, or use terminal-safe queries such as "
+                "brief_stack or history."
             )
         if self.state_machine.has_regions:
             return self.configuration
@@ -5176,8 +5079,6 @@ class SimulationRuntime:
         :return: The configuration at the current stable boundary.
         :rtype: pyfcstm.model.configuration.Configuration
         :raises SimulationRuntimeTerminalStateError: If the runtime has ended.
-        :raises RuntimeError: If the active stack is unexpectedly empty before
-            the runtime has ended.
 
         Example::
 
@@ -5192,16 +5093,10 @@ class SimulationRuntime:
             'Root.Idle'
         """
         if not self.stack:
-            if self._ended:
-                raise SimulationRuntimeTerminalStateError(
-                    "Cannot access configuration: runtime has ended and the "
-                    "active stack is empty. Check is_ended before querying "
-                    "configuration."
-                )
-            raise RuntimeError(
-                "Cannot access configuration: runtime active stack is empty "
-                "before termination. This indicates an internal runtime "
-                "invariant failure."
+            raise SimulationRuntimeTerminalStateError(
+                "Cannot access configuration: runtime has ended and the "
+                "active stack is empty. Check is_ended before querying "
+                "configuration."
             )
         return self._configuration_of(self.stack)
 
@@ -5220,7 +5115,11 @@ class SimulationRuntime:
         """
         position = self._position_of(stack)
         top = stack[-1]
-        if not self._initialized and top.state.is_root_state and top.mode == "init_wait":
+        if (
+            top.mode == "init_wait"
+            and top.state.is_root_state
+            and all(branch.status == "pending" for branch in top.branches or ())
+        ):
             mode = "initialization"
         elif self._is_resting(stack):
             mode = "stable"

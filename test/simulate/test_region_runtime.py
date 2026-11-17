@@ -299,15 +299,20 @@ def test_hot_start_stays_a_controlled_rejection_for_region_models():
 
 
 @pytest.mark.unittest
-def test_position_dependent_event_names_are_refused_for_region_models():
-    """Short names need a single current state; full paths keep working."""
+def test_position_dependent_event_names_need_a_single_active_leaf():
+    """Short names resolve from one leaf; several leaves accept only root-based names."""
     runtime = _controller()
-    runtime.cycle(inputs={"fault": 0, "requested": 0})
-    with pytest.raises(SimulationRuntimeEventError, match="full event path"):
-        runtime.cycle("Start", inputs={"fault": 0, "requested": 0})
-    with pytest.raises(SimulationRuntimeEventError, match="full event path"):
-        runtime.cycle(".Start", inputs={"fault": 0, "requested": 0})
-    runtime.cycle("Controller.Start", inputs={"fault": 0, "requested": 0})
+    inputs = {"fault": 0, "requested": 0}
+    runtime.cycle(inputs=inputs)
+    # One active leaf: the parent-relative name resolves like it does without regions.
+    runtime.cycle(".Start", inputs=inputs)
+    assert str(runtime.configuration).startswith("Controller.Running")
+    # Two active leaves: a position-dependent name would be ambiguous.
+    with pytest.raises(SimulationRuntimeEventError, match="single active leaf"):
+        runtime.cycle(".Stop", inputs=inputs)
+    runtime.cycle("/Stop", inputs=inputs)
+    assert str(runtime.configuration) == "Controller.Idle"
+    runtime.cycle("Controller.Start", inputs=inputs)
     assert str(runtime.configuration).startswith("Controller.Running")
 
 
@@ -558,3 +563,98 @@ def test_active_query_without_regions_runs_from_a_cold_start_only():
             initial_state="Root.A",
             initial_vars={"seen": 0, "__active_Root_A": 1},
         )
+
+
+@pytest.mark.unittest
+def test_owner_aspect_handler_reports_the_owner_while_one_region_is_done():
+    """An aspect wrapping the whole group reports the owner even when a region is done."""
+    model = load_state_machine_from_text(
+        """
+        def int n = 0;
+        state Root {
+            event Stop;
+            >> during after abstract Done;
+            region R1 { [*] -> A; state A { during { n = n + 1; } } }
+            region R2 { [*] -> B; state B; B -> [*] : /Stop; }
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    reports = []
+    runtime.register_abstract_handler(
+        "Root.Done", lambda ctx: reports.append(ctx.get_full_state_path())
+    )
+    runtime.cycle()
+    # R1 never finishes, so the machine stays alive and the aspect sees the owner.
+    runtime.cycle("Root.Stop")
+    assert reports == ["Root", "Root"]
+    assert str(runtime.configuration) == "Root{R1: A, R2: [done]}"
+
+
+@pytest.mark.unittest
+def test_forced_transition_of_a_group_can_end_the_machine():
+    """A forced transition from the owner to ``[*]`` terminates the whole machine."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Stop;
+            [*] -> P;
+            state P {
+                region R1 { [*] -> A; state A; }
+                region R2 { [*] -> B; state B; }
+            }
+            !P -> [*] : /Stop;
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    assert str(runtime.configuration) == "Root.P{R1: A, R2: B}"
+    runtime.cycle("Root.Stop")
+    assert runtime.is_ended
+
+
+@pytest.mark.unittest
+def test_preempted_group_runs_plain_after_actions_of_composites_inside_a_region():
+    """A composite below a region leaves with its ``during after`` before its ``exit``."""
+    model = load_state_machine_from_text(
+        """
+        def int trail = 0;
+        state Root {
+            event Stop;
+            [*] -> P;
+            state P {
+                region R {
+                    [*] -> C;
+                    state C {
+                        during after { trail = trail * 10 + 2; }
+                        exit { trail = trail * 10 + 3; }
+                        [*] -> L;
+                        state L { exit { trail = trail * 10 + 1; } }
+                    }
+                }
+            }
+            state Idle;
+            !P -> Idle : /Stop;
+        }
+        """
+    )
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    runtime.cycle("Root.Stop")
+    assert str(runtime.configuration) == "Root.Idle"
+    assert runtime.vars["trail"] == 123
+
+
+@pytest.mark.unittest
+def test_machine_that_ends_while_starting_has_no_position():
+    """A model whose initial chain leaves the root terminates on the first cycle."""
+    runtime = SimulationRuntime(
+        load_state_machine_from_text(
+            "state Root { pseudo state P; [*] -> P; P -> [*]; }"
+        )
+    )
+    runtime.cycle()
+    assert runtime.is_ended
+    with pytest.raises(SimulationRuntimeTerminalStateError):
+        runtime.configuration

@@ -17,9 +17,30 @@ Example::
     ...     print(f"Counter: {ctx.get_var('counter')}")
 """
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping, Optional, Union, Tuple
+from typing import Any, Callable, Mapping, Optional, Union, Tuple
+
+#: Supplies the configuration snapshot of the cycle that is executing, so that
+#: every context built while handlers run carries the position at the moment
+#: of its construction. The runtime sets it for the duration of a committed
+#: cycle; outside a cycle it is ``None``.
+_configuration_provider: ContextVar[Optional[Callable[[], Any]]] = ContextVar(
+    "pyfcstm_simulate_configuration_provider", default=None
+)
+
+
+def _current_configuration() -> Optional[Any]:
+    """
+    Snapshot the position of the cycle that is executing, if any.
+
+    :return: The configuration at this moment, or ``None`` when no committed
+        cycle is running, for example for a context built by hand.
+    :rtype: Optional[pyfcstm.model.configuration.Configuration]
+    """
+    provider = _configuration_provider.get()
+    return None if provider is None else provider()
 
 
 @dataclass(frozen=True)
@@ -71,7 +92,8 @@ class ReadOnlyExecutionContext:
         moment of the call, as a :class:`pyfcstm.model.configuration.Configuration`.
         It shows regions that already moved earlier in the same cycle in their
         new place and regions that have not yet been initialized as ``[init]``.
-        ``None`` when the context is built by hand.
+        Contexts that the runtime builds for handlers always carry it; a context
+        built by hand, outside a running cycle, defaults to ``None``.
     :type configuration: Optional[pyfcstm.model.configuration.Configuration], optional
 
     Example::
@@ -104,7 +126,7 @@ class ReadOnlyExecutionContext:
         default_factory=dict, repr=False
     )
     inputs: Mapping[str, Union[int, float]] = field(default_factory=dict, repr=False)
-    configuration: Optional[Any] = field(default=None, repr=False)
+    configuration: Optional[Any] = field(default_factory=_current_configuration, repr=False)
 
     def __post_init__(self) -> None:
         """

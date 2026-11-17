@@ -1,6 +1,7 @@
 """Immutable model-bound configurations preserve ordered parallel positions."""
 
 import json
+import re
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -311,3 +312,93 @@ def test_deep_configuration_roundtrips_through_public_model():
     assert [state.name for state in config.leaves] == ['Leaf']
     assert Configuration.parse(model, str(config)) == config
     assert Configuration.from_dict(model, config.to_dict()) == config
+
+
+@pytest.mark.parametrize('closed', [False, True])
+def test_excessive_configuration_nesting_has_a_readable_input_error(machine, closed):
+    text = 'Root.Job{A: ' + 'Nested{Inner: ' * 1500
+    if closed:
+        text += 'Working' + '}' * 1501
+    with pytest.raises(ValueError, match=r'nesting.*too deep.*line 1, column \d+') as caught:
+        Configuration.parse(machine, text, mode='transient')
+    assert 'RecursionError' not in str(caught.value)
+    assert len(str(caught.value)) < 300
+    assert caught.value.__suppress_context__
+
+
+@pytest.mark.parametrize('prefix', ['Root.Idle ', 'Root.', ''])
+def test_long_invalid_configuration_names_have_concise_errors(machine, prefix):
+    with pytest.raises(ValueError) as caught:
+        Configuration.parse(machine, prefix + 'LongName' * 15000)
+    message = str(caught.value)
+    assert len(message) < 300
+    assert 'LongName' in message and '...' in message
+    assert 'Expected end of input' in message or 'Unknown configuration path' in message
+
+
+def test_unfinished_configuration_reports_end_of_input(machine):
+    with pytest.raises(ValueError, match=r"Expected '}' at line 2, column 12, got end of input"):
+        Configuration.parse(machine, 'Root.Job{\n A: Working', mode='transient')
+
+
+def test_long_model_context_and_mode_have_concise_errors(machine):
+    name = 'LongOwner' * 1000
+    model = load_state_machine_from_text(
+        'state %s { region Main { state Working; [*] -> Working; } }' % name)
+    with pytest.raises(ValueError, match='Missing region') as caught:
+        Configuration.parse(model, name)
+    assert len(str(caught.value)) < 300
+    assert 'LongOwner' in str(caught.value)
+    with pytest.raises(ValueError, match='Unknown configuration mode') as caught:
+        Configuration.parse(machine, 'Root.Idle', mode='BadMode' * 1000)
+    assert len(str(caught.value)) < 300
+
+
+@pytest.mark.parametrize('character,escaped', [
+    ('\x00', r'\x00'), ('\x1b', r'\x1b'), ('\ud800', r'\ud800'),
+])
+def test_configuration_errors_escape_nonprinting_input(machine, character, escaped):
+    with pytest.raises(ValueError) as caught:
+        Configuration.parse(machine, 'Root.' + character)
+    message = str(caught.value)
+    assert 'configuration identifier at line 1, column 6' in message
+    assert escaped in message
+    assert character not in message
+
+
+def test_mutated_configuration_inputs_return_values_or_informative_errors(machine):
+    seeds = [
+        'Root.Idle',
+        'Root.Job{A: Working, B: [done]}',
+        'Root.Job{A: Nested{Inner: [init], Other: Working}, B: [done]}',
+    ]
+    corpus = set(seeds)
+    for seed in seeds:
+        for index in range(len(seed) + 1):
+            corpus.add(seed[:index] + seed[index + 1:])
+            for token in ('@', '{', '}', ':', ',', '.', '[done]', '[init]', '\x00', '\ud800'):
+                corpus.add(seed[:index] + token + seed[index:])
+    accepted = rejected = 0
+    for text in sorted(corpus):
+        for mode in ('stable', 'initialization', 'transient'):
+            try:
+                config = Configuration.parse(machine, text, mode=mode)
+            except ValueError as error:
+                # ValueError: mutations can violate text syntax or model/mode constraints.
+                message = str(error)
+                assert message and len(message) < 300
+                assert message.startswith(('Expected ', 'Unknown ', 'Duplicate ',
+                                           'Stable ', 'Missing ', 'All regions ',
+                                           'Initialization ', 'Parallel ', 'A configuration '))
+                if message.startswith('Expected '):
+                    assert re.search(r'line \d+, column \d+', message)
+                    assert ', got ' in message
+                rejected += 1
+            else:
+                assert Configuration.parse(machine, str(config), mode=mode) == config
+                assert Configuration.from_dict(machine, config.to_dict()) == config
+                assert hash(Configuration.from_dict(machine, config.to_dict())) == hash(config)
+                assert config.is_active('Root')
+                accepted += 1
+    assert accepted > 5
+    assert rejected > 1000

@@ -117,6 +117,20 @@ JavaScript 模型前端目前仍在构建阶段拒绝这些功能。
        ...
    ValueError: Expected a configuration identifier at line 2, column 8, got '@'.
 
+非字符串输入抛出 ``TypeError``。嵌套过深时抛出说明原因的 ``ValueError``，
+不会直接泄漏 Python 的 ``RecursionError``；可支持的深度取决于解释器可用的调用栈。
+错误消息缩短过长的记号或路径片段、转义不可打印字符，并用 ``end of input``
+明确表示输入已结束。调用方可以捕获 ``ValueError``，直接展示输入问题：
+
+.. code-block:: pycon
+
+   >>> try:
+   ...     Configuration.parse(model, 'Root{Left: Working', mode='transient')
+   ... except ValueError as error:
+   ...     # ValueError: the input is missing its closing region-block brace.
+   ...     print(error)
+   Expected '}' at line 1, column 19, got end of input.
+
 ``is_active`` 接受状态路径，包括活动祖先，但拒绝区域路径。
 ``region_status`` 接受区域路径，返回 ``live``、``done``、``pending``
 （所属状态活动但区域尚未初始化）或 ``inactive``（所属状态不在配置中）。

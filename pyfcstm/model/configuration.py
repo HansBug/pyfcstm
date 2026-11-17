@@ -7,6 +7,7 @@ Stable, initialization and transient positions have separate validation modes.
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from reprlib import Repr
 from typing import Tuple, TYPE_CHECKING, Union
 
 from .region import Region, namespace_child
@@ -29,6 +30,8 @@ class _Position:
 
 _TEXT_TOKENS = re.compile(r'\[init\]|\[done\]|[A-Za-z_][A-Za-z_0-9]*|\S')
 _TEXT_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*')
+_ERROR_REPR = Repr()
+_ERROR_REPR.maxstring = 80
 
 
 def _lookup(model, path):
@@ -36,11 +39,11 @@ def _lookup(model, path):
     parts = tuple(path.split('.')) if isinstance(path, str) else tuple(path)
     current = model.root_state
     if not parts or parts[0] != current.name:
-        raise ValueError('Unknown configuration path: %r.' % (path,))
+        raise ValueError('Unknown configuration path: %s.' % _ERROR_REPR.repr(path))
     for segment in parts[1:]:
         current = namespace_child(current, segment)
         if current is None:
-            raise ValueError('Unknown configuration path: %r.' % (path,))
+            raise ValueError('Unknown configuration path: %s.' % _ERROR_REPR.repr(path))
     return current
 
 
@@ -57,12 +60,15 @@ class _TextParser:
     def peek(self):
         return self.tokens[self.index][0] if self.index < len(self.tokens) else ''
 
-    def error(self, expected):
+    def location(self):
         offset = self.tokens[self.index][1] if self.index < len(self.tokens) else len(self.text)
         line = self.text.count('\n', 0, offset) + 1
         column = offset - self.text.rfind('\n', 0, offset)
-        raise ValueError('Expected %s at line %d, column %d, got %r.' %
-                         (expected, line, column, self.peek()))
+        return 'line %d, column %d' % (line, column)
+
+    def error(self, expected):
+        actual = _ERROR_REPR.repr(self.peek()) if self.peek() else 'end of input'
+        raise ValueError('Expected %s at %s, got %s.' % (expected, self.location(), actual))
 
     def take(self, expected=None):
         token = self.peek()
@@ -163,7 +169,8 @@ def _validate(model, position, base, mode):
     """Validate one branch, then return a declaration-ordered value."""
     path = position.path
     if path[:len(base)] != base or len(path) <= len(base):
-        raise ValueError('Configuration path %r is outside namespace %r.' % (path, base))
+        raise ValueError('Configuration path %s is outside namespace %s.' %
+                         (_ERROR_REPR.repr(path), _ERROR_REPR.repr(base)))
     state = _lookup(model, path)
     if isinstance(state, Region):
         raise ValueError('A configuration branch must end at a State, not a Region.')
@@ -171,22 +178,23 @@ def _validate(model, position, base, mode):
     for end in range(len(base) + 1, len(path)):
         ancestor = _lookup(model, path[:end])
         if getattr(ancestor, 'regions', {}):
-            raise ValueError('Parallel owner %s requires a region block.' % '.'.join(ancestor.path))
+            raise ValueError('Parallel owner %s requires a region block.' %
+                             _ERROR_REPR.repr('.'.join(ancestor.path)))
     context = '.'.join(path)
     entries = dict(position.regions)
     if len(entries) != len(position.regions):
-        raise ValueError('Duplicate region in configuration for %s.' % context)
+        raise ValueError('Duplicate region in configuration for %s.' % _ERROR_REPR.repr(context))
     if set(entries) - set(state.regions):
-        raise ValueError('Unknown region in configuration for %s.' % context)
+        raise ValueError('Unknown region in configuration for %s.' % _ERROR_REPR.repr(context))
     if mode == 'stable':
         if state.is_pseudo or state.substates:
-            raise ValueError('Stable configuration must reach a non-pseudo leaf at %s.' % context)
+            raise ValueError('Stable configuration must reach a non-pseudo leaf at %s.' % _ERROR_REPR.repr(context))
         if state.regions and set(entries) != set(state.regions):
-            raise ValueError('Missing region in stable configuration for %s.' % context)
+            raise ValueError('Missing region in stable configuration for %s.' % _ERROR_REPR.repr(context))
         if any(child is _RegionInit.PENDING for child in entries.values()):
-            raise ValueError('Stable configuration cannot contain pending regions at %s.' % context)
+            raise ValueError('Stable configuration cannot contain pending regions at %s.' % _ERROR_REPR.repr(context))
         if state.regions and all(child is None for child in entries.values()):
-            raise ValueError('All regions are Done at %s.' % context)
+            raise ValueError('All regions are Done at %s.' % _ERROR_REPR.repr(context))
     ordered = []
     for name in state.regions:
         child = entries.get(name, _RegionInit.PENDING)
@@ -234,7 +242,7 @@ class Configuration:
 
     def __post_init__(self):
         if self.mode not in ('stable', 'initialization', 'transient'):
-            raise ValueError('Unknown configuration mode: %r.' % self.mode)
+            raise ValueError('Unknown configuration mode: %s.' % _ERROR_REPR.repr(self.mode))
         position = _validate(self._model, self._position, (), self.mode)
         if self.mode == 'initialization':
             state = _lookup(self._model, position.path)
@@ -255,13 +263,21 @@ class Configuration:
         :raises TypeError: If text is not a string.
         :raises ValueError: On malformed text or invalid position. Syntax errors
             include one-based line and character column numbers; tabs count as
-            one character and lines are separated by newline characters.
+            one character and lines are separated by newline characters. Excessive
+            nesting also raises ValueError instead of exposing RecursionError.
+            Long token and path excerpts are shortened in error messages.
         """
         parser = _TextParser(text)
-        position = parser.position()
-        if parser.peek():
-            parser.error('end of input')
-        return cls(model, position, mode)
+        try:
+            position = parser.position()
+            if parser.peek():
+                parser.error('end of input')
+            return cls(model, position, mode)
+        except RecursionError:
+            # RecursionError: position() parses nested blocks and cls() validates
+            # the resulting recursive position tree within Python's stack limit.
+            raise ValueError('Configuration nesting is too deep near %s; '
+                             'reduce nested region blocks.' % parser.location()) from None
 
     @classmethod
     def from_dict(cls, model, data):

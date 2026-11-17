@@ -123,7 +123,12 @@ Tokens accept surrounding whitespace, including newlines. Identifiers use
 ``[ init ]`` are rejected. Syntax errors raise ``ValueError`` with one-based
 line and character column numbers. Tabs count as one character; newline
 characters separate lines. Model errors separately identify invalid paths,
-region entries or validation modes.
+region entries or validation modes. Non-string input raises ``TypeError``.
+Excessive nesting raises an informative ``ValueError`` rather than exposing
+Python's ``RecursionError``; the supported depth depends on the interpreter's
+available stack. Long token/path excerpts are shortened, nonprinting characters
+are escaped, and unfinished input is described as ``end of input``. Applications
+can catch ``ValueError`` to report invalid text without exposing a traceback.
 
 .. code-block:: pycon
 
@@ -131,6 +136,13 @@ region entries or validation modes.
    Traceback (most recent call last):
        ...
    ValueError: Expected a configuration identifier at line 2, column 8, got '@'.
+
+   >>> try:
+   ...     Configuration.parse(model, 'Root{Left: Working', mode='transient')
+   ... except ValueError as error:
+   ...     # ValueError: the input is missing its closing region-block brace.
+   ...     print(error)
+   Expected '}' at line 1, column 19, got end of input.
 
 ``is_active`` accepts State paths, including active ancestors, but rejects
 Region paths. ``region_status`` accepts Region paths and returns ``live``,

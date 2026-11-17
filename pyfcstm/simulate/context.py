@@ -26,9 +26,9 @@ from typing import Any, Callable, Mapping, Optional, Union, Tuple
 #: every context built while handlers run carries the position at the moment
 #: of its construction. The runtime sets it for the duration of a committed
 #: cycle; outside a cycle it is ``None``.
-_configuration_provider: ContextVar[Optional[Callable[[], Any]]] = ContextVar(
+_configuration_provider = ContextVar(
     "pyfcstm_simulate_configuration_provider", default=None
-)
+)  # type: ContextVar[Optional[Callable[[], Any]]]
 
 
 def _current_configuration() -> Optional[Any]:

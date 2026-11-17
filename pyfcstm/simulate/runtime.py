@@ -519,7 +519,9 @@ class CycleResult:
         normalized input order.
     :type input_events: Tuple[str, ...]
     :param consumed_events: Canonical event paths for evented transitions that
-        executed during this cycle, in execution order.
+        executed during this cycle, in execution order. A path appears once per
+        executed transition, so one event that moves several regions of a model
+        is listed once for each of them.
     :type consumed_events: Tuple[str, ...]
     :param unconsumed_events: Canonical input event paths that did not
         correspond to an executed evented transition.

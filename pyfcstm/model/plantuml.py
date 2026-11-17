@@ -1142,6 +1142,9 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         True
     """
     from collections import defaultdict
+    from .support import require_supported_model
+
+    require_supported_model(state_machine, 'Event transition collection')
     event_map = defaultdict(list)
 
     for state in state_machine.walk_states():

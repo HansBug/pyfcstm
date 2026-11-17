@@ -199,6 +199,7 @@ generated API documentation remains the last item in this reference area.
     Reference map <reference/index>
     reference/cli/index
     reference/dsl/index
+    reference/region_model/index
     reference/inspect_report/index
     reference/diagnostics_codes/index
     reference/simulation/index
@@ -214,6 +215,7 @@ generated API documentation remains the last item in this reference area.
 * :doc:`Reference map <reference/index>`
 * :doc:`reference/cli/index`
 * :doc:`reference/dsl/index`
+* :doc:`reference/region_model/index`
 * :doc:`reference/inspect_report/index`
 * :doc:`reference/diagnostics_codes/index`
 * :doc:`reference/simulation/index`

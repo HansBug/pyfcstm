@@ -149,9 +149,11 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name="state_machine_dsl")
         try:
+            from pyfcstm.model.support import require_supported_model
             model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
+            require_supported_model(model, 'generate')
         except ModelValidationError as err:
-            # Model construction rejects invalid or unsupported DSL features.
+            # Model construction or the renderer support check rejects the model.
             raise ClickErrorException(str(err)) from err
 
         if template_name:

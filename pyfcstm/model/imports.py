@@ -48,7 +48,7 @@ from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
-from ._unsupported_syntax import reject_unsupported_syntax
+from .region import ast_namespace_children, validate_region_structure
 
 __all__ = [
     "assemble_state_machine_imports",
@@ -367,7 +367,7 @@ def _clone_ast_node(node):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
                 _mark_generated_combo_transition_node(cloned, metadata)
-        if isinstance(node, dsl_nodes.StateDefinition):
+        if isinstance(node, (dsl_nodes.StateDefinition, dsl_nodes.RegionDefinition)):
             for original_substate, cloned_substate in zip(
                 node.substates, cloned.substates
             ):
@@ -439,7 +439,7 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
-    if reject_unsupported_syntax(program, sink):
+    if program.root_state is not None and validate_region_structure(program.root_state, sink):
         return
     if program.root_state is None:  # pragma: no cover
         # Defensive: grammar always emits at least one ``state X { ... }``
@@ -480,6 +480,11 @@ def _assemble_program(
         host_explicit_def_names=host_explicit_def_names,
         sink=sink,
     )
+    # Import expansion can introduce a parallel descendant below a history
+    # owner. Validate that complete subtree without repeating earlier errors.
+    if not any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+               for item in sink.diagnostics):
+        validate_region_structure(program.root_state, sink)
 
 
 def _assemble_state(
@@ -492,12 +497,12 @@ def _assemble_state(
     sink: DiagnosticSink,
 ) -> None:
     occupied_names = []
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         if subnode.name not in occupied_names:
             occupied_names.append(subnode.name)
 
     imported_substates = []
-    for import_item in node.imports:
+    for import_item in getattr(node, "imports", ()):
         if import_item.alias in occupied_names:
             _emit_import_diag(
                 sink,
@@ -595,6 +600,10 @@ def _assemble_state(
                 continue
 
             imported_root = imported_program.root_state
+            _rebase_active_queries(
+                imported_program, imported_root.name,
+                (*current_state_path, import_item.alias),
+            )
             event_mappings = _resolve_import_event_mappings(
                 program=imported_program,
                 import_item=import_item,
@@ -646,9 +655,10 @@ def _assemble_state(
         # it will surface as a real bug instead of being silently
         # swallowed.
 
-    node.imports = []
+    if isinstance(node, dsl_nodes.StateDefinition):
+        node.imports = []
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _assemble_state(
             node=subnode,
             current_state_path=(*current_state_path, subnode.name),
@@ -840,6 +850,27 @@ def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> 
             _validate_imported_readonly_writes(item, readonly, sink)
 
 
+def _rebase_active_queries(node, root_name, instance_path, seen=None):
+    """Rebase every query in one imported program, including nested imports."""
+    if seen is None:
+        seen = set()
+    if isinstance(node, dsl_nodes.ActiveStateQuery):
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        parts = tuple(node.path.split('.'))
+        if node.path.startswith('/'):
+            node.path = '.'.join((*instance_path, *node.path[1:].split('.')))
+        elif parts[0] == root_name:
+            node.path = '.'.join((*instance_path, *parts[1:]))
+    elif isinstance(node, dsl_nodes.ASTNode):
+        for item in fields(node):
+            _rebase_active_queries(getattr(node, item.name), root_name, instance_path, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _rebase_active_queries(item, root_name, instance_path, seen)
+
+
 def _rewrite_absolute_paths_for_imported_root(
     node: dsl_nodes.StateDefinition,
     instance_prefix: Tuple[str, ...],
@@ -871,21 +902,21 @@ def _rewrite_absolute_paths_for_imported_root(
         ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if (
             isinstance(enter_item, dsl_nodes.EnterRefFunction)
             and enter_item.ref.is_absolute
         ):
             enter_item.ref.path = [*instance_prefix, *enter_item.ref.path]
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if (
             isinstance(during_item, dsl_nodes.DuringRefFunction)
             and during_item.ref.is_absolute
         ):
             during_item.ref.path = [*instance_prefix, *during_item.ref.path]
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if (
             isinstance(exit_item, dsl_nodes.ExitRefFunction)
             and exit_item.ref.is_absolute
@@ -902,7 +933,7 @@ def _rewrite_absolute_paths_for_imported_root(
                 *during_aspect_item.ref.path,
             ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_absolute_paths_for_imported_root(
             node=subnode,
             instance_prefix=instance_prefix,
@@ -1128,31 +1159,12 @@ def _aggregate_declared_import_event_docs(
             owner_state_path=owner_state_path,
             sink=sink,
         )
-        if not _state_path_matches(host_root, mapping.target_state_path, owner_state):
+        if owner_state is None:
             continue
         for event in owner_state.events:
             if event.name == mapping.target_event_name:
                 event.doc = aggregate_documentation((event.doc, mapping.source_doc))
                 break
-
-
-def _state_path_matches(
-    root: dsl_nodes.StateDefinition,
-    state_path: Tuple[str, ...],
-    state: Optional[dsl_nodes.StateDefinition],
-) -> bool:
-    """Distinguish a valid target from collect-mode's diagnostic fallback."""
-    if state is None or not state_path or root.name != state_path[0]:
-        return False
-    current = root
-    for segment in state_path[1:]:
-        current = next(
-            (subnode for subnode in current.substates if subnode.name == segment),
-            None,
-        )
-        if current is None:
-            return False
-    return current is state
 
 
 def _collect_event_extra_names(
@@ -1168,7 +1180,7 @@ def _collect_event_extra_names(
         output[(*current_state_path[1:], event.name)] = event.extra_name
         output[(event.name,)] = output.get((event.name,), event.extra_name)
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_extra_names(subnode, current_state_path, output)
 
 
@@ -1188,7 +1200,7 @@ def _collect_event_docs(
         for key in keys:
             output[key] = aggregate_documentation((output.get(key), event.doc))
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_docs(subnode, current_state_path, output)
     return output
 
@@ -1236,7 +1248,7 @@ def _rewrite_imported_state_event_paths(
                 pending_registrations=pending_registrations,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_imported_state_event_paths(
             node=subnode,
             current_path=current_state_path,
@@ -1280,8 +1292,8 @@ def _rewrite_transition_event_id(
                 source_path=source_path,
             )
         )
-    elif transition.event_id.is_absolute:
-        transition.event_id.path = [*current_scope_path, *transition.event_id.path]
+    # Unmapped absolute paths are relative to the imported module root. The
+    # instance prefix is applied once by _rewrite_absolute_paths_for_imported_root.
 
 
 def _rewrite_combo_transition_event_ids(
@@ -1333,8 +1345,7 @@ def _rewrite_combo_transition_event_ids(
                     source_path=source_path,
                 )
             )
-        elif event_id.is_absolute:
-            event_id.path = [*current_scope_path, *event_id.path]
+        # Keep unmapped absolute paths rooted at the module until rebasing.
 
 
 def _prune_mapped_source_event_definitions(
@@ -1350,7 +1361,7 @@ def _prune_mapped_source_event_definitions(
         if tuple((*current_scope_path, item.name)) not in resolved_event_mappings
     ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _prune_mapped_source_event_definitions(
             node=subnode,
             current_path=current_state_path,
@@ -1509,7 +1520,7 @@ def _ensure_state_path_exists(
     state = root
     for segment in state_path[1:]:
         next_state = None
-        for subnode in state.substates:
+        for subnode in ast_namespace_children(state):
             if subnode.name == segment:
                 next_state = subnode
                 break
@@ -2143,15 +2154,15 @@ def _rewrite_state_variable_references(
             rewrite_effects=False,
         )
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if isinstance(enter_item, dsl_nodes.EnterOperations):
             _rewrite_operation_block_variables(enter_item.operations, source_to_target)
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if isinstance(during_item, dsl_nodes.DuringOperations):
             _rewrite_operation_block_variables(during_item.operations, source_to_target)
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if isinstance(exit_item, dsl_nodes.ExitOperations):
             _rewrite_operation_block_variables(exit_item.operations, source_to_target)
 
@@ -2162,5 +2173,5 @@ def _rewrite_state_variable_references(
                 source_to_target,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_state_variable_references(subnode, source_to_target)

@@ -144,6 +144,18 @@ class TestHistoryTargetErrors:
         assert "E_HISTORY_TARGET_UNDECLARED" not in codes
         assert any(item.severity == "error" for item in diagnostics)
 
+    def test_inherited_forced_history_target_reports_one_authored_failure(self):
+        _, diagnostics = _collect('''state Root {
+            state Idle;
+            state Group { state A; state B; [*] -> A; A -> B; }
+            state Target { state Leaf; [*] -> Leaf; }
+            [*] -> Group;
+            !* -> Target.[H] : Resume;
+        }''')
+        items = _only(diagnostics, 'E_HISTORY_TARGET_UNDECLARED')
+        assert len(items) == 1
+        assert items[0].refs == {'owner_path': 'Root.Target', 'kind': 'shallow'}
+
 
 @pytest.mark.unittest
 class TestHistoryUnused:

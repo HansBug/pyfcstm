@@ -286,6 +286,8 @@ class TestRenderRender:
             _ensure_output_parent_dir("bare-file.txt")
 
     def test_renderer_has_no_template_file_name_postprocessing(self):
+        import ast
+
         render_source = (
             pathlib.Path(__file__).parents[2] / "pyfcstm" / "render" / "render.py"
         )
@@ -299,7 +301,13 @@ class TestRenderRender:
         assert "machine.py.j2" not in source
         assert "os.path.basename(template_file)" not in source
         assert "re.sub" not in source
-        assert "import re" not in source
+        imports = [node for node in ast.walk(ast.parse(source))
+                   if isinstance(node, (ast.Import, ast.ImportFrom))]
+        assert not any(
+            node.module == 're' if isinstance(node, ast.ImportFrom)
+            else any(alias.name == 're' for alias in node.names)
+            for node in imports
+        )
 
     def test_renderer_expr_render_supports_language_aliases(self, sample_model):
         with TemporaryDirectory() as template_dir:

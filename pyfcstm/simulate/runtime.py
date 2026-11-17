@@ -905,6 +905,8 @@ class SimulationRuntime:
            but it does not replay the composite's plain ``during before``
            boundary actions before that child entry.
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(state_machine, 'simulate')
         if abstract_error_mode not in ("raise", "log"):
             raise ValueError("abstract_error_mode must be 'raise' or 'log'")
         self.state_machine = state_machine

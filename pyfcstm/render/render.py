@@ -582,6 +582,8 @@ class StateMachineCodeRenderer:
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(model, 'generate')
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         _ensure_output_parent_dir(output_file)
         with self._statement_default_context(model):
@@ -647,6 +649,8 @@ class StateMachineCodeRenderer:
             >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
             True
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(model, 'generate')
         output_dir = os.path.abspath(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         if clear_previous_directory:

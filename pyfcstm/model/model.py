@@ -65,6 +65,8 @@ from typing import (
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .region import Region, namespace_actions, namespace_child, namespace_children, walk_namespaces
+from .support import require_supported_model
 from .imports import (
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
@@ -110,6 +112,7 @@ from ..utils import aggregate_documentation, sequence_safe, to_identifier
 
 if TYPE_CHECKING:  # pragma: no cover - imported for annotations only.
     from .history import HistoryOwner
+    from .active import ActiveQuery
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:
@@ -268,9 +271,7 @@ def _attach_model_source_metadata(
                 # table answers, and when its key is ambiguous it answers with nothing.
                 # A member with no reference is honest; one pointing at a file whose
                 # line at that span belongs to an unrelated statement is not.
-                declared = all_spans.get(transition_key)
-                if declared is not None:
-                    attach(transition, declared)
+                attach(transition)
             # The three tiers above are for the transition alone, and everything
             # below this line takes the host state's file with no tier at all.  That
             # asymmetry is the language's, not an oversight: only a transition can be
@@ -296,19 +297,14 @@ def _attach_model_source_metadata(
                 attach_operation(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
-        for action in [
-            *model_state.on_enters,
-            *model_state.on_durings,
-            *model_state.on_exits,
-            *model_state.on_during_aspects,
-        ]:
+        for action in namespace_actions(model_state):
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
                 attach_operation(operation, state_source)
         ast_children = {
-            child.name: child for child in getattr(ast_state, "substates", ())
+            child.name: child for child in chain(getattr(ast_state, "substates", ()), getattr(ast_state, "regions", ()))
         }
-        for child in model_state.substates.values():
+        for child in namespace_children(model_state):
             ast_child = ast_children.get(child.name)
             if ast_child is not None:
                 pair_states(ast_child, child)
@@ -870,12 +866,12 @@ class Transition(AstExportable):
         super().__setattr__(name, value)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this transition.
 
         :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None
@@ -883,12 +879,12 @@ class Transition(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this transition.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1226,12 +1222,12 @@ class OnAspect(AstExportable):
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this aspect action.
 
         :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -1239,12 +1235,12 @@ class OnAspect(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this aspect action.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1386,6 +1382,8 @@ class State(AstExportable, PlantUMLExportable):
     :type path: Tuple[str, ...]
     :param substates: Dictionary mapping substate names to State objects
     :type substates: Dict[str, 'State']
+    :param regions: Ordered region namespaces, mutually exclusive with substates
+    :type regions: Dict[str, Region], optional
     :param events: Dictionary mapping event names to Event objects
     :type events: Dict[str, Event]
     :param transitions: List of transitions between substates
@@ -1400,7 +1398,7 @@ class State(AstExportable, PlantUMLExportable):
     :type on_exits: List[OnStage]
     :param on_during_aspects: List of aspect-oriented actions for the during stage
     :type on_during_aspects: List[OnAspect]
-    :param parent_ref: Weak reference to the parent state
+    :param parent_ref: Weak reference to the immediate parent State or Region
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
@@ -1432,6 +1430,7 @@ class State(AstExportable, PlantUMLExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, "State"]
+    regions: Dict[str, Region] = field(default_factory=dict)
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
     named_functions: Dict[str, Union[OnStage, OnAspect]] = None
@@ -1475,6 +1474,7 @@ class State(AstExportable, PlantUMLExportable):
         is_combo_relay: bool = False,
         doc: Optional[str] = None,
         is_history_gate: bool = False,
+        regions: Optional[Dict[str, Region]] = None,
     ) -> None:
         """Initialize a state while preserving the legacy positional order.
 
@@ -1485,6 +1485,7 @@ class State(AstExportable, PlantUMLExportable):
         self.name = name
         self.path = path
         self.substates = substates
+        self.regions = regions or {}
         self.events = events
         self.transitions = transitions
         self.named_functions = named_functions
@@ -1525,7 +1526,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: True if this is a leaf state, False otherwise
         :rtype: bool
         """
-        return len(self.substates) == 0
+        return not self.substates and not self.regions
 
     @property
     def is_stoppable(self) -> bool:
@@ -1538,12 +1539,12 @@ class State(AstExportable, PlantUMLExportable):
         return self.is_leaf_state and not self.is_pseudo
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this state.
 
         :return: The parent state or None if this is the root state
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None
@@ -1551,12 +1552,12 @@ class State(AstExportable, PlantUMLExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this state.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -2026,13 +2027,13 @@ class State(AstExportable, PlantUMLExportable):
 
     @classmethod
     def transition_to_ast_node(
-        cls, self: Optional["State"], transition: Transition
+        cls, self: Optional[Union["State", Region]], transition: Transition
     ) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
         :param self: The parent state, or None
-        :type self: Optional['State']
+        :type self: Optional[Union['State', Region]]
         :param transition: The transition to convert
         :type transition: Transition
         :return: A transition definition AST node
@@ -2113,6 +2114,7 @@ class State(AstExportable, PlantUMLExportable):
             **_ast_doc_kwargs(dsl_nodes.StateDefinition, self.doc),
             events=[event.to_ast_node() for _, event in self.events.items()],
             substates=substate_nodes,
+            regions=[region.to_ast_node() for region in self.regions.values()],
             transitions=[
                 self.to_transition_ast_node(trans) for trans in self.transitions
             ],
@@ -2146,6 +2148,7 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: str
         """
         # Resolve configuration
+        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
@@ -2373,8 +2376,14 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: Iterator['State']
         """
         yield self
-        for _, substate in self.substates.items():
-            yield from substate.walk_states()
+        for child in namespace_children(self):
+            yield from child.walk_states()
+
+    def walk_regions(self) -> Iterator[Region]:
+        """Yield descendant regions in declaration preorder."""
+        for namespace in walk_namespaces(self):
+            if isinstance(namespace, Region):
+                yield namespace
 
     def resolve_event(
         self,
@@ -2628,14 +2637,14 @@ class State(AstExportable, PlantUMLExportable):
         # Navigate to the target state
         current_state = root_state
         for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
                     f"while resolving event reference {event_ref!r}",
                     searched_from=".".join(self.path),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -2800,7 +2809,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
     history_owners: Tuple["HistoryOwner", ...] = field(
         default_factory=tuple, compare=False, repr=False
     )
-    # The import-assembled program of a machine that lowered history, and the
+    # The import-assembled program of a machine that lowered history/activity, and the
     # model built from it without lowering once ``_as_written`` needs it.
     _assembled_program: Optional[dsl_nodes.StateMachineDSLProgram] = field(
         default=None, compare=False, repr=False
@@ -2815,6 +2824,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
     )
 
     _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+    active_queries: Tuple["ActiveQuery", ...] = field(default_factory=tuple, repr=False, compare=False)
 
     def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
         readonly = {
@@ -2845,15 +2855,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         )
                     )
 
-        for state in self.walk_states():
+        for state in walk_namespaces(self.root_state):
             for transition in state.transitions:
                 check(transition.effects)
-            for action in chain(
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-            ):
+            for action in namespace_actions(state):
                 check(action.operations)
         for diagnostic in diagnostics:
             _emit_or_raise(_validation_sink, diagnostic)
@@ -2954,9 +2959,21 @@ class StateMachine(AstExportable, PlantUMLExportable):
         path = item.decode(variables.get(item.record_variable, 0))
         return None if path is None else ".".join(path)
 
+    def active_variables(self, configuration) -> Dict[str, int]:
+        """Derive hidden activity flags from a configuration of this machine.
+
+        :param configuration: Immutable Configuration bound to this machine.
+        :return: Hidden variable names mapped to integer zero or one.
+        :raises ValueError: If the configuration belongs to another machine.
+        """
+        if configuration._model is not self:
+            raise ValueError('Configuration belongs to a different state machine.')
+        return {item.variable_name: int(configuration.is_active(item.state_path))
+                for item in self.active_queries}
+
     def _as_written(self) -> "StateMachine":
         """
-        Return this model as written, before history lowering.
+        Return this model as written, before history and activity lowering.
 
         Static analyses judge this model (see
         :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
@@ -2964,9 +2981,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         no lowered variable, gate state, route or record-writing exit exists.
         It is built from the same import-assembled program on first use; its
         diagnostics repeat those of the original build and are dropped. A
-        machine that lowered no history is its own model as written.
+        machine that lowered neither history nor activity is its own model as written.
 
-        :return: The model before history lowering
+        Activity queries retain their source expressions, and no generated
+        activity flags or lifecycle writes exist in this view.
+
+        :return: The model before history and activity lowering
         :rtype: StateMachine
         """
         if self._assembled_program is None:
@@ -3056,6 +3076,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: str
         """
         # Resolve configuration
+        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
@@ -3170,6 +3191,15 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    @property
+    def has_regions(self) -> bool:
+        """Whether this model declares any region, including nested regions."""
+        return next(self.walk_regions(), None) is not None
+
+    def walk_regions(self) -> Iterator[Region]:
+        """Yield all regions in declaration preorder."""
+        yield from self.root_state.walk_regions()
 
     def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
         """
@@ -3440,7 +3470,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         # Navigate through the remaining state path
         for i, state_name in enumerate(state_path_parts[1:], 1):
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State '{state_name}' not found in state "
                     f"'{'.'.join(state_path_parts[:i])}' "
@@ -3448,7 +3478,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     searched_from=".".join(state_path_parts[:i]),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -3541,12 +3571,15 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
-    if any(item.code == "E_UNSUPPORTED_FEATURE" for item in sink.diagnostics):
+    if any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+           for item in sink.diagnostics):
         # Strict mode raises at emission. Collect mode must not expose a model
-        # assembled with unsupported regions or imported subtrees omitted.
+        # assembled with invalid region structure or imported subtrees omitted.
         return None, sink.diagnostics
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
-    if machine.history_owners:
+    if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
+        return None, sink.diagnostics
+    if machine.history_owners or machine.active_queries:
         # Inspect and verify judge the model as written; keep what is needed
         # to build it on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
@@ -3827,11 +3860,15 @@ def _build_assembled_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        is_combo_relay_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
-        is_reserved_combo_pseudo = (
-            node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
+        is_region = isinstance(node, dsl_nodes.RegionDefinition)
+        is_pseudo = bool(getattr(node, "is_pseudo", False))
+        is_combo_relay_pseudo = (
+            not is_region and _is_exported_combo_pseudo_node(node, owner_node)
         )
-        if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
+        is_reserved_combo_pseudo = (
+            node.name.startswith(_COMBO_STATE_PREFIX) and is_pseudo
+        )
+        if not is_region and node.name.startswith(_COMBO_STATE_PREFIX) and not is_pseudo:
             sink.emit(
                 ModelDiagnostic(
                     code="W_COMBO_RESERVED_PREFIX_STATE_KIND",
@@ -3879,6 +3916,11 @@ def _build_assembled_state_machine(
                     )
                 )
 
+        d_regions = {
+            item.name: _recursive_build_states(item, current_path, node)
+            for item in getattr(node, "regions", ())
+        }
+
         named_functions = {}
 
         def _ast_action_kinds(node: dsl_nodes.StateDefinition) -> List[str]:
@@ -3894,8 +3936,7 @@ def _build_assembled_state_machine(
             return kinds
 
         on_enters = []
-        for enter_item in node.enters:
-            on_stage = None
+        for enter_item in getattr(node, "enters", ()):
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = _parse_operation_block(
                     enter_item.operations,
@@ -3929,7 +3970,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(enter_item),
                 )
-            elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="enter",
                     aspect=None,
@@ -3950,38 +3991,36 @@ def _build_assembled_state_machine(
                     _span=_node_span(enter_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        # I1 from PR-110: first-wins tiebreaker — keep the
-                        # initial declaration so collect/strict modes resolve
-                        # ``ref X`` identically (strict raises before the
-                        # overwrite would have happened).
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(enter_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "enter",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    # Keep the first declaration so collect/strict modes resolve
+                    # ``ref X`` identically (strict raises before the
+                    # overwrite would have happened).
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(enter_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "enter",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_enters.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_enters.append(on_stage)
 
         on_durings = []
-        for during_item in node.durings:
+        for during_item in getattr(node, "durings", ()):
             if (
-                not d_substates
+                not (d_substates or d_regions)
                 and during_item.aspect is not None
                 and not is_reserved_combo_pseudo
             ):
@@ -4002,7 +4041,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            if d_substates and during_item.aspect is None:
+            if (d_substates or d_regions) and during_item.aspect is None:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4021,7 +4060,6 @@ def _build_assembled_state_machine(
                     )
                 )
 
-            on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
                 during_operations = _parse_operation_block(
                     during_item.operations,
@@ -4055,7 +4093,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_item),
                 )
-            elif isinstance(during_item, dsl_nodes.DuringRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="during",
                     aspect=during_item.aspect,
@@ -4076,33 +4114,31 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_durings.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_durings.append(on_stage)
 
         on_exits = []
-        for exit_item in node.exits:
-            on_stage = None
+        for exit_item in getattr(node, "exits", ()):
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = _parse_operation_block(
                     exit_item.operations,
@@ -4136,7 +4172,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(exit_item),
                 )
-            elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="exit",
                     aspect=None,
@@ -4157,29 +4193,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(exit_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(exit_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "exit",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(exit_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "exit",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_exits.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_exits.append(on_stage)
 
         on_during_aspects = []
         for during_aspect_item in node.during_aspects:
@@ -4187,7 +4222,7 @@ def _build_assembled_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates and not is_reserved_combo_pseudo:
+            if not (d_substates or d_regions) and not is_reserved_combo_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4206,7 +4241,6 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(
                     during_aspect_item.operations,
@@ -4240,7 +4274,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_aspect_item),
                 )
-            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_aspect = OnAspect(
                     stage="during",
                     aspect=during_aspect_item.aspect,
@@ -4261,29 +4295,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_aspect_item),
                 )
 
-            if on_aspect is not None:
-                if on_aspect.name:
-                    if on_aspect.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_aspect.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_aspect_item, "_span", None),
-                                refs={
-                                    "function_name": on_aspect.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during_aspect",
-                                },
-                            )
+            if on_aspect.name:
+                if on_aspect.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_aspect.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_aspect_item, "_span", None),
+                            refs={
+                                "function_name": on_aspect.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during_aspect",
+                            },
                         )
-                    else:
-                        named_functions[on_aspect.name] = on_aspect
-                on_during_aspects.append(on_aspect)
+                    )
+                else:
+                    named_functions[on_aspect.name] = on_aspect
+            on_during_aspects.append(on_aspect)
 
         d_events = {}
         for event in node.events:
@@ -4297,22 +4330,20 @@ def _build_assembled_state_machine(
                 _span=_node_span(event),
             )
 
-        my_state = State(
-            name=node.name,
-            extra_name=node.extra_name,
-            doc=getattr(node, "doc", None),
-            events=d_events,
-            path=current_path,
-            substates=d_substates,
-            is_pseudo=bool(node.is_pseudo),
-            is_combo_relay=is_combo_relay_pseudo,
-            on_enters=on_enters,
-            on_durings=on_durings,
-            on_exits=on_exits,
-            on_during_aspects=on_during_aspects,
-            named_functions=named_functions,
+        common = dict(
+            name=node.name, path=current_path, substates=d_substates,
+            events=d_events, doc=getattr(node, "doc", None),
+            on_during_aspects=on_during_aspects, named_functions=named_functions,
             _span=_node_span(node),
         )
+        if is_region:
+            my_state = Region(**common)
+        else:
+            my_state = State(
+                **common, regions=d_regions, extra_name=node.extra_name,
+                is_pseudo=is_pseudo, is_combo_relay=is_combo_relay_pseudo,
+                on_enters=on_enters, on_durings=on_durings, on_exits=on_exits,
+            )
         if is_reserved_combo_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
@@ -4335,7 +4366,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-        if my_state.is_pseudo and not my_state.is_leaf_state:
+        if is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
                     code="E_PSEUDO_NOT_LEAF",
@@ -4351,15 +4382,10 @@ def _build_assembled_state_machine(
                     },
                 )
             )
-        for func_item in [
-            *my_state.on_enters,
-            *my_state.on_durings,
-            *my_state.on_exits,
-            *my_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(my_state):
             func_item.parent = my_state
-        for _, substate in d_substates.items():
-            substate.parent = my_state
+        for child in namespace_children(my_state):
+            child.parent = my_state
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
@@ -4372,7 +4398,7 @@ def _build_assembled_state_machine(
         force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
     ) -> None:
         current_path = tuple((*current_path, current_state.name))
-        force_transitions = list(force_transitions or [])
+        force_transitions = [] if getattr(current_state, "regions", {}) else list(force_transitions or [])
 
         force_transition_tuples_to_inherit = []
         local_force_ids = {id(item) for item in node.force_transitions}
@@ -4456,8 +4482,8 @@ def _build_assembled_state_machine(
                 # on (C1 from PR-110 review).
                 path_resolved = True
                 for seg in my_event_id.path[:-1]:
-                    if seg in start_state.substates:
-                        start_state = start_state.substates[seg]
+                    if namespace_child(start_state, seg) is not None:
+                        start_state = namespace_child(start_state, seg)
                     else:
                         sink.emit(
                             ModelDiagnostic(
@@ -4642,6 +4668,11 @@ def _build_assembled_state_machine(
                 force_transitions=_inner_force_transitions,
             )
 
+        for region_node in getattr(node, "regions", ()):
+            _recursive_finish_states(
+                region_node, current_state.regions[region_node.name], current_path,
+            )
+
         def _emit_dangling_transition_diagnostics(transnode) -> bool:
             """Validate transition endpoints and return whether they are usable."""
             src_unknown = (
@@ -4756,8 +4787,8 @@ def _build_assembled_state_machine(
 
             path_resolved = True
             for seg in effective_event_id.path[:-1]:
-                if seg in start_state.substates:
-                    start_state = start_state.substates[seg]
+                if namespace_child(start_state, seg) is not None:
+                    start_state = namespace_child(start_state, seg)
                 else:
                     sink.emit(
                         ModelDiagnostic(
@@ -5561,17 +5592,12 @@ def _build_assembled_state_machine(
                 )
             )
 
-        for func_item in [
-            *current_state.on_enters,
-            *current_state.on_durings,
-            *current_state.on_exits,
-            *current_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(current_state):
             if func_item.ref_state_path is not None:
                 state = root_state
                 walk_failed = False
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
-                    if segment not in state.substates:
+                    if namespace_child(state, segment) is None:
                         # M1 from PR-110 review: the named-function ref AST
                         # nodes don't carry their own spans yet, so fall back
                         # to the owning state's span. State-level anchoring
@@ -5598,7 +5624,7 @@ def _build_assembled_state_machine(
                         )
                         walk_failed = True
                         break
-                    state = state.substates[segment]
+                    state = namespace_child(state, segment)
                 if walk_failed:
                     continue
 
@@ -5639,14 +5665,8 @@ def _build_assembled_state_machine(
     history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
 
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
-        for func_item in [
-            *state.on_enters,
-            *state.on_durings,
-            *state.on_exits,
-            *state.on_during_aspects,
-        ]:
-            yield func_item
-        for substate in state.substates.values():
+        yield from namespace_actions(state)
+        for substate in namespace_children(state):
             for func_item in _iter_lifecycle_actions(substate):
                 yield func_item
 
@@ -5680,11 +5700,15 @@ def _build_assembled_state_machine(
 
     _validate_action_ref_cycles()
 
+    from .active import lower_active
+
+    active_queries = lower_active(root_state, d_defines, sink, apply=lower)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
         history_owners=history_owners,
+        active_queries=active_queries,
         _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)

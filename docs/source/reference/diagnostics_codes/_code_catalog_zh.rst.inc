@@ -12,6 +12,26 @@
      - 发射层级
      - 能力层级
      - 源码对象
+   * - :ref:`E_UNSUPPORTED_FEATURE <diag-code-e-unsupported-feature-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_ACTIVE_QUERY_TARGET <diag-code-e-active-query-target-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`E_REGION_STRUCTURE <diag-code-e-region-structure-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_DUPLICATE_REGION <diag-code-e-duplicate-region-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
    * - :ref:`E_UNDEFINED_VAR <diag-code-e-undefined-var-zh>`
      - ``error``
      - ``static_pipeline``
@@ -441,6 +461,202 @@
 
 名称、变量、类型和导入
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-e-unsupported-feature-zh:
+
+E_UNSUPPORTED_FEATURE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_UNSUPPORTED_FEATURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_UNSUPPORTED_FEATURE feature type=str required=true enum=region|active item_enum=- exact_values=-
+.. diagnostics-ref E_UNSUPPORTED_FEATURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
+
+所选消费者无法保留 region 模型或活动查询的语义，因此拒绝操作。Python 模型构建已经支持二者；尚未适配的执行、分析和渲染入口仍拒绝。JavaScript 前端可能在模型构建时拒绝。
+
+.. list-table:: Refs 字段契约
+   :header-rows: 1
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``feature``
+     - ``str``
+     - 是
+     - 所选消费者尚未支持的功能。 枚举：``region``、``active``。
+   * - ``source_path``
+     - ``str_or_null``
+     - 否
+     - 原始源文件路径，未知时为空。
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
+
+下列源可以通过 load_state_machine_from_text 构建，但交给 SimulationRuntime 会抛出 ModelValidationError。CLI 对应入口非零退出，不产生成功报告。
+
+.. code-block:: fcstm
+
+   state Root { region Motor { state Idle; [*] -> Idle; } }
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 2 boundary_only
+
+可以通过模型 API 查看命名空间和 Configuration；需要立即执行时，使用后端已支持的语言子集。不能默默把多个活动 region 压成单分支。
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
+
+生成器在清空或替换已有输出之前拒绝模型；普通、不含 region 或活动查询的模型不受影响。
+
+.. _diag-code-e-active-query-target-zh:
+
+E_ACTIVE_QUERY_TARGET
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_ACTIVE_QUERY_TARGET severity=error emit_tier=static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET reason type=str required=true enum=invalid_path|not_found|region|pseudo|initializer item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_ACTIVE_QUERY_TARGET kind=cli_error
+
+活动查询必须指向当前模型中实际存在的非 pseudo State，不能指向 Region，也不能用于持久变量初始化器。
+
+.. list-table:: Refs 字段契约
+   :header-rows: 1
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``state_path``
+     - ``str``
+     - 是
+     - 导入重定位后的目标 state 路径。
+   * - ``reason``
+     - ``str``
+     - 是
+     - 校验失败原因，合法值见下列枚举。 枚举：``invalid_path``、``not_found``、``region``、``pseudo``、``initializer``。
+   * - ``source_path``
+     - ``str_or_null``
+     - 否
+     - 原始源文件路径，未知时为空。
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 1 cli_error
+
+加载下列源抛出 ModelValidationError，reason 为 not_found；主位置指向查询表达式。
+
+.. code-block:: fcstm
+
+   state Root { during { if [active("Root.Unknown")] {} } }
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
+
+把 Root.Unknown 改为 Root 即可查询实际存在的根。以 / 开始的根相对路径不重复写根名称。
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
+
+不要把 Region 或 pseudo 当作稳定活动状态；持久变量初始化时不存在可以查询的活动配置。
+
+.. _diag-code-e-region-structure-zh:
+
+E_REGION_STRUCTURE
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_REGION_STRUCTURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_REGION_STRUCTURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE namespace_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE reason type=str required=true enum=empty_region|mixed_children|owner_statements|history_boundary item_enum=- exact_values=-
+.. diagnostics-boundary E_REGION_STRUCTURE kind=cli_error
+
+region 为空、混合直接 state/region 子级、owner 包含非法直接声明，或 history 需要保存并行配置时拒绝构建。
+
+.. list-table:: Refs 字段契约
+   :header-rows: 1
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - 否
+     - 原始源文件路径，未知时为空。
+   * - ``namespace_path``
+     - ``str``
+     - 是
+     - 非法命名空间的完整路径。
+   * - ``reason``
+     - ``str``
+     - 是
+     - 校验失败原因，合法值见下列枚举。 枚举：``empty_region``、``mixed_children``、``owner_statements``、``history_boundary``。
+
+.. diagnostics-example E_REGION_STRUCTURE 1 cli_error
+
+下列空 region 产生 empty_region。每个 region 必须拥有子 state 和合法初始转换。
+
+.. code-block:: fcstm
+
+   state Root { region Empty {} }
+
+.. diagnostics-example E_REGION_STRUCTURE 2 boundary_only
+
+可改为 region Empty { state Idle; [*] -> Idle; }。只有一个直接 region 合法，本身不产生警告。
+
+.. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
+
+局部转换应放在 region 内，导入应放在普通子 state 内；region 不能直接包含导入。普通子树内仍允许 history；包含并行后代的 history owner 不受支持。
+
+.. _diag-code-e-duplicate-region-zh:
+
+E_DUPLICATE_REGION
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DUPLICATE_REGION severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_DUPLICATE_REGION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION region_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION previous_span type=Span required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_DUPLICATE_REGION kind=cli_error
+
+同一 state 的两个直接 region 同名，导致命名空间路径无法区分。
+
+.. list-table:: Refs 字段契约
+   :header-rows: 1
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - 否
+     - 原始源文件路径，未知时为空。
+   * - ``region_name``
+     - ``str``
+     - 是
+     - 重复的 region 名称。
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 包含重复 region 声明的 owner state 完整路径。
+   * - ``previous_span``
+     - ``Span``
+     - 否
+     - 第一次声明的位置，已知时提供。
+
+.. diagnostics-example E_DUPLICATE_REGION 1 cli_error
+
+下列源产生 E_DUPLICATE_REGION。主位置指向重复声明；previous_span 在已知时指向第一次声明。
+
+.. code-block:: fcstm
+
+   state Root { region A { state Idle; [*] -> Idle; } region A { state Idle; [*] -> Idle; } }
+
+.. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
+
+把第二个 region 改为 B，并更新对应引用路径。不同 region 中的子 state 可以同名。
+
+.. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
+
+不同 owner state 下允许相同 region 名称；唯一性限制不能扩大到整个模型。
 
 .. _diag-code-e-undefined-var-zh:
 

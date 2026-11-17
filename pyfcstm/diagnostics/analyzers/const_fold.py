@@ -87,6 +87,9 @@ def collect_const_fold_warnings(
     """Collect diagnostics that depend on constant folding."""
     if machine is None:
         return []
+    from ...model.support import require_supported_model
+
+    require_supported_model(machine, 'Constant-folding analysis')
     diagnostics: List[ModelDiagnostic] = []
     defined_vars = set(machine.defines)
     transition_indexes = _transition_indexes(machine)

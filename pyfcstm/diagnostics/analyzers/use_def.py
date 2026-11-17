@@ -45,6 +45,9 @@ class UseDefGraph:
 
 def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
     """Build a conservative use-def graph from concrete actions/effects."""
+    from ...model.support import require_supported_model
+
+    require_supported_model(machine, 'Use-def analysis')
     edges: Set[Tuple[str, str]] = set()
 
     for state in machine.walk_states():

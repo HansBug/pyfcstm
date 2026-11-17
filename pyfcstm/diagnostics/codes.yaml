@@ -40,8 +40,11 @@ E_UNSUPPORTED_FEATURE:
   severity: error
   span_object: syntax_construct
   description: >-
-    Syntax is recognized by the parser but has no executable model semantics.
-    Model construction stops rather than silently ignoring the feature.
+    The selected consumer cannot preserve this language feature and refuses
+    the operation rather than producing partial results. Python model building
+    supports regions and activity queries; unsupported execution, analysis and
+    rendering consumers still reject them. Other frontends may reject them
+    during model construction until their semantic support is available.
   refs:
     feature:
       type: str
@@ -53,6 +56,69 @@ E_UNSUPPORTED_FEATURE:
       required: false
       description: Absolute originating source file, when known.
   example_dsl: 'state Root { region Motor { state Idle; [*] -> Idle; } }'
+
+E_ACTIVE_QUERY_TARGET:
+  severity: error
+  span_object: expression
+  description: An activity query has an invalid target or appears in a persistent initializer.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: State path written in the query after import rebasing.
+    reason:
+      type: str
+      required: true
+      enum: ['invalid_path', 'not_found', 'region', 'pseudo', 'initializer']
+      description: Why the query cannot be bound to an activity flag.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+  example_dsl: 'state Root { during { if [active("Root.Unknown")] {} } }'
+
+E_REGION_STRUCTURE:
+  severity: error
+  span_object: syntax_construct
+  description: A region is empty or a parallel owner mixes incompatible direct declarations.
+  refs:
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+    namespace_path:
+      type: str
+      required: true
+      description: Full path of the invalid namespace.
+    reason:
+      type: str
+      required: true
+      enum: ['empty_region', 'mixed_children', 'owner_statements', 'history_boundary']
+      description: Structural rule that was violated.
+  example_dsl: 'state Root { region Empty {} }'
+
+E_DUPLICATE_REGION:
+  severity: error
+  span_object: syntax_construct
+  description: Two regions have the same name within one owner state.
+  refs:
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+    region_name:
+      type: str
+      required: true
+      description: Repeated region identifier.
+    owner_path:
+      type: str
+      required: true
+      description: Full path of the owner state.
+    previous_span:
+      type: Span
+      required: false
+      description: Source position of the first declaration, when available.
+  example_dsl: 'state Root { region A { state Leaf; [*] -> Leaf; } region A { state Leaf; [*] -> Leaf; } }'
 
 E_UNDEFINED_VAR:
   severity: error

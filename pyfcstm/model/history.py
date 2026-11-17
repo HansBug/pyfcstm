@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterator, List, Mapping, Optional, Set, Tuple
 
 from .expr import BinaryOp, ConditionalOp, Expr, Integer, Variable
+from .region import namespace_actions, walk_namespaces
 from ..dsl import node as dsl_nodes
 from ..utils.validate import ModelDiagnostic
 
@@ -141,20 +142,17 @@ class HistoryOwner:
 
 
 def _walk(state: "State") -> Iterator["State"]:
-    yield state
-    for child in state.substates.values():
-        for item in _walk(child):
-            yield item
+    yield from state.walk_states()
 
 
 def _walk_ast(
     node: dsl_nodes.StateDefinition, path: _Path = ()
 ) -> Iterator[Tuple[_Path, dsl_nodes.StateDefinition]]:
     path = (*path, node.name)
-    yield path, node
-    for child in node.substates:
-        for item in _walk_ast(child, path):
-            yield item
+    if isinstance(node, dsl_nodes.StateDefinition):
+        yield path, node
+    for child in [*node.substates, *getattr(node, 'regions', ())]:
+        yield from _walk_ast(child, path)
 
 
 def _operations(statements) -> Iterator:
@@ -167,16 +165,11 @@ def _operations(statements) -> Iterator:
             yield statement
 
 
-def _state_operations(state: "State") -> Iterator:
-    for action in [
-        *state.on_enters,
-        *state.on_durings,
-        *state.on_exits,
-        *state.on_during_aspects,
-    ]:
+def _namespace_operations(namespace) -> Iterator:
+    for action in namespace_actions(namespace):
         for item in _operations(action.operations):
             yield item
-    for transition in state.transitions:
+    for transition in namespace.transitions:
         for item in _operations(transition.effects):
             yield item
 
@@ -236,8 +229,8 @@ class _Lowering:
             check(name, "variable", define._span)
         for state in self.states.values():
             check(state.name, "state", state._span)
-        for state in self.states.values():
-            for operation in _state_operations(state):
+        for namespace in walk_namespaces(self.root):
+            for operation in _namespace_operations(namespace):
                 if operation.var_name not in self.defines:
                     check(operation.var_name, "temporary", operation._span)
 
@@ -299,7 +292,7 @@ class _Lowering:
         """Validate every transition that enters a history."""
         found = []
         reported = set()
-        for scope in self.states.values():
+        for scope in walk_namespaces(self.root):
             for transition in scope.transitions:
                 kind = transition.target_history
                 if kind is None:
@@ -425,11 +418,10 @@ class _Lowering:
 
     def run(self) -> Tuple[HistoryOwner, ...]:
         from .model import OnStage, State, Transition, VarDefine
-
         uses_history = any(node.histories for _, node in _walk_ast(self.ast_root)) or any(
             t.target_history is not None
-            for state in self.states.values()
-            for t in state.transitions
+            for namespace in walk_namespaces(self.root)
+            for t in namespace.transitions
         )
         self._check_reserved_names(uses_history)
         if not uses_history:

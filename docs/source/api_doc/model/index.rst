@@ -9,13 +9,17 @@ pyfcstm.model
 .. toctree::
     :maxdepth: 3
 
+    active
     base
+    configuration
     expr
     history
     imports
     load
     model
     plantuml
+    region
+    support
 
 \_\_all\_\_
 -----------------------------------------------------

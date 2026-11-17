@@ -66,7 +66,10 @@ def _load_model(input_code_file: str):
         decoded, parsed, or assembled into a valid model.
     """
     try:
-        return load_state_machine_from_file(input_code_file)
+        from pyfcstm.model.support import require_supported_model
+        model = load_state_machine_from_file(input_code_file)
+        require_supported_model(model, 'diagram')
+        return model
     except FileNotFoundError:
         # The path is validated by click, but it can disappear between the
         # check and the read.

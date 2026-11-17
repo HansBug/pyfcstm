@@ -17,6 +17,7 @@ pyfcstm.diagnostics.analyzers
     naming
     numeric
     redundancy
+    region_order
     structural
     thresholds
     transition_info

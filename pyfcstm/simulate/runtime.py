@@ -4468,8 +4468,6 @@ class SimulationRuntime:
                     validate_stoppable=validate_post_child_exit,
                     force_validate=validate_post_child_exit,
                 )
-                if transition is None:
-                    return _FAILED
                 ended = self._execute_transition_on_context(
                     stack,
                     vars_,

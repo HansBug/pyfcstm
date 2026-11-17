@@ -1145,6 +1145,16 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         ['System.ErrorEvent']
         >>> len(event_map['System.ErrorEvent']) >= 2
         True
+
+    A transition written inside a region is reported with the region as owner::
+
+        >>> regional = parse_dsl_node_to_state_machine(parse_with_grammar_entry('''state Root {
+        ...     event Go;
+        ...     region A { state X; [*] -> X; X -> [*] : /Go; }
+        ... }''', 'state_machine_dsl'))
+        >>> owner, transition = collect_event_transitions(regional)['Root.Go'][0]
+        >>> type(owner).__name__, owner.name
+        ('Region', 'A')
     """
     from collections import defaultdict
     from .region import walk_namespaces

@@ -44,7 +44,35 @@ class UseDefGraph:
 
 
 def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
-    """Build a conservative use-def graph from concrete actions/effects."""
+    """
+    Build a conservative use-def graph from concrete actions and effects.
+
+    The graph has an edge ``(source, target)`` whenever an assignment to
+    ``target`` reads ``source``, directly or through the condition of an
+    enclosing ``if``. States and regions are both visited, so assignments in
+    region aspects and in region-owned transitions are included. Abstract
+    actions are skipped, and an ``active("...")`` query reads a state's
+    activity, not a variable, so it adds no edge.
+
+    :param machine: State machine to analyze.
+    :type machine: pyfcstm.model.model.StateMachine
+    :return: The sorted edges and, for each target, the variables it depends on.
+    :rtype: UseDefGraph
+
+    Example::
+
+        >>> from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int a = 0;
+        ... def int b = 0;
+        ... state Root {
+        ...     region Work { state S { during { b = a + 1; } } [*] -> S; }
+        ... }
+        ... ''')
+        >>> build_use_def_graph(machine).edges
+        (('a', 'b'),)
+    """
     from ...model.region import namespace_actions, walk_namespaces
 
     edges: Set[Tuple[str, str]] = set()

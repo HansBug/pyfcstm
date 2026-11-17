@@ -266,9 +266,10 @@ def _note_expression(access, expression, defined, root, span) -> Set[str]:
         access.reads.setdefault(name, span)
     for node in expression._iter_all_subs():
         if isinstance(node, ActiveStateQuery):
-            target, reason = _target(root, node)
-            if reason is None:
-                access.queries.setdefault(tuple(target.path), span)
+            # Model construction already rejected every query that names no
+            # state, so the target always resolves here.
+            target, _ = _target(root, node)
+            access.queries.setdefault(tuple(target.path), span)
     return names
 
 

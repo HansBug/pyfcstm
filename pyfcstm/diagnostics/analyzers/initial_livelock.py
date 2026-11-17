@@ -16,7 +16,30 @@ def collect_initial_livelock_warnings(states, transitions, regions=()):
     separate routing entry, and reaching its ``[*]`` finishes the region, which
     counts as an escape because the owner's continuation depends on all of
     its regions.
+
+    :param states: Inspect state records.
+    :type states: Iterable[pyfcstm.diagnostics.inspect.StateInfo]
+    :param transitions: Inspect transition records.
+    :type transitions: Iterable[pyfcstm.diagnostics.inspect.TransitionInfo]
+    :param regions: Inspect region records, defaults to ``()``.
+    :type regions: Iterable[pyfcstm.diagnostics.inspect.RegionInfo], optional
+    :return: One ``W_INITIAL_LIVELOCK`` diagnostic per closed routing
+        component, or an empty list when endpoints are unresolved.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region Work { pseudo state P; [*] -> P; P -> P; } }')
+        >>> report = inspect_model(machine)
+        >>> [item.code for item in report.diagnostics if item.code == 'W_INITIAL_LIVELOCK']
+        ['W_INITIAL_LIVELOCK']
     """
+    states = list(states)
+    regions = list(regions)
+    transitions = list(transitions)
     by_path = {state.path: state for state in states}
     region_paths = {region.path for region in regions}
     # Collect-mode parsing preserves unresolved endpoints for error reporting.

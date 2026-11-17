@@ -858,6 +858,14 @@ def run_inspect_algorithms(
     results when they are otherwise eligible, and never emits diagnostics-layer
     objects directly.
 
+    A machine with regions is verified as far as the algorithms allow:
+    the structural topology algorithms follow one active leaf path and are not
+    run (they are left out of the results, as
+    :func:`project_inspect_eligibility` reports with ``has_regions=True``), the
+    solver-local algorithms visit the transitions of regions as well, and the
+    initial-lifecycle check of a state inside a region returns an
+    ``undecidable_skip`` result.
+
     :param machine: State machine to verify.
     :type machine: StateMachine
     :param max_complexity_tier: Maximum complexity tier allowed by the

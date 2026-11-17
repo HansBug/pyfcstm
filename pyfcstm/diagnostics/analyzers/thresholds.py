@@ -17,7 +17,38 @@ def collect_threshold_warnings(
     var_to_leaf_ratio_threshold: float,
     regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
-    """Collect warnings controlled by inspect-model threshold options."""
+    """
+    Collect warnings controlled by inspect-model threshold options.
+
+    :param states: Inspect state records.
+    :type states: Iterable[pyfcstm.diagnostics.inspect.StateInfo]
+    :param metrics: Aggregate metrics of the model.
+    :type metrics: pyfcstm.diagnostics.inspect.ModelMetrics
+    :param deep_hierarchy_threshold: Depth above which ``W_DEEP_HIERARCHY``
+        fires.
+    :type deep_hierarchy_threshold: int
+    :param large_composite_threshold: Direct-child count above which
+        ``W_LARGE_COMPOSITE`` fires; a region counts its own child states.
+    :type large_composite_threshold: int
+    :param var_to_leaf_ratio_threshold: Ratio above which
+        ``W_HIGH_VAR_TO_LEAF_RATIO`` fires.
+    :type var_to_leaf_ratio_threshold: float
+    :param regions: Inspect region records, defaults to ``()``.
+    :type regions: Iterable[pyfcstm.diagnostics.inspect.RegionInfo], optional
+    :return: Threshold diagnostics.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region Work { state A; state B; state C; [*] -> A; } }')
+        >>> report = inspect_model(machine, large_composite_threshold=2)
+        >>> [item.refs['composite_path'] for item in report.diagnostics
+        ...  if item.code == 'W_LARGE_COMPOSITE']
+        ['Root.Work']
+    """
     states = list(states)
     diagnostics: List[ModelDiagnostic] = []
     diagnostics.extend(_high_var_to_leaf_ratio_warnings(

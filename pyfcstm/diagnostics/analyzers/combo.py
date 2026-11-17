@@ -92,6 +92,9 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     original combo term and keep related term spans in ``refs`` so editor
     integrations can navigate to the first duplicate event or prior guard.
 
+    Combo transitions declared inside a ``region`` block are examined like any
+    other.
+
     :param machine: State machine to inspect, or ``None`` to emit no
         diagnostics.
     :type machine: pyfcstm.model.StateMachine, optional
@@ -418,19 +421,15 @@ def _first_hop_actions_may_write(
 ) -> bool:
     from ...dsl import INIT_STATE
 
-    from ...model.region import Region
-
     parent = transition.parent
     if parent is None:
         return False
-    if isinstance(parent, Region):
-        # A region has no lifecycle actions of its own; what runs before its
-        # first state is not tracked, so conservatively assume it may write.
-        return True
     if transition.from_state is INIT_STATE:
+        # A region has no ``during`` actions of its own, so nothing runs
+        # between its start and its first state.
         return _actions_may_write_relevant(
             [
-                item for item in parent.on_durings
+                item for item in getattr(parent, "on_durings", ())
                 if getattr(item, "aspect", None) == "before"
             ],
             relevant,

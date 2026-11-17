@@ -18,6 +18,44 @@ def collect_structural_warnings(
     root_state_path: Optional[str] = None,
     regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
+    """
+    Collect structural design-health warnings.
+
+    Covers initial routing livelocks, leaf states without an outgoing
+    transition, composites without an unconditional initial transition, forced
+    transitions that expand to nothing, aspects without a descendant leaf, and
+    dead named actions. A region is judged like a composite container (its own
+    initial transition, its own aspects), while a state that owns regions is not
+    asked for an initial transition because each region selects its own.
+
+    :param states: Inspect state records.
+    :type states: Iterable[pyfcstm.diagnostics.inspect.StateInfo]
+    :param transitions: Inspect transition records.
+    :type transitions: Iterable[pyfcstm.diagnostics.inspect.TransitionInfo]
+    :param actions: Inspect action records.
+    :type actions: Iterable[pyfcstm.diagnostics.inspect.ActionInfo]
+    :param forced_transitions: Inspect forced-transition records.
+    :type forced_transitions: Iterable[pyfcstm.diagnostics.inspect.ForcedTransitionInfo]
+    :param reachability_graph: State path to the state paths it reaches.
+    :type reachability_graph: Mapping[str, Sequence[str]]
+    :param root_state_path: Root state path used to decide reachability,
+        defaults to ``None``.
+    :type root_state_path: str, optional
+    :param regions: Inspect region records, defaults to ``()``.
+    :type regions: Iterable[pyfcstm.diagnostics.inspect.RegionInfo], optional
+    :return: Structural diagnostics.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'def int n = 0; state Root { region Work { state A; [*] -> A : if [n > 0]; } }')
+        >>> [item.refs['composite_path'] for item in inspect_model(machine).diagnostics
+        ...  if item.code == 'W_INITIAL_UNCONDITIONAL_MISSING']
+        ['Root.Work']
+    """
     states = list(states)
     regions = list(regions)
     transitions = list(transitions)

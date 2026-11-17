@@ -959,6 +959,17 @@ class ModelInspect:
         without regions. The serialized report carries a ``regions`` key only
         when this tuple is not empty.
     :type regions: Tuple[RegionInfo, ...]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> report = inspect_model(load_state_machine_from_text(
+        ...     'state Root { state A; [*] -> A; }'))
+        >>> report.root_state_path, report.regions
+        ('Root', ())
+        >>> 'regions' in report.to_json()
+        False
     """
 
     root_state_path: str
@@ -1664,12 +1675,14 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
 
     sites = {name: {'reads': [], 'writes': []} for name in machine.defines}
 
-    def record(names, mode, site):
+    def _record(names, mode, site):
+        """Append ``site`` to the ``mode`` list of each declared variable in ``names``."""
         for name in dict.fromkeys(names):
             if name in sites:
                 sites[name][mode].append(site)
 
-    def located(owner, node, path):
+    def _located(owner, node, path):
+        """Return ``owner`` relocated to ``node`` at statement ``path``."""
         return replace(
             owner,
             statement_path=path,
@@ -1677,19 +1690,20 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
             span=getattr(node, '_span', owner.span),
         )
 
-    def statements(items, owner, prefix=()):
+    def _statements(items, owner, prefix=()):
+        """Record the reads and writes of a statement list under ``prefix``."""
         for index, statement in enumerate(items):
             path = (*prefix, index)
-            site = located(owner, statement, path)
+            site = _located(owner, statement, path)
             if isinstance(statement, Operation):
-                record([statement.var_name], 'writes', site)
-                record(_walk_expr_variables(statement.expr), 'reads', site)
+                _record([statement.var_name], 'writes', site)
+                _record(_walk_expr_variables(statement.expr), 'reads', site)
             else:
                 for branch_index, branch in enumerate(statement.branches):
                     branch_path = (*path, branch_index)
-                    record(_walk_expr_variables(branch.condition), 'reads',
-                           located(owner, branch, branch_path))
-                    statements(branch.statements, owner, branch_path)
+                    _record(_walk_expr_variables(branch.condition), 'reads',
+                           _located(owner, branch, branch_path))
+                    _statements(branch.statements, owner, branch_path)
 
     transition_index = 0
     action_index = 0
@@ -1704,7 +1718,7 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                     source_path=getattr(action, '_source_path', machine.source_path),
                     span=getattr(action, '_span', None),
                 )
-                statements(action.operations, owner)
+                _statements(action.operations, owner)
                 action_index += 1
         for transition in state.transitions:
             owner = VariableAccessSite(
@@ -1713,8 +1727,8 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                 source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
             )
-            record(_walk_expr_variables(transition.guard), 'reads', owner)
-            statements(transition.effects, replace(owner, kind='effect'))
+            _record(_walk_expr_variables(transition.guard), 'reads', owner)
+            _statements(transition.effects, replace(owner, kind='effect'))
             transition_index += 1
     return sites
 
@@ -2894,6 +2908,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
     }
 
     def add_edges(transition: TransitionInfo, targets) -> None:
+        """Add ``targets`` as the entry of the transition's container, or as its edges."""
         if transition.from_path == _INIT_MARK:
             container = transition.to_path.rsplit('.', 1)[0]
             if container in region_entries:
@@ -2917,6 +2932,7 @@ def _reachability_pass(states, transitions, history_defaults, regions_of, owners
                 initial_edges[state.path].add(target)
 
     def closure(start: str) -> set:
+        """Return every state path reachable from ``start`` under this pass."""
         seen = set()
         queue = [start]
         while queue:
@@ -4571,6 +4587,16 @@ def inspect_model(
     in the report. For reachability, a history entry also reaches every state on
     the default path of the kind it names.
 
+    A machine with ``region`` blocks or ``active()`` queries is also reported
+    as written. Regions are listed in :attr:`ModelInspect.regions`; the
+    transitions, events and actions inside them join the ordinary lists; the
+    reachability graph follows region entry and joint completion; and the two
+    ordering diagnostics ``I_REGION_BACKWARD_READ`` and
+    ``W_REGION_BLIND_OVERWRITE`` judge sibling regions. With ``enable_verify``
+    the single-active-path topology algorithms are reported as ``not_run`` with
+    the reason ``requires_single_active_path`` for such a model, and no hidden
+    ``active()`` flag variable ever appears in the report.
+
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
     :param deep_hierarchy_threshold: Maximum accepted hierarchy depth.
@@ -4612,6 +4638,8 @@ def inspect_model(
     :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
+    :raises ValueError: If a threshold or the verification policy is invalid.
+    :raises TypeError: If a threshold has the wrong type.
 
     Examples::
 

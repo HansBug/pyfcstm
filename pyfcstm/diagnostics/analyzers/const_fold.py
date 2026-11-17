@@ -84,7 +84,39 @@ def fold_condition_expression(expr: 'Expr') -> Optional[bool]:
 def collect_const_fold_warnings(
     machine: Optional['StateMachine'],
 ) -> List[ModelDiagnostic]:
-    """Collect diagnostics that depend on constant folding."""
+    """
+    Collect diagnostics that depend on constant folding.
+
+    Every guard and every plain ``during`` action of every state **and region**
+    is folded, so a guard or assignment inside a ``region`` block is judged like
+    one anywhere else. The diagnostics are ``W_GUARD_CONST_TRUE``,
+    ``W_GUARD_CONST_FALSE`` and ``W_DURING_CONST_ASSIGN``. An ``active("...")``
+    query is never a constant.
+
+    :param machine: State machine to inspect, or ``None`` to emit no
+        diagnostics.
+    :type machine: pyfcstm.model.model.StateMachine, optional
+    :return: Constant-folding diagnostics, in model order.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... state Root {
+        ...     region Work {
+        ...         state A; state B;
+        ...         [*] -> A;
+        ...         A -> B : if [1 > 2];
+        ...     }
+        ... }
+        ... ''')
+        >>> [item.code for item in collect_const_fold_warnings(machine)]
+        ['W_GUARD_CONST_FALSE']
+        >>> collect_const_fold_warnings(None)
+        []
+    """
     if machine is None:
         return []
     from ...model.region import walk_namespaces

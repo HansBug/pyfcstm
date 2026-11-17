@@ -18,6 +18,36 @@ def collect_data_flow_warnings(
         variables: Iterable['VariableInfo'],
         machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
+    """
+    Collect data-flow diagnostics from variable summaries.
+
+    Variables that nothing reads, that are never written, or that only feed
+    guards that never change are reported. When ``machine`` is given, guard-only
+    checks also walk the transitions of regions, so a guard inside a ``region``
+    block is judged like any other.
+
+    :param variables: Inspect variable summaries, as in
+        :attr:`pyfcstm.diagnostics.inspect.ModelInspect.variables`.
+    :type variables: Iterable[pyfcstm.diagnostics.inspect.VariableInfo]
+    :param machine: State machine for the guard checks, defaults to ``None``
+        (which skips them).
+    :type machine: pyfcstm.model.model.StateMachine, optional
+    :return: Data-flow diagnostics.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int unused = 0;
+        ... state Root { region Work { state A; [*] -> A; } }
+        ... ''')
+        >>> report = inspect_model(machine)
+        >>> [item.code for item in collect_data_flow_warnings(report.variables, machine)]
+        ['W_UNREFERENCED_VAR']
+    """
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
     variable_spans = {variable.name: variable.span for variable in variables}

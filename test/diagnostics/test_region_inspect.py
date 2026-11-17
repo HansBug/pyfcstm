@@ -101,9 +101,8 @@ def test_region_aspects_events_and_variable_sites_are_reported():
         }
     }
     ''')
-    assert report.regions[0].aspect_before
-    assert [item.signature for item in report.actions] == [item.signature for item in report.actions]
-    assert any(item.state_path == 'Root.Worker' for item in report.actions)
+    assert len(report.regions[0].aspect_before) == 1
+    assert [(item.state_path, item.aspect) for item in report.actions] == [('Root.Worker', 'before')]
     assert {item.qualified_name for item in report.events} == {'Root.Worker.Busy.Finish'}
     count = next(item for item in report.variables if item.name == 'count')
     assert count.written_in_states and count.read_in_states
@@ -167,13 +166,10 @@ def test_owner_exit_is_unreachable_when_a_region_can_never_finish():
     assert 'Plant.Off' not in report.reachability_graph['Plant']
     unreachable = [item for item in report.diagnostics if item.code == 'W_UNREACHABLE_TRANSITION']
     assert [(item.refs['from_path'], item.refs['to_path'], item.refs['reasons'])
-            for item in unreachable] == [
-        ('Plant.Run', 'Plant.Off', ['owner_never_completes', 'unreachable_source_state'][:1]),
-    ] or [(item.refs['from_path'], item.refs['reasons']) for item in unreachable] == [
-        ('Plant.Run', ['owner_never_completes']),
-    ]
-    assert ('Plant.Off' in [item.refs['state_path']
-                            for item in report.diagnostics if item.code == 'W_UNREACHABLE_STATE'])
+            for item in unreachable] == [('Plant.Run', 'Plant.Off', ['owner_never_completes'])]
+    assert [item.refs['state_path'] for item in report.diagnostics
+            if item.code == 'W_UNREACHABLE_STATE'] == ['Plant.Off']
+    assert report.structure_statistics.unreachable_transition_reasons == {'owner_never_completes': 1}
 
 
 def test_forced_owner_transition_keeps_the_target_reachable():
@@ -570,4 +566,74 @@ def test_cli_active_only_model_is_inspected(tmp_path):
     result = run_cli(tmp_path, 'state Root { state A; [*] -> A; A -> [*] : if [active("Root.A")]; }',
                      '--format', 'json')
     assert result.exitcode == 0, result.stderr
-    assert json.loads(result.stdout)['regions'] if 'regions' in json.loads(result.stdout) else True
+    payload = json.loads(result.stdout)
+    assert 'regions' not in payload
+    assert [item['guard'] for item in payload['transitions'] if item['guard']] == ['active("Root.A")']
+
+
+# ------------------------------------------------- tests added for coverage
+
+@pytest.mark.parametrize('edge', ['A -> B : [x > 0] + [x > -1];', '[*] -> A : [x > 0] + [x > -1];'])
+def test_combo_guard_checks_apply_inside_regions(edge):
+    report = inspect_text('''
+    def int x = 1;
+    state Root {
+        region Work { state A; state B; [*] -> A; %s }
+    }
+    ''' % edge)
+    assert 'W_COMBO_GUARD_PREFIX_IMPLIED' in codes(report)
+
+
+def test_combo_guard_check_sees_source_state_exit_writes_inside_regions():
+    report = inspect_text('''
+    def int x = 1;
+    state Root {
+        region Work {
+            state A { exit { x = 5; } }
+            state B;
+            [*] -> A;
+            A -> B : [x > 0] + [x > -1];
+        }
+    }
+    ''')
+    assert 'W_COMBO_GUARD_PREFIX_IMPLIED' not in codes(report)
+
+
+def test_querying_an_earlier_or_own_region_is_silent():
+    source = '''
+    def int seen = 0;
+    state Root {
+        region First {
+            state A { during { if [active("Root.First.A")] { seen = 1; } } }
+            [*] -> A;
+        }
+        region Second {
+            state B { during { if [active("Root.First.A")] { seen = 2; } } }
+            [*] -> B;
+        }
+    }
+    '''
+    assert 'I_REGION_BACKWARD_READ' not in codes(inspect_text(source))
+
+
+def test_block_temporaries_are_not_model_variables_for_ordering():
+    source = ORDER_PROLOGUE + '''
+    state Root {
+        region First { state A { during { x = 1; } } [*] -> A; }
+        region Second { state B { during { tmp = x; z = tmp; } } [*] -> B; }
+    }
+    '''
+    report = inspect_text(source)
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(report)
+    assert 'I_REGION_BACKWARD_READ' not in codes(report)
+
+
+def test_distinct_reads_of_one_variable_report_once_per_reading_region():
+    source = ORDER_PROLOGUE + '''
+    state Root {
+        region Reader { state R { during { z = x + x; y = x; } } [*] -> R; }
+        region Writer { state W { during { x = y + 1; } } [*] -> W; }
+    }
+    '''
+    found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
+    assert [(d.refs['target'], d.refs['reader_region']) for d in found] == [('x', 'Root.Reader')]

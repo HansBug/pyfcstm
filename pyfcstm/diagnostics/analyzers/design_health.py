@@ -55,7 +55,60 @@ def collect_design_health_warnings(
     machine: Optional['StateMachine'] = None,
     regions: Iterable['RegionInfo'] = (),
 ) -> List[ModelDiagnostic]:
-    """Collect design-health warning diagnostics from inspect payloads."""
+    """
+    Collect design-health diagnostics from the inspect payloads of one model.
+
+    This is the aggregator behind :func:`pyfcstm.diagnostics.inspect_model`: it
+    runs reachability, structural, threshold, naming, type, data-flow,
+    redundancy, transition-info, numeric and region-ordering analyses and
+    attaches suggested fixes. A model that declares regions is judged with
+    ``regions`` so that region entry selections, region containers and the
+    ordering of sibling regions are covered; the model-based analyzers need
+    ``machine`` for that.
+
+    :param states: Inspect state records.
+    :type states: Iterable[pyfcstm.diagnostics.inspect.StateInfo]
+    :param transitions: Inspect transition records.
+    :type transitions: Iterable[pyfcstm.diagnostics.inspect.TransitionInfo]
+    :param variables: Inspect variable records.
+    :type variables: Iterable[pyfcstm.diagnostics.inspect.VariableInfo]
+    :param events: Inspect event records.
+    :type events: Iterable[pyfcstm.diagnostics.inspect.EventInfo]
+    :param actions: Inspect action records.
+    :type actions: Iterable[pyfcstm.diagnostics.inspect.ActionInfo]
+    :param forced_transitions: Inspect forced-transition records.
+    :type forced_transitions: Iterable[pyfcstm.diagnostics.inspect.ForcedTransitionInfo]
+    :param metrics: Aggregate metrics of the model.
+    :type metrics: pyfcstm.diagnostics.inspect.ModelMetrics
+    :param reachability_graph: State path to the state paths it reaches.
+    :type reachability_graph: Mapping[str, Sequence[str]]
+    :param root_state_path: Root state path, defaults to the first state.
+    :type root_state_path: str, optional
+    :param deep_hierarchy_threshold: Depth above which ``W_DEEP_HIERARCHY``
+        fires, defaults to ``6``.
+    :type deep_hierarchy_threshold: int, optional
+    :param large_composite_threshold: Child count above which
+        ``W_LARGE_COMPOSITE`` fires, defaults to ``12``.
+    :type large_composite_threshold: int, optional
+    :param var_to_leaf_ratio_threshold: Ratio above which
+        ``W_HIGH_VAR_TO_LEAF_RATIO`` fires, defaults to ``2.0``.
+    :type var_to_leaf_ratio_threshold: float, optional
+    :param machine: The model as written, for the analyzers that read model
+        objects, defaults to ``None``.
+    :type machine: pyfcstm.model.model.StateMachine, optional
+    :param regions: Inspect region records, defaults to ``()``.
+    :type regions: Iterable[pyfcstm.diagnostics.inspect.RegionInfo], optional
+    :return: All design-health diagnostics, each with its suggested fix.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('state Root { state A; state B; [*] -> A; }')
+        >>> [item.code for item in inspect_model(machine).diagnostics if item.code == 'W_UNREACHABLE_STATE']
+        ['W_UNREACHABLE_STATE']
+    """
     diagnostics: List[ModelDiagnostic] = []
     states = list(states)
     transitions = list(transitions)

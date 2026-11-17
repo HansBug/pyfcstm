@@ -100,6 +100,9 @@ def collect_numeric_warnings(
     """
     Collect C/C++ deployment-profile numeric warnings for a model.
 
+    Expressions in states **and regions** are examined: guards, effects,
+    lifecycle actions and region aspects alike.
+
     :param machine: State-machine model to inspect. ``None`` is accepted so
         callers can mirror other analyzer entry points during defensive
         composition.

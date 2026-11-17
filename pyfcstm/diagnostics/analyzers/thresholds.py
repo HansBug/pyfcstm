@@ -95,9 +95,12 @@ def _deep_hierarchy_warnings(states, metrics, threshold) -> List[ModelDiagnostic
     actual = metrics.max_hierarchy_depth
     if actual <= threshold:
         return []
+    from ..inspect import _state_depths
+
+    depths = _state_depths(states)
     deepest = [
         state.path for state in states
-        if state.path.count('.') == actual
+        if depths[state.path] == actual
     ]
     deepest_path = sorted(deepest)[0] if deepest else ''
     deepest_state = next((state for state in states if state.path == deepest_path), None)

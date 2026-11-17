@@ -1448,13 +1448,46 @@ def _is_forced_transition(transition: 'Transition') -> bool:
     ) and getattr(transition, 'forced_origin', None) is not None
 
 
+def _state_depths(states: Sequence[StateInfo]) -> Dict[str, int]:
+    """Return the nesting depth of every state, with the root at depth 0.
+
+    The depth counts ancestor *states*: the ``region`` segment of a path is a
+    namespace, not a level of state nesting, so a state directly inside a
+    region is one level below the state that owns the region.
+
+    :param states: Inspect state records in pre-order, parents first.
+    :type states: Sequence[StateInfo]
+    :return: Mapping from state path to depth.
+    :rtype: Dict[str, int]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region Work { state A; [*] -> A; } }')
+        >>> _state_depths(_build_state_infos(machine))
+        {'Root': 0, 'Root.Work.A': 1}
+    """
+    depths: Dict[str, int] = {}
+    for state in states:
+        parent = state.parent_path
+        if parent is None:
+            depths[state.path] = 0
+            continue
+        if parent not in depths:
+            # The parent is a region; its owner is the path without the region name.
+            parent = parent.rsplit('.', 1)[0]
+        depths[state.path] = depths[parent] + 1
+    return depths
+
+
 def _hierarchy_depth(states: Tuple[StateInfo, ...]) -> int:
     if not states:  # pragma: no cover
         # Defensive: ``inspect_model`` always builds at least one
         # StateInfo (the root). Empty input would mean a caller used
         # this helper outside the pipeline; keep the fail-soft 0.
         return 0
-    return max(s.path.count('.') for s in states)
+    return max(_state_depths(states).values())
 
 
 def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
@@ -3014,10 +3047,35 @@ def _build_var_dataflow(
 
 def _build_aspect_impact_map(
         states: Tuple[StateInfo, ...],
+        regions: Sequence[RegionInfo] = (),
 ) -> Dict[str, Tuple[str, ...]]:
+    """Map each aspect-carrying composite or region to the leaves its aspects reach.
+
+    :param states: Inspect state records.
+    :type states: Tuple[StateInfo, ...]
+    :param regions: Inspect region records, defaults to ``()``; a region that
+        declares ``>> during`` aspects is keyed by its own path.
+    :type regions: Sequence[RegionInfo], optional
+    :return: Mapping from container path to its descendant non-pseudo leaf paths.
+    :rtype: Dict[str, Tuple[str, ...]]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int n = 0;
+        ... state Root { region Work {
+        ...     >> during before { n = n + 1; }
+        ...     state A { during { n = 0; } }
+        ...     [*] -> A;
+        ... } }
+        ... ''')
+        >>> _build_aspect_impact_map(_build_state_infos(machine), _build_region_infos(machine))
+        {'Root.Work': ('Root.Work.A',)}
+    """
     out: Dict[str, Tuple[str, ...]] = {}
-    for s in states:
-        if not (s.is_composite and (s.aspect_before or s.aspect_after)):
+    for s in (*states, *regions):
+        if not getattr(s, 'is_composite', True) or not (s.aspect_before or s.aspect_after):
             continue
         descendants = tuple(sorted(
             desc.path
@@ -4809,7 +4867,7 @@ def inspect_model(
         reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
         var_dataflow=_build_var_dataflow(variables),
-        aspect_impact_map=_build_aspect_impact_map(states),
+        aspect_impact_map=_build_aspect_impact_map(states, regions),
         action_ref_graph=_build_action_ref_graph(machine),
         diagnostics=tuple(diagnostics),
         verification=verification,

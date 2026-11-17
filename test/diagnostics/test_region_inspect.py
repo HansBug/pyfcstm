@@ -704,3 +704,71 @@ def test_cli_llm_reports_carry_the_region_diagnostics(tmp_path, output_format):
     assert result.exitcode == 0, result.stderr
     assert 'W_REGION_BLIND_OVERWRITE' in result.stdout
     assert 'I_REGION_BACKWARD_READ' in result.stdout
+
+
+def test_hierarchy_depth_counts_states_not_region_segments():
+    source = '''
+    state Root {
+        region R {
+            state S {
+                region R2 { state T; [*] -> T; }
+            }
+            [*] -> S;
+        }
+    }
+    '''
+    report = inspect_text(source, deep_hierarchy_threshold=1)
+    assert report.metrics.max_hierarchy_depth == 2
+    deep = [d for d in report.diagnostics if d.code == 'W_DEEP_HIERARCHY']
+    assert [(d.refs['max_depth'], d.refs['deepest_path']) for d in deep] == [(2, 'Root.R.S.R2.T')]
+    assert 'W_DEEP_HIERARCHY' not in codes(inspect_text(source, deep_hierarchy_threshold=2))
+
+
+def test_region_aspects_report_the_leaves_they_reach():
+    report = inspect_text('''
+    def int n = 0;
+    state Root {
+        region Work {
+            >> during before { n = n + 1; }
+            state A { during { n = 0; } }
+            [*] -> A;
+        }
+        region Idle { state B; [*] -> B; }
+    }
+    ''')
+    assert report.aspect_impact_map == {'Root.Work': ('Root.Work.A',)}
+
+
+def test_region_aspect_without_a_reachable_leaf_is_reported_for_the_region():
+    report = inspect_text('''
+    def int n = 0;
+    state Root {
+        region Work {
+            >> during before { n = n + 1; }
+            pseudo state P;
+            [*] -> P;
+        }
+    }
+    ''')
+    found = [d for d in report.diagnostics if d.code == 'W_ASPECT_NO_DESCENDANT_LEAF']
+    assert [(d.refs['composite_path'], d.refs['aspect']) for d in found] == [('Root.Work', 'before')]
+    assert "Region 'Root.Work'" in found[0].message
+
+
+def test_forced_transitions_and_declared_events_inside_regions_are_reported():
+    report = inspect_text('''
+    state Root {
+        region Work {
+            event Spare;
+            state A; state B; state C;
+            [*] -> A;
+            A -> B :: Go;
+            !* -> C :: Abort;
+        }
+    }
+    ''')
+    assert [(item.state_path, item.expansion_count) for item in report.forced_transitions] == [
+        ('Root.Work', 3)]
+    assert len([item for item in report.transitions if item.is_forced]) == 3
+    assert [d.refs['event_qualified_name'] for d in report.diagnostics if d.code == 'W_UNUSED_EVENT'] == [
+        'Root.Work.Spare']

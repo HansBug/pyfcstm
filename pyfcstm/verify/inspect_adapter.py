@@ -10,8 +10,8 @@ The module contains:
 * :class:`InspectRunResult` - One normalized inspect-adapter result
 * :class:`InspectEligibility` - Inspect admission decision for one registry
   algorithm
-* :class:`InspectAccessForbiddenError` - Error raised when a forbidden inspect
-  complexity tier is requested
+* :class:`InspectAccessForbiddenError` - Error raised for an invalid inspect
+  policy value
 * :func:`eligible_for_inspect` - Decide whether one metadata entry is allowed
 * :func:`project_inspect_eligibility` - Project every registry entry without
   executing it

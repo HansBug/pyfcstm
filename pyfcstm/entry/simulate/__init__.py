@@ -97,6 +97,8 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         :type diagnostics: bool
         :param diagnostics_format: Human ``text`` or batch-only ``jsonl``.
         :type diagnostics_format: str
+        :param parameter_assignments: Repeated construction-time ``NAME=VALUE``
+            pairs from ``--param``.
         :type parameter_assignments: Tuple[str, ...]
         :return: ``None``.  In batch mode a non-zero exit code of the batch
             processor is turned into :class:`click.exceptions.Exit`.

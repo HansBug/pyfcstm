@@ -18,19 +18,19 @@ The module contains:
 
 Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ...     state Off;
-        ...     Run -> Off : if [active("Root.Run.Motion.Move") && x > 3];
-        ... }
-        ... ''')
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> model = load_state_machine_from_text('''
+    ... def int x = 0;
+    ... state Root {
+    ...     [*] -> Run;
+    ...     state Run {
+    ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+    ...         region Guard { [*] -> Watch; state Watch; }
+    ...     }
+    ...     state Off;
+    ...     Run -> Off : if [active("Root.Run.Motion.Move") && x > 3];
+    ... }
+    ... ''')
     >>> model.active_queries
     (ActiveQuery(state_path=('Root', 'Run', 'Motion', 'Move'), variable_name='__active_Root_Run_Motion_Move'),)
     >>> list(model.defines)

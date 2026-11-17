@@ -17,7 +17,7 @@ The module contains:
   ``-c`` assignments and the dedicated detail-level option
 * :func:`build_plantuml_output` - Build PlantUML text from a state machine DSL
   file
-* :func:`_add_plantuml_subcommand` - Register the ``plantuml`` subcommand on a
+* ``_add_plantuml_subcommand`` - Register the ``plantuml`` subcommand on a
   Click group
 
 .. note::

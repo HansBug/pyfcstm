@@ -66,10 +66,11 @@ def collect_data_flow_warnings(
       with ``written_states`` in ``refs``.
 
     When ``machine`` is given, every guarded transition whose guard reads only
-    declared variables that are never written additionally yields
+    ``control`` variables that no action or effect writes additionally yields
     ``W_GUARD_VARS_NEVER_CHANGE``, with ``from_path``, ``to_path`` and
-    ``guard_vars`` in ``refs``. Without ``machine`` this last check is skipped
-    because there is no transition list to scan.
+    ``guard_vars`` in ``refs``. Variables with any other role count as supplied
+    from outside and never trigger it. Without ``machine`` this last check is
+    skipped because there is no transition list to scan.
 
     :param variables: Variable summaries, normally
         :attr:`pyfcstm.diagnostics.inspect.ModelInspect.variables`.

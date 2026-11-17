@@ -1800,12 +1800,8 @@ def _ensure_state_path_exists(
       ``E_IMPORT_MAPPING_INVALID`` with reason ``host_root_mismatch``, and the
       walk then continues from ``root`` regardless.
     * A segment with no matching child emits ``E_IMPORT_MAPPING_INVALID`` with
-      reason ``target_invalid``; in collect mode the walk then carries ``None``
-      forward, so the returned value is ``None`` when the last segment is the
-      one that failed (the annotation does not say so; see the caller guard in
-      :func:`_aggregate_declared_import_event_docs`).  If a segment other than
-      the last is missing, the next iteration dereferences that ``None`` and an
-      :exc:`AttributeError` propagates.
+      reason ``target_invalid``; in collect mode the function then returns
+      ``None`` instead of a state when the last segment is the one that failed.
     * An empty ``state_path`` emits reason ``empty_path`` and returns ``root``.
 
     :param root: Root state of the host program.

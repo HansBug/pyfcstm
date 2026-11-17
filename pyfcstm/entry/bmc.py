@@ -15,7 +15,7 @@ The module contains:
   text plus its exit status
 * :func:`write_bmc_output` - Atomically replace an output file with a completed
   report
-* :func:`_add_bmc_subcommand` - Register the ``bmc`` subcommand on a Click
+* ``_add_bmc_subcommand`` - Register the ``bmc`` subcommand on a Click
   group
 
 Module map:
@@ -29,7 +29,7 @@ Module map:
      - Run one model/query pair and return report text plus its exit status.
    * - :func:`write_bmc_output`
      - Atomically replace an output file with a completed report.
-   * - :func:`_add_bmc_subcommand`
+   * - ``_add_bmc_subcommand``
      - Register the ``bmc`` command on a Click group.
 
 Examples::

@@ -8,12 +8,12 @@ model, and renders code using template files.
 
 The module is intended to be imported by CLI entry-point modules that assemble
 Click command groups. It does not expose public helpers; the main integration
-point is the internal :func:`_add_generate_subcommand` used by the package's
+point is the internal ``_add_generate_subcommand`` used by the package's
 CLI bootstrap code.
 
 The module contains:
 
-* :func:`_add_generate_subcommand` - Register the ``generate`` subcommand on a
+* ``_add_generate_subcommand`` - Register the ``generate`` subcommand on a
   Click group
 
 Example::

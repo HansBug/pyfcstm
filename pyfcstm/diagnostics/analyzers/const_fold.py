@@ -128,7 +128,8 @@ def collect_const_fold_warnings(
     from a combo transition are skipped here because the combo analyzer maps
     their guard terms back to the original source spans. Each plain
     (non-abstract, non-``ref``, non-aspect) ``during`` action is scanned for
-    assignments to a declared variable whose right-hand side folds to a
+    top-level assignments (those inside ``if`` blocks are not visited) to a
+    declared variable whose right-hand side folds to a
     JSON-stable number, which yields ``W_DURING_CONST_ASSIGN`` with
     ``state_path``, ``var_name`` and ``value`` in ``refs``. Assignments to
     block-local temporary names are ignored.

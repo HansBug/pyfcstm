@@ -191,9 +191,13 @@ def _attach_model_source_metadata(
     documents themselves on ``machine``. Diagnostics and viewers use this to
     point at the right file when a model was assembled from several imports.
 
-    Variables are paired with their declarations by name, everything else by
-    source span, with extra care for transitions that a combo or forced
-    declaration expanded into a state from another file.
+    Variables are paired with their declarations by name, and states and
+    regions by name while recursing. A transition uses the path it carries,
+    then its span among the declaring state's own transitions, then the
+    whole-program span table, which is what finds the file of a transition a
+    combo or forced declaration expanded into a state from another file.
+    Events, actions and operations take the file of the state that declares
+    them.
 
     :param machine: Model whose objects receive the metadata; mutated in place.
     :type machine: StateMachine

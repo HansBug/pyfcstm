@@ -555,7 +555,9 @@ class GrammarParseListener(GrammarListener):
         Build an :class:`pyfcstm.dsl.node.InitialAssignment` node.
 
         Handles the ``initial_assignment`` rule, the ``name := expression;``
-        form used for variable declarations with an initial value. The node
+        statement of a preamble program (``preamble_program``, the entry point
+        behind ``parse_preamble``). It is not the variable declaration of a
+        state machine file, which uses ``def``. The node
         keeps the variable name and the already-built initialization
         expression node of ``ctx.init_expression()``, and is stored in
         ``self.nodes[ctx]``.
@@ -587,7 +589,8 @@ class GrammarParseListener(GrammarListener):
         Build a :class:`pyfcstm.dsl.node.ConstantDefinition` node.
 
         Handles the ``constant_definition`` rule, the ``NAME = expression;``
-        form (plain ``=``, not ``:=``) that defines a named constant. The node
+        statement (plain ``=``, not ``:=``) of a preamble program
+        (``preamble_program``) that defines a named constant. The node
         keeps the constant name and the already-built initialization
         expression node of ``ctx.init_expression()``, and is stored in
         ``self.nodes[ctx]``.

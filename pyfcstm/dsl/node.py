@@ -282,22 +282,54 @@ class Expr(ASTNode):
 
 @dataclass
 class ActiveStateQuery(Expr):
-    """A condition querying whether the state at a string path is active.
+    """
+    A condition querying whether the state at a string path is active.
+
+    This is the AST form of ``active("Root.Motor.Running")`` inside a guard or
+    condition. The node only carries the path text; whether the path names an
+    existing state is decided later, during model construction. It is an
+    :class:`Expr`, so it can be combined with other conditions, for example
+    ``x > 1 && active("Root.A")``.
 
     :param path: Decoded state path; resolution belongs to model construction.
     :type path: str
 
+    :ivar path: The decoded state path as written inside the string literal.
+    :vartype path: str
+
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.dsl.node import ActiveStateQuery
         >>> str(ActiveStateQuery('/Root.Motor.Running'))
         'active("/Root.Motor.Running")'
+        >>> node = parse_with_grammar_entry(
+        ...     "x > 1 && active('Root.Motor.Running')", "cond_expression"
+        ... )
+        >>> node.expr2
+        ActiveStateQuery(path='Root.Motor.Running')
     """
 
     path: str
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
-        """Return the condition with its path escaped as a DSL string."""
+        """
+        Return the condition with its path escaped as a DSL string.
+
+        The path is rendered with double quotes and JSON-style escapes
+        (a quote inside the path becomes ``\\"``), and non-ASCII characters
+        are kept as they are.
+
+        :return: DSL text of the form ``active("<path>")``.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.dsl.node import ActiveStateQuery
+            >>> str(ActiveStateQuery('Root.A'))
+            'active("Root.A")'
+        """
         # Preserve non-BMP code points: JSON surrogate pairs decode as two
         # Python characters in the DSL's Python-literal string decoder.
         quoted = json.dumps(self.path, ensure_ascii=False)
@@ -1588,10 +1620,16 @@ class TransitionDefinition(ASTNode):
     :param combo_trigger: Optional structured combo trigger metadata retained
         for parser provenance and later pseudo-state expansion.
     :type combo_trigger: Optional[ComboTransitionTrigger]
+    :param doc: Optional documentation text rendered before the transition,
+        defaults to ``None``.
+    :type doc: Optional[str], optional
     :param target_history: ``'shallow'`` or ``'deep'`` when the transition
         enters ``to_state`` through its history (``to_state.[H]`` or
         ``to_state.[H*]``), otherwise ``None``.
     :type target_history: Optional[str]
+
+    :raises ValueError: If both ``event_id`` and ``condition_expr`` are
+        non-``None`` at construction or assignment.
 
     :rtype: TransitionDefinition
 
@@ -1607,6 +1645,19 @@ class TransitionDefinition(ASTNode):
         ...     BinaryOp(Name("counter"), ">", Integer("10")),
         ...     [op],
         ... )
+        >>> print(cond_trans)
+        running -> idle : if [counter > 10] effect {
+            counter = 0;
+        }
+
+    An event and a guard cannot be combined on one transition::
+
+        >>> TransitionDefinition(
+        ...     "idle", "running", ChainID(["idle", "start"]), Name("ready"), []
+        ... )
+        Traceback (most recent call last):
+        ...
+        ValueError: event_id and condition_expr are mutually exclusive
     """
 
     from_state: Union[str, _StateSingletonMark]
@@ -1822,18 +1873,57 @@ class HistoryDefinition(ASTNode):
 
 @dataclass
 class RegionDefinition(ASTNode):
-    """A named, ordered region containing states, transitions and aspects.
+    """
+    A named, ordered region containing states, transitions and aspects.
 
     A region is a scope within its owning state, not a state itself. The AST
-    preserves declaration order without assigning execution semantics.
+    preserves declaration order without assigning execution semantics: this
+    class only records what was written inside ``region Name { ... }``.
+    Lifecycle actions (``enter`` / ``during`` / ``exit``) are not part of a
+    region body; they belong to the owning state.
 
     :param name: Region identifier.
-    :param substates: States declared in the region.
-    :param transitions: Initial, ordinary and exit transitions.
-    :param force_transitions: Forced transitions.
-    :param events: Region-local event declarations.
-    :param during_aspects: Before/after during aspects.
-    :param doc: Optional documentation text.
+    :type name: str
+    :param substates: States declared in the region, defaults to an empty list.
+    :type substates: List[StateDefinition], optional
+    :param transitions: Initial, ordinary and exit transitions, defaults to
+        an empty list.
+    :type transitions: List[TransitionDefinition], optional
+    :param force_transitions: Forced transitions, defaults to an empty list.
+    :type force_transitions: List[ForceTransitionDefinition], optional
+    :param events: Region-local event declarations, defaults to an empty list.
+    :type events: List[EventDefinition], optional
+    :param during_aspects: Before/after during aspects, defaults to an empty
+        list.
+    :type during_aspects: List[DuringAspectStatement], optional
+    :param doc: Optional documentation text, defaults to ``None``.
+    :type doc: Optional[str], optional
+
+    :ivar name: Region identifier.
+    :vartype name: str
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> region = parse_with_grammar_entry(
+        ...     "region R { [*] -> X; state X; }", "region_definition"
+        ... )
+        >>> region.name
+        'R'
+        >>> [state.name for state in region.substates]
+        ['X']
+        >>> print(region)
+        region R {
+            state X;
+            [*] -> X;
+        }
+
+    An empty region keeps its braces when rendered::
+
+        >>> from pyfcstm.dsl.node import RegionDefinition
+        >>> print(RegionDefinition("Empty"))
+        region Empty {
+        }
     """
 
     name: str
@@ -1846,7 +1936,19 @@ class RegionDefinition(ASTNode):
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
-        """Return canonical DSL, retaining an empty region's braces."""
+        """
+        Return canonical DSL text for the region.
+
+        The body lists during aspects, states, events, forced transitions and
+        then transitions, each group in declaration order and indented by four
+        spaces, so the output can differ in statement order from the original
+        source. An empty region renders as ``region Name {`` and ``}`` on two
+        lines. A documentation block, when present, is rendered before the
+        ``region`` keyword.
+
+        :return: Multi-line DSL text of the region.
+        :rtype: str
+        """
         lines = [_render_documentation_prefix(self.doc) + "region %s {" % self.name]
         for group in (self.during_aspects, self.substates, self.events,
                       self.force_transitions, self.transitions):
@@ -1893,19 +1995,41 @@ class StateDefinition(ASTNode):
     :type histories: List[HistoryDefinition]
     :param regions: Named regions in declaration order.
     :type regions: List[RegionDefinition]
+    :param doc: Optional documentation text rendered before the state,
+        defaults to ``None``.
+    :type doc: Optional[str], optional
+
+    Every list parameter defaults to ``None`` and is normalized to a fresh
+    empty list in :meth:`__post_init__`, so the attributes can always be
+    iterated or appended to.
 
     :rtype: StateDefinition
 
     Example::
 
+        >>> from pyfcstm.dsl.node import ChainID, StateDefinition, TransitionDefinition
         >>> simple_state = StateDefinition("idle")
         >>> str(simple_state)
         'state idle;'
+        >>> simple_state.substates
+        []
 
         >>> trans = TransitionDefinition(
         ...     "idle", "running", ChainID(["idle", "start"]), None, []
         ... )
         >>> state_with_trans = StateDefinition("idle", transitions=[trans])
+        >>> print(state_with_trans)
+        state idle {
+            idle -> running :: start;
+        }
+
+    A state with children renders as a block::
+
+        >>> parent = StateDefinition("P", substates=[StateDefinition("A")])
+        >>> print(parent)
+        state P {
+            state A;
+        }
     """
 
     name: str
@@ -1927,7 +2051,18 @@ class StateDefinition(ASTNode):
 
     def __post_init__(self) -> None:
         """
-        Initialize default empty lists for optional parameters.
+        Replace every ``None`` list attribute with a new empty list.
+
+        Dataclass defaults of ``None`` avoid sharing one mutable list between
+        instances; after this hook each of ``histories``, ``regions``,
+        ``events``, ``imports``, ``substates``, ``transitions``,
+        ``force_transitions``, ``enters``, ``durings``, ``exits`` and
+        ``during_aspects`` is a list owned by this instance. A list passed
+        by the caller is kept as is, except that an empty list is replaced
+        by a new empty one.
+
+        :return: ``None``.
+        :rtype: None
         """
         self.histories = self.histories or []
         self.regions = self.regions or []
@@ -1945,8 +2080,22 @@ class StateDefinition(ASTNode):
         """
         Convert the state definition to its string representation.
 
+        A state with no content renders as the single line ``state Name;``
+        (with ``pseudo`` and ``named '...'`` parts when set). Otherwise it
+        renders as a brace block whose members appear in a fixed order:
+        enters, durings, exits, during aspects, imports, substates, regions,
+        events, histories, forced transitions and finally transitions, each
+        indented by four spaces. This canonical order can differ from the
+        order in the original source.
+
         :return: String representation of the state definition
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.dsl.node import StateDefinition
+            >>> print(StateDefinition("A", extra_name="Alpha", is_pseudo=True))
+            pseudo state A named 'Alpha';
         """
         with io.StringIO() as sf:
             print(_render_documentation_prefix(self.doc), file=sf, end="")
@@ -2337,8 +2486,11 @@ class ExitOperations(ExitStatement):
 
     :param operations: List of operation statements
     :type operations: List[OperationalStatement]
-    :param name: Optional name for the operation block
-    :type name: Optional[str]
+    :param name: Optional name for the operation block, defaults to ``None``
+    :type name: Optional[str], optional
+    :param doc: Optional documentation text rendered before the block,
+        defaults to ``None``
+    :type doc: Optional[str], optional
 
     :rtype: ExitOperations
 
@@ -2348,6 +2500,13 @@ class ExitOperations(ExitStatement):
         >>> exit_ops = ExitOperations([op])
         >>> print(str(exit_ops))
         exit {
+            active_flag = False;
+        }
+
+    A named block keeps its name after the keyword::
+
+        >>> print(ExitOperations([op], name="Cleanup"))
+        exit Cleanup {
             active_flag = False;
         }
     """

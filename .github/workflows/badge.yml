@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main, 'badge/*' ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-badges:
     name: Update Badges

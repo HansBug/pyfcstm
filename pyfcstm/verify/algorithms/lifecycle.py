@@ -5,6 +5,11 @@ current raw algorithm focuses on the entry path into a leaf state and the first
 ``during`` chain that can run immediately after entry.  Public callers should
 normally import the algorithm from :mod:`pyfcstm.verify`.
 
+The module contains:
+
+* :func:`enter_postcondition_implies_during_precondition` - Detect first-cycle
+  ``during`` branch conditions already determined by enter-time values
+
 Algorithm map:
 
 .. list-table::

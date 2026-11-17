@@ -120,6 +120,31 @@ Abstract handler registration::
             print(f"Counter: {ctx.get_var('counter')}")
 
     runtime.register_handlers_from_object(MyHandlers())
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.simulate import SimulationRuntime
+    >>> source = '''
+    ... def int counter = 0;
+    ... state Root {
+    ...     state Idle;
+    ...     state Busy {
+    ...         during { counter = counter + 1; }
+    ...     }
+    ...     [*] -> Idle;
+    ...     Idle -> Busy : Start;
+    ... }
+    ... '''
+    >>> runtime = SimulationRuntime(load_state_machine_from_text(source))
+    >>> runtime.cycle().value is None
+    True
+    >>> runtime.current_state.path, runtime.vars
+    (('Root', 'Idle'), {'counter': 0})
+    >>> runtime.cycle(['Root.Start']).value is None
+    True
+    >>> runtime.current_state.path, runtime.vars
+    (('Root', 'Busy'), {'counter': 1})
 """
 
 import copy

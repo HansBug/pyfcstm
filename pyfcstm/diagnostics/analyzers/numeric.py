@@ -15,6 +15,23 @@ The module contains:
    The analyzer deliberately avoids variable range solving, cross-statement
    propagation, SMT checks, and generated-code policy changes. Those belong
    to the verify and code-generation tracks.
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.diagnostics.analyzers.numeric import collect_numeric_warnings
+    >>> source = '''
+    ... def int x = 0;
+    ... state Root {
+    ...     state A {
+    ...         during { x = 1 / 0; }
+    ...     }
+    ...     [*] -> A;
+    ... }
+    ... '''
+    >>> machine = load_state_machine_from_text(source)
+    >>> [item.code for item in collect_numeric_warnings(machine)]
+    ['W_NUMERIC_CONSTANT_DIVISION_BY_ZERO']
 """
 
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple

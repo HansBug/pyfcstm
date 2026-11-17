@@ -1037,6 +1037,8 @@ class SimulationRuntime:
         # Per-cycle bookkeeping of aspects on scopes of a model with regions:
         # scope path -> [before already ran, after still owed].
         self._ledger: Dict[Tuple[str, ...], List[bool]] = {}
+        # Main stack of the committed execution pass, for handler snapshots.
+        self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
         self.vars: Dict[str, Union[int, float]] = {}
         self._input_sources = _InputSources(state_machine.inputs, input_source)
@@ -2163,6 +2165,9 @@ class SimulationRuntime:
         abstract actions are intentionally excluded because they cannot be
         dispatched by the handler registry.
 
+        Region aspects are included, because a region may declare
+        ``>> during before/after`` actions of its own.
+
         :return: Sorted canonical abstract action paths.
         :rtype: List[str]
 
@@ -2179,13 +2184,14 @@ class SimulationRuntime:
             True
         """
         paths = []
-        for state in self.state_machine.walk_states():
-            actions = (
-                list(state.on_enters)
-                + list(state.on_durings)
-                + list(state.on_exits)
-                + list(state.on_during_aspects)
-            )
+        for namespace in walk_namespaces(self.state_machine.root_state):
+            actions = list(namespace.on_during_aspects)
+            if isinstance(namespace, State):
+                actions += (
+                    list(namespace.on_enters)
+                    + list(namespace.on_durings)
+                    + list(namespace.on_exits)
+                )
             for action in actions:
                 if action.is_abstract and action.name is not None:
                     paths.append(action.func_name)
@@ -2425,6 +2431,7 @@ class SimulationRuntime:
                 call_stage=call_stage,
                 abstract_target=func_path,
                 named_ref=named_ref,
+                configuration=self._call_time_configuration(),
             )
 
             # Execute all handlers in order
@@ -2689,12 +2696,17 @@ class SimulationRuntime:
                 if not entry[0]:
                     entry[0] = True
                     for func in scope.list_on_during_aspects(aspect="before"):
+                        wrapped = (
+                            state.path
+                            if is_validation_mode
+                            else self._wrapped_state_path(scope)
+                        )
                         self._execute_func(
                             func,
                             vars_,
                             is_validation_mode=is_validation_mode,
-                            execution_state_path=state.path,
-                            active_leaf_path=state.path,
+                            execution_state_path=wrapped,
+                            active_leaf_path=wrapped,
                         )
         for func in state.list_on_durings(aspect=None):
             self._execute_func(
@@ -2707,6 +2719,69 @@ class SimulationRuntime:
         if not state.is_pseudo:
             for scope in scopes:
                 self._ledger[scope.path][1] = True
+
+    def _call_time_configuration(self) -> Optional[Configuration]:
+        """
+        Snapshot the position of the committed execution tree for a handler.
+
+        :return: The configuration of the tree being executed, or ``None``
+            while no committed tree exists or it is empty.
+        :rtype: Optional[pyfcstm.model.configuration.Configuration]
+        """
+        if not self._root_stack:
+            return None
+        return self._configuration_of(self._root_stack)
+
+    def _wrapped_state_path(self, scope: Union[State, Region]) -> Tuple[str, ...]:
+        """
+        Find the deepest state common to everything an aspect of ``scope`` wraps.
+
+        Starting at the frame of ``scope`` in the committed tree, the search
+        follows the single active chain downwards and stops at the first state
+        that owns regions or at the active leaf. A scope that wraps one branch
+        therefore reports that branch's leaf, and a scope that wraps a whole
+        group of regions reports the owner of the group, even while some of its
+        regions are already done.
+
+        :param scope: State or region that declares the aspect being run.
+        :type scope: Union[State, Region]
+        :return: Path of the deepest common state, or the path of ``scope``
+            when it is not part of the committed tree.
+        :rtype: Tuple[str, ...]
+        """
+        located = self._find_frame(self._root_stack or [], scope)
+        if located is None:
+            return scope.path
+        stack, index = located
+        while index + 1 < len(stack) and (
+            isinstance(stack[index].state, Region) or stack[index].branches is None
+        ):
+            index += 1
+        return stack[index].state.path
+
+    @staticmethod
+    def _find_frame(
+        stack: List[_Frame], scope: Union[State, Region]
+    ) -> Optional[Tuple[List[_Frame], int]]:
+        """
+        Locate the frame of ``scope`` in a stack tree.
+
+        :param stack: Stack to search, including the stacks of its branches.
+        :type stack: List[_Frame]
+        :param scope: State or region to look for.
+        :type scope: Union[State, Region]
+        :return: The stack holding the frame and the frame's index, or ``None``
+            when ``scope`` is not active.
+        :rtype: Optional[Tuple[List[_Frame], int]]
+        """
+        for index, frame in enumerate(stack):
+            if frame.state is scope:
+                return stack, index
+            for branch in frame.branches or ():
+                found = SimulationRuntime._find_frame(branch.stack, scope)
+                if found is not None:
+                    return found
+        return None
 
     def _scope_at(self, path: Tuple[str, ...]) -> Union[State, Region]:
         """
@@ -2754,8 +2829,20 @@ class SimulationRuntime:
         ]
         for path in sorted(owed, key=lambda item: (-len(item), item)):
             self._ledger[path][1] = False
-            for func in self._scope_at(path).list_on_during_aspects(aspect="after"):
-                self._execute_func(func, vars_, is_validation_mode=is_validation_mode)
+            scope = self._scope_at(path)
+            for func in scope.list_on_during_aspects(aspect="after"):
+                wrapped = (
+                    scope.path
+                    if is_validation_mode
+                    else self._wrapped_state_path(scope)
+                )
+                self._execute_func(
+                    func,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                    execution_state_path=wrapped,
+                    active_leaf_path=wrapped,
+                )
 
     def _enter_state(
         self,
@@ -4078,6 +4165,8 @@ class SimulationRuntime:
         :rtype: bool
         """
         stack.clear()
+        if not is_validation_mode:
+            self._root_stack = stack
         self._enter_state(
             stack,
             self.state_machine.root_state,
@@ -4216,6 +4305,8 @@ class SimulationRuntime:
             validate_post_child_exit=validate_post_child_exit,
         )
         self._outer_chain = []
+        if not is_validation_mode:
+            self._root_stack = stack
         outcome = self._advance_stack(stack, vars_, d_events, run)
         if outcome in (_STABLE, _ENDED):
             self._flush_after_aspects(vars_, is_validation_mode)

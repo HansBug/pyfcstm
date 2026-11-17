@@ -1010,7 +1010,7 @@ def _simulation_kwargs(case: SemanticCase) -> Dict[str, Any]:
     return _initial_kwargs(case)
 
 
-def _handler_call_record(ctx: Any) -> Dict[str, Any]:
+def _handler_call_record(ctx: Any, with_configuration: bool = False) -> Dict[str, Any]:
     record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
@@ -1021,18 +1021,20 @@ def _handler_call_record(ctx: Any) -> Dict[str, Any]:
         if hasattr(ctx, name):
             value = getattr(ctx, name)
             record[name] = ".".join(value) if isinstance(value, tuple) else value
-    configuration = getattr(ctx, "configuration", None)
-    if configuration is not None:
-        record["configuration"] = str(configuration)
+    if with_configuration:
+        record["configuration"] = str(ctx.configuration)
     return record
 
 
 def _run_fixture_handler(
-    handler_data: Mapping[str, Any], ctx: Any, calls: List[Mapping[str, Any]]
+    handler_data: Mapping[str, Any],
+    ctx: Any,
+    calls: List[Mapping[str, Any]],
+    with_configuration: bool = False,
 ) -> None:
     behavior = handler_data["behavior"]
     if behavior == "record_call":
-        calls.append(_handler_call_record(ctx))
+        calls.append(_handler_call_record(ctx, with_configuration))
     else:
         raise ValueError("handlers behavior is invalid: %r" % behavior)
 
@@ -1041,11 +1043,14 @@ def _register_fixture_handlers(
     runtime: SimulationRuntime, case: SemanticCase
 ) -> List[Mapping[str, Any]]:
     calls = []
+    # Only region cases observe the configuration: the other runners of the
+    # shared corpus do not expose it, so recording it would break alignment.
+    with_configuration = "regions" in case.data["categories"]
     for handler_data in case.data.get("handlers") or []:
         action_path = handler_data["action"]
 
         def fixture_handler(ctx, item=handler_data, handler_calls=calls):
-            _run_fixture_handler(item, ctx, handler_calls)
+            _run_fixture_handler(item, ctx, handler_calls, with_configuration)
 
         runtime.register_abstract_handler(action_path, fixture_handler)
     return calls

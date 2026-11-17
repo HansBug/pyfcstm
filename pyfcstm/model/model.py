@@ -182,6 +182,26 @@ def _collect_ast_source_metadata(
 def _attach_model_source_metadata(
     machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram
 ) -> None:
+    """
+    Record where each model object was written, in place.
+
+    Copies the source document each declaration came from (``_source_path``)
+    from the import-assembled AST onto the model's variables, states,
+    regions, events, transitions, actions and operations, and stores the
+    documents themselves on ``machine``. Diagnostics and viewers use this to
+    point at the right file when a model was assembled from several imports.
+
+    Variables are paired with their declarations by name, everything else by
+    source span, with extra care for transitions that a combo or forced
+    declaration expanded into a state from another file.
+
+    :param machine: Model whose objects receive the metadata; mutated in place.
+    :type machine: StateMachine
+    :param dnode: Import-assembled program the model was built from.
+    :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
+    :return: ``None``.
+    :rtype: None
+    """
     documents: Dict[str, str] = {}
     all_spans: Dict[Any, str] = {}
     _collect_ast_source_metadata(dnode, all_spans, documents)
@@ -229,6 +249,20 @@ def _attach_model_source_metadata(
                 attach_operation(statement, source)
 
     def pair_states(ast_state: Any, model_state: "State") -> None:
+        """
+        Attach source paths to one state and everything declared inside it.
+
+        Handles the state's transitions (and their effects), events and
+        actions, then recurses into every child state or region that has a
+        declaration of the same name in the AST.
+
+        :param ast_state: The state or region declaration.
+        :type ast_state: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param model_state: The model namespace built from it.
+        :type model_state: Union[State, pyfcstm.model.region.Region]
+        :return: ``None``.
+        :rtype: None
+        """
         state_source = getattr(ast_state, "_source_path", None)
         attach(model_state, state_source)
         transition_sources = {
@@ -868,10 +902,44 @@ class Transition(AstExportable):
     @property
     def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this transition.
+        Get the namespace that declares this transition.
 
-        :return: The parent state or None if no parent is set
+        The link is held weakly. For a transition written inside a region the
+        parent is that :class:`~pyfcstm.model.region.Region`, otherwise the
+        owning :class:`State`.
+
+        :return: The parent state or region, or None if no parent is set
         :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.transitions[1].parent.name
+            'Root'
+            >>> type(motion.transitions[1].parent).__name__, motion.transitions[1].parent.name
+            ('Region', 'Motion')
         """
         if self.parent_ref is None:
             return None
@@ -881,10 +949,13 @@ class Transition(AstExportable):
     @parent.setter
     def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this transition.
+        Set the namespace that declares this transition.
 
-        :param new_parent: The new parent state or None to clear the parent
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
         :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1224,10 +1295,44 @@ class OnAspect(AstExportable):
     @property
     def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this aspect action.
+        Get the namespace that declares this aspect action.
 
-        :return: The parent state or None if no parent is set
+        The link is held weakly. An aspect written inside a region has that
+        :class:`~pyfcstm.model.region.Region` as its parent, otherwise the
+        owning :class:`State`.
+
+        :return: The parent state or region, or None if no parent is set
         :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.on_during_aspects[0].parent.name
+            'Root'
+            >>> type(motion.on_during_aspects[0].parent).__name__
+            'Region'
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -1237,10 +1342,13 @@ class OnAspect(AstExportable):
     @parent.setter
     def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this aspect action.
+        Set the namespace that declares this aspect action.
 
-        :param new_parent: The new parent state or None to clear the parent
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
         :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1476,11 +1584,74 @@ class State(AstExportable, PlantUMLExportable):
         is_history_gate: bool = False,
         regions: Optional[Dict[str, Region]] = None,
     ) -> None:
-        """Initialize a state while preserving the legacy positional order.
+        """
+        Initialize a state while preserving the legacy positional order.
 
         doc is in the dataclass public-field section before the private span,
         but remains the final optional constructor argument so callers using
         historical positional span/relay arguments do not change meaning.
+
+        States are normally built by
+        :func:`~pyfcstm.model.model.parse_dsl_node_to_state_machine`. Optional
+        containers passed as ``None`` become fresh empty containers, and
+        :attr:`substate_name_to_id` is always recomputed from ``substates``.
+
+        :param name: The name of the state
+        :type name: str
+        :param path: The full path to this state in the hierarchy
+        :type path: Tuple[str, ...]
+        :param substates: Child states in declaration order
+        :type substates: Dict[str, State]
+        :param events: Events declared by this state, defaults to ``None``
+        :type events: Dict[str, Event], optional
+        :param transitions: Transitions between this state's children,
+            defaults to ``None``
+        :type transitions: List[Transition], optional
+        :param named_functions: Named lifecycle and aspect actions, defaults to
+            ``None``
+        :type named_functions: Dict[str, Union[OnStage, OnAspect]], optional
+        :param on_enters: Enter actions, defaults to ``None``
+        :type on_enters: List[OnStage], optional
+        :param on_durings: During actions, defaults to ``None``
+        :type on_durings: List[OnStage], optional
+        :param on_exits: Exit actions, defaults to ``None``
+        :type on_exits: List[OnStage], optional
+        :param on_during_aspects: ``>> during before/after`` aspect actions,
+            defaults to ``None``
+        :type on_during_aspects: List[OnAspect], optional
+        :param parent_ref: Weak reference to the parent, defaults to ``None``;
+            normally set through :attr:`parent`
+        :type parent_ref: Optional[weakref.ReferenceType], optional
+        :param substate_name_to_id: Ignored; recomputed from ``substates``
+            during initialization, defaults to ``None``
+        :type substate_name_to_id: Dict[str, int], optional
+        :param extra_name: Display name from the DSL ``named`` clause, defaults
+            to ``None``
+        :type extra_name: Optional[str], optional
+        :param is_pseudo: Whether this is a pseudo state, defaults to ``False``
+        :type is_pseudo: bool, optional
+        :param _span: Source location, defaults to ``None``
+        :type _span: Optional[pyfcstm.utils.validate.Span], optional
+        :param is_combo_relay: Whether this is a generated combo relay state,
+            defaults to ``False``
+        :type is_combo_relay: bool, optional
+        :param doc: Source documentation, defaults to ``None``
+        :type doc: Optional[str], optional
+        :param is_history_gate: Whether this is a generated history gate state,
+            defaults to ``False``
+        :type is_history_gate: bool, optional
+        :param regions: Ordered region namespaces of a parallel owner, mutually
+            exclusive with ``substates``; defaults to ``None`` (no regions)
+        :type regions: Optional[Dict[str, pyfcstm.model.region.Region]], optional
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model.model import State
+            >>> state = State('Idle', ('Root', 'Idle'), {})
+            >>> state.is_leaf_state, state.events, state.transitions
+            (True, {}, [])
         """
         self.name = name
         self.path = path
@@ -1506,6 +1677,9 @@ class State(AstExportable, PlantUMLExportable):
     def __post_init__(self) -> None:
         """
         Initialize default values for optional fields after instance creation.
+
+        :return: ``None``.
+        :rtype: None
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []
@@ -1521,10 +1695,38 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def is_leaf_state(self) -> bool:
         """
-        Check if this state is a leaf state (has no substates).
+        Check if this state is a leaf state (has no substates or regions).
 
         :return: True if this is a leaf state, False otherwise
         :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.is_leaf_state, run.is_leaf_state, motion.substates['Stop'].is_leaf_state
+            (False, False, True)
         """
         return not self.substates and not self.regions
 
@@ -1541,10 +1743,44 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this state.
+        Get the namespace that contains this state.
 
-        :return: The parent state or None if this is the root state
+        The link is held weakly. A state declared inside a region has that
+        :class:`~pyfcstm.model.region.Region` as its parent; every other
+        non-root state has its owning :class:`State`.
+
+        :return: The parent state or region, or None if this is the root state
         :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.parent is None, run.parent.name
+            (True, 'Root')
+            >>> type(motion.substates['Stop'].parent).__name__
+            'Region'
         """
         if self.parent_ref is None:
             return None
@@ -1554,10 +1790,13 @@ class State(AstExportable, PlantUMLExportable):
     @parent.setter
     def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this state.
+        Set the namespace that contains this state.
 
-        :param new_parent: The new parent state or None to clear the parent
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
         :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -2032,12 +2271,47 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
-        :param self: The parent state, or None
+        Event paths are written relative to ``self`` when the event lives
+        below it and as absolute paths otherwise, which is why the owning
+        namespace is needed: the same transition exports differently from a
+        different context.
+
+        :param self: The parent state or region, or None
         :type self: Optional[Union['State', Region]]
         :param transition: The transition to convert
         :type transition: Transition
         :return: A transition definition AST node
         :rtype: dsl_nodes.TransitionDefinition
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> str(State.transition_to_ast_node(root, root.transitions[1]))
+            'Run -> Off :: Halt;'
+            >>> str(State.transition_to_ast_node(motion, motion.transitions[1]))
+            'Stop -> Move :: Go;'
         """
         if self:
             cur_path = self.path
@@ -2102,8 +2376,57 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to an AST node.
 
+        Children, regions, events, transitions and actions keep their
+        declaration order, so printing the node reproduces the state as
+        authored.
+
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> print(run.to_ast_node())
+            state Run {
+                region Motion {
+                    >> during after {
+                        x = x + 2;
+                    }
+                    state Stop {
+                        event Go;
+                    }
+                    state Move;
+                    [*] -> Stop;
+                    Stop -> Move :: Go;
+                }
+                region Guard {
+                    state Watch;
+                    [*] -> Watch;
+                }
+                event Halt;
+            }
         """
         substate_nodes = [
             substate.to_ast_node() for _, substate in self.substates.items()
@@ -2138,7 +2461,17 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to PlantUML notation.
 
-        :param options: Configuration input for PlantUML generation
+        The result is the PlantUML fragment for this state only: a ``state``
+        declaration, and for a composite state its nested states and
+        transitions. It is not a complete document; use
+        :meth:`StateMachine.to_plantuml` for one that starts with
+        ``@startuml``. The detail level in ``options`` controls how much of
+        the state is shown, for example whether lifecycle actions are listed.
+
+        :param options: Configuration input for PlantUML generation: a
+            :class:`pyfcstm.model.plantuml.PlantUMLOptions`, one of the detail
+            level strings ``'minimal'``, ``'normal'`` or ``'full'``, or ``None``
+            for the defaults, defaults to ``None``
         :type options: PlantUMLOptionsInput
         :param current_depth: Current depth in the state hierarchy (for max_depth support)
         :type current_depth: int
@@ -2146,6 +2479,24 @@ class State(AstExportable, PlantUMLExportable):
         :type event_colors: Optional[Dict[str, str]]
         :return: PlantUML representation of the state
         :rtype: str
+        :raises TypeError: If ``options`` is not a supported type or an
+            unknown detail level string.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'def int x = 0; state Root { state A { enter { x = 1; } } [*] -> A; }'
+            ... )
+            >>> state = machine.root_state.substates['A']
+            >>> state.to_plantuml('minimal')
+            'state "A" as root__a'
+            >>> 'root__a : enter' in state.to_plantuml('full')
+            True
+            >>> state.to_plantuml('bogus')
+            Traceback (most recent call last):
+            ...
+            TypeError: Invalid detail level value 'bogus', expected one of 'minimal', 'normal', 'full'.
         """
         # Resolve configuration
         require_supported_model(self, 'plantuml')
@@ -2372,15 +2723,82 @@ class State(AstExportable, PlantUMLExportable):
         """
         Iterate through this state and all its substates recursively.
 
+        States inside regions are included, in declaration order; region
+        containers are not yielded (see :meth:`walk_regions`).
+
         :yield: Each state in the hierarchy, starting with this one
         :rtype: Iterator['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [state.name for state in root.walk_states()]
+            ['Root', 'Run', 'Stop', 'Move', 'Watch', 'Off']
         """
         yield self
         for child in namespace_children(self):
             yield from child.walk_states()
 
     def walk_regions(self) -> Iterator[Region]:
-        """Yield descendant regions in declaration preorder."""
+        """
+        Yield descendant regions in declaration preorder.
+
+        :yield: Each region below this state, outer regions before the regions
+            nested inside them. A state without regions below it yields nothing.
+        :rtype: Iterator[pyfcstm.model.region.Region]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [region.name for region in root.walk_regions()]
+            ['Motion', 'Guard']
+            >>> list(motion.substates['Stop'].walk_regions())
+            []
+        """
         for namespace in walk_namespaces(self):
             if isinstance(namespace, Region):
                 yield namespace
@@ -2760,6 +3178,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
         transitions, and this metadata maps those variables back to
         source-level records.
     :type history_owners: Tuple[pyfcstm.model.history.HistoryOwner, ...]
+    :param active_queries: One entry per state queried by ``active("...")``,
+        pairing the state path with the hidden flag variable that replaced the
+        query; empty for a machine without activity queries. See
+        :mod:`pyfcstm.model.active`.
+    :type active_queries: Tuple[pyfcstm.model.active.ActiveQuery, ...]
 
     Example::
 
@@ -2827,6 +3250,21 @@ class StateMachine(AstExportable, PlantUMLExportable):
     active_queries: Tuple["ActiveQuery", ...] = field(default_factory=tuple, repr=False, compare=False)
 
     def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        """
+        Reject model operations that write inputs or parameters.
+
+        Walks every transition effect and action body, including those inside
+        regions, and reports ``E_INPUT_WRITE`` or ``E_PARAM_WRITE`` for each
+        assignment to an input or parameter variable.
+
+        :param _validation_sink: Where the diagnostics go; ``None`` raises
+            :class:`~pyfcstm.utils.validate.ModelValidationError` on the first.
+        :type _validation_sink: Optional[pyfcstm.diagnostics.sink.DiagnosticSink]
+        :return: ``None``.
+        :rtype: None
+        :raises pyfcstm.utils.validate.ModelValidationError: If an operation
+            writes an input or parameter and the sink is strict.
+        """
         readonly = {
             name: (
                 "E_INPUT_WRITE"
@@ -2960,11 +3398,38 @@ class StateMachine(AstExportable, PlantUMLExportable):
         return None if path is None else ".".join(path)
 
     def active_variables(self, configuration) -> Dict[str, int]:
-        """Derive hidden activity flags from a configuration of this machine.
+        """
+        Derive hidden activity flags from a configuration of this machine.
+
+        Every ``active("...")`` query of the model owns one hidden variable
+        (see :attr:`active_queries`); its value is ``1`` while the queried
+        state is active in ``configuration`` and ``0`` otherwise. Models without
+        queries yield an empty mapping.
 
         :param configuration: Immutable Configuration bound to this machine.
+        :type configuration: pyfcstm.model.configuration.Configuration
         :return: Hidden variable names mapped to integer zero or one.
+        :rtype: Dict[str, int]
         :raises ValueError: If the configuration belongs to another machine.
+
+        Example::
+
+            >>> from pyfcstm.model import Configuration, load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off : if [active("Root.Run.Motion.Move")];
+            ... }
+            ... ''')
+            >>> moving = Configuration.parse(model, 'Root.Run{Motion: Move, Guard: Watch}')
+            >>> stopped = Configuration.parse(model, 'Root.Run{Motion: Stop, Guard: Watch}')
+            >>> model.active_variables(moving), model.active_variables(stopped)
+            ({'__active_Root_Run_Motion_Move': 1}, {'__active_Root_Run_Motion_Move': 0})
         """
         if configuration._model is not self:
             raise ValueError('Configuration belongs to a different state machine.')
@@ -3070,10 +3535,36 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to PlantUML notation.
 
-        :param options: Configuration input for PlantUML generation
+        The result is a complete PlantUML document from ``@startuml`` to
+        ``@enduml``, containing the optional variable definitions, the state
+        hierarchy and the transitions. Rendering it to an image needs a
+        PlantUML processor, which this method does not invoke.
+
+        :param options: Configuration input for PlantUML generation: a
+            :class:`pyfcstm.model.plantuml.PlantUMLOptions`, one of the detail
+            level strings ``'minimal'``, ``'normal'`` or ``'full'``, or ``None``
+            for the defaults, defaults to ``None``
         :type options: PlantUMLOptionsInput
         :return: PlantUML representation of the state machine
         :rtype: str
+        :raises TypeError: If ``options`` is not a supported type or an
+            unknown detail level string.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { [*] -> A; state A; state B; A -> B :: Go; }'
+            ... )
+            >>> text = machine.to_plantuml()
+            >>> text.splitlines()[0], text.splitlines()[-1]
+            ('@startuml', '@enduml')
+            >>> 'root__a --> root__b : A.Go' in text
+            True
+            >>> machine.to_plantuml(5)
+            Traceback (most recent call last):
+            ...
+            TypeError: Invalid plantuml options type int, expected PlantUMLOptions, detail level string, or None.
         """
         # Resolve configuration
         require_supported_model(self, 'plantuml')
@@ -3187,18 +3678,114 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Iterate through all states in the state machine.
 
-        :yield: Each state in the hierarchy
+        :yield: Each state in the hierarchy, parents before children
         :rtype: Iterator[State]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [state.name for state in model.walk_states()]
+            ['Root', 'Run', 'Stop', 'Move', 'Watch', 'Off']
         """
         yield from self.root_state.walk_states()
 
     @property
     def has_regions(self) -> bool:
-        """Whether this model declares any region, including nested regions."""
+        """
+        Whether this model declares any region, including nested regions.
+
+        :return: ``True`` if at least one region exists anywhere in the model.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> model.has_regions
+            True
+            >>> load_state_machine_from_text('state Root { [*] -> A; state A; }').has_regions
+            False
+        """
         return next(self.walk_regions(), None) is not None
 
     def walk_regions(self) -> Iterator[Region]:
-        """Yield all regions in declaration preorder."""
+        """
+        Yield all regions in declaration preorder.
+
+        :yield: Each region of the model, outer regions before nested ones.
+        :rtype: Iterator[pyfcstm.model.region.Region]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [region.path for region in model.walk_regions()]
+            [('Root', 'Run', 'Motion'), ('Root', 'Run', 'Guard')]
+        """
         yield from self.root_state.walk_regions()
 
     def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
@@ -3610,6 +4197,13 @@ def _build_assembled_state_machine(
     """
     Build the model of an import-assembled program.
 
+    This is the single construction routine behind every public loader: it
+    builds states and regions, resolves transitions, events, forced and combo
+    transitions and action references, validates them, and lowers history and
+    ``active()`` queries. Diagnostics go to ``sink``: a strict sink turns the
+    first error into an exception, a collecting sink keeps going and the
+    returned machine may be partial.
+
     :param dnode: Program AST after import assembly
     :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
     :param sink: Sink that receives every diagnostic of the build
@@ -3619,6 +4213,8 @@ def _build_assembled_state_machine(
     :type lower: bool
     :return: The built machine
     :rtype: StateMachine
+    :raises pyfcstm.utils.validate.ModelValidationError: If ``sink`` is strict
+        and the program violates a model rule.
     """
     d_defines: Dict[str, VarDefine] = {}
     # Track first-declaration spans so duplicate diagnostics can point at
@@ -3859,6 +4455,26 @@ def _build_assembled_state_machine(
         current_path: Tuple[str, ...],
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
+        """
+        Build the model namespace of one declaration and, recursively, its children.
+
+        Creates the object, its child states and regions, events and actions,
+        and reports duplicate children and reserved-name problems. Transitions
+        are resolved later by :func:`_recursive_finish_states`, once every
+        state exists.
+
+        :param node: A state declaration or a region declaration.
+        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param current_path: Path of the parent namespace; the node's own name
+            is appended.
+        :type current_path: Tuple[str, ...]
+        :param owner_node: Declaration of the parent, used to recognize
+            generated combo relay states. Defaults to ``None``.
+        :type owner_node: Optional[pyfcstm.dsl.node.StateDefinition], optional
+        :return: A :class:`State` for a state declaration, or a
+            :class:`~pyfcstm.model.region.Region` for a region declaration.
+        :rtype: Union[State, pyfcstm.model.region.Region]
+        """
         current_path = tuple((*current_path, node.name))
         is_region = isinstance(node, dsl_nodes.RegionDefinition)
         is_pseudo = bool(getattr(node, "is_pseudo", False))
@@ -4397,6 +5013,28 @@ def _build_assembled_state_machine(
         current_path: Tuple[str, ...],
         force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
     ) -> None:
+        """
+        Resolve transitions, forced transitions and events of one namespace, then recurse.
+
+        Runs after :func:`_recursive_build_states`, when every state and
+        region exists. Expands forced transitions (including those inherited
+        from enclosing states), resolves transition events against the event
+        scope rules, builds :class:`Transition` objects and attaches them, and
+        finally repeats the process for each child. A parallel owner does not
+        pass inherited forced transitions down into its regions.
+
+        :param node: Declaration being finished.
+        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param current_state: The model namespace built for ``node``.
+        :type current_state: Union[State, pyfcstm.model.region.Region]
+        :param current_path: Path of the parent namespace.
+        :type current_path: Tuple[str, ...]
+        :param force_transitions: Forced transitions inherited from enclosing
+            states. Defaults to ``None`` (none).
+        :type force_transitions: Optional[List[pyfcstm.dsl.node.ForceTransitionDefinition]], optional
+        :return: ``None``; the model is updated in place.
+        :rtype: None
+        """
         current_path = tuple((*current_path, current_state.name))
         force_transitions = [] if getattr(current_state, "regions", {}) else list(force_transitions or [])
 
@@ -4766,6 +5404,28 @@ def _build_assembled_state_machine(
             event_scope: Optional[str],
             source_state_name: Optional[str],
         ) -> Tuple[Optional[str], Optional[Event]]:
+            """
+            Resolve the event a transition names, creating it when it is local.
+
+            Determines the effective scope (``local``, ``chain`` or
+            ``absolute``) from the written event path, walks the path from the
+            right starting namespace and returns the matching or newly
+            created event. Failures are reported to the sink.
+
+            :param transnode: Transition declaration being resolved, used for
+                diagnostics.
+            :type transnode: pyfcstm.dsl.node.TransitionDefinition
+            :param event_id: Event path as written.
+            :type event_id: pyfcstm.dsl.node.ChainID
+            :param event_scope: Scope recorded by the grammar, if any.
+            :type event_scope: Optional[str]
+            :param source_state_name: Name of the transition's source state,
+                or ``None`` for initial transitions.
+            :type source_state_name: Optional[str]
+            :return: ``(effective scope, event)``; the event is ``None`` after
+                a reported error.
+            :rtype: Tuple[Optional[str], Optional[Event]]
+            """
             event_scope = _event_origin_from_id(
                 event_id,
                 event_scope,
@@ -5665,6 +6325,14 @@ def _build_assembled_state_machine(
     history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
 
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
+        """
+        Yield every lifecycle and aspect action in a subtree, parents first.
+
+        :param state: State or region whose subtree is scanned.
+        :type state: Union[State, pyfcstm.model.region.Region]
+        :return: The namespace's own actions, then those of each child.
+        :rtype: Iterator[Union[OnStage, OnAspect]]
+        """
         yield from namespace_actions(state)
         for substate in namespace_children(state):
             for func_item in _iter_lifecycle_actions(substate):

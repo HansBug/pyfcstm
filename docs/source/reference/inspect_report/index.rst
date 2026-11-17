@@ -115,6 +115,8 @@ these required top-level fields.
      - Composite path to descendant leaves reached by aspect actions.
    * - ``action_ref_graph``
      - Named-action signature to referenced named-action signatures.
+   * - ``regions``
+     - Optional. ``RegionInfo`` objects, present only when the model declares regions; see :ref:`inspect-report-regions`.
    * - ``verification``
      - Verification-provider support, requested policy, execution coverage,
        and one result record per registered algorithm.
@@ -132,6 +134,8 @@ Nested object contracts
      - Required fields and notes
    * - ``StateInfo``
      - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. A model that uses history is reported as written, before lowering, so no state or initial target is one that lowering generated. See :ref:`dsl-history-reference`.
+   * - ``RegionInfo``
+     - ``path``, ``name``, ``owner_path``, ``index``, ``substates``, ``initial_targets``, ``aspect_before`` and ``aspect_after``; see :ref:`inspect-report-regions`.
    * - ``TransitionInfo``
      - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields. ``target_history`` (``shallow``, ``deep`` or null) marks a transition that enters ``Target.[H]`` / ``Target.[H*]``; its ``to_path`` names the history owner.
    * - ``ComboOriginInfo``
@@ -162,6 +166,101 @@ Nested object contracts
      - ``code``, ``severity``, ``message``, ``span``, ``refs``, and optional ``suggested_fix``.
    * - ``Span``
      - ``line``, ``column``, ``end_line``, and ``end_column``.
+
+.. _inspect-report-regions:
+
+Regions in the report
+---------------------
+
+A model that declares ``region`` blocks adds an optional top-level ``regions``
+array. It is present only for such models, so the report of a model without
+regions is unchanged. Each ``RegionInfo`` gives the region ``path``, its
+``name``, the ``owner_path`` of the state that owns it, ``index`` (the
+zero-based declaration order among the owner's regions, which is also their
+execution order), the direct child ``substates``, the region's
+``initial_targets`` and its ``aspect_before`` / ``aspect_after`` labels.
+
+States, transitions, events and actions inside a region appear in the ordinary
+arrays. A state in a region reports the region path as its ``parent_path``, and
+a state that owns regions is ``is_composite`` with an empty ``substates``. The
+report describes the model as written, so ``active("...")`` queries never add
+hidden flag variables to ``variables``.
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i order_demo.fcstm --format json
+
+.. code-block:: fcstm
+
+   def int level = 0;
+   def int seen = 0;
+   def int out = 0;
+   def int y = 0;
+   state Root {
+       region Reader {
+           state Idle { during { seen = level; out = 1; } }
+           [*] -> Idle;
+       }
+       region Writer {
+           state Busy { during { level = level + 1; out = y + 2; } }
+           [*] -> Busy;
+       }
+   }
+
+The report's ``regions`` entry for the first region and its two ordering
+diagnostics are:
+
+.. code-block:: json
+
+   {
+     "path": "Root.Reader", "name": "Reader", "owner_path": "Root", "index": 0,
+     "substates": ["Root.Reader.Idle"],
+     "initial_targets": [{"target": "Root.Reader.Idle", "guard": null, "event": null, "is_unconditional": true}],
+     "aspect_before": [], "aspect_after": []
+   }
+
+.. code-block:: json
+
+   {
+     "code": "I_REGION_BACKWARD_READ", "severity": "info",
+     "message": "Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.",
+     "span": {"line": 7, "column": 31, "end_line": 7, "end_column": 44},
+     "refs": {"owner_path": "Root", "reader_region": "Root.Reader", "target_kind": "variable", "target": "level", "writer_regions": ["Root.Writer"]}
+   }
+
+.. code-block:: json
+
+   {
+     "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
+     "message": "Region 'Root.Writer' overwrites variable 'out' without using the value written by the earlier region 'Root.Reader'.",
+     "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
+     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out"}
+   }
+
+``I_REGION_BACKWARD_READ`` is informational: an earlier region reads what a
+later region writes or contains (through ``active()``), so it sees the previous
+cycle's value. ``W_REGION_BLIND_OVERWRITE`` marks an assignment in a later
+region that discards an earlier region's value without reading it; ``out = out
++ y + 2;`` would not be reported. Both are judged statically and do not check
+whether the two statements can run in the same cycle.
+
+Reachability follows region semantics. Entering a state that owns regions
+reaches the initial targets of every region. The owner's ordinary outgoing
+transitions run only after every region is done, so they count as reachable
+only when each region can reach its ``[*]`` exit; otherwise they are reported
+by ``W_UNREACHABLE_TRANSITION`` with the reason ``owner_never_completes``.
+Forced transitions declared on the owner are always reachable with the owner.
+
+With ``--enable-verify`` the single-active-path topology algorithms
+(``topological_reachable_set``, ``unreachable_states``,
+``strongly_connected_components``, ``topological_finite``,
+``topological_inevitable_terminator`` and
+``event_emission_to_consumer_reachable``) are reported as ``not_run`` with the
+``reason_code`` ``requires_single_active_path`` for a model with regions. The
+solver-local algorithms run inside regions; a guard that contains an
+``active()`` query is reported as ``undecidable_skip`` instead of being
+judged, and the lifecycle check of a state inside a region is skipped for the
+same reason.
 
 Verification execution metadata
 -------------------------------

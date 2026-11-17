@@ -109,6 +109,8 @@ Inspect 报告参考
      - 组合状态路径到被切面动作影响的后代叶状态。
    * - ``action_ref_graph``
      - 命名动作签名到被引用命名动作签名。
+   * - ``regions``
+     - 可选。``RegionInfo`` 对象数组，只有模型声明了区域时才出现，见 :ref:`inspect-report-regions-zh`\ 。
    * - ``verification``
      - 验证提供方支持情况、请求策略、执行覆盖率，以及每个已注册算法的一条结果记录。
    * - ``diagnostics``
@@ -125,6 +127,8 @@ Inspect 报告参考
      - 必填字段和说明
    * - ``StateInfo``
      - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。使用了历史的模型按展开前的书写形式报告，因此不会出现展开生成的状态或初始目标。见 :ref:`dsl-history-reference-zh`\ 。
+   * - ``RegionInfo``
+     - ``path``、``name``、``owner_path``、``index``、``substates``、``initial_targets``、``aspect_before`` 和 ``aspect_after``，见 :ref:`inspect-report-regions-zh`\ 。
    * - ``TransitionInfo``
      - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。``target_history``\ （\ ``shallow``\ 、\ ``deep`` 或 null）标出进入 ``Target.[H]`` / ``Target.[H*]`` 的转换，其 ``to_path`` 为历史所有者。
    * - ``ComboOriginInfo``
@@ -149,6 +153,71 @@ Inspect 报告参考
      - ``code``、``severity``、``message``、``span``、``refs`` 和可选 ``suggested_fix``。
    * - ``Span``
      - ``line``、``column``、``end_line`` 和 ``end_column``。
+
+.. _inspect-report-regions-zh:
+
+报告中的区域
+----------------------------------------
+
+声明了 ``region`` 块的模型会多出一个可选的顶层 ``regions`` 数组。只有这类模型才有它，因此不含区域的模型，其报告保持不变。每个 ``RegionInfo`` 给出区域的 ``path`` 和 ``name``，拥有它的状态的 ``owner_path``，``index``\ （在同一所属状态的区域中从 0 开始的声明顺序，也就是执行顺序），区域的直接子状态 ``substates``，区域的 ``initial_targets``，以及 ``aspect_before`` / ``aspect_after`` 标签。
+
+区域内的状态、转换、事件和动作出现在普通数组里。区域内状态的 ``parent_path`` 是区域路径；拥有区域的状态的 ``is_composite`` 为真，``substates`` 为空。报告描述的是书写形式的模型，因此 ``active("...")`` 查询不会往 ``variables`` 里增加隐藏标志变量。
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i order_demo.fcstm --format json
+
+.. code-block:: fcstm
+
+   def int level = 0;
+   def int seen = 0;
+   def int out = 0;
+   def int y = 0;
+   state Root {
+       region Reader {
+           state Idle { during { seen = level; out = 1; } }
+           [*] -> Idle;
+       }
+       region Writer {
+           state Busy { during { level = level + 1; out = y + 2; } }
+           [*] -> Busy;
+       }
+   }
+
+第一个区域在 ``regions`` 中的条目，以及两条顺序诊断如下：
+
+.. code-block:: json
+
+   {
+     "path": "Root.Reader", "name": "Reader", "owner_path": "Root", "index": 0,
+     "substates": ["Root.Reader.Idle"],
+     "initial_targets": [{"target": "Root.Reader.Idle", "guard": null, "event": null, "is_unconditional": true}],
+     "aspect_before": [], "aspect_after": []
+   }
+
+.. code-block:: json
+
+   {
+     "code": "I_REGION_BACKWARD_READ", "severity": "info",
+     "message": "Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.",
+     "span": {"line": 7, "column": 31, "end_line": 7, "end_column": 44},
+     "refs": {"owner_path": "Root", "reader_region": "Root.Reader", "target_kind": "variable", "target": "level", "writer_regions": ["Root.Writer"]}
+   }
+
+.. code-block:: json
+
+   {
+     "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
+     "message": "Region 'Root.Writer' overwrites variable 'out' without using the value written by the earlier region 'Root.Reader'.",
+     "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
+     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out"}
+   }
+
+``I_REGION_BACKWARD_READ`` 是提示级：靠前的区域读取了靠后区域写入或包含（通过 ``active()``\ ）的内容，读到的是上一周期的值。``W_REGION_BLIND_OVERWRITE`` 标出靠后区域中没有读取旧值就丢掉靠前区域写入的赋值；写成 ``out = out + y + 2;`` 就不会被报告。两者都是静态判断，不检查两条语句是否真的会在同一周期执行。
+
+可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
+
+带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``。求解器局部算法会在区域内运行；含 ``active()`` 查询的守卫报告为 ``undecidable_skip`` 而不做判断，区域内状态的生命周期检查也因同样的原因被跳过。
 
 验证执行元数据
 ----------------------------------------

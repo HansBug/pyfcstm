@@ -87,6 +87,7 @@ Allowed categories:
 - `validation`
 - `lifecycle`
 - `history`
+- `regions`
 
 ## Construction
 
@@ -233,7 +234,8 @@ and event-object descriptors such as
 
 | Field | Meaning |
 |---|---|
-| `state` | Expected current state path as a dot-separated string, or `null` for ended runtime. |
+| `state` | Expected current state path as a dot-separated string, or `null` for ended runtime. Models that declare regions use `configuration` instead. |
+| `configuration` | Expected position as configuration text, for example `Root.P{R1: X, R2: [done]}`. The text must equal `str(runtime.configuration)`; it is compared as written, so write it in canonical form. |
 | `vars` | Partial control-variable value assertion: check only the named keys. |
 | `outputs` | Partial output value assertion: check only the named keys. |
 | `ended` | Expected `runtime.is_ended`. |
@@ -269,6 +271,18 @@ Rules:
   error-state metadata, anonymous-warning counters, and generated-template
   private state IDs remain rejected. Runtime count/history and event-ledger
   fields remain simulator-only; only `delta` is shared.
+
+## Region cases
+
+A case in the `regions` category exercises a model that declares regions. Until
+every shared runner supports regions, such a case must set
+`exclude_runners: [generated_python_alignment, bmc_core]`; the loader rejects a
+`regions` case that leaves either runner selected. Region cases assert the
+position with `configuration`. Their `handler_calls` records may add a
+`configuration` string, the configuration text at the moment of the call; it is
+recorded only for region cases because the other runners do not expose it.
+Cold-start region cases rely on the simulator only; hot start of a region model
+is not part of the corpus yet.
 
 ## Exceptions
 

@@ -229,14 +229,11 @@ def test_active_query_is_not_allowed_in_persistent_initializer():
     assert error.value.diagnostics[0].refs['reason'] == 'initializer'
 
 
-@pytest.mark.parametrize('consumer', ['simulate', 'bmc', 'plantuml', 'diagram', 'inspect'])
+@pytest.mark.parametrize('consumer', ['bmc', 'plantuml', 'diagram', 'inspect'])
 def test_active_only_models_remain_refused_by_execution_consumers(consumer):
     machine = load_state_machine_from_text('state Root { during { if [active("Root")] {} } }')
     with pytest.raises(ModelValidationError) as error:
-        if consumer == 'simulate':
-            from pyfcstm.simulate import SimulationRuntime
-            SimulationRuntime(machine)
-        elif consumer == 'bmc':
+        if consumer == 'bmc':
             from pyfcstm.bmc import build_bmc_domain
             build_bmc_domain(machine, bound=1)
         elif consumer == 'plantuml':

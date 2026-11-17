@@ -58,19 +58,24 @@ State objects returned by ``leaves`` belong to the model used for construction.
      - Every live branch reaches a non-pseudo leaf; every active owner specifies
        all its regions and has at least one live region. Checked at every depth.
    * - ``initialization``
-     - One whole composite/region-owning state path, without a region block.
-       Represents an owner awaiting initialization, not a partially specified
-       stable configuration.
+     - One whole composite/region-owning state awaiting initialization. Region
+       entries may be omitted or explicitly ``[init]``; live and Done entries
+       are rejected. This is not a partially specified stable configuration.
    * - ``transient``
      - Structurally valid intermediate positions, including pseudo states,
        partial region initialization and all-Done snapshots. This does not make
        them valid runtime parking positions or hot-start inputs.
 
 In text, the outer state path is root-qualified. A region entry names its child
-relative to that region; ``[*]`` means that region is Done. Nested parallel
+relative to that region; ``[done]`` means that region is Done and ``[init]``
+means it has not initialized. Nested parallel
 owners introduce another region block. Input entry order is normalized to model
 declaration order. Unknown, duplicate or foreign entries are rejected. A linear
 path cannot bypass a parallel owner to select only one of its regions.
+``stable`` rejects ``[init]`` at every depth. In ``initialization`` and
+``transient`` modes, omitted regions mean pending initialization and are shown
+explicitly as ``[init]`` by ``str()``. The old configuration marker ``[*]`` is
+rejected; the DSL still uses ``[*]`` for initial and final transitions.
 
 .. code-block:: pycon
 
@@ -80,9 +85,9 @@ path cannot bypass a parallel owner to select only one of its regions.
    ...     region Right { state Working; [*] -> Working; }
    ... }'''
    >>> model = load_state_machine_from_text(source)
-   >>> config = Configuration.parse(model, 'Root{Right: Working, Left: [*]}')
+   >>> config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
    >>> str(config)
-   'Root{Left: [*], Right: Working}'
+   'Root{Left: [done], Right: Working}'
    >>> [state.path for state in config.leaves]
    [('Root', 'Right', 'Working')]
    >>> config.is_active('Root'), config.is_active('Root.Left.Idle')
@@ -91,6 +96,41 @@ path cannot bypass a parallel owner to select only one of its regions.
    ('done', 'live')
    >>> Configuration.from_dict(model, config.to_dict()) == config
    True
+
+``str(config)`` is canonical position text. ``repr(config)`` also shows the
+validation mode for debugging; it is not an executable constructor expression
+or accepted parser input. Reparse a non-stable value with its explicit mode:
+
+.. code-block:: pycon
+
+   >>> pending = Configuration.parse(model, 'Root', mode='initialization')
+   >>> str(pending)
+   'Root{Left: [init], Right: [init]}'
+   >>> repr(pending)
+   "Configuration(mode='initialization', position='Root{Left: [init], Right: [init]}')"
+   >>> Configuration.parse(model, str(pending), mode=pending.mode) == pending
+   True
+   >>> mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
+   >>> str(mixed)
+   'Root{Left: [done], Right: [init]}'
+   >>> mixed.region_status('Root.Left'), mixed.region_status('Root.Right')
+   ('done', 'pending')
+   >>> Configuration.parse(model, str(mixed), mode=mixed.mode) == mixed
+   True
+
+Tokens accept surrounding whitespace, including newlines. Identifiers use
+``[A-Za-z_][A-Za-z_0-9]*``; marker spelling is exact, so ``[Done]`` and
+``[ init ]`` are rejected. Syntax errors raise ``ValueError`` with one-based
+line and character column numbers. Tabs count as one character; newline
+characters separate lines. Model errors separately identify invalid paths,
+region entries or validation modes.
+
+.. code-block:: pycon
+
+   >>> Configuration.parse(model, 'Root{\n Left: @\n}', mode='transient')
+   Traceback (most recent call last):
+       ...
+   ValueError: Expected a configuration identifier at line 2, column 8, got '@'.
 
 ``is_active`` accepts State paths, including active ancestors, but rejects
 Region paths. ``region_status`` accepts Region paths and returns ``live``,
@@ -114,9 +154,19 @@ Unknown paths raise ``ValueError``.
    }
 
 Nested nodes use full state paths and omit ``mode``. ``null`` means Done;
-an empty region list on a composite in an appropriate mode means pending
-initialization. Omitted outer ``mode`` defaults to ``stable``. Text does not
+pending entries remain omitted in JSON, including an empty region list when
+the whole owner awaits initialization. ``[init]`` and ``[done]`` are text
+markers, not JSON string values. Omitted outer ``mode`` defaults to ``stable``. Text does not
 encode the mode: pass it again when reparsing a non-stable value.
+
+.. code-block:: pycon
+
+   >>> pending.to_dict()
+   {'mode': 'initialization', 'state': 'Root', 'regions': []}
+   >>> mixed.to_dict()
+   {'mode': 'transient', 'state': 'Root', 'regions': [{'name': 'Left', 'configuration': None}]}
+   >>> Configuration.from_dict(model, mixed.to_dict()) == mixed
+   True
 
 Activity queries
 ----------------

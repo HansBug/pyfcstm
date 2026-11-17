@@ -6,7 +6,8 @@ Stable, initialization and transient positions have separate validation modes.
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional, Tuple, TYPE_CHECKING
+from enum import Enum
+from typing import Tuple, TYPE_CHECKING, Union
 
 from .region import Region, namespace_child
 
@@ -14,10 +15,20 @@ if TYPE_CHECKING:
     from .model import State, StateMachine
 
 
+class _RegionInit(Enum):
+    """A region position before its initial transition has run."""
+
+    PENDING = 'init'
+
+
 @dataclass(frozen=True)
 class _Position:
     path: Tuple[str, ...]
-    regions: Tuple[Tuple[str, Optional['_Position']], ...] = ()
+    regions: Tuple[Tuple[str, Union['_Position', _RegionInit, None]], ...] = ()
+
+
+_TEXT_TOKENS = re.compile(r'\[init\]|\[done\]|[A-Za-z_][A-Za-z_0-9]*|\S')
+_TEXT_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*')
 
 
 def _lookup(model, path):
@@ -39,25 +50,31 @@ class _TextParser:
     def __init__(self, text):
         if not isinstance(text, str):
             raise TypeError('Configuration text must be a string.')
-        self.tokens = re.findall(r'\[\*\]|[A-Za-z_][A-Za-z_0-9]*|\S', text)
+        self.text = text
+        self.tokens = [(match.group(), match.start()) for match in _TEXT_TOKENS.finditer(text)]
         self.index = 0
 
     def peek(self):
-        return self.tokens[self.index] if self.index < len(self.tokens) else ''
+        return self.tokens[self.index][0] if self.index < len(self.tokens) else ''
+
+    def error(self, expected):
+        offset = self.tokens[self.index][1] if self.index < len(self.tokens) else len(self.text)
+        line = self.text.count('\n', 0, offset) + 1
+        column = offset - self.text.rfind('\n', 0, offset)
+        raise ValueError('Expected %s at line %d, column %d, got %r.' %
+                         (expected, line, column, self.peek()))
 
     def take(self, expected=None):
         token = self.peek()
         if not token or (expected is not None and token != expected):
-            raise ValueError('Expected %r at configuration token %d, got %r.' %
-                             (expected, self.index, token))
+            self.error(repr(expected))
         self.index += 1
         return token
 
     def identifier(self):
-        token = self.take()
-        if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', token) is None:
-            raise ValueError('Expected a configuration identifier, got %r.' % token)
-        return token
+        if _TEXT_IDENTIFIER.fullmatch(self.peek()) is None:
+            self.error('a configuration identifier')
+        return self.take()
 
     def position(self, base=()):
         path = [self.identifier()]
@@ -71,9 +88,12 @@ class _TextParser:
             while True:
                 name = self.identifier()
                 self.take(':')
-                if self.peek() == '[*]':
-                    self.take('[*]')
+                if self.peek() == '[done]':
+                    self.take('[done]')
                     child = None
+                elif self.peek() == '[init]':
+                    self.take('[init]')
+                    child = _RegionInit.PENDING
                 else:
                     child = self.position((*path, name))
                 regions.append((name, child))
@@ -111,7 +131,7 @@ def _to_dict(position):
     """Return newly allocated JSON-compatible containers."""
     return {'state': '.'.join(position.path), 'regions': [
         {'name': name, 'configuration': None if child is None else _to_dict(child)}
-        for name, child in position.regions
+        for name, child in position.regions if child is not _RegionInit.PENDING
     ]}
 
 
@@ -119,17 +139,23 @@ def _positions(position):
     """Walk active positions in model declaration order."""
     yield position
     for _, child in position.regions:
-        if child is not None:
+        if isinstance(child, _Position):
             yield from _positions(child)
 
 
 def _text(position, prefix=0):
     result = '.'.join(position.path[prefix:])
     if position.regions:
-        result += '{' + ', '.join(
-            '%s: %s' % (name, '[*]' if child is None else _text(child, len(position.path) + 1))
-            for name, child in position.regions
-        ) + '}'
+        parts = []
+        for name, child in position.regions:
+            if child is None:
+                value = '[done]'
+            elif child is _RegionInit.PENDING:
+                value = '[init]'
+            else:
+                value = _text(child, len(position.path) + 1)
+            parts.append('%s: %s' % (name, value))
+        result += '{' + ', '.join(parts) + '}'
     return result
 
 
@@ -157,14 +183,17 @@ def _validate(model, position, base, mode):
             raise ValueError('Stable configuration must reach a non-pseudo leaf at %s.' % context)
         if state.regions and set(entries) != set(state.regions):
             raise ValueError('Missing region in stable configuration for %s.' % context)
+        if any(child is _RegionInit.PENDING for child in entries.values()):
+            raise ValueError('Stable configuration cannot contain pending regions at %s.' % context)
         if state.regions and all(child is None for child in entries.values()):
             raise ValueError('All regions are Done at %s.' % context)
-    ordered = tuple(
-        (name, None if entries[name] is None else
-         _validate(model, entries[name], (*path, name), mode))
-        for name in state.regions if name in entries
-    )
-    return _Position(path, ordered)
+    ordered = []
+    for name in state.regions:
+        child = entries.get(name, _RegionInit.PENDING)
+        if isinstance(child, _Position):
+            child = _validate(model, child, (*path, name), mode)
+        ordered.append((name, child))
+    return _Position(path, tuple(ordered))
 
 
 @dataclass(frozen=True)
@@ -176,6 +205,13 @@ class Configuration:
     branch. ``initialization`` accepts one whole composite/parallel owner path.
     ``transient`` also accepts intermediate pseudo states, partial region
     initialization and all-Done snapshots; it does not execute them.
+
+    Text uses ``[init]`` for pending regions and ``[done]`` for completed ones.
+    ``str(config)`` includes every region of each active parallel owner in
+    declaration order. ``repr(config)`` includes both position and mode for
+    debugging; it is not constructor syntax. Text omits mode, so use
+    ``Configuration.parse(model, str(config), mode=config.mode)`` to roundtrip.
+    JSON retains omitted pending entries and ``null`` for completed regions.
 
     Equality and hashing compare the mode and ordered paths by value. The model
     supplies State objects returned by :attr:`leaves`, but is not part of value
@@ -202,24 +238,29 @@ class Configuration:
         position = _validate(self._model, self._position, (), self.mode)
         if self.mode == 'initialization':
             state = _lookup(self._model, position.path)
-            if state.is_leaf_state or position.regions:
+            if state.is_leaf_state or any(child is not _RegionInit.PENDING for _, child in position.regions):
                 raise ValueError('Initialization requires one whole owner path.')
         object.__setattr__(self, '_position', position)
 
     @classmethod
     def parse(cls, model, text: str, *, mode: str = 'stable'):
-        """Parse a one-line configuration and validate it against ``model``.
+        """Parse configuration text and validate it against ``model``.
 
         :param model: State machine owning all referenced paths.
         :param text: Full state path with optional recursive region blocks.
+            Region values are relative state paths, ``[init]`` or ``[done]``.
+            Whitespace, including newlines, is allowed between tokens.
         :param mode: ``stable``, ``initialization`` or ``transient``.
         :return: A new immutable configuration.
-        :raises ValueError: On malformed text or invalid position.
+        :raises TypeError: If text is not a string.
+        :raises ValueError: On malformed text or invalid position. Syntax errors
+            include one-based line and character column numbers; tabs count as
+            one character and lines are separated by newline characters.
         """
         parser = _TextParser(text)
         position = parser.position()
         if parser.peek():
-            raise ValueError('Unexpected configuration token %r.' % parser.peek())
+            parser.error('end of input')
         return cls(model, position, mode)
 
     @classmethod
@@ -239,6 +280,9 @@ class Configuration:
 
     def __str__(self):
         return _text(self._position)
+
+    def __repr__(self):
+        return 'Configuration(mode=%r, position=%r)' % (self.mode, str(self))
 
     @property
     def leaves(self) -> Tuple['State', ...]:
@@ -273,7 +317,7 @@ class Configuration:
         for position in _positions(self._position):
             if position.path == region.path[:-1]:
                 children = dict(position.regions)
-                if region.name not in children:
+                if children[region.name] is _RegionInit.PENDING:
                     return 'pending'
                 return 'done' if children[region.name] is None else 'live'
         return 'inactive'

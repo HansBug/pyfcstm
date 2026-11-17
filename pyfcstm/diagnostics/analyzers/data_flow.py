@@ -58,12 +58,13 @@ def collect_data_flow_warnings(
       variable in ways the model cannot see, the finding is downgraded to
       ``I_UNREFERENCED_VAR_MAYBE_ABSTRACT`` (severity ``info``). A variable
       that is neither read nor written anywhere additionally carries a
-      ``definition_delete_anchor`` entry in ``refs``.
-    * A variable that is read but never written yields
-      ``W_UNWRITTEN_READ_VAR``, with ``read_states`` and ``init_value`` in
-      ``refs``.
-    * A variable that is written but never read yields ``W_WRITE_ONLY_VAR``,
-      with ``written_states`` in ``refs``.
+      ``definition_delete_anchor`` entry in ``refs`` of the warning (the
+      informational variant has none).
+    * Otherwise (the variable affects a guard), a variable that is read but
+      never written yields ``W_UNWRITTEN_READ_VAR``, with ``read_states`` and
+      ``init_value`` in ``refs``.
+    * Otherwise, a variable that is written but never read yields
+      ``W_WRITE_ONLY_VAR``, with ``written_states`` in ``refs``.
 
     When ``machine`` is given, every guarded transition whose guard reads only
     ``control`` variables that no action or effect writes additionally yields

@@ -2458,8 +2458,10 @@ class State(AstExportable, PlantUMLExportable):
         Convert this state to an AST node.
 
         Children, regions, events, transitions and actions keep their
-        declaration order, so printing the node reproduces the state as
-        authored.
+        declaration order, so printing the node reproduces the model's state.
+        After history or ``active()`` lowering this includes the generated
+        hidden variables, actions and rewritten guards, not the authored
+        spelling.
 
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
@@ -4289,8 +4291,9 @@ def _build_assembled_state_machine(
     :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
     :param sink: Sink that receives every diagnostic of the build
     :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
-    :param lower: Whether to lower history constructs; when ``False`` the
-        history owners are still validated and described
+    :param lower: Whether to lower history constructs and ``active()``
+        queries; when ``False`` both are still validated and described, but no
+        hidden variable, action or rewrite is installed
     :type lower: bool
     :return: The built machine
     :rtype: StateMachine

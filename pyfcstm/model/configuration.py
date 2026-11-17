@@ -784,9 +784,10 @@ class Configuration:
         Active leaf States in declaration order, excluding Done regions.
 
         Transient snapshots may include pseudo leaves. Pending composite owners
-        contribute no leaf until their children have initialized. For an
-        ordinary model the result has exactly one State; for a model with
-        parallel regions it has one per live region branch.
+        contribute no leaf until their children have initialized. In ``stable``
+        mode an ordinary model yields exactly one State and a model with
+        parallel regions one per live region branch; ``initialization`` and
+        ``transient`` configurations may yield none.
 
         :return: Leaf :class:`~pyfcstm.model.model.State` objects of the bound
             model, in region declaration order.

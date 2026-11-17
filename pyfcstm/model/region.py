@@ -289,7 +289,8 @@ def validate_region_structure(node, sink: DiagnosticSink, path=()) -> bool:
     with its own transitions, forced transitions, imports or histories) and
     ``history_boundary`` (a state with history whose subtree contains regions);
     plus ``E_DUPLICATE_REGION`` for repeated region names in one owner. The
-    walk always recurses into every child, so one call reports every problem.
+    walk always recurses into every child, so with a collecting sink one call
+    reports every problem.
 
     :param node: Root state or region declaration to check, with its subtree.
     :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]

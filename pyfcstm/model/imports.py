@@ -603,7 +603,7 @@ def _assemble_state(
     ``host_program`` are mutated in place.
 
     :param node: State or region being processed.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param current_state_path: Names from the host root state down to ``node``;
         used for diagnostics and for rebasing imported paths.
     :type current_state_path: Tuple[str, ...]
@@ -1400,7 +1400,7 @@ def _collect_event_extra_names(
     ``output`` is mutated in place.
 
     :param node: State or region to scan.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param current_path: Names of the ancestors of ``node``, starting at the
         module root; empty for the module root itself.
     :type current_path: Tuple[str, ...]
@@ -1438,7 +1438,7 @@ def _collect_event_docs(
     order and without duplicates.
 
     :param node: State or region to scan.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param current_path: Names of the ancestors of ``node``, starting at the
         module root; empty for the module root itself.
     :type current_path: Tuple[str, ...]
@@ -1490,7 +1490,7 @@ def _rewrite_imported_state_event_paths(
     :func:`_rewrite_absolute_paths_for_imported_root` rebases them.
 
     :param node: State or region to rewrite.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param current_path: Names of the ancestors of ``node``, starting at the
         module root; empty for the module root itself.
     :type current_path: Tuple[str, ...]
@@ -1649,7 +1649,7 @@ def _prune_mapped_source_event_definitions(
     order; ``node.events`` is reassigned to a new list on every visited node.
 
     :param node: State or region to prune.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param current_path: Names of the ancestors of ``node``, starting at the
         module root; empty for the module root itself.
     :type current_path: Tuple[str, ...]
@@ -2487,7 +2487,7 @@ def _rewrite_state_variable_references(
     and abstract actions carry no operations and are skipped.
 
     :param node: State or region whose subtree is rewritten.
-    :type node: pyfcstm.dsl.node.StateDefinition
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
     :param source_to_target: Mapping from original variable names to the names
         they take in the host program.
     :type source_to_target: Dict[str, str]

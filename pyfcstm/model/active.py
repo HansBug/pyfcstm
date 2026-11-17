@@ -189,15 +189,18 @@ def _rewrite(expression, variables):
     Replace every bound query in an expression tree with a flag comparison.
 
     Each :class:`~pyfcstm.model.expr.ActiveStateQuery` becomes
-    ``<variable> != 0``. Other nodes are copied only when one of their
-    sub-expressions changed, so untouched subtrees are shared, not cloned.
+    ``<variable> != 0``. Every node that has expression-valued fields is
+    rebuilt with :func:`dataclasses.replace`, even when nothing below it
+    changed; only leaf nodes without such fields (and the unchanged children
+    themselves) are shared.
 
     :param expression: Expression to rewrite.
     :type expression: pyfcstm.model.expr.Expr
     :param variables: Hidden variable name for each query, keyed by ``id()`` of
         the query object.
     :type variables: Dict[int, str]
-    :return: The rewritten expression (the input itself if it held no query).
+    :return: The rewritten expression; an equal copy when it held no query,
+        except that a leaf is returned as is.
     :rtype: pyfcstm.model.expr.Expr
     """
     if isinstance(expression, ActiveStateQuery):

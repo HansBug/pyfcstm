@@ -144,8 +144,9 @@ class SyntaxFailError(GrammarItemError):
         The raw ANTLR text is lower-cased and matched against a series of
         known failure shapes (unterminated comment, missing ``;``, ``}``,
         ``{``, ``]``, ``[``, ``->`` or ``=``, extraneous input, mismatched
-        input, no viable alternative, token recognition error); the first matching shape selects a
-        replacement message, sometimes refined by ``offending_symbol``. For
+        input, no viable alternative, token recognition error); the first
+        matching shape selects a replacement message, sometimes refined by
+        ``offending_symbol``. For
         mismatched input, an offending ``<EOF>`` together with an expected
         ``RBRACE`` (ANTLR's token name for ``}``) means the input ended
         while a block was still open, and is reported as a missing closing

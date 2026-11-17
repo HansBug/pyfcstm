@@ -4701,8 +4701,17 @@ def inspect_model(
     :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
-    :raises ValueError: If a threshold or the verification policy is invalid.
-    :raises TypeError: If a threshold has the wrong type.
+    :raises pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: If
+        ``max_complexity_tier`` or ``max_call_count_scaling`` is not a known
+        value, or ``smt_timeout_ms`` is neither ``None`` nor a non-negative
+        integer. This is a :class:`ValueError` subclass.
+    :raises TypeError: If a threshold is a ``bool`` or has a non-numeric type,
+        or ``structure_statistics_policy`` is not a mapping, a
+        :class:`StructureStatisticsPolicy` or ``None``, or names an unknown
+        field.
+    :raises ValueError: If an integer threshold is a non-integral float, a
+        float threshold is not finite, or a structure-statistics value is out
+        of range.
 
     Examples::
 
@@ -4724,6 +4733,17 @@ def inspect_model(
         >>> verify_report = inspect_model(machine, enable_verify=True)
         >>> len(verify_report.diagnostics) >= len(report.diagnostics)
         True
+
+    Invalid policy arguments are rejected before any analysis runs::
+
+        >>> inspect_model(machine, max_complexity_tier='bogus')
+        Traceback (most recent call last):
+        ...
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect complexity tier: 'bogus'
+        >>> inspect_model(machine, deep_hierarchy_threshold=True)
+        Traceback (most recent call last):
+        ...
+        TypeError: deep_hierarchy_threshold must be an integer threshold, got bool
     """
     if model_diagnostics is None:
         model_diagnostics = machine._build_warnings

@@ -8,8 +8,13 @@ model, and renders code using template files.
 
 The module is intended to be imported by CLI entry-point modules that assemble
 Click command groups. It does not expose public helpers; the main integration
-point is the internal :func:`_add_generate_subcommand` used by the package's
+point is the internal ``_add_generate_subcommand`` used by the package's
 CLI bootstrap code.
+
+The module contains:
+
+* ``_add_generate_subcommand`` - Register the ``generate`` subcommand on a
+  Click group
 
 Example::
 
@@ -47,6 +52,12 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
     :type cli: click.Group
     :return: The modified Click command group.
     :rtype: click.Group
+    :raises FileNotFoundError: If the packaged template index is missing; the
+        names of the built-in templates are read through
+        :func:`pyfcstm.template.list_templates` while the command is being
+        registered, to build the choices of ``--template``.
+    :raises json.JSONDecodeError: If the packaged template index is not valid
+        JSON, for the same reason.
 
     Example::
 
@@ -129,17 +140,28 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         :return: ``None``.
         :rtype: None
 
+        :raises click.UsageError: If neither or both of ``--template-dir`` and
+            ``--template`` are given; nothing is read or written in that case.
+        :raises pyfcstm.entry.base.ClickErrorException: If building the model
+            raises :class:`pyfcstm.utils.validate.ModelValidationError`; the
+            message is the validation error text.
         :raises UnicodeDecodeError: If the input file cannot be decoded.
-        :raises AttributeError: If the grammar entry ``state_machine_dsl`` is missing.
         :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
-        :raises SyntaxError: If the DSL model is invalid.
-        :raises IOError: If reading the input file or writing output files fails.
+        :raises OSError: If reading the input file or writing output files fails.
         :raises jinja2.exceptions.TemplateError: If template rendering fails.
+
+        .. note::
+           Only the first two failures are converted into Click errors.  The
+           parse, decode, file system and template errors are not caught here
+           and propagate out of the command.
 
         Example::
 
             $ pyfcstm generate -i ./machine.dsl -t ./templates -o ./out --clear
             $ pyfcstm generate -i ./machine.dsl --template python -o ./out
+
+        With ``--template python`` the output directory receives ``machine.py``
+        together with the generated ``README.md`` and ``README_zh.md``.
         """
         if bool(template_dir) == bool(template_name):
             raise click.UsageError(

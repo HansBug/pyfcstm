@@ -1491,20 +1491,56 @@ class Variable(Expr):
 
 @dataclass
 class ActiveStateQuery(Expr):
-    """An authored query bound and lowered during model construction.
+    """
+    An authored query bound and lowered during model construction.
+
+    Written ``active("Root.Run.Motion.Move")`` in DSL conditions. Model
+    construction binds the path to a state and rewrites the query to a
+    comparison on a hidden flag variable (see :mod:`pyfcstm.model.active`), so
+    models returned to callers no longer contain this node.
 
     :param path: Full State path or a root-relative path beginning with ``/``.
+    :type path: str
     :param _span: Source location of the authored query, when available.
+    :type _span: Optional[pyfcstm.utils.validate.Span], optional
 
     This expression can be inspected or exported before binding. Evaluation
     requires model lowering; an unbound query is not a runnable expression.
+
+    Example::
+
+        >>> from pyfcstm.model import ActiveStateQuery
+        >>> query = ActiveStateQuery('Root.Run.Motion.Move')
+        >>> query
+        ActiveStateQuery(path='Root.Run.Motion.Move')
+        >>> str(query)
+        'active("Root.Run.Motion.Move")'
+        >>> ActiveStateQuery('/Run.Motion.Move').path
+        '/Run.Motion.Move'
+        >>> query == ActiveStateQuery('Root.Run.Motion.Move')
+        True
     """
 
     path: str
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.ActiveStateQuery:
-        """Preserve the query spelling and source position in the AST."""
+        """
+        Convert this query back to its AST node.
+
+        The path spelling and source position are preserved, so exporting an
+        unbound query reproduces what was written.
+
+        :return: The equivalent :class:`pyfcstm.dsl.node.ActiveStateQuery`.
+        :rtype: pyfcstm.dsl.node.ActiveStateQuery
+
+        Example::
+
+            >>> from pyfcstm.model import ActiveStateQuery
+            >>> node = ActiveStateQuery('Root.Run.Motion.Move').to_ast_node()
+            >>> type(node).__name__, str(node)
+            ('ActiveStateQuery', 'active("Root.Run.Motion.Move")')
+        """
         return dsl_nodes.ActiveStateQuery(self.path, _span=self._span)
 
 

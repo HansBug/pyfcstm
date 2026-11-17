@@ -16,6 +16,11 @@ to build higher-level representations of:
 * Import statements and import mapping rules
 * Entry/exit/during operation blocks and function references
 
+The module contains:
+
+* :class:`GrammarParseListener` - Listener that builds AST nodes from parse
+  contexts as the parse tree is walked
+
 Example::
 
     >>> from antlr4 import CommonTokenStream, InputStream
@@ -202,6 +207,9 @@ class GrammarParseListener(GrammarListener):
 
     :ivar nodes: Mapping of parse contexts to constructed AST nodes.
     :vartype nodes: dict[object, Any]
+    :ivar errors: Item-level errors collected while building nodes, such as
+        malformed documentation blocks; the list is empty for clean input.
+    :vartype errors: list
 
     Example::
 
@@ -420,10 +428,30 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = node
 
     def exitActiveExprCond(self, ctx: GrammarParser.ActiveExprCondContext) -> None:
-        """Build an active-state query with its decoded path and source span.
+        """
+        Build an :class:`pyfcstm.dsl.node.ActiveStateQuery` for ``active("...")``.
+
+        Handles the ``activeExprCond`` alternative of ``cond_expression``,
+        i.e. the ``active`` keyword followed by one string literal in
+        parentheses. The literal is decoded (quotes removed, escapes
+        resolved) and stored as ``path``; the node also records the source
+        span of the whole query. The path is stored verbatim and is not
+        resolved to a state here; resolution belongs to model construction.
+        The node is stored in ``self.nodes[ctx]``.
 
         :param ctx: Parse context for an active-state condition.
         :type ctx: GrammarParser.ActiveExprCondContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("active('Root.Motor.Running')", "cond_expression")
+            >>> node
+            ActiveStateQuery(path='Root.Motor.Running')
+            >>> str(node)
+            'active("Root.Motor.Running")'
         """
         self.nodes[ctx] = ActiveStateQuery(
             path=_parse_string_literal(ctx.state_path.text),
@@ -524,10 +552,29 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.Initial_assignmentContext
     ) -> None:
         """
-        Build an initial assignment node.
+        Build an :class:`pyfcstm.dsl.node.InitialAssignment` node.
+
+        Handles the ``initial_assignment`` rule, the ``name := expression;``
+        statement of a preamble program (``preamble_program``, the entry point
+        behind ``parse_preamble``). It is not the variable declaration of a
+        state machine file, which uses ``def``. The node
+        keeps the variable name and the already-built initialization
+        expression node of ``ctx.init_expression()``, and is stored in
+        ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the initial assignment.
         :type ctx: GrammarParser.Initial_assignmentContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("x := 3 * 2;", "initial_assignment")
+            >>> node.name
+            'x'
+            >>> node.expr
+            BinaryOp(expr1=Integer(raw='3'), op='*', expr2=Integer(raw='2'))
         """
         super().exitInitial_assignment(ctx)
         self.nodes[ctx] = InitialAssignment(
@@ -539,10 +586,25 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.Constant_definitionContext
     ) -> None:
         """
-        Build a constant definition node.
+        Build a :class:`pyfcstm.dsl.node.ConstantDefinition` node.
+
+        Handles the ``constant_definition`` rule, the ``NAME = expression;``
+        statement (plain ``=``, not ``:=``) of a preamble program
+        (``preamble_program``) that defines a named constant. The node
+        keeps the constant name and the already-built initialization
+        expression node of ``ctx.init_expression()``, and is stored in
+        ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the constant definition.
         :type ctx: GrammarParser.Constant_definitionContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> parse_with_grammar_entry("PI = 3.14;", "constant_definition")
+            ConstantDefinition(name='PI', expr=Float(raw='3.14'))
         """
         super().exitConstant_definition(ctx)
         self.nodes[ctx] = ConstantDefinition(
@@ -554,10 +616,27 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.Operational_assignmentContext
     ) -> None:
         """
-        Build an operational (deprecated) assignment node.
+        Build an :class:`pyfcstm.dsl.node.OperationalDeprecatedAssignment` node.
+
+        Handles the ``operational_assignment`` rule, the
+        ``name := numeric_expression;`` form. This rule belongs to the legacy
+        ``operation_program`` entry point and is kept for compatibility; the
+        node keeps the variable name and the numeric expression node of
+        ``ctx.num_expression()``, and is stored in ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the operational assignment.
         :type ctx: GrammarParser.Operational_assignmentContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("y := x + 1;", "operational_assignment")
+            >>> node.name
+            'y'
+            >>> node.expr
+            BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1'))
         """
         super().exitOperational_assignment(ctx)
         self.nodes[ctx] = OperationalDeprecatedAssignment(
@@ -709,10 +788,29 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.LeafStateDefinitionContext
     ) -> None:
         """
-        Build a leaf :class:`StateDefinition` node.
+        Build a leaf :class:`pyfcstm.dsl.node.StateDefinition` node.
+
+        Handles the ``leafStateDefinition`` alternative of
+        ``state_definition``, i.e. ``state Name;`` with an optional
+        ``pseudo`` prefix, an optional ``named "..."`` display name and an
+        optional leading documentation block. The node has empty
+        ``substates``, ``transitions``, ``enters``, ``durings`` and ``exits``;
+        ``extra_name`` is decoded from its string literal, ``is_pseudo``
+        reflects the ``pseudo`` keyword, and the owner span is recorded. The
+        node is stored in ``self.nodes[ctx]``. Documentation problems found
+        by ``_documentation`` are appended to ``self.errors``.
 
         :param ctx: Parse context for the leaf state definition.
         :type ctx: GrammarParser.LeafStateDefinitionContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("pseudo state A named 'Alpha';", "state_definition")
+            >>> (node.name, node.extra_name, node.is_pseudo, node.substates)
+            ('A', 'Alpha', True, [])
         """
         super().exitLeafStateDefinition(ctx)
         node = StateDefinition(
@@ -735,10 +833,33 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.CompositeStateDefinitionContext
     ) -> None:
         """
-        Build a composite :class:`StateDefinition` node.
+        Build a composite :class:`pyfcstm.dsl.node.StateDefinition` node.
+
+        Handles the ``compositeStateDefinition`` alternative of
+        ``state_definition``, i.e. ``state Name { ... }``. The already-built
+        nodes of the direct children are sorted by node type into the
+        matching lists of the result: events, imports, substates, regions,
+        transitions, enter/during/exit statements, during aspects, forced
+        transitions and history declarations. Children without a stored node
+        (for example empty ``;`` statements) are skipped, and the relative
+        order of each kind is the declaration order. The node is stored in
+        ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the composite state definition.
         :type ctx: GrammarParser.CompositeStateDefinitionContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("state P { state A; [*] -> A; }", "state_definition")
+            >>> node.name
+            'P'
+            >>> [child.name for child in node.substates]
+            ['A']
+            >>> [str(transition) for transition in node.transitions]
+            ['[*] -> A;']
         """
         super().exitCompositeStateDefinition(ctx)
         node = StateDefinition(
@@ -812,10 +933,34 @@ class GrammarParseListener(GrammarListener):
         self.nodes[ctx] = node
 
     def exitRegion_definition(self, ctx: GrammarParser.Region_definitionContext) -> None:
-        """Build a region without treating it as an executable state.
+        """
+        Build a :class:`pyfcstm.dsl.node.RegionDefinition` node.
+
+        Handles the ``region_definition`` rule, ``region Name { ... }`` with an
+        optional leading documentation block. The statements of the body
+        (already stored by :meth:`exitRegion_inner_statement`) are sorted by
+        node type into ``substates``, ``transitions``, ``force_transitions``,
+        ``events`` and ``during_aspects``, keeping declaration order within
+        each list. Empty ``;`` statements have no stored node and are
+        skipped. The result is a plain AST node: it is not a
+        :class:`pyfcstm.dsl.node.StateDefinition`, and this method assigns it
+        no behavior. The node is stored in ``self.nodes[ctx]``.
 
         :param ctx: Parse context for a named region declaration.
         :type ctx: GrammarParser.Region_definitionContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("region R { [*] -> X; state X; }", "region_definition")
+            >>> node.name
+            'R'
+            >>> [state.name for state in node.substates]
+            ['X']
+            >>> [str(transition) for transition in node.transitions]
+            ['[*] -> X;']
         """
         statements = [self.nodes[item] for item in ctx.region_inner_statement()
                       if item in self.nodes]
@@ -831,28 +976,79 @@ class GrammarParseListener(GrammarListener):
         )
 
     def exitRegion_inner_statement(self, ctx: GrammarParser.Region_inner_statementContext) -> None:
-        """Bind a region statement, ignoring optional empty statements.
+        """
+        Forward the node of a region body statement to its wrapper context.
+
+        Handles ``region_inner_statement``, which wraps exactly one of a state
+        definition, a transition, a forced transition, a during aspect, an
+        event definition or a bare ``;``. When the single child has a stored
+        node, that same node object is stored under ``ctx``; for the bare
+        ``;`` no node exists and nothing is stored, which is why
+        :meth:`exitRegion_definition` filters on membership in
+        ``self.nodes``.
 
         :param ctx: Parse context for a statement owned by a region.
         :type ctx: GrammarParser.Region_inner_statementContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("state X;", "region_inner_statement")
+            >>> (type(node).__name__, node.name)
+            ('StateDefinition', 'X')
         """
         child = ctx.getChild(0)
         if child in self.nodes:
             self.nodes[ctx] = self.nodes[child]
 
     def exitState_child_statement(self, ctx: GrammarParser.State_child_statementContext) -> None:
-        """Bind the first declaration selecting an ordinary child namespace.
+        """
+        Forward the node of a child declaration to its wrapper context.
+
+        Handles ``state_child_statement``, which wraps exactly one of a state
+        definition, a transition, a forced transition, a history declaration
+        or an import statement. In a composite state this is the first
+        declaration after the owner statements, and it selects the ordinary
+        child namespace (as opposed to regions). The node of the single
+        child is stored under ``ctx`` as the same object.
 
         :param ctx: Parse context for a child declaration or local transition.
         :type ctx: GrammarParser.State_child_statementContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("state X;", "state_child_statement")
+            >>> (type(node).__name__, node.name)
+            ('StateDefinition', 'X')
         """
         self.nodes[ctx] = self.nodes[ctx.getChild(0)]
 
     def exitState_owner_statement(self, ctx: GrammarParser.State_owner_statementContext) -> None:
-        """Bind an owner declaration, ignoring empty statements.
+        """
+        Forward the node of a state's own declaration to its wrapper context.
+
+        Handles ``state_owner_statement``, which wraps exactly one of an
+        enter, during, exit or during-aspect definition, an event definition
+        or a bare ``;``. When the single child has a stored node, that same
+        node object is stored under ``ctx``; for the bare ``;`` nothing is
+        stored.
 
         :param ctx: Parse context for a state's own declaration.
         :type ctx: GrammarParser.State_owner_statementContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> node = parse_with_grammar_entry("enter { a = 1; }", "state_owner_statement")
+            >>> node
+            EnterOperations(operations=[OperationAssignment(name='a', expr=Integer(raw='1'))], name=None, doc=None)
         """
         child = ctx.getChild(0)
         if child in self.nodes:
@@ -954,8 +1150,23 @@ class GrammarParseListener(GrammarListener):
         """
         Collect the dotted default target of a history declaration.
 
+        Handles ``history_default_path``, an identifier optionally followed
+        by further ``.identifier`` segments. The stored value is a plain
+        ``list`` of the segment texts in source order, not an AST node; a
+        shallow history normally names one child and a deep history a
+        descendant path. :meth:`exitHistory_definition` consumes it as the
+        ``default_path`` of the resulting history node.
+
         :param ctx: Parse context for the history default path.
         :type ctx: GrammarParser.History_default_pathContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> parse_with_grammar_entry("A.B.C", "history_default_path")
+            ['A', 'B', 'C']
         """
         super().exitHistory_default_path(ctx)
         self.nodes[ctx] = [item.text for item in ctx.path_items]
@@ -1228,8 +1439,21 @@ class GrammarParseListener(GrammarListener):
         """
         Build a source-local combo event identifier from a bare event name.
 
+        Handles ``local_combo_event_term``, a single identifier used as an
+        event term inside a source-local combo trigger. The stored value is
+        the identifier text as a plain ``str``, not an AST node;
+        :meth:`exitLocal_combo_trigger_term` forwards it as the term.
+
         :param ctx: Parse context for the local combo event term.
         :type ctx: GrammarParser.Local_combo_event_termContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> parse_with_grammar_entry("Go", "local_combo_event_term")
+            'Go'
         """
         super().exitLocal_combo_event_term(ctx)
         self.nodes[ctx] = ctx.event_id.text
@@ -1398,10 +1622,26 @@ class GrammarParseListener(GrammarListener):
 
     def exitChain_id(self, ctx: GrammarParser.Chain_idContext) -> None:
         """
-        Build a chain identifier node.
+        Build a :class:`pyfcstm.dsl.node.ChainID` node.
+
+        Handles ``chain_id``, a dotted identifier path with an optional
+        leading ``/``. ``path`` holds the segment texts in source order, and
+        ``is_absolute`` is ``True`` only when the leading slash is present.
+        No name resolution happens here. The node is stored in
+        ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the chain identifier.
         :type ctx: GrammarParser.Chain_idContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> parse_with_grammar_entry("/Root.Sub.Ev", "chain_id")
+            ChainID(path=['Root', 'Sub', 'Ev'], is_absolute=True)
+            >>> parse_with_grammar_entry("Sub.Ev", "chain_id")
+            ChainID(path=['Sub', 'Ev'], is_absolute=False)
         """
         super().exitChain_id(ctx)
         self.nodes[ctx] = ChainID(
@@ -1522,10 +1762,24 @@ class GrammarParseListener(GrammarListener):
         self, ctx: GrammarParser.Operation_assignmentContext
     ) -> None:
         """
-        Build an operation assignment node.
+        Build a :class:`pyfcstm.dsl.node.OperationAssignment` node.
+
+        Handles ``operation_assignment``, the ``name = numeric_expression;``
+        statement used inside enter/during/exit/effect blocks. The node keeps
+        the variable name and the numeric expression node of
+        ``ctx.num_expression()``, records its source span, and is stored in
+        ``self.nodes[ctx]``.
 
         :param ctx: Parse context for the operation assignment.
         :type ctx: GrammarParser.Operation_assignmentContext
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> parse_with_grammar_entry("y = x + 1;", "operation_assignment")
+            OperationAssignment(name='y', expr=BinaryOp(expr1=Name(name='x'), op='+', expr2=Integer(raw='1')))
         """
         super().exitOperation_assignment(ctx)
         node = OperationAssignment(

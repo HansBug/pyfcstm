@@ -1,7 +1,40 @@
-"""Constant-folding diagnostics for literal-only expressions.
+"""
+Constant-folding diagnostics for literal-only expressions.
+
+This module evaluates expressions that consist only of literals and supported
+operators, without any variable lookup, and reports design-health warnings
+that follow from the folded value: a transition guard that is always true or
+always false, and a ``during`` action that assigns the same constant to a
+variable on every cycle. Folding is deliberately conservative: an expression
+that mentions a variable, uses an unsupported operator, or would produce a
+value outside the JSON-stable range is left unfolded and yields no diagnostic.
 
 Numeric diagnostic refs are limited to JSON-stable values so Python and
 jsfcstm agree on values that cross the JSON boundary.
+
+The module contains:
+
+* :func:`fold_numeric_expression` - Fold a numeric expression to a constant
+  or ``None``
+* :func:`fold_condition_expression` - Fold a condition expression to a
+  ``bool`` or ``None``
+* :func:`collect_const_fold_warnings` - Collect the warnings that depend on
+  constant folding for a whole state machine
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
+    >>> machine = load_state_machine_from_text('''
+    ... state Root {
+    ...     state A;
+    ...     state B;
+    ...     [*] -> A;
+    ...     A -> B : if [1 > 2];
+    ... }
+    ... ''')
+    >>> [d.code for d in collect_const_fold_warnings(machine)]
+    ['W_GUARD_CONST_FALSE']
 """
 
 import math
@@ -85,25 +118,56 @@ def collect_const_fold_warnings(
     machine: Optional['StateMachine'],
 ) -> List[ModelDiagnostic]:
     """
-    Collect diagnostics that depend on constant folding.
+    Collect the warnings that depend on constant folding for a state machine.
 
-    Every guard and every plain ``during`` action of every state **and region**
-    is folded, so a guard or assignment inside a ``region`` block is judged like
-    one anywhere else. The diagnostics are ``W_GUARD_CONST_TRUE``,
-    ``W_GUARD_CONST_FALSE`` and ``W_DURING_CONST_ASSIGN``. An ``active("...")``
-    query is never a constant.
+    Every transition guard is folded with :func:`fold_condition_expression`.
+    A guard that folds to ``True`` yields ``W_GUARD_CONST_TRUE`` and one that
+    folds to ``False`` yields ``W_GUARD_CONST_FALSE``; the diagnostic ``refs``
+    carry ``folded_value``, ``from_path``, ``to_path``, ``guard_text`` and the
+    transition's index in model traversal order. Transitions that originate
+    from a combo transition are skipped here because the combo analyzer maps
+    their guard terms back to the original source spans. Each plain
+    (non-abstract, non-``ref``, non-aspect) ``during`` action is scanned for
+    top-level assignments (those inside ``if`` blocks are not visited) to a
+    declared variable whose right-hand side folds to a
+    JSON-stable number, which yields ``W_DURING_CONST_ASSIGN`` with
+    ``state_path``, ``var_name`` and ``value`` in ``refs``. Assignments to
+    block-local temporary names are ignored.
 
-    :param machine: State machine to inspect, or ``None`` to emit no
-        diagnostics.
-    :type machine: pyfcstm.model.model.StateMachine, optional
-    :return: Constant-folding diagnostics, in model order.
+    Regions are visited like states: the guards of region-owned transitions
+    and the plain ``during`` actions of states inside a region are folded too
+    (a region itself has no ``during`` actions). An ``active("...")`` query is
+    never a constant.
+
+    Diagnostics are returned in model traversal order; within one state the
+    guard warnings come before the ``during`` warnings.
+
+    :param machine: State machine to inspect. ``None`` is accepted and yields
+        an empty list, so callers can pass an optional model straight through.
+    :type machine: Optional[pyfcstm.model.model.StateMachine]
+    :return: Constant-folding warnings; empty when nothing folds.
     :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
 
     Example::
 
-        >>> from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
         >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
         >>> machine = load_state_machine_from_text('''
+        ... def int counter = 0;
+        ... state Root {
+        ...     state A { during { counter = 5; } }
+        ...     state B;
+        ...     [*] -> A;
+        ...     A -> B : if [1 > 2];
+        ...     B -> A : if [true];
+        ... }
+        ... ''')
+        >>> for item in collect_const_fold_warnings(machine):
+        ...     print(item.code, item.refs.get('guard_text', item.refs.get('value')))
+        W_GUARD_CONST_FALSE 1 > 2
+        W_GUARD_CONST_TRUE true
+        W_DURING_CONST_ASSIGN 5
+        >>> region_machine = load_state_machine_from_text('''
         ... state Root {
         ...     region Work {
         ...         state A; state B;
@@ -112,7 +176,7 @@ def collect_const_fold_warnings(
         ...     }
         ... }
         ... ''')
-        >>> [item.code for item in collect_const_fold_warnings(machine)]
+        >>> [item.code for item in collect_const_fold_warnings(region_machine)]
         ['W_GUARD_CONST_FALSE']
         >>> collect_const_fold_warnings(None)
         []

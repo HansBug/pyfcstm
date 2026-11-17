@@ -1,4 +1,39 @@
-"""Use-def graph construction for guard-affect data-flow analysis."""
+"""
+Use-def graph construction for guard-affect data-flow analysis.
+
+This module builds a conservative directed graph that records which variables
+may influence the value of which other variables, based on the assignments in
+concrete lifecycle actions and transition effects. The data-flow analyzers use
+it to decide whether a variable can reach a transition guard, directly or
+through a chain of assignments. The graph is conservative: it records every
+dependency that may exist and does not try to prove that an assignment is
+reachable or that a branch is taken.
+
+The module contains:
+
+* :class:`UseDefGraph` - Immutable dependency graph with transitive queries
+* :func:`build_use_def_graph` - Build the graph for a state machine
+* :func:`collect_expr_variables` - List the variables read by one expression
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+    >>> machine = load_state_machine_from_text('''
+    ... def int a = 0;
+    ... def int b = 0;
+    ... def int c = 0;
+    ... state Root {
+    ...     state S { during { b = a + 1; c = b * 2; } }
+    ...     [*] -> S;
+    ... }
+    ... ''')
+    >>> graph = build_use_def_graph(machine)
+    >>> graph.edges
+    (('a', 'b'), ('b', 'c'))
+    >>> graph.affecting_variables(['c'])
+    ('a', 'b')
+"""
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterable, List, Set, Tuple
@@ -47,30 +82,64 @@ def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
     """
     Build a conservative use-def graph from concrete actions and effects.
 
-    The graph has an edge ``(source, target)`` whenever an assignment to
-    ``target`` reads ``source``, directly or through the condition of an
-    enclosing ``if``. States and regions are both visited, so assignments in
-    region aspects and in region-owned transitions are included. Abstract
-    actions are skipped, and an ``active("...")`` query reads a state's
-    activity, not a variable, so it adds no edge.
+    Every state is scanned for its ``enter``, ``during``, ``exit`` and aspect
+    actions (abstract actions have no body and are skipped), and every
+    transition for its effect block. Each assignment ``target = expr`` adds an
+    edge ``(source, target)`` for every variable ``source`` read by ``expr``.
+    Inside an ``if`` block, the variables read by the enclosing conditions, and
+    by the conditions of earlier branches of the same chain, also become
+    sources of every assignment in the branch, because whether the assignment
+    runs depends on them. An assignment of a literal outside any ``if`` block
+    produces no edge, while inside an ``if`` block it still depends on the
+    branch conditions. The graph does not distinguish declared variables from
+    block-local temporaries.
 
-    :param machine: State machine to analyze.
+    States and regions are both visited, so assignments in region aspects and
+    in region-owned transitions are included. An ``active("...")`` query reads
+    a state's activity, not a variable, so it adds no edge.
+
+    Edges are sorted, so the result is deterministic for a given model.
+
+    :param machine: State machine whose actions and transition effects are
+        scanned.
     :type machine: pyfcstm.model.model.StateMachine
-    :return: The sorted edges and, for each target, the variables it depends on.
+    :return: The dependency graph; it has no edges when no assignment reads a
+        variable, in its expression or in an enclosing ``if`` condition.
     :rtype: UseDefGraph
 
     Example::
 
-        >>> from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
         >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
         >>> machine = load_state_machine_from_text('''
+        ... def int a = 0;
+        ... def int b = 0;
+        ... def int c = 0;
+        ... state Root {
+        ...     state S {
+        ...         during {
+        ...             b = a + 1;
+        ...             if [b > 0] { c = 2; }
+        ...         }
+        ...     }
+        ...     [*] -> S;
+        ... }
+        ... ''')
+        >>> graph = build_use_def_graph(machine)
+        >>> graph.edges
+        (('a', 'b'), ('b', 'c'))
+        >>> graph.dependencies_of('c')
+        ('b',)
+        >>> graph.dependencies_of('a')
+        ()
+        >>> region_machine = load_state_machine_from_text('''
         ... def int a = 0;
         ... def int b = 0;
         ... state Root {
         ...     region Work { state S { during { b = a + 1; } } [*] -> S; }
         ... }
         ... ''')
-        >>> build_use_def_graph(machine).edges
+        >>> build_use_def_graph(region_machine).edges
         (('a', 'b'),)
     """
     from ...model.region import namespace_actions, walk_namespaces

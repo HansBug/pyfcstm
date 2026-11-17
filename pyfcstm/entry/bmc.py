@@ -9,6 +9,15 @@ The normative BMC JSON Schema is published as a download from the
 <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_
 rather than shipped as a runtime package resource.
 
+The module contains:
+
+* :func:`build_bmc_output` - Run one model/query pair and return the report
+  text plus its exit status
+* :func:`write_bmc_output` - Atomically replace an output file with a completed
+  report
+* ``_add_bmc_subcommand`` - Register the ``bmc`` subcommand on a Click
+  group
+
 Module map:
 
 .. list-table::
@@ -20,7 +29,7 @@ Module map:
      - Run one model/query pair and return report text plus its exit status.
    * - :func:`write_bmc_output`
      - Atomically replace an output file with a completed report.
-   * - :func:`_add_bmc_subcommand`
+   * - ``_add_bmc_subcommand``
      - Register the ``bmc`` command on a Click group.
 
 Examples::
@@ -166,6 +175,25 @@ def _read_query_file(query_file: str) -> str:
 
 
 def _load_model(input_code_file: str) -> StateMachine:
+    """
+    Load the FCSTM model for ``pyfcstm bmc``, reporting input failures as CLI errors.
+
+    The model is read with
+    :func:`pyfcstm.model.load.load_state_machine_from_file`, which also follows
+    ``import`` statements.  Every expected user-input failure is converted to a
+    :class:`pyfcstm.entry.base.ClickErrorException` whose message names the
+    failure kind; any other exception propagates.
+
+    :param input_code_file: Path to the input FCSTM file.
+    :type input_code_file: str
+    :return: The loaded state machine.
+    :rtype: pyfcstm.model.model.StateMachine
+    :raises pyfcstm.entry.base.ClickErrorException: If the file is missing
+        (``Input DSL file not found``), cannot be decoded (``Failed to decode``),
+        has a syntax error (``Failed to parse``), fails model validation
+        (``Invalid FCSTM model``), or cannot be read for another filesystem
+        reason (``Failed to read``).
+    """
     try:
         from pyfcstm.model.support import require_supported_model
         model = load_state_machine_from_file(input_code_file)

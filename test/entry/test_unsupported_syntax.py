@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unittest
 @pytest.mark.parametrize('arguments', [
     ['inspect'], ['inspect', '--collect-errors'], ['inspect', '--format', 'json'],
     ['inspect', '--collect-errors', '--format', 'json'],
-    ['plantuml'], ['simulate'], ['diagram'], ['generate'], ['bmc'],
+    ['simulate'], ['diagram'], ['generate'], ['bmc'],
 ])
 def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
     path = tmp_path / 'unsupported.fcstm'
@@ -33,6 +33,19 @@ def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
                 else 'does not support active queries yet')
     assert expected in output
     assert 'Traceback' not in output
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('state Root { region Motor { state A; [*] -> A; } }', 'region 1: Motor'),
+    ('state Root { state A; [*] -> A; A -> [*] : if [active("Root.A")]; }', 'active("Root.A")'),
+])
+def test_plantuml_command_exports_region_and_active_models(tmp_path, source, expected):
+    path = tmp_path / 'supported.fcstm'
+    path.write_text(source, encoding='utf-8')
+    result = simulate_entry(pyfcstmcli, ['pyfcstm', 'plantuml', '-i', str(path)])
+    assert result.exitcode == 0
+    assert expected in result.stdout
+    assert '__active_' not in result.stdout
 
 
 @pytest.mark.parametrize('output_format', ['human', 'json'])

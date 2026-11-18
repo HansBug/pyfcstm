@@ -416,6 +416,7 @@ class StateMachineModelBuilder {
             lookups,
             historyOwners: history.owners,
             history_owners: history.owners,
+            activeQueryCount: this.activeQueries.length,
             historyDiagnostics: history.diagnostics,
         };
         return hydrateStateMachine(rawStateMachine);

@@ -406,6 +406,8 @@ export interface RawFcstmModelStateMachine extends RawFcstmModelNodeBase {
     all_actions: RawFcstmModelNamedFunction[];
     lookups: RawFcstmModelLookups;
     historyOwners?: RawFcstmModelHistoryOwner[];
+    /** Number of ``active()`` queries used anywhere in the model; ``0`` or unset when there are none. */
+    activeQueryCount?: number;
     history_owners?: RawFcstmModelHistoryOwner[];
     historyDiagnostics?: FcstmModelHistoryDiagnostic[];
 }

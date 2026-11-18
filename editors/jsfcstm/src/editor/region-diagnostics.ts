@@ -12,6 +12,10 @@
  *
  * The module contains:
  * - :func:`collectRegionDiagnostics` - ``E_REGION_STRUCTURE``, ``E_DUPLICATE_REGION`` and ``E_ACTIVE_QUERY_TARGET``
+ *
+ * A query whose path enters an imported module is not judged here, because the
+ * imported states exist only after the imports are assembled; it is bound
+ * against the assembled model when the diagram is built.
  */
 import type {
     FcstmAstDocument,
@@ -28,6 +32,10 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z_0-9]*$/;
 
 function regionsOf(node: Scope): FcstmAstRegionDefinition[] {
     return node.kind === 'regionDefinition' ? [] : node.regions;
+}
+
+function regionOwnerImports(node: Scope): FcstmAstStateDefinition['imports'] {
+    return node.kind === 'regionDefinition' ? [] : node.imports;
 }
 
 function hasRegions(node: Scope): boolean {
@@ -97,7 +105,11 @@ function bindQuery(root: FcstmAstStateDefinition, path: string): string | null {
     for (const segment of parts.slice(1)) {
         const next: Scope | undefined = current.substates.find(item => item.name === segment)
             ?? regionsOf(current).find(item => item.name === segment);
-        if (!next) return 'not_found';
+        if (!next) {
+            // A segment that names an import alias leads into a module that only
+            // the assembled model knows; leave such a path to it.
+            return regionOwnerImports(current).some(item => item.alias === segment) ? null : 'not_found';
+        }
         current = next;
     }
     if (current.kind === 'regionDefinition') return 'region';

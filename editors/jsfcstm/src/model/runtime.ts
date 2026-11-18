@@ -1721,6 +1721,8 @@ export class StateMachine extends ModelNode {
     history_owners: RawFcstmModelHistoryOwner[];
     /** Diagnostics raised while lowering history. */
     historyDiagnostics: FcstmModelHistoryDiagnostic[];
+    /** Whether the model uses at least one ``active("path")`` query. */
+    has_active_queries: boolean;
     /**
      * The same model built without lowering its history, which static
      * analyses judge instead (see ``inspectModel``); unset without history.
@@ -1747,6 +1749,7 @@ export class StateMachine extends ModelNode {
         this.historyOwners = raw.historyOwners ?? [];
         this.history_owners = this.historyOwners;
         this.historyDiagnostics = raw.historyDiagnostics ?? [];
+        this.has_active_queries = (raw.activeQueryCount ?? 0) > 0;
     }
 
     get control_variables(): Readonly<Record<string, VarDefine>> {

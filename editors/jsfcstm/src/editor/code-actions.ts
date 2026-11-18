@@ -1,6 +1,6 @@
 import {pathToFileURL} from 'node:url';
 
-import {inspectModel} from '../diagnostics';
+import {inspectModel, isInspectable} from '../diagnostics';
 import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
@@ -138,7 +138,7 @@ export async function collectCodeActions(
     const localModel = semantic ? buildStateMachineModel(semantic) : null;
     if (localModel) {
         const existing = new Set<string>();
-        const inspectDiagnostics = localModel.has_regions ? [] : inspectModel(localModel).diagnostics;
+        const inspectDiagnostics = isInspectable(localModel) ? inspectModel(localModel).diagnostics : [];
         const serverSuggestedKeysAtRange = new Set(
             collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
                 .filter(diagnostic => (

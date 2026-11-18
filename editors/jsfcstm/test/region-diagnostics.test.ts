@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import {createDocument, editorModule, packageModule} from './support';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import {createDocument, editorModule, packageModule, trackTempDir, writeFile} from './support';
+
+const diagnosticsModule = require('@pyfcstm/jsfcstm/diagnostics') as typeof import('@pyfcstm/jsfcstm/diagnostics');
 
 async function diagnose(source: string) {
     const document = createDocument(source, '/tmp/region-diagnostics.fcstm');
@@ -134,6 +138,52 @@ describe('region documents in the editor', () => {
         const found = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
             packageModule.buildSemanticDocument(ast!)!, document).filter(item => item.code === 'E_DUPLICATE_REGION');
         assert.deepEqual(found.map(item => (item.data?.previous_span as {start: {line: number}}).start.line), [1, 2]);
+    });
+
+    it('does not reject a query that enters an imported module', async () => {
+        const directory = trackTempDir('jsfcstm-region-editor-import-');
+        const module = path.join(directory, 'mod.fcstm');
+        const host = path.join(directory, 'host.fcstm');
+        writeFile(module, 'state Sub { state Par { region L { [*] -> L1; state L1; } } [*] -> Par; }');
+        writeFile(host, `state Root { state M { import "mod.fcstm" as Mod; [*] -> Mod; }
+            state Q; [*] -> Q; Q -> M : if [active("Root.M.Mod.Par.L.L1")]; M -> Q :: Back; }`);
+        const document = createDocument(fs.readFileSync(host, 'utf8'), host);
+        const found = (await editorModule.collectDocumentDiagnosticsByUri(document));
+        assert.deepEqual([...found.values()].flat().filter(item => item.code === 'E_ACTIVE_QUERY_TARGET'), []);
+    });
+
+    it('still rejects an unknown path next to an import alias', async () => {
+        const found = await publish(`state Root { state M { import "mod.fcstm" as Mod; [*] -> Mod; }
+            state Q; [*] -> Q; Q -> M : if [active("Root.M.Nothing")]; M -> Q :: Back; }`);
+        assert.deepEqual(found.filter(item => item.code === 'E_ACTIVE_QUERY_TARGET').map(item => item.data?.reason), ['not_found']);
+    });
+
+    it('does not crash the editor on a document that only uses active queries', async () => {
+        const document = createDocument(`def int n = 0;
+            state Root { state A; state B { during { if [active("Root.A")] { n = 1; } } }
+              [*] -> A; A -> B : if [n > 0]; B -> A :: Back; }`, '/tmp/region-actions.fcstm');
+        const actions = await editorModule.collectCodeActions(document, {
+            start: {line: 0, character: 0}, end: {line: 3, character: 0},
+        }, []);
+        assert.ok(Array.isArray(actions));
+    });
+});
+
+describe('structural inspector support', () => {
+    it('refuses machines with regions or active queries explicitly', async () => {
+        for (const source of [
+            'state Root { region A { state X; [*] -> X; } }',
+            'state Root { state A; [*] -> A; A -> A : if [active("Root.A")]; }',
+        ]) {
+            const ast = await packageModule.parseAstDocument(createDocument(source, '/tmp/inspect.fcstm'));
+            const machine = packageModule.buildStateMachineModel(ast!)!;
+            assert.equal(diagnosticsModule.isInspectable(machine), false);
+            assert.throws(() => diagnosticsModule.inspectModel(machine), /does not support machines with regions or active\(\) queries/);
+        }
+        const plain = packageModule.buildStateMachineModel(
+            (await packageModule.parseAstDocument(createDocument('state Root { state A; [*] -> A; }', '/tmp/plain.fcstm')))!)!;
+        assert.equal(diagnosticsModule.isInspectable(plain), true);
+        assert.equal(diagnosticsModule.inspectModel(plain).root_state_path, 'Root');
     });
 });
 

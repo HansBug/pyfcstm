@@ -1,7 +1,7 @@
 import {pathToFileURL} from 'node:url';
 
 import {getParser, ParseError} from '../dsl/parser';
-import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
+import {inspectModel, isInspectable, type ModelDiagnosticJson} from '../diagnostics';
 import {canonicalizeDiagnosticCode} from '../diagnostics/codes-registry';
 import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument} from '../semantics';
@@ -502,9 +502,10 @@ export async function collectDocumentDiagnosticsByUri(
                 code: item.code,
                 data: {...item.refs},
             })));
-            // The structural inspector does not judge machines with regions,
-            // like ``pyfcstm inspect``; the semantic analysis above does.
-            const localInspectDiagnostics = localModel.has_regions ? [] : collectInspectModelDiagnostics(
+            // The structural inspector does not judge machines with regions or
+            // active() queries, like ``pyfcstm inspect``; the semantic analysis
+            // above does.
+            const localInspectDiagnostics = !isInspectable(localModel) ? [] : collectInspectModelDiagnostics(
                 document,
                 node.semantic,
                 localModel,
@@ -541,7 +542,7 @@ export async function collectDocumentDiagnosticsByUri(
     // a subtree mounted under an unreachable host state appear reachable.
     if (node?.model && node.modelAuthority === 'assembled') {
         const assembledModel = node.model;
-        const assembledDiagnostics = assembledModel.has_regions ? [] : inspectModel(assembledModel).diagnostics;
+        const assembledDiagnostics = isInspectable(assembledModel) ? inspectModel(assembledModel).diagnostics : [];
         for (const filePath of snapshot.order) {
             const authoredNode = snapshot.nodes[filePath];
             if (!authoredNode?.semantic) continue;

@@ -97,9 +97,9 @@ The rules that decide the corner cases are:
   ``during`` step, whether or not it declares a ``during`` action. A pseudo
   leaf does not, and a region that is done does not. The ``before`` actions of a
   scope run ahead of the first such step below it in the cycle. The ``after``
-  actions are owed and run when the region branch ends, after each region of a
-  group that is being entered, when a group ends and, for the remaining scopes,
-  when the cycle ends, deeper scopes first. They do not run when the cycle is a
+  actions are owed and run when the region branch ends, likewise after each
+  region of a group that is being entered, and for the remaining scopes when
+  the cycle ends, deeper scopes first. They do not run when the cycle is a
   Delta or ends the machine.
 * **Group entry.** The regions of a group are entered in order, each taking its
   first initial candidate that can reach a stable position. A later region that
@@ -2947,9 +2947,12 @@ class SimulationRuntime:
         Run the ``>> during after`` actions that are owed below ``prefix``.
 
         Scopes run innermost first, matching the order a single leaf uses for
-        its ancestors. Calling it at the end of a region branch, the end of an
-        owner group and the end of the cycle gives each scope its ``after``
-        exactly once, after its last ``during`` work.
+        its ancestors. Calling it at the end of a region branch and at the end
+        of the cycle gives each scope its ``after`` exactly once, after its last
+        ``during`` work. The owner of a group needs no call of its own: a branch
+        that worked rests for the remainder of the cycle, so nothing can run
+        between the last region of the group and the end of the branch, or of
+        the cycle, that encloses the owner.
 
         :param vars_: Variable mapping to mutate.
         :type vars_: Dict[str, Union[int, float]]
@@ -3210,7 +3213,6 @@ class SimulationRuntime:
                 # The first non-pseudo child entered anywhere in the group consumes
                 # the owner's plain ``during before`` boundary actions.
                 pending = region_frame.plain_before_pending
-            self._flush_after_aspects(vars_, is_validation_mode, frame.state.path)
             frame.plain_before_pending = False
             self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
             return True
@@ -3323,7 +3325,6 @@ class SimulationRuntime:
             self._flush_after_aspects(
                 vars_, run.is_validation_mode, branch.region.path
             )
-        self._flush_after_aspects(vars_, run.is_validation_mode, frame.state.path)
         self._finish_group_advance(frame, vars_, run.is_validation_mode)
         return _CONTINUE if frame.mode == "post_child_exit" else _STABLE
 

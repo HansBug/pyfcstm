@@ -111,7 +111,10 @@ The rules that decide the corner cases are:
 * **Loops.** An entry that comes back to the same position and variable values
   through a chain of group entries and continuations is a dead path, like any
   loop through pseudo states: another candidate is tried, and the loop is
-  reported only when nothing else works. An entry whose variable values keep
+  reported only when nothing else works. That includes a candidate inside a
+  region whose only way on, through the owner finishing and being entered
+  again, leads back to the point where the candidate was chosen: the next
+  candidate of that state is taken instead. An entry whose variable values keep
   changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. Whether
   a finished group can continue is decided by entering what follows, one level
   deeper each time, and that nesting is limited to 64 levels. A finite loop that
@@ -2682,13 +2685,25 @@ class SimulationRuntime:
                         vars_,
                         self._current_outer(),
                     )
+                    # A check that is under way owns the point it started
+                    # from. Coming back to that point further in is a loop,
+                    # whichever candidate is asked about there: taking it for
+                    # real would arrive here again and choose the same way.
+                    origin = ("origin",) + memo_key[1:]
+                    if self._memo_deps:
+                        self._memo_deps[-1].add(origin)
+                    if origin in self._continuation_trail:
+                        signature = self._create_execution_signature(stack, vars_)
+                        raise _SimulationRuntimeLivelockError((signature, signature))
                     accepted = self._memo_get(memo_key)
                     if accepted is None:
+                        self._continuation_trail.append(origin)
                         self._memo_deps.append(set())
                         try:
                             accepted = validator(stack, vars_, transition, d_events)
                         finally:
                             positions = self._memo_close()
+                            self._continuation_trail.pop()
                         self._memo_put(memo_key, accepted, positions)
                 else:
                     accepted = validator(stack, vars_, transition, d_events)

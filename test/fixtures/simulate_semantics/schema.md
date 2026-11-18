@@ -367,8 +367,10 @@ one case in this corpus, and `region_*` case titles say which.
   failed start is not repeated on the values it left behind.
 - Handlers: nothing is called while a cycle is tried or when it ends as a Delta;
   while a group is left, regions that already left show as `[done]`.
-- Loops: a loop back to the same position and values is a dead path, and is
-  reported as `SimulationRuntimeDfsError` when nothing else is left to try;
+- Loops: a loop back to the same position and values is a dead path, also when
+  it runs through an owner finishing and being entered again, so the next
+  candidate is taken; it is reported as `SimulationRuntimeDfsError` only when
+  nothing else is left to try;
   changing values make it unbounded, which ends in the same error class. A
   group that is re-entered a bounded number of times within one cycle is judged
   on the current values each time.

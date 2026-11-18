@@ -1,0 +1,13 @@
+state Root {
+    [*] -> Q;
+    state Q {
+        region R {
+            [*] -> j;
+            pseudo state j;
+            state Rest;
+            j -> [*];
+            j -> Rest;
+        }
+    }
+    Q -> Q;
+}

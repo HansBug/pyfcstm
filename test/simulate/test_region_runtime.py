@@ -1233,3 +1233,22 @@ def test_diagnostics_describe_a_combo_transition_declared_in_a_region():
     }
     assert triggers == {"/Go + /Arm"}
     assert "/Go + /Arm" in report.to_text(verbose=True)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["body", "position"],
+    [
+        ("region R { %s }", "Root.Q{R: Rest}"),
+        ("%s", "Root.Q.Rest"),
+    ],
+)
+def test_candidate_that_only_leads_back_to_its_own_start_gives_way(body, position):
+    """Finishing would only re-enter the owner at the same point, so the region rests."""
+    inner = "[*] -> j; pseudo state j; state Rest; j -> [*]; j -> Rest;"
+    source = "state Root { [*] -> Q; state Q { %s } Q -> Q; }" % (body % inner)
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    for _ in range(2):
+        result = runtime.cycle()
+        assert not result.delta
+        assert str(runtime.configuration) == position

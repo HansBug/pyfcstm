@@ -1,0 +1,24 @@
+title: A candidate inside a region whose only way on finishes the owner and enters it again at the same point is
+  a dead path, so the next candidate of that state is taken
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Finishing the region lets the owner continue only through its transition back to itself, which arrives at the
+    pseudo state j again with nothing changed. Taking that way for real would choose it again forever, so j takes
+    its second transition and the region rests. A plain composite written the same way rests in the same state.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Q{R: Rest}'
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.Q{R: Rest}'
+    delta: false

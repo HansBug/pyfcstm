@@ -305,6 +305,9 @@ ROW_CASES = [
     ('earlier_region_after_aspect_reads', ONE_STATE % 'x = y + 2;', '>> during after { z = x; } state A { during { x = 1; } } [*] -> A;', 0),
     ('earlier_region_reads_in_composite_during', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; } } [*] -> A;', 1),
     ('earlier_region_abstract_action', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; } during abstract Peek; } [*] -> A;', 0),
+    # --- an earlier write that only sometimes runs is still lost whenever it runs
+    ('earlier_write_is_conditional', ONE_STATE % 'x = y + 2;', 'state A { during { if [y > 0] { x = 1; } } } [*] -> A;', 1),
+    ('earlier_region_writes_twice', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; x = 2; } } [*] -> A;', 1),
 ]
 
 

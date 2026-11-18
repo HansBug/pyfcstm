@@ -2996,6 +2996,10 @@ class SimulationRuntime:
         ``'init_wait'`` mode and immediately attempt their initial transition
         chain. Once an initial child is selected, the composite's plain
         ``during before`` actions run before entering that selected child.
+        A state that owns regions only switches into ``'init_wait'`` mode here:
+        starting its regions changes values region by region and can fail half
+        way, so that step belongs to :meth:`_advance_owner`, which makes the
+        whole attempt fail instead of leaving a half-started group behind.
 
         :param stack: Target execution stack.
         :type stack: List[_Frame]
@@ -3039,7 +3043,9 @@ class SimulationRuntime:
                 stack[-1].branches = [
                     _Branch(region, []) for region in state.regions.values()
                 ]
-            if attempt_initial_transition:
+            if attempt_initial_transition and not state.regions:
+                # Trying a composite's initial transition changes nothing when
+                # no candidate is usable, so the unused result is harmless.
                 self._attempt_init_transition(
                     stack,
                     vars_,
@@ -3076,20 +3082,10 @@ class SimulationRuntime:
         :type consumed_events: Optional[List[str]]
         :param is_validation_mode: Whether this is validation mode (handlers not executed).
         :type is_validation_mode: bool
-        :return: ``True`` if an initial transition was taken. For a state that
-            owns regions, ``True`` means every region was initialized.
+        :return: ``True`` if an initial transition was taken.
         :rtype: bool
         """
         state = stack[-1].state
-        if stack[-1].branches is not None:
-            return self._init_group(
-                stack,
-                vars_,
-                d_events,
-                consumed_events=consumed_events,
-                is_validation_mode=is_validation_mode,
-                outer=self._current_outer(),
-            )
         transition = self._select_valid_candidate(
             stack, vars_, d_events, state.init_transitions,
             self._validate_initial_transition,

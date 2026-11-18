@@ -1098,3 +1098,32 @@ def test_unbounded_reentry_is_reported_even_when_the_caller_stack_is_deep():
     assert str(runtime.configuration) == "Root"
     with pytest.raises(SimulationRuntimeDfsError, match="nested deeper"):
         runtime.cycle()
+
+
+@pytest.mark.unittest
+def test_root_group_that_cannot_start_is_not_started_again_on_changed_values():
+    """A failed start of a root that owns regions leaves no trace of the attempt."""
+    source = """
+    def int y = 0;
+    state Root {
+        region A {
+            [*] -> A1;
+            state A1 { enter { y = y + 1; } during abstract Tick; }
+        }
+        region B {
+            [*] -> B1 : if [y == 2];
+            state B1;
+        }
+    }
+    """
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    calls = []
+    runtime.register_abstract_handler("Root.A.A1.Tick", lambda ctx: calls.append(ctx.vars["y"]))
+    # B can only start once A has written twice, which a single start never does.
+    for _ in range(3):
+        result = runtime.cycle(trace=True)
+        assert result.delta
+        assert result.trace == ()
+        assert runtime.vars["y"] == 0
+        assert str(runtime.configuration) == "Root{A: [init], B: [init]}"
+    assert calls == []

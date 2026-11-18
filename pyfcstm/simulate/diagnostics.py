@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
 
 from ..dsl import EXIT_STATE, INIT_STATE
+from ..model.region import walk_namespaces
 
 Number = Union[int, float]
 
@@ -519,8 +520,9 @@ class _DecisionCollector:
         self.inputs = inputs
         self.parameters = dict(runtime.parameters)
         terms = {}
-        for state in runtime.state_machine.walk_states():
-            for transition in state.transitions:
+        # Regions own transitions too, so walk every namespace, not only states.
+        for namespace in walk_namespaces(runtime.state_machine.root_state):
+            for transition in namespace.transitions:
                 for ref in transition.combo_origin_refs:
                     terms.setdefault(ref.origin_id, {})[ref.term_index] = ref.term_text
         self.triggers = {

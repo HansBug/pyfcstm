@@ -1171,3 +1171,37 @@ def test_diagnostics_grow_with_the_model_and_not_with_repeated_checks(build):
     # Twice the owners may cost a few times the checks, never a power of them.
     assert sizes[8] <= 4 * sizes[4]
     assert sizes[16] <= 4 * sizes[8]
+
+
+@pytest.mark.unittest
+def test_diagnostics_describe_a_combo_transition_declared_in_a_region():
+    """A combo transition owned by a region is reported with the trigger as written."""
+    source = """
+    def int n = 0;
+    state Root {
+        event Go;
+        event Arm;
+        [*] -> P;
+        state P {
+            region A {
+                [*] -> A1;
+                state A1;
+                state A2;
+                A1 -> A2 : /Go + /Arm effect { n = n + 1; };
+            }
+            region B { [*] -> B1; state B1; }
+        }
+    }
+    """
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    runtime.cycle()
+    report = runtime.cycle(["Root.Go", "Root.Arm"], diagnostics=True).diagnostics
+    assert str(runtime.configuration) == "Root.P{A: A2, B: B1}"
+    assert runtime.vars["n"] == 1
+    triggers = {
+        origin["trigger"]
+        for decision in report.decisions
+        for origin in decision.combo_origins
+    }
+    assert triggers == {"/Go + /Arm"}
+    assert "/Go + /Arm" in report.to_text(verbose=True)

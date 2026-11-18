@@ -6,7 +6,7 @@ import type {
     StateMachine,
     Transition,
 } from '../model';
-import {resolvedExprText} from '../model';
+import {resolvedExprText, resolvedOperationText} from '../model';
 import {getWorkspaceGraph, type FcstmWorkspaceGraphSnapshot} from '../workspace';
 import type {TextDocumentLike} from '../utils/text';
 import type {
@@ -198,13 +198,13 @@ function ensureTerminatedStatement(text: string): string {
 function formatOperationStatementLines(statement: { kind?: string; text?: string; branches?: Array<{ condition?: { text?: string } | null; statements?: unknown[] }> }, depth: number): string[] {
     const prefix = '    '.repeat(depth);
     if (statement.kind === 'operation') {
-        return [`${prefix}${ensureTerminatedStatement(statement.text || '')}`];
+        return [`${prefix}${ensureTerminatedStatement(resolvedOperationText(statement as never))}`];
     }
 
     if (statement.kind === 'ifBlock' && Array.isArray(statement.branches) && statement.branches.length > 0) {
         const lines: string[] = [];
         for (const [index, branch] of statement.branches.entries()) {
-            const conditionText = branch.condition?.text || '';
+            const conditionText = branch.condition ? resolvedExprText(branch.condition as never) : '';
             if (index === 0) {
                 lines.push(`${prefix}if [${conditionText}] {`);
             } else if (branch.condition) {

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 
-import {createDocument} from './support';
+import * as path from 'node:path';
+
+import {createDocument, packageModule, trackTempDir, writeFile} from './support';
 import {
     buildFcstmDiagramFromDocument,
+    buildFcstmDiagramFromWorkspaceSnapshot,
     buildFcstmElkGraph,
     resolveFcstmDiagramPreviewOptions,
 } from '@pyfcstm/jsfcstm/diagram';
@@ -101,5 +104,52 @@ describe('region diagram snapshot', () => {
         assert.equal(titles.length, 2);
         assert.ok(titles[0].includes('region 1: Safety'), titles[0]);
         assert.ok(titles[1].includes('region 2: Motion'), titles[1]);
+    });
+
+    it('shows active queries in effects with the full path of the state they name', async () => {
+        const diagram = await build(`def int x = 0;
+            state Root {
+                state A { state P; [*] -> P; }
+                state B;
+                [*] -> A;
+                A -> B effect {
+                    if [active("Root.A.P")] { x = 1; }
+                    else if [!active("/B")] { x = (active("Root.A.P")) ? 2 : 3; }
+                    else { x = 4; }
+                }
+            }`);
+        const effect = diagram.rootState.transitions.find(item => item.effectLines.length > 0)!.effectLines;
+        assert.deepEqual(effect.filter(line => /active/.test(line)), [
+            '    if [active("Root.A.P")] {',
+            '    else if [!active("Root.B")] {',
+            '        x=(active("Root.A.P"))?2:3;',
+        ]);
+    });
+
+    it('shows the instance path for the queries of an imported module, in guards and effects', async () => {
+        const directory = trackTempDir('jsfcstm-region-diagram-import-');
+        const module = path.join(directory, 'module.fcstm');
+        const host = path.join(directory, 'host.fcstm');
+        writeFile(module, `def int y = 0; state Sub {
+            region A { [*] -> X; state X; state Y; X -> Y : if [active("/A.X")];
+                Y -> X effect { if [active("Sub.A.Y")] { y = 1; } } }
+            region B { [*] -> Z; state Z; Z -> Z : if [active("Sub.A.Y")]; }
+        }`);
+        writeFile(host, 'def int y = 0; state Host { import "module.fcstm" as Mod; [*] -> Mod; }');
+        const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
+        const diagram = buildFcstmDiagramFromWorkspaceSnapshot(snapshot, host)!;
+        assert.ok(diagram);
+        const transitions: Array<{label: string; effectLines: string[]}> = [];
+        const visit = (state: FcstmDiagramState): void => {
+            transitions.push(...state.transitions);
+            state.children.forEach(visit);
+        };
+        visit(diagram.rootState);
+        assert.deepEqual(transitions.filter(item => /active/.test(item.label)).map(item => item.label).sort(), [
+            'X -> Y if [active("Host.Mod.A.X")]',
+            'Z -> Z if [active("Host.Mod.A.Y")]',
+        ]);
+        assert.ok(transitions.some(item => item.effectLines.includes('        if [active("Host.Mod.A.Y")] {')
+            || item.effectLines.includes('    if [active("Host.Mod.A.Y")] {')));
     });
 });

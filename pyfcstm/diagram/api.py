@@ -193,24 +193,60 @@ def _span_range(span: Optional[Span]) -> Optional[Dict[str, Dict[str, int]]]:
     }
 
 
-def _operation_lines(statement: OperationStatement, depth: int = 1) -> List[str]:
-    """Render one model operation statement into display lines."""
+def _shown_expr(expression: Any, active_paths: Mapping[str, str]) -> Any:
+    """
+    Return the expression the diagram shows, with activity queries as written.
+
+    :param expression: Expression of the lowered model.
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for, as returned by :func:`_active_paths`; empty when the model
+        has no activity queries, in which case the expression is returned as it is.
+    :type active_paths: Mapping[str, str]
+    :return: ``expression`` itself, or a copy whose lowered flag tests are
+        ``active("path")`` queries again.
+    """
+    if not active_paths:
+        return expression
+    return restore_active_expression(expression, active_paths)
+
+
+def _operation_lines(
+    statement: OperationStatement, active_paths: Mapping[str, str], depth: int = 1
+) -> List[str]:
+    """
+    Render one model operation statement into display lines.
+
+    Assigned values and ``if`` conditions show activity queries as written, so
+    the hidden flag variables of a lowered model never reach the diagram.
+
+    :param statement: Operation or ``if`` block to render.
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for; see :func:`_active_paths`.
+    :type active_paths: Mapping[str, str]
+    :param depth: Nesting depth used for indentation, defaults to ``1``.
+    :type depth: int, optional
+    :return: Display lines, indented by ``depth`` levels.
+    :rtype: List[str]
+    """
     prefix = "    " * depth
     if isinstance(statement, Operation):
-        return [prefix + _text(statement.to_ast_node()).strip()]
+        shown = Operation(statement.var_name, _shown_expr(statement.expr, active_paths))
+        return [prefix + _text(shown.to_ast_node()).strip()]
     if isinstance(statement, IfBlock):
         lines: List[str] = []
         for index, branch in enumerate(statement.branches):
             if index == 0:
-                head = "if [%s] {" % _text(branch.condition)
+                head = "if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
             elif branch.condition is None:
                 head = "else {"
             else:
-                head = "else if [%s] {" % _text(branch.condition)
+                head = "else if [%s] {" % _text(
+                    _shown_expr(branch.condition, active_paths)
+                )
             lines.append(prefix + head)
             if branch.statements:
                 for child in branch.statements:
-                    lines.extend(_operation_lines(child, depth + 1))
+                    lines.extend(_operation_lines(child, active_paths, depth + 1))
             else:
                 lines.append(prefix + "    ...")
             lines.append(prefix + "}")
@@ -218,12 +254,25 @@ def _operation_lines(statement: OperationStatement, depth: int = 1) -> List[str]
     return [prefix + _text(statement).strip()]
 
 
-def _effect_lines(transition: Transition) -> List[str]:
+def _effect_lines(
+    transition: Transition, active_paths: Mapping[str, str]
+) -> List[str]:
+    """
+    Render the effect block of a transition into display lines.
+
+    :param transition: Transition whose effects are shown.
+    :type transition: pyfcstm.model.model.Transition
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for; see :func:`_active_paths`.
+    :type active_paths: Mapping[str, str]
+    :return: ``effect {`` … ``}`` lines, or an empty list without effects.
+    :rtype: List[str]
+    """
     if not transition.effects:
         return []
     lines = ["effect {"]
     for statement in transition.effects:
-        lines.extend(_operation_lines(statement))
+        lines.extend(_operation_lines(statement, active_paths))
     lines.append("}")
     return lines
 
@@ -388,7 +437,7 @@ def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
             )
         else:
             guard = _text(transition.guard)
-        effects = _effect_lines(transition)
+        effects = _effect_lines(transition, active_paths)
         transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
             "id": transition_id,

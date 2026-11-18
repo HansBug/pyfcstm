@@ -2200,11 +2200,26 @@ const ACTIVE_QUERY_TEXT = /active\s*\(\s*"(?:[^"\\]|\\.)*"\s*\)/g;
  * @returns The source text of ``expr``, with the paths of its queries resolved.
  */
 export function resolvedExprText(expr: Expr): string {
+    return resolveQueriesInText(expr.text, expr);
+}
+
+/**
+ * Render an assignment as written, with every ``active("...")`` query in its
+ * value showing the full dotted path of the state it names.
+ *
+ * @param operation An assignment of the model.
+ * @returns The source text of ``operation``, with the paths of its queries resolved.
+ */
+export function resolvedOperationText(operation: Operation): string {
+    return resolveQueriesInText(operation.text, operation.expr);
+}
+
+function resolveQueriesInText(text: string, expr: Expr): string {
     const queries: ActiveStateQuery[] = [];
     collectActiveQueries(expr, queries);
-    if (queries.length === 0) return expr.text;
+    if (queries.length === 0) return text;
     let index = 0;
-    return expr.text.replace(ACTIVE_QUERY_TEXT, () => {
+    return text.replace(ACTIVE_QUERY_TEXT, () => {
         index += 1;
         return queries[index - 1].resolvedText;
     });

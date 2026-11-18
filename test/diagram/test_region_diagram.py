@@ -107,6 +107,53 @@ def test_models_without_regions_gain_no_region_fields():
         'active("Root.B")']
 
 
+def test_active_queries_in_effects_keep_their_written_form():
+    machine = load_state_machine_from_text('''def int x = 0;
+    state Root {
+        state A { state P; [*] -> P; }
+        state B;
+        [*] -> A;
+        A -> B effect {
+            if [active("Root.A.P")] { x = 1; }
+            else if [!active("Root.B")] { x = (active("Root.A.P")) ? 2 : 3; }
+            else { x = 4; }
+        }
+    }''')
+    data = machine.diagram().to_dict()
+    assert '__active_' not in json.dumps(data)
+    effect = [t for t in data['rootState']['transitions'] if t['effectLines']][0]['effectLines']
+    assert effect == [
+        'effect {',
+        '    if [active("Root.A.P")] {',
+        '        x = 1;',
+        '    }',
+        '    else if [!active("Root.B")] {',
+        '        x = (active("Root.A.P")) ? 2 : 3;',
+        '    }',
+        '    else {',
+        '        x = 4;',
+        '    }',
+        '}',
+    ]
+
+
+def test_active_queries_of_an_imported_module_show_the_instance_path(tmp_path):
+    (tmp_path / 'module.fcstm').write_text('''def int y = 0;
+    state Sub {
+        region A { [*] -> X; state X; state Y; X -> Y : if [active("/A.X")]; Y -> X effect { y = 1; } }
+        region B { [*] -> Z; state Z; Z -> Z : if [active("Sub.A.Y")]; }
+    }''')
+    (tmp_path / 'host.fcstm').write_text(
+        'def int y = 0;\nstate Host { import "module.fcstm" as Mod; [*] -> Mod; }')
+    data = load_state_machine_from_file(str(tmp_path / 'host.fcstm')).diagram().to_dict()
+    text = json.dumps(data)
+    assert '__active_' not in text
+    guards = sorted(
+        t['guardLabel'] for state in _walk(data['rootState']) for t in state['transitions']
+        if t['guardLabel'])
+    assert guards == ['active("Host.Mod.A.X")', 'active("Host.Mod.A.Y")']
+
+
 def _region_boxes(svg):
     """Bounding boxes ``(x0, y0, x1, y1)`` of the dashed, filled region sections.
 

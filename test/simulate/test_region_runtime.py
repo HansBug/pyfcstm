@@ -1067,3 +1067,34 @@ def test_looping_group_reentry_without_a_fallback_reports_a_livelock():
         runtime.cycle("Root.Idle.Go")
     assert str(runtime.configuration) == "Root.Idle"
     assert runtime.vars["b"] == 0
+
+
+@pytest.mark.unittest
+def test_unbounded_reentry_is_reported_even_when_the_caller_stack_is_deep():
+    """Calling cycle() from deep inside the caller still gives the documented error."""
+    import inspect
+    import sys
+
+    source = """
+    def int x = 0;
+    state Root {
+        [*] -> S0;
+        state S0 { region R { [*] -> P; pseudo state P; P -> [*]; } }
+        S0 -> S0 : if [x >= 0] effect { x = x + 1; }
+    }
+    """
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+
+    def call_at_depth(depth):
+        return runtime.cycle() if depth == 0 else call_at_depth(depth - 1)
+
+    # Leave too little stack for the engine to reach its own nesting limit.
+    spare = 300
+    depth = sys.getrecursionlimit() - len(inspect.stack()) - spare
+    with pytest.raises(SimulationRuntimeDfsError):
+        call_at_depth(depth)
+    assert runtime.cycle_count == 0
+    assert runtime.vars["x"] == 0
+    assert str(runtime.configuration) == "Root"
+    with pytest.raises(SimulationRuntimeDfsError, match="nested deeper"):
+        runtime.cycle()

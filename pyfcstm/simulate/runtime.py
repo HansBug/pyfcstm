@@ -763,14 +763,6 @@ class _Frame:
     :param branches: Ordered region branches of a state that owns regions,
         or ``None`` for every other frame.
     :type branches: Optional[List[_Branch]]
-    :param before_done: Whether the ``>> during before`` aspects declared on
-        this scope already ran in the current cycle.
-    :type before_done: bool
-    :param after_pending: Whether ``>> during after`` aspects declared on this
-        scope still have to run because a ``during`` action ran below it in
-        the current cycle.
-    :type after_pending: bool
-
     Example::
 
         >>> # Internal frame structure (not directly created by users)
@@ -795,8 +787,6 @@ class _Frame:
     mode: str
     plain_before_pending: bool = False
     branches: Optional[List["_Branch"]] = None
-    before_done: bool = False
-    after_pending: bool = False
 
 
 @dataclass
@@ -1173,6 +1163,13 @@ class SimulationRuntime:
         # Owners whose continuation is being checked right now, to recognize a
         # continuation that loops back to the same position.
         self._continuation_trail: List[tuple] = []
+        # Whether the model declares regions; fixed for the life of the runtime.
+        self._has_regions = state_machine.has_regions
+        # Answers of candidate and continuation checks within one cycle, with
+        # the continuation positions each answer looked at.
+        self._memo: Dict[tuple, Tuple[bool, frozenset]] = {}
+        # Open computations: [positions looked at, whether one was on the trail].
+        self._memo_deps: List[list] = []
         # Main stack of the committed execution pass, for handler snapshots.
         self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
@@ -1759,8 +1756,6 @@ class SimulationRuntime:
                     _Branch(branch.region, SimulationRuntime._clone_stack(branch.stack))
                     for branch in frame.branches
                 ],
-                frame.before_done,
-                frame.after_pending,
             )
             for frame in stack
         ]
@@ -2674,7 +2669,23 @@ class SimulationRuntime:
                 if collector is not None:
                     previous_parent = collector.parent
                     collector.parent = record['id']
-                accepted = validator(stack, vars_, transition, d_events)
+                if self._has_regions and collector is None:
+                    memo_key = self._memo_key(
+                        ("candidate", _transition_label(stack[-1].state, transition)),
+                        stack,
+                        vars_,
+                        self._current_outer(),
+                    )
+                    accepted = self._memo_get(memo_key)
+                    if accepted is None:
+                        self._memo_deps.append([set(), False])
+                        try:
+                            accepted = validator(stack, vars_, transition, d_events)
+                        finally:
+                            closed = self._memo_close()
+                        self._memo_put(memo_key, accepted, closed)
+                else:
+                    accepted = validator(stack, vars_, transition, d_events)
             except _SimulationRuntimeLivelockError:
                 # _SimulationRuntimeLivelockError: validator rejected a cyclic path;
                 # retain its evidence if a later stable candidate is selected.
@@ -2765,7 +2776,7 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
-        if self.state_machine.has_regions:
+        if self._has_regions:
             self._run_scoped_during(state, vars_, is_validation_mode)
             return
         for _, func in state.iter_on_during_aspect_recursively():
@@ -3398,13 +3409,32 @@ class SimulationRuntime:
         owner_frame.mode = "post_child_exit"
         signature = self._create_execution_signature(owner_stack, sim_vars)
         key = (signature, self._enclosing_shapes(outer.parent))
+        if self._memo_deps:
+            self._memo_deps[-1][0].add(key)
         if key in self._continuation_trail:
+            for open_computation in self._memo_deps:
+                open_computation[1] = True
             raise _SimulationRuntimeLivelockError((signature, signature))
         self._continuation_trail.append(key)
         try:
-            return self._validation_search_reaches_stable(
-                owner_stack, sim_vars, d_events, outer=outer.parent
+            if self._cycle_diagnostics is not None:
+                return self._validation_search_reaches_stable(
+                    owner_stack, sim_vars, d_events, outer=outer.parent
+                )
+            memo_key = self._memo_key(
+                ("continuation",), owner_stack, sim_vars, outer.parent
             )
+            viable = self._memo_get(memo_key)
+            if viable is None:
+                self._memo_deps.append([set(), False])
+                try:
+                    viable = self._validation_search_reaches_stable(
+                        owner_stack, sim_vars, d_events, outer=outer.parent
+                    )
+                finally:
+                    closed = self._memo_close()
+                self._memo_put(memo_key, viable, closed)
+            return viable
         finally:
             self._continuation_trail.pop()
 
@@ -4356,7 +4386,7 @@ class SimulationRuntime:
         return SimulationRuntime._stack_shape(stack)
 
     @staticmethod
-    def _stack_shape(stack: List[_Frame]) -> tuple:
+    def _stack_shape(stack: List[_Frame], skip: Optional[int] = None) -> tuple:
         """
         Summarize a stack, including its region branches, as a hashable value.
 
@@ -4367,21 +4397,139 @@ class SimulationRuntime:
 
         :param stack: Execution stack to summarize.
         :type stack: List[_Frame]
+        :param skip: Index of a branch of the top frame to leave out, defaults
+            to ``None``. Used when that branch is described separately, so that
+            the summary does not depend on its current content.
+        :type skip: Optional[int], optional
         :return: Nested tuples of ``(path, mode, plain_before_pending)`` items.
         :rtype: tuple
         """
         shape = []
-        for frame in stack:
+        last = len(stack) - 1
+        for position, frame in enumerate(stack):
             item = (frame.state.path, frame.mode, frame.plain_before_pending)
             if frame.branches is not None:
                 item += (
                     tuple(
-                        SimulationRuntime._stack_shape(branch.stack)
-                        for branch in frame.branches
+                        None
+                        if position == last and index == skip
+                        else SimulationRuntime._stack_shape(branch.stack)
+                        for index, branch in enumerate(frame.branches)
                     ),
                 )
             shape.append(item)
         return tuple(shape)
+
+    def _memo_key(
+        self,
+        tag: tuple,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        outer: Optional[_Outer],
+    ) -> tuple:
+        """
+        Build the key under which the answer to one check is remembered.
+
+        The key holds everything the answer depends on within a cycle: the
+        stack being checked, the variable values, every enclosing stack with
+        the checked branch left out, and the aspect ledger. Events, inputs and
+        parameters are fixed for the cycle, and the remembered answers are
+        dropped when a cycle starts.
+
+        :param tag: What is being checked, for example the transition label.
+        :type tag: tuple
+        :param stack: Stack the check starts from.
+        :type stack: List[_Frame]
+        :param vars_: Variable values the check starts from.
+        :type vars_: Dict[str, Union[int, float]]
+        :param outer: Link from ``stack`` to its owner, or ``None``.
+        :type outer: Optional[_Outer]
+        :return: Hashable key.
+        :rtype: tuple
+        """
+        enclosing = []
+        while outer is not None:
+            enclosing.append(self._stack_shape(outer.stack, outer.index))
+            outer = outer.parent
+        ledger = tuple(
+            sorted((path, entry[0], entry[1]) for path, entry in self._ledger.items())
+        )
+        return (
+            tag,
+            self._stack_shape(stack),
+            tuple(sorted(vars_.items())),
+            tuple(enclosing),
+            ledger,
+        )
+
+    def _memo_get(self, key: tuple) -> Optional[bool]:
+        """
+        Look up the remembered answer of a check.
+
+        Entering a group asks the same question again and again: whether a
+        candidate can reach a stable position is first decided on a copy and
+        then decided once more for every nested owner while the candidate is
+        actually taken. Remembering the answer makes each question cost once
+        per cycle instead of once per enclosing level.
+
+        An answer may depend on the continuation positions that are being
+        examined further out (:attr:`_continuation_trail`), because coming back
+        to one of them counts as a loop. Each answer therefore records the
+        positions it compared against that trail and is reused only where none
+        of them is on the current trail, which makes a recomputation take
+        exactly the same steps.
+
+        The three ``_memo_*`` helpers are called one after another instead of
+        wrapping the computation, so that remembering adds no frame to the
+        call stack of nested group initializations.
+
+        :param key: Key from :meth:`_memo_key`.
+        :type key: tuple
+        :return: The remembered answer, or ``None`` if the check has to run.
+        :rtype: Optional[bool]
+        """
+        entry = self._memo.get(key)
+        if entry is None or not entry[1].isdisjoint(self._continuation_trail):
+            return None
+        if self._memo_deps:
+            self._memo_deps[-1][0].update(entry[1])
+        return entry[0]
+
+    def _memo_close(self) -> Tuple[set, bool]:
+        """
+        Finish the computation opened by appending to :attr:`_memo_deps`.
+
+        The positions the computation looked at, and whether one of them was
+        on the trail, also count for the computation that encloses it.
+
+        :return: The positions looked at and whether the trail was hit.
+        :rtype: Tuple[set, bool]
+        """
+        positions, hit = self._memo_deps.pop()
+        if self._memo_deps:
+            self._memo_deps[-1][0].update(positions)
+            self._memo_deps[-1][1] = self._memo_deps[-1][1] or hit
+        return positions, hit
+
+    def _memo_put(self, key: tuple, result: bool, closed: Tuple[set, bool]) -> None:
+        """
+        Remember the answer of a check that returned normally.
+
+        An answer during which the trail was hit holds only under that trail
+        and is not remembered. Errors never reach this point.
+
+        :param key: Key from :meth:`_memo_key`.
+        :type key: tuple
+        :param result: The answer.
+        :type result: bool
+        :param closed: Value returned by :meth:`_memo_close` for the check.
+        :type closed: Tuple[set, bool]
+        :return: ``None``.
+        :rtype: None
+        """
+        positions, hit = closed
+        if not hit:
+            self._memo[key] = (result, frozenset(positions))
 
     def _run_cycle_on_context(
         self,
@@ -4955,6 +5103,8 @@ class SimulationRuntime:
         """Execute using a single frozen input vector and commit after advance."""
         trace_entries: Optional[List[ExecutionTraceEntry]] = [] if trace else None
         self._outer_chain = []
+        self._memo = {}
+        self._memo_deps = []
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
@@ -4977,21 +5127,37 @@ class SimulationRuntime:
         validation_ended = snapshot_ended
 
         self._ledger = {}
-        if not validation_initialized:
-            validation_ended = self._initialize_context(
+        try:
+            if not validation_initialized:
+                validation_ended = self._initialize_context(
+                    validation_stack,
+                    validation_vars,
+                    d_events,
+                    is_validation_mode=True,
+                )
+                validation_initialized = True
+
+            success, validation_ended = self._run_cycle_on_context(
                 validation_stack,
                 validation_vars,
                 d_events,
                 is_validation_mode=True,
             )
-            validation_initialized = True
-
-        success, validation_ended = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            d_events,
-            is_validation_mode=True,
-        )
+        except RecursionError as err:
+            # RecursionError: entering or re-entering an owner nests one group
+            # initialization per owner within a cycle, so a loop through owners
+            # can exhaust the interpreter's call stack before it reaches the
+            # explicit nesting limit when the caller's own stack is already
+            # deep. No handler runs in this pass, so the engine itself ran out
+            # of stack. Models without regions never nest here; for them the
+            # error keeps propagating unchanged.
+            if not self._has_regions:
+                raise
+            raise SimulationRuntimeDfsError(
+                "The call stack was exhausted while entering nested or re-entered "
+                "owners of regions within one cycle; the state machine likely "
+                "re-enters a group without bound."
+            ) from err
 
         # A validation dead end is a successful Delta boundary. The speculative
         # context is intentionally discarded; the public runtime will commit
@@ -5062,7 +5228,7 @@ class SimulationRuntime:
 
         if not prepared_stack:
             state_path = "(terminated)"
-        elif self.state_machine.has_regions:
+        elif self._has_regions:
             state_path = str(self._configuration_of(prepared_stack))
         else:
             state_path = ".".join(prepared_stack[-1].state.path)
@@ -5097,7 +5263,7 @@ class SimulationRuntime:
                 tuple(prepared_stack[-1].state.path) if prepared_stack else None,
                 prepared_vars,
                 str(self._configuration_of(prepared_stack))
-                if prepared_stack and self.state_machine.has_regions
+                if prepared_stack and self._has_regions
                 else None,
             ) if self._cycle_diagnostics is not None else None),
         )
@@ -5255,7 +5421,7 @@ class SimulationRuntime:
                 "current_state, or use terminal-safe queries such as "
                 "brief_stack or history."
             )
-        if self.state_machine.has_regions:
+        if self._has_regions:
             return self.configuration
         return self.stack[-1].state
 
@@ -5426,7 +5592,7 @@ class SimulationRuntime:
            provides insight into the runtime's internal execution state without
            exposing the internal :class:`_Frame` objects.
         """
-        if self.state_machine.has_regions:
+        if self._has_regions:
             raise SimulationRuntimeRegionQueryError(
                 "brief_stack describes a single active path, but this model has "
                 "regions; use configuration, which shows every branch."

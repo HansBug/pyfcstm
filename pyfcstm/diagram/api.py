@@ -66,6 +66,8 @@ from ..model.model import (
     Transition,
 )
 from ..utils.validate import Span
+from ..model.region import Region, walk_namespaces
+from ..model.active import restore_active_expression
 from .engine import (
     MAX_EXPORT_PNG_BYTES,
     MAX_EXPORT_TEXT_BYTES,
@@ -298,7 +300,75 @@ def _event_dict(event: Event, include_ranges: bool) -> Dict[str, Any]:
     return result
 
 
-def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
+def _active_paths(namespace: Any) -> Dict[str, str]:
+    """
+    Map the hidden activity flags of a model to the state paths they stand for.
+
+    Model construction lowers every ``active("path")`` into a hidden variable
+    that is set in ``enter`` and cleared in ``exit``. The diagram shows the query
+    as written instead, so it needs to know which variable stands for which
+    state.
+
+    :param namespace: A state or region of the model; a region is resolved
+        through its owner, which carries the flag metadata.
+    :return: Hidden flag variable name mapped to the dotted full state path;
+        empty when the model has no activity queries.
+    :rtype: Dict[str, str]
+    """
+    owner = namespace.parent if isinstance(namespace, Region) else namespace
+    return {
+        item.variable_name: ".".join(item.state_path)
+        for item in getattr(owner, "_active_queries", ())
+    }
+
+
+def _is_active_flag_write(action: Any, paths: Dict[str, str]) -> bool:
+    """
+    Tell whether an action is the flag write model construction added.
+
+    The write is an anonymous action holding exactly one assignment to a hidden
+    flag variable; a user cannot write one, because the flag names are generated
+    to avoid every declared name.
+
+    :param action: A lifecycle or aspect action of a state or region.
+    :param paths: Mapping returned by :func:`_active_paths`.
+    :return: ``True`` for the generated write, ``False`` for anything the user
+        wrote and whenever the model has no activity queries.
+    :rtype: bool
+    """
+    operations = getattr(action, "operations", ())
+    return bool(
+        paths
+        and getattr(action, "name", None) is None
+        and len(operations) == 1
+        and getattr(operations[0], "var_name", None) in paths
+    )
+
+
+def _state_dict(
+    state: Any, include_ranges: bool, ordinal: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Build the snapshot node of a state or region and, recursively, its children.
+
+    A region becomes a child node of its owner flagged with ``"region": True``
+    and its one-based ``"ordinal"`` among the owner's regions, which is also the
+    order in which the regions run. It carries the same keys as a state: its
+    states are ``children``, its own transitions are ``transitions`` and its
+    ``>> during`` aspects are ``actions``. ``active("path")`` is shown as
+    written in guards, and the flag writes model construction added are left
+    out of ``actions``.
+
+    :param state: State or region to describe.
+    :param include_ranges: Whether to add source ranges and source paths.
+    :type include_ranges: bool
+    :param ordinal: Position of a region among its siblings, ``None`` for a state.
+    :type ordinal: int, optional
+    :return: JSON-compatible node mapping.
+    :rtype: Dict[str, Any]
+    """
+    is_region = isinstance(state, Region)
+    active_paths = _active_paths(state)
     transitions = []
     for index, transition in enumerate(state.transitions):
         source_init = _is_marker(transition.from_state, "INIT_STATE")
@@ -306,7 +376,14 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         source_label = "[*]" if source_init else _text(transition.from_state)
         target_label = "[*]" if target_exit else _text(transition.to_state)
         trigger = _event_reference(transition) if transition.event else ""
-        guard = _text(transition.guard) if transition.guard is not None else None
+        if transition.guard is None:
+            guard = None
+        elif active_paths:
+            guard = _text(
+                restore_active_expression(transition.guard, active_paths).to_ast_node()
+            )
+        else:
+            guard = _text(transition.guard)
         effects = _effect_lines(transition)
         transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
@@ -350,11 +427,13 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
 
     actions = []
     for action in [
-        *state.on_enters,
-        *state.on_durings,
-        *state.on_exits,
+        *getattr(state, "on_enters", ()),
+        *getattr(state, "on_durings", ()),
+        *getattr(state, "on_exits", ()),
         *state.on_during_aspects,
     ]:
+        if _is_active_flag_write(action, active_paths):
+            continue
         item = {
             "name": action.name,
             "qualifiedName": ".".join(
@@ -379,20 +458,29 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         "id": _state_id(state.path),
         "name": state.name,
         "qualifiedName": _state_id(state.path),
-        "displayName": state.extra_name,
-        "pseudo": bool(state.is_pseudo),
-        "comboRelay": bool(state.is_combo_relay),
-        "leaf": bool(state.is_leaf_state),
-        "root": bool(state.is_root_state),
+        "displayName": getattr(state, "extra_name", None),
+        "pseudo": bool(getattr(state, "is_pseudo", False)),
+        "comboRelay": bool(getattr(state, "is_combo_relay", False)),
+        "leaf": bool(getattr(state, "is_leaf_state", False)),
+        "root": bool(getattr(state, "is_root_state", False)),
         "events": [
             _event_dict(event, include_ranges) for event in state.events.values()
         ],
         "actions": actions,
         "transitions": transitions,
         "children": [
-            _state_dict(child, include_ranges) for child in state.substates.values()
+            *(_state_dict(child, include_ranges) for child in state.substates.values()),
+            *(
+                _state_dict(region, include_ranges, ordinal=index)
+                for index, region in enumerate(
+                    getattr(state, "regions", {}).values(), 1
+                )
+            ),
         ],
     }
+    if is_region:
+        result["region"] = True
+        result["ordinal"] = ordinal
     if include_ranges:
         result["range"] = _span_range(state._span)
         result["_sourcePath"] = getattr(state, "_source_path", None)
@@ -400,17 +488,28 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
 
 
 def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
+    """
+    Count the states, events, transitions and actions shown in a snapshot.
+
+    Regions are not states, but the events, transitions and aspects declared in
+    them are counted.
+
+    :param machine: State machine being snapshotted.
+    :return: ``(states, events, transitions, actions)``.
+    :rtype: Tuple[int, int, int, int]
+    """
     states = list(machine.walk_states())
-    events = [event for state in states for event in state.events.values()]
-    transitions = [transition for state in states for transition in state.transitions]
+    namespaces = list(walk_namespaces(machine.root_state))
+    events = [event for ns in namespaces for event in ns.events.values()]
+    transitions = [transition for ns in namespaces for transition in ns.transitions]
     actions = [
         action
-        for state in states
+        for ns in namespaces
         for action in [
-            *state.on_enters,
-            *state.on_durings,
-            *state.on_exits,
-            *state.on_during_aspects,
+            *getattr(ns, "on_enters", ()),
+            *getattr(ns, "on_durings", ()),
+            *getattr(ns, "on_exits", ()),
+            *ns.on_during_aspects,
         ]
     ]
     return len(states), len(events), len(transitions), len(actions)
@@ -420,7 +519,7 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
     transitions = [
         transition
-        for state in machine.walk_states()
+        for state in walk_namespaces(machine.root_state)
         for transition in state.transitions
     ]
     event_counts: Dict[str, int] = {}
@@ -478,6 +577,7 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
         "variables": [
             {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
             for item in machine.defines.values()
+            if item.name not in {query.variable_name for query in machine.active_queries}
         ],
         "eventLegend": event_legend,
         "rootState": root,
@@ -2157,6 +2257,13 @@ class DiagramData:
     """
     Portable, deterministic diagram data without editor-only metadata.
 
+    A state that owns regions lists them in ``children`` after its states, each
+    flagged with ``region`` and numbered by ``ordinal`` (``1`` for the first
+    region written, which is also the first to run). A region node has the same
+    keys as a state node: its states are ``children``, its own transitions are
+    ``transitions``, and its ``>> during`` aspects are ``actions``. A model
+    without regions gains neither key.
+
     :param value: Renderer data. Source ranges, local paths and other
         editor-only fields are removed when the value is stored.
     :type value: collections.abc.Mapping[str, object]
@@ -2166,6 +2273,12 @@ class DiagramData:
         >>> data = DiagramData({"kind": "diagram", "rootState": {"children": []}})
         >>> data.to_dict()["kind"]
         'diagram'
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }'
+        ... )
+        >>> [(item["name"], item["ordinal"]) for item in model.diagram().to_dict()["rootState"]["children"]]
+        [('A', 1), ('B', 2)]
     """
 
     value: Mapping[str, Any]
@@ -2410,9 +2523,7 @@ class Diagram:
             ...
             ValueError: unknown DiagramOptions field(s): bogus
         """
-        from pyfcstm.model.support import require_supported_model
 
-        require_supported_model(model, "diagram")
         self.model = model
         self.options = self._normalize_options(options)
         self.view_state = self._normalize_view_state(view_state)

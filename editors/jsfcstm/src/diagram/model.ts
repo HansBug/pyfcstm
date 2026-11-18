@@ -102,6 +102,10 @@ export interface FcstmDiagramState {
     actions: FcstmDiagramAction[];
     transitions: FcstmDiagramTransition[];
     children: FcstmDiagramState[];
+    /** True when this node is an ordered region of its parent, not a state. */
+    region?: boolean;
+    /** One-based declaration (and execution) position among sibling regions. */
+    ordinal?: number;
     /**
      * Absolute path of the file this state was imported from, when it
      * is the root of an imported subtree. Missing (``undefined``) for
@@ -257,6 +261,9 @@ export interface FcstmElkNodeMeta {
     pseudo?: boolean;
     composite?: boolean;
     collapsed?: boolean;
+    /** The node is an ordered region of its owner state. */
+    region?: boolean;
+    ordinal?: number;
     sourceRange?: TextRange;
     // Fields carried for the effect side panel and state detail summary.
     eventLabels?: string[];
@@ -277,7 +284,11 @@ export interface FcstmElkEdge {
 }
 
 export interface FcstmElkEdgeMeta {
-    kind: 'transition';
+    /**
+     * ``regionOrder`` marks an invisible edge between consecutive regions of
+     * one owner: it only fixes their order in the layout and is never drawn.
+     */
+    kind: 'transition' | 'regionOrder';
     transitionId: string;
     eventColor?: string;
     forced?: boolean;

@@ -8,6 +8,7 @@ import {
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
 import {smoothGraphEdges} from '../../../../jsfcstm/src/diagram/render/edge-smoother';
+import {layoutFcstmGraph} from '../../../../jsfcstm/src/diagram/region-order';
 import type {PaletteId, PaletteMode} from '../../../../jsfcstm/src/diagram/render/palette';
 import {getElk} from '../composables/useElk';
 import {asPointerKind, decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
@@ -179,8 +180,9 @@ async function relayout() {
     try {
         // ELK mutates its input; deep-clone so repeated runs on the
         // same payload.graph can't poison each other.
-        const graphCopy = JSON.parse(JSON.stringify(payload.graph));
-        const laid = await getElk().layout(graphCopy) as PreviewElkNode;
+        // ``layoutFcstmGraph`` clones the graph itself and keeps the regions
+        // of one owner in declaration order.
+        const laid = await layoutFcstmGraph(getElk() as never, payload.graph as never) as unknown as PreviewElkNode;
         if (token !== layoutToken) return;
         // ELK's orthogonal router occasionally lands the last segment
         // of an edge within a handful of pixels of the target port,

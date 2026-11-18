@@ -204,6 +204,7 @@ export function smoothGraphEdges(
 ): void {
     if (node.edges) {
         for (const edge of node.edges) {
+            if (edge.fcstm?.kind === 'regionOrder') continue;
             smoothEdge(edge, minStubLen);
         }
     }

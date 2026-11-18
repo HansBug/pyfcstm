@@ -368,7 +368,9 @@ export function buildFcstmElkGraph(
 
     const buildStateNode = (state: FcstmDiagramState): FcstmElkNode => {
         const isCollapsed = collapsed.has(state.qualifiedName);
-        const title = state.displayName ? `${state.displayName} (${state.name})` : state.name;
+        const title = state.region
+            ? `region ${state.ordinal}: ${state.name}`
+            : (state.displayName ? `${state.displayName} (${state.name})` : state.name);
         const { width: titleW, height: titleH } = measureLabel(title, 18, 6);
         const leafDetails = leafDetailLines(state, options);
 
@@ -406,6 +408,8 @@ export function buildFcstmElkGraph(
                     pseudo: state.pseudo,
                     composite: state.children.length > 0,
                     collapsed: isCollapsed,
+                    region: state.region,
+                    ordinal: state.ordinal,
                     sourceRange: state.range,
                     eventLabels: leafDetails.eventLabels,
                     actionLabels: leafDetails.actionLabels,
@@ -518,6 +522,8 @@ export function buildFcstmElkGraph(
                 pseudo: state.pseudo,
                 composite: true,
                 collapsed: false,
+                region: state.region,
+                ordinal: state.ordinal,
                 sourceRange: state.range,
                 eventLabels: leafDetails.eventLabels,
                 actionLabels: leafDetails.actionLabels,

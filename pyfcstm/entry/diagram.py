@@ -107,9 +107,7 @@ def _load_model(input_code_file: str):
         Input DSL file not found: missing.fcstm
     """
     try:
-        from pyfcstm.model.support import require_supported_model
         model = load_state_machine_from_file(input_code_file)
-        require_supported_model(model, 'diagram')
         return model
     except FileNotFoundError:
         # The path is validated by click, but it can disappear between the

@@ -191,6 +191,15 @@ function drawNode(
         strokeWidth = P.leafStrokeWidth;
         radius = P.leafRadius;
         extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
+    } else if (isComposite && meta.region) {
+        // An ordered region: a composite-like section drawn with a dashed
+        // border so it reads as a concurrent section, not as a state.
+        variant = 'region';
+        fill = P.compositeFill;
+        stroke = P.compositeStroke;
+        strokeWidth = P.compositeStrokeWidth;
+        radius = P.compositeRadius;
+        extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
     } else if (isComposite) {
         variant = 'composite';
         fill = P.compositeFill;
@@ -203,6 +212,11 @@ function drawNode(
         stroke = P.leafStroke;
         strokeWidth = P.leafStrokeWidth;
         radius = P.leafRadius;
+        if (meta.region) {
+            // A collapsed region keeps its dashed border.
+            variant = 'region';
+            extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
+        }
     }
 
     out.push(
@@ -407,6 +421,8 @@ function drawEdge(
     crossings: CrossingIndex,
 ): void {
     const meta = edge.fcstm;
+    // Order edges only steer the layout; they have no visual form.
+    if (meta?.kind === 'regionOrder') return;
     const kind = meta?.transitionKind || 'normal';
     const forced = Boolean(meta?.forced);
     const color = meta?.eventColor || P.edgeStroke;

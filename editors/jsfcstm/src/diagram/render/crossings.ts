@@ -81,6 +81,7 @@ function walk(node: PreviewElkNode, ox: number, oy: number, out: ResolvedSegment
             walk(child, x, y, out);
         }
         for (const edge of node.edges || []) {
+            if (edge.fcstm?.kind === 'regionOrder') continue;
             pushSegmentsForEdge(edge, x, y, out);
         }
     }

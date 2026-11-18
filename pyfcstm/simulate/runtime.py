@@ -112,7 +112,15 @@ The rules that decide the corner cases are:
   through a chain of group entries and continuations is a dead path, like any
   loop through pseudo states: another candidate is tried, and the loop is
   reported only when nothing else works. An entry whose variable values keep
-  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`.
+  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. The
+  nesting of group entries is limited to 64 levels, so a finite loop that
+  re-enters a group more than about 64 times in one cycle ends in the same error,
+  where the same loop through plain composites is only limited by the step budget.
+* **Cost.** Deciding whether a group can be entered or continued repeats the
+  decision for every owner on the way, so the time grows exponentially with the
+  number of owners chained in one cycle (about 3 times per owner that completes
+  and continues, 2 times per level of nested owners). A handful of levels is
+  instant; around ten levels takes seconds.
 * **Handlers.** No handler runs while a cycle is being tried, for a rejected
   candidate or for a cycle that ends as a Delta, even when earlier regions
   already moved. The configuration a handler sees is the position at the moment

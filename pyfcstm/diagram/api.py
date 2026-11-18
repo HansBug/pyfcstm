@@ -254,9 +254,7 @@ def _operation_lines(
     return [prefix + _text(statement).strip()]
 
 
-def _effect_lines(
-    transition: Transition, active_paths: Mapping[str, str]
-) -> List[str]:
+def _effect_lines(transition: Transition, active_paths: Mapping[str, str]) -> List[str]:
     """
     Render the effect block of a transition into display lines.
 
@@ -514,9 +512,7 @@ def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
         "comboRelay": bool(getattr(state, "is_combo_relay", False)),
         "leaf": bool(getattr(state, "is_leaf_state", False)),
         "root": bool(getattr(state, "is_root_state", False)),
-        "events": [
-            _event_dict(event) for event in state.events.values()
-        ],
+        "events": [_event_dict(event) for event in state.events.values()],
         "actions": actions,
         "transitions": transitions,
         "children": [
@@ -641,7 +637,8 @@ def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
         "variables": [
             {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
             for item in machine.defines.values()
-            if item.name not in {query.variable_name for query in machine.active_queries}
+            if item.name
+            not in {query.variable_name for query in machine.active_queries}
         ],
         "eventLegend": event_legend,
         "rootState": root,

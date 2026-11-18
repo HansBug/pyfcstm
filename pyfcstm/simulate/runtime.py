@@ -1173,9 +1173,9 @@ class SimulationRuntime:
         self._has_regions = state_machine.has_regions
         # Answers of candidate and continuation checks within one cycle, with
         # the continuation positions each answer looked at.
-        self._memo: Dict[tuple, Tuple[bool, frozenset]] = {}
+        self._memo: Dict[tuple, Tuple[bool, frozenset, frozenset]] = {}
         # Open computations: [positions looked at, whether one was on the trail].
-        self._memo_deps: List[list] = []
+        self._memo_deps: List[set] = []
         # Main stack of the committed execution pass, for handler snapshots.
         self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
@@ -2684,12 +2684,12 @@ class SimulationRuntime:
                     )
                     accepted = self._memo_get(memo_key)
                     if accepted is None:
-                        self._memo_deps.append([set(), False])
+                        self._memo_deps.append(set())
                         try:
                             accepted = validator(stack, vars_, transition, d_events)
                         finally:
-                            closed = self._memo_close()
-                        self._memo_put(memo_key, accepted, closed)
+                            positions = self._memo_close()
+                        self._memo_put(memo_key, accepted, positions)
                 else:
                     accepted = validator(stack, vars_, transition, d_events)
             except _SimulationRuntimeLivelockError:
@@ -3412,11 +3412,9 @@ class SimulationRuntime:
         owner_frame.mode = "post_child_exit"
         signature = self._create_execution_signature(owner_stack, sim_vars)
         key = (signature, self._enclosing_shapes(outer.parent))
-        if self._memo_deps:
-            self._memo_deps[-1][0].add(key)
+        # A region only finishes inside a check started by _check_candidate.
+        self._memo_deps[-1].add(key)
         if key in self._continuation_trail:
-            for open_computation in self._memo_deps:
-                open_computation[1] = True
             raise _SimulationRuntimeLivelockError((signature, signature))
         self._continuation_trail.append(key)
         try:
@@ -3425,14 +3423,14 @@ class SimulationRuntime:
             )
             viable = self._memo_get(memo_key)
             if viable is None:
-                self._memo_deps.append([set(), False])
+                self._memo_deps.append(set())
                 try:
                     viable = self._validation_search_reaches_stable(
                         owner_stack, sim_vars, d_events, outer=outer.parent
                     )
                 finally:
-                    closed = self._memo_close()
-                self._memo_put(memo_key, viable, closed)
+                    positions = self._memo_close()
+                self._memo_put(memo_key, viable, positions)
             return viable
         finally:
             self._continuation_trail.pop()
@@ -4473,10 +4471,11 @@ class SimulationRuntime:
 
         An answer may depend on the continuation positions that are being
         examined further out (:attr:`_continuation_trail`), because coming back
-        to one of them counts as a loop. Each answer therefore records the
-        positions it compared against that trail and is reused only where none
-        of them is on the current trail, which makes a recomputation take
-        exactly the same steps.
+        to one of them counts as a loop. Each answer therefore records every
+        position it compared against that trail and which of them were on it.
+        It is reused exactly where the same ones are on the current trail:
+        every comparison then gives the same result, so a recomputation would
+        take the same steps and arrive at the same answer.
 
         The three ``_memo_*`` helpers are called one after another instead of
         wrapping the computation, so that remembering adds no frame to the
@@ -4488,47 +4487,53 @@ class SimulationRuntime:
         :rtype: Optional[bool]
         """
         entry = self._memo.get(key)
-        if entry is None or not entry[1].isdisjoint(self._continuation_trail):
+        if entry is None:
+            return None
+        result, positions, on_trail = entry
+        if positions.intersection(self._continuation_trail) != on_trail:
             return None
         if self._memo_deps:
-            self._memo_deps[-1][0].update(entry[1])
-        return entry[0]
+            self._memo_deps[-1].update(positions)
+        return result
 
-    def _memo_close(self) -> Tuple[set, bool]:
+    def _memo_close(self) -> set:
         """
         Finish the computation opened by appending to :attr:`_memo_deps`.
 
-        The positions the computation looked at, and whether one of them was
-        on the trail, also count for the computation that encloses it.
+        The positions the computation looked at also count for the
+        computation that encloses it.
 
-        :return: The positions looked at and whether the trail was hit.
-        :rtype: Tuple[set, bool]
+        :return: The continuation positions the computation compared against
+            the trail.
+        :rtype: set
         """
-        positions, hit = self._memo_deps.pop()
+        positions = self._memo_deps.pop()
         if self._memo_deps:
-            self._memo_deps[-1][0].update(positions)
-            self._memo_deps[-1][1] = self._memo_deps[-1][1] or hit
-        return positions, hit
+            self._memo_deps[-1].update(positions)
+        return positions
 
-    def _memo_put(self, key: tuple, result: bool, closed: Tuple[set, bool]) -> None:
+    def _memo_put(self, key: tuple, result: bool, positions: set) -> None:
         """
         Remember the answer of a check that returned normally.
 
-        An answer during which the trail was hit holds only under that trail
-        and is not remembered. Errors never reach this point.
+        The trail is back to what it was when the check started, so the
+        positions that are on it now are the ones the answer was reached with.
+        A check that ends in an error never reaches this point.
 
         :param key: Key from :meth:`_memo_key`.
         :type key: tuple
         :param result: The answer.
         :type result: bool
-        :param closed: Value returned by :meth:`_memo_close` for the check.
-        :type closed: Tuple[set, bool]
+        :param positions: Value returned by :meth:`_memo_close` for the check.
+        :type positions: set
         :return: ``None``.
         :rtype: None
         """
-        positions, hit = closed
-        if not hit:
-            self._memo[key] = (result, frozenset(positions))
+        self._memo[key] = (
+            result,
+            frozenset(positions),
+            frozenset(positions.intersection(self._continuation_trail)),
+        )
 
     def _run_cycle_on_context(
         self,

@@ -76,3 +76,15 @@ describe('region diagnostics', () => {
         assert.ok(!codes.includes('E_ACTIVE_QUERY_TARGET'));
     });
 });
+
+describe('region diagnostics without a root state', () => {
+    it('reports nothing for a document that declares no state', async () => {
+        const document = createDocument('def int x = 0;', '/tmp/region-empty.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        const semantic = ast ? packageModule.buildSemanticDocument(ast) : null;
+        if (semantic) {
+            const found = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(semantic, document);
+            assert.deepEqual(found.filter(item => /REGION|ACTIVE/.test(item.code)), []);
+        }
+    });
+});

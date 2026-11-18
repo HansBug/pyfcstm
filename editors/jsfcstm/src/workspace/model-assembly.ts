@@ -1274,7 +1274,7 @@ function assembleProgramImports(
         // no separate ``imports`` array to check here. The AST builder
         // computes ``composite`` differently (``substates ∪ imports >
         // 0``) because it runs BEFORE imports have been resolved.
-        node.composite = node.substates.length > 0 || (node.regions?.length ?? 0) > 0;
+        node.composite = node.substates.length > 0 || node.regions.length > 0;
     };
 
     assembleState(program.rootState, [program.rootState.name]);

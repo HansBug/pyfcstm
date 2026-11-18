@@ -266,9 +266,7 @@ class SemanticBuilder {
                 this.buildState(
                     regionAsStateDefinition(statement),
                     ownerState,
-                    ownerState.childStateIds.filter(id => (
-                        this.states.find(item => item.identity.id === id)?.isRegion
-                    )).length,
+                    this.states.filter(item => item.parentStateId === ownerState.identity.id && item.isRegion).length,
                 );
                 break;
             case 'eventDefinition':
@@ -620,9 +618,9 @@ class SemanticBuilder {
         const descendants: FcstmSemanticState[] = [];
 
         for (const childId of root.childStateIds) {
-            const child = this.states.find(state => state.identity.id === childId);
+            const child = this.states.find(state => state.identity.id === childId)!;
             // A forced transition of an ancestor does not reach into regions.
-            if (!child || child.isRegion) {
+            if (child.isRegion) {
                 continue;
             }
             if (child.childStateIds.length === 0) {

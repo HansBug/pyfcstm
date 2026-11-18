@@ -26,9 +26,12 @@ type Scope = FcstmAstStateDefinition | FcstmAstRegionDefinition;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z_0-9]*$/;
 
+function regionsOf(node: Scope): FcstmAstRegionDefinition[] {
+    return node.kind === 'regionDefinition' ? [] : node.regions;
+}
+
 function hasRegions(node: Scope): boolean {
-    const regions = (node as FcstmAstStateDefinition).regions ?? [];
-    return regions.length > 0 || node.substates.some(hasRegions);
+    return regionsOf(node).length > 0 || node.substates.some(hasRegions);
 }
 
 function structureReason(node: Scope): 'empty_region' | 'history_boundary' | null {
@@ -46,7 +49,7 @@ function checkStructure(
     diagnostics: FcstmDiagnostic[],
 ): boolean {
     const here = [...path, node.name];
-    const regions = (node as FcstmAstStateDefinition).regions ?? [];
+    const regions = regionsOf(node);
     let invalid = false;
     const reason = structureReason(node);
     if (reason !== null) {
@@ -94,7 +97,7 @@ function bindQuery(root: FcstmAstStateDefinition, path: string): string | null {
     let current: Scope = root;
     for (const segment of parts.slice(1)) {
         const next: Scope | undefined = current.substates.find(item => item.name === segment)
-            ?? ((current as FcstmAstStateDefinition).regions ?? []).find(item => item.name === segment);
+            ?? regionsOf(current).find(item => item.name === segment);
         if (!next) return 'not_found';
         current = next;
     }

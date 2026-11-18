@@ -2204,9 +2204,8 @@ export function resolvedExprText(expr: Expr): string {
     collectActiveQueries(expr, queries);
     if (queries.length === 0) return expr.text;
     let index = 0;
-    return expr.text.replace(ACTIVE_QUERY_TEXT, match => {
-        const query = queries[index];
+    return expr.text.replace(ACTIVE_QUERY_TEXT, () => {
         index += 1;
-        return query ? query.resolvedText : match;
+        return queries[index - 1].resolvedText;
     });
 }

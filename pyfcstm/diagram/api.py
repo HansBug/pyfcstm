@@ -287,16 +287,15 @@ def _state_path_for(owner: State, value: Any) -> Optional[List[str]]:
     return list(candidate)
 
 
-def _event_dict(event: Event, include_ranges: bool) -> Dict[str, Any]:
+def _event_dict(event: Event) -> Dict[str, Any]:
     result = {
         "name": event.name,
         "qualifiedName": event.path_name,
         "displayName": event.extra_name,
         "declared": bool(event.declared),
         "origins": list(event.origins),
+        "range": _span_range(event._span),
     }
-    if include_ranges:
-        result["range"] = _span_range(event._span)
     return result
 
 
@@ -345,9 +344,7 @@ def _is_active_flag_write(action: Any, paths: Dict[str, str]) -> bool:
     )
 
 
-def _state_dict(
-    state: Any, include_ranges: bool, ordinal: Optional[int] = None
-) -> Dict[str, Any]:
+def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
     """
     Build the snapshot node of a state or region and, recursively, its children.
 
@@ -360,8 +357,6 @@ def _state_dict(
     out of ``actions``.
 
     :param state: State or region to describe.
-    :param include_ranges: Whether to add source ranges and source paths.
-    :type include_ranges: bool
     :param ordinal: Position of a region among its siblings, ``None`` for a state.
     :type ordinal: int, optional
     :return: JSON-compatible node mapping.
@@ -420,9 +415,8 @@ def _state_dict(
             else None,
             "eventColor": None,
         }
-        if include_ranges:
-            transition_dict["range"] = _span_range(transition._span)
-            transition_dict["_sourcePath"] = getattr(transition, "_source_path", None)
+        transition_dict["range"] = _span_range(transition._span)
+        transition_dict["_sourcePath"] = getattr(transition, "_source_path", None)
         transitions.append(transition_dict)
 
     actions = []
@@ -450,8 +444,7 @@ def _state_dict(
             "operationCount": len(action.operations),
             "label": _action_label(action),
         }
-        if include_ranges:
-            item["range"] = _span_range(action._span)
+        item["range"] = _span_range(action._span)
         actions.append(item)
 
     result: Dict[str, Any] = {
@@ -464,14 +457,14 @@ def _state_dict(
         "leaf": bool(getattr(state, "is_leaf_state", False)),
         "root": bool(getattr(state, "is_root_state", False)),
         "events": [
-            _event_dict(event, include_ranges) for event in state.events.values()
+            _event_dict(event) for event in state.events.values()
         ],
         "actions": actions,
         "transitions": transitions,
         "children": [
-            *(_state_dict(child, include_ranges) for child in state.substates.values()),
+            *(_state_dict(child) for child in state.substates.values()),
             *(
-                _state_dict(region, include_ranges, ordinal=index)
+                _state_dict(region, ordinal=index)
                 for index, region in enumerate(
                     getattr(state, "regions", {}).values(), 1
                 )
@@ -481,9 +474,8 @@ def _state_dict(
     if is_region:
         result["region"] = True
         result["ordinal"] = ordinal
-    if include_ranges:
-        result["range"] = _span_range(state._span)
-        result["_sourcePath"] = getattr(state, "_source_path", None)
+    result["range"] = _span_range(state._span)
+    result["_sourcePath"] = getattr(state, "_source_path", None)
     return result
 
 
@@ -515,7 +507,7 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
     return len(states), len(events), len(transitions), len(actions)
 
 
-def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str, Any]:
+def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
     transitions = [
         transition
@@ -552,7 +544,7 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
         for child in state_dict["children"]:
             apply_colors(child)
 
-    root = _state_dict(machine.root_state, include_ranges)
+    root = _state_dict(machine.root_state)
     apply_colors(root)
     event_legend = [
         {
@@ -582,8 +574,6 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
         "eventLegend": event_legend,
         "rootState": root,
     }
-    if not include_ranges:
-        result.pop("filePath", None)
     return result
 
 
@@ -662,7 +652,7 @@ def _source_sidecar(
     }
     main_document_id = _source_document_id(machine, machine.source_path or "<memory>")
     if diagram is None:
-        diagram = _build_diagram_dict(machine, include_ranges=True)
+        diagram = _build_diagram_dict(machine)
     mapping: Dict[str, Any] = {}
     line_to_id: Dict[str, Union[str, List[str]]] = {}
 
@@ -2528,7 +2518,7 @@ class Diagram:
         self.options = self._normalize_options(options)
         self.view_state = self._normalize_view_state(view_state)
         self.source_text = model.source_text if source_text is None else source_text
-        renderer_diagram = _build_diagram_dict(model, include_ranges=True)
+        renderer_diagram = _build_diagram_dict(model)
         self._renderer_diagram = _freeze_value(renderer_diagram)
         self.data = DiagramData(renderer_diagram)
         (

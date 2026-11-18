@@ -71,7 +71,7 @@ export function regionAsStateDefinition(region: FcstmAstRegionDefinition): Fcstm
  * @param node A state definition (or the view of a region, which has none).
  */
 export function astRegionViews(node: FcstmAstStateDefinition): FcstmAstStateDefinition[] {
-    return (node.regions ?? []).map(regionAsStateDefinition);
+    return node.regions.map(regionAsStateDefinition);
 }
 
 /**

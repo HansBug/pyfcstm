@@ -215,14 +215,14 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
             reachable.add(stateId);
             worklist.push(stateId);
             // Entering a state starts every one of its regions.
-            for (const childId of statesById.get(stateId)?.childStateIds ?? []) {
-                if (statesById.get(childId)?.isRegion) enter(childId);
+            for (const childId of statesById.get(stateId)!.childStateIds) {
+                if (statesById.get(childId)!.isRegion) enter(childId);
             }
         }
     };
     if (semantic.machine.rootStateId) {
-        for (const childId of statesById.get(semantic.machine.rootStateId)?.childStateIds ?? []) {
-            if (statesById.get(childId)?.isRegion) enter(childId);
+        for (const childId of statesById.get(semantic.machine.rootStateId)!.childStateIds) {
+            if (statesById.get(childId)!.isRegion) enter(childId);
         }
     }
     // The states a default enters, or undefined when it names no state. A
@@ -1077,7 +1077,7 @@ function addInitialTransitionInvalidDiagnostics(
             continue;
         }
         // A state that owns regions starts them all instead of choosing a child.
-        if (state.childStateIds.some(id => semantic.states.find(item => item.identity.id === id)?.isRegion)) {
+        if (semantic.states.some(item => item.parentStateId === state.identity.id && item.isRegion)) {
             continue;
         }
         if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {

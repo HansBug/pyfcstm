@@ -18,7 +18,7 @@
 import type {FcstmElkEdge, FcstmElkGraph, FcstmElkNode} from './model';
 
 function regionChildren(node: FcstmElkNode): FcstmElkNode[] {
-    return (node.children || []).filter(child => child.fcstm?.region);
+    return (node.children || []).filter(child => child.fcstm!.region);
 }
 
 /**
@@ -32,10 +32,10 @@ function regionChildren(node: FcstmElkNode): FcstmElkNode[] {
  */
 export function orderRegionSections(laidOut: FcstmElkNode, horizontal: boolean): boolean {
     let ok = true;
-    const along = (n: FcstmElkNode) => (horizontal ? n.x : n.y) || 0;
-    const alongSize = (n: FcstmElkNode) => (horizontal ? n.width : n.height) || 0;
-    const across = (n: FcstmElkNode) => (horizontal ? n.y : n.x) || 0;
-    const acrossSize = (n: FcstmElkNode) => (horizontal ? n.height : n.width) || 0;
+    const along = (n: FcstmElkNode) => (horizontal ? n.x : n.y) as number;
+    const alongSize = (n: FcstmElkNode) => (horizontal ? n.width : n.height) as number;
+    const across = (n: FcstmElkNode) => (horizontal ? n.y : n.x) as number;
+    const acrossSize = (n: FcstmElkNode) => (horizontal ? n.height : n.width) as number;
     const visit = (node: FcstmElkNode): void => {
         const regions = regionChildren(node);
         if (regions.length > 1) {
@@ -51,7 +51,7 @@ export function orderRegionSections(laidOut: FcstmElkNode, horizontal: boolean):
                 // float in the middle of the row.
                 const edge = Math.min(...regions.map(across));
                 [...regions]
-                    .sort((a, b) => (a.fcstm?.ordinal || 0) - (b.fcstm?.ordinal || 0))
+                    .sort((a, b) => a.fcstm!.ordinal! - b.fcstm!.ordinal!)
                     .forEach((region, index) => {
                         if (horizontal) { region.x = cursor; region.y = edge; } else { region.y = cursor; region.x = edge; }
                         cursor += alongSize(region) + (gaps[index] || 0);
@@ -75,7 +75,7 @@ export function orderRegionSections(laidOut: FcstmElkNode, horizontal: boolean):
 export function pinRegionOrder<T extends FcstmElkNode>(graph: T): T {
     const visit = (node: FcstmElkNode): void => {
         const regions = regionChildren(node)
-            .sort((a, b) => (a.fcstm?.ordinal || 0) - (b.fcstm?.ordinal || 0));
+            .sort((a, b) => a.fcstm!.ordinal! - b.fcstm!.ordinal!);
         for (let index = 0; index + 1 < regions.length; index += 1) {
             const edge: FcstmElkEdge = {
                 id: `${node.id}:order${index}`,
@@ -83,7 +83,7 @@ export function pinRegionOrder<T extends FcstmElkNode>(graph: T): T {
                 targets: [regions[index + 1].id],
                 fcstm: {kind: 'regionOrder', transitionId: '', transitionKind: 'normal'},
             };
-            (node.edges = node.edges || []).push(edge);
+            node.edges!.push(edge);
         }
         (node.children || []).forEach(visit);
     };

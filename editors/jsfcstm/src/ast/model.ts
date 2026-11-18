@@ -132,7 +132,7 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     imports: FcstmAstImportStatement[];
     substates: FcstmAstStateDefinition[];
     /** Ordered regions. Parsers emit an array; older programmatic ASTs may omit it. */
-    regions?: FcstmAstRegionDefinition[];
+    regions: FcstmAstRegionDefinition[];
     transitions: FcstmAstTransition[];
     enters: FcstmAstAction[];
     durings: FcstmAstAction[];

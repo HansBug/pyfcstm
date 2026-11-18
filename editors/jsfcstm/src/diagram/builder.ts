@@ -6,7 +6,7 @@ import type {
     StateMachine,
     Transition,
 } from '../model';
-import {resolvedExprText} from '../model/runtime';
+import {resolvedExprText} from '../model';
 import {getWorkspaceGraph, type FcstmWorkspaceGraphSnapshot} from '../workspace';
 import type {TextDocumentLike} from '../utils/text';
 import type {
@@ -277,7 +277,7 @@ function buildTransition(
     const sourceLabel = transition.fromState === 'INIT_STATE' ? '[*]' : transition.fromState;
     const targetLabel = transition.toState === 'EXIT_STATE' ? '[*]' : transition.toState;
     const triggerLabel = formatTriggerLabel(transition);
-    const guardLabel = transition.guard ? resolvedExprText(transition.guard) || '' : undefined;
+    const guardLabel = transition.guard ? resolvedExprText(transition.guard) : undefined;
     const effectLines = buildEffectLines(transition);
     const eventQualifiedName = transition.event?.pathName;
     const eventName = transition.event?.name;

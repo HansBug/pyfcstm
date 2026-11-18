@@ -116,11 +116,14 @@ The rules that decide the corner cases are:
   nesting of group entries is limited to 64 levels, so a finite loop that
   re-enters a group more than about 64 times in one cycle ends in the same error,
   where the same loop through plain composites is only limited by the step budget.
-* **Cost.** Deciding whether a group can be entered or continued repeats the
-  decision for every owner on the way, so the time grows exponentially with the
-  number of owners chained in one cycle (about 3 times per owner that completes
-  and continues, 2 times per level of nested owners). A handful of levels is
-  instant; around ten levels takes seconds.
+* **Cost.** Whether a candidate can reach a stable position is asked again for
+  every owner on the way: once on a copy, and once more at each level while the
+  candidate is actually taken. Within one cycle the answer to a question that
+  was already asked at the same position, with the same variable values, is
+  reused, so the time grows with the size of the model instead of with a power
+  of the number of owners. A diagnostics report follows the same rule: a check
+  that repeats is listed with its result each time and expanded into its inner
+  checks only where it ran.
 * **Handlers.** No handler runs while a cycle is being tried, for a rejected
   candidate or for a cycle that ends as a Delta, even when earlier regions
   already moved. The configuration a handler sees is the position at the moment
@@ -2669,7 +2672,7 @@ class SimulationRuntime:
                 if collector is not None:
                     previous_parent = collector.parent
                     collector.parent = record['id']
-                if self._has_regions and collector is None:
+                if self._has_regions:
                     memo_key = self._memo_key(
                         ("candidate", _transition_label(stack[-1].state, transition)),
                         stack,
@@ -3413,10 +3416,6 @@ class SimulationRuntime:
             raise _SimulationRuntimeLivelockError((signature, signature))
         self._continuation_trail.append(key)
         try:
-            if self._cycle_diagnostics is not None:
-                return self._validation_search_reaches_stable(
-                    owner_stack, sim_vars, d_events, outer=outer.parent
-                )
             memo_key = self._memo_key(
                 ("continuation",), owner_stack, sim_vars, outer.parent
             )
@@ -4771,7 +4770,10 @@ class SimulationRuntime:
 
         :param diagnostics: Capture immutable candidate checks independently of
             committed tracing, defaults to ``False``. Reports survive Delta;
-            failures still raise without a partial report.
+            failures still raise without a partial report. For a model with
+            regions, a check that repeats within the cycle is listed with its
+            result each time and expanded into its inner checks only where it
+            ran.
         :type diagnostics: bool
         :param inputs: Optional partial input override mapping.
         :type inputs: Optional[Mapping[str, Union[int, float]]]

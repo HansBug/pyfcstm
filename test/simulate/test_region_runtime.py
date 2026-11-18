@@ -1127,3 +1127,47 @@ def test_root_group_that_cannot_start_is_not_started_again_on_changed_values():
         assert runtime.vars["y"] == 0
         assert str(runtime.configuration) == "Root{A: [init], B: [init]}"
     assert calls == []
+
+
+def _chained_groups(count):
+    states = "".join(
+        "state P%d { region R { [*] -> p; pseudo state p; p -> [*]; } } " % index
+        for index in range(count)
+    )
+    edges = "".join("P%d -> P%d; " % (index, index + 1) for index in range(count - 1))
+    return "state Root { [*] -> P0; %s state Done; %s P%d -> Done; }" % (
+        states,
+        edges,
+        count - 1,
+    )
+
+
+def _nested_groups(depth):
+    body = "state L%d { during { t = t + 1; } }" % depth
+    for index in range(depth - 1, -1, -1):
+        body = "state L%d { region R%d { [*] -> L%d; %s } }" % (
+            index,
+            index,
+            index + 1,
+            body,
+        )
+    return "def int t = 0; state Root { [*] -> L0; %s }" % body
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("build", [_chained_groups, _nested_groups])
+def test_diagnostics_grow_with_the_model_and_not_with_repeated_checks(build):
+    """A check that repeats within a cycle is expanded once in the report."""
+    sizes = {}
+    for count in (4, 8, 16):
+        observed = SimulationRuntime(load_state_machine_from_text(build(count)))
+        plain = SimulationRuntime(load_state_machine_from_text(build(count)))
+        report = observed.cycle(diagnostics=True).diagnostics
+        plain.cycle()
+        assert str(observed.configuration) == str(plain.configuration)
+        assert observed.vars == plain.vars
+        assert report.configuration_after == str(plain.configuration)
+        sizes[count] = len(report.decisions)
+    # Twice the owners may cost a few times the checks, never a power of them.
+    assert sizes[8] <= 4 * sizes[4]
+    assert sizes[16] <= 4 * sizes[8]

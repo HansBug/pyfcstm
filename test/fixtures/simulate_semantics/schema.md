@@ -369,8 +369,10 @@ one case in this corpus, and `region_*` case titles say which.
   while a group is left, regions that already left show as `[done]`.
 - Loops: a loop back to the same position and values is a dead path, also when
   it runs through an owner finishing and being entered again, so the next
-  candidate is taken; it is reported as `SimulationRuntimeDfsError` only when
-  nothing else is left to try;
+  candidate is taken; it is reported as `SimulationRuntimeDfsError`, at the
+  owner, only when nothing else is left to try. Only the region that finishes
+  last is judged for leading back; an earlier region finishes without asking
+  what follows. What is decided while a cycle is tried is what the cycle does;
   changing values make it unbounded, which ends in the same error class. A
   group that is re-entered a bounded number of times within one cycle is judged
   on the current values each time.

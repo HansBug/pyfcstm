@@ -1252,3 +1252,127 @@ def test_candidate_that_only_leads_back_to_its_own_start_gives_way(body, positio
         result = runtime.cycle()
         assert not result.delta
         assert str(runtime.configuration) == position
+
+
+CHOICE_IN_COMPOSITE = """
+state Root {
+    event Go;
+    [*] -> Idle;
+    state Idle { exit abstract IdleOut; }
+    state Q {
+        enter abstract QIn;
+        exit abstract QOut;
+        region R {
+            [*] -> C;
+            state C {
+                [*] -> p;
+                [*] -> Stay;
+                pseudo state p;
+                state Stay;
+                p -> [*];
+            }
+            C -> [*];
+        }
+    }
+    Idle -> Q : /Go;
+    Q -> Q;
+}
+"""
+
+
+@pytest.mark.unittest
+def test_choice_in_a_composite_of_a_region_is_decided_alike_when_tried_and_taken():
+    """What is decided while a cycle is tried is what the cycle then does."""
+    runtime = SimulationRuntime(load_state_machine_from_text(CHOICE_IN_COMPOSITE))
+    calls = []
+    for path in ("Root.Idle.IdleOut", "Root.Q.QIn", "Root.Q.QOut"):
+        runtime.register_abstract_handler(
+            path, lambda ctx, path=path: calls.append(path.split(".")[-1])
+        )
+    runtime.cycle()
+    result = runtime.cycle("Root.Go", diagnostics=True)
+    # Leaving C through p only leads back into Q at the same point, so C
+    # takes its second initial transition and nothing is entered twice.
+    assert not result.delta
+    assert str(runtime.configuration) == "Root.Q{R: C.Stay}"
+    assert calls == ["IdleOut", "QIn"]
+    top = [d for d in result.diagnostics.decisions if d.parent_id is None]
+    tried = [(d.transition_label, d.outcome) for d in top if d.phase == "preflight"]
+    taken = [(d.transition_label, d.outcome) for d in top if d.phase == "execution"]
+    assert tried == taken
+
+
+@pytest.mark.unittest
+def test_aspects_run_while_trying_a_rejected_way_are_not_counted_for_the_next_way():
+    """A dead first way through a pseudo state leaves the aspect to the way that works."""
+    source = """
+    def int x = 0;
+    state Root {
+        >> during before { x = 1; }
+        [*] -> Q;
+        state Q {
+            region R {
+                [*] -> j;
+                pseudo state j;
+                state O2 {
+                    region X { [*] -> X1; state X1; }
+                    region Y { [*] -> Y1 : if [x == 5]; state Y1; }
+                }
+                j -> O2;
+                j -> [*];
+            }
+        }
+        state O3 {
+            region M { [*] -> M1; state M1; }
+            region N { [*] -> N1 : if [x == 1]; state N1; }
+        }
+        Q -> O3;
+    }
+    """
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    result = runtime.cycle()
+    assert not result.delta
+    assert str(runtime.configuration) == "Root.O3{M: M1, N: N1}"
+    assert runtime.vars["x"] == 1
+
+
+@pytest.mark.unittest
+def test_stack_overflow_outside_any_group_is_not_blamed_on_group_entries():
+    """A model with regions that overflows elsewhere keeps the interpreter's error."""
+    import inspect
+    import sys
+
+    guard = " + ".join(["x"] * 150)
+    source = (
+        "def int x = 0; state Root { [*] -> A; state A; state B; "
+        "A -> B : if [%s > 0]; "
+        "state Q { region R { [*] -> L; state L; } } B -> Q; }" % guard
+    )
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    runtime.cycle()
+
+    def call_at_depth(depth):
+        return runtime.cycle() if depth == 0 else call_at_depth(depth - 1)
+
+    spare = 120
+    depth = sys.getrecursionlimit() - len(inspect.stack()) - spare
+    with pytest.raises(RecursionError):
+        call_at_depth(depth)
+    assert str(runtime.configuration) == "Root.A"
+    assert runtime.cycle_count == 1
+    runtime.cycle()
+    assert runtime.cycle_count == 2
+
+
+@pytest.mark.unittest
+def test_loop_report_names_the_owner_and_not_its_region():
+    """A region is not a state, so a loop through it is reported at its owner."""
+    source = (
+        "state Root { [*] -> Q; state Q { region R { [*] -> j; pseudo state j; "
+        "j -> [*]; } } Q -> Q; }"
+    )
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    with pytest.raises(SimulationRuntimeDfsError) as info:
+        runtime.cycle()
+    assert "Root.Q -> Root.Q" in str(info.value)
+    assert "Root.Q.R" not in str(info.value)

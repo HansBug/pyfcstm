@@ -1,5 +1,4 @@
 import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
-import {collectUnsupportedSyntaxDiagnostics} from '../ast/unsupported-syntax';
 import {pathToFileURL} from 'node:url';
 
 import type {
@@ -214,8 +213,17 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         if (!reachable.has(stateId)) {
             reachable.add(stateId);
             worklist.push(stateId);
+            // Entering a state starts every one of its regions.
+            for (const childId of statesById.get(stateId)?.childStateIds ?? []) {
+                if (statesById.get(childId)?.isRegion) enter(childId);
+            }
         }
     };
+    if (semantic.machine.rootStateId) {
+        for (const childId of statesById.get(semantic.machine.rootStateId)?.childStateIds ?? []) {
+            if (statesById.get(childId)?.isRegion) enter(childId);
+        }
+    }
     // The states a default enters, or undefined when it names no state. A
     // default through an import alias leaves the local model, so the states
     // before the alias are what it enters here.
@@ -1067,6 +1075,10 @@ function addInitialTransitionInvalidDiagnostics(
         if (!state.composite || state.pseudo) {
             continue;
         }
+        // A state that owns regions starts them all instead of choosing a child.
+        if (state.childStateIds.some(id => semantic.states.find(item => item.identity.id === id)?.isRegion)) {
+            continue;
+        }
         if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
@@ -1087,10 +1099,6 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
     semantic: FcstmSemanticDocument,
     document: TextDocumentLike,
 ): FcstmDiagnostic[] {
-    if (semantic.ast) {
-        const unsupported = collectUnsupportedSyntaxDiagnostics(semantic.ast);
-        if (unsupported.length > 0) return unsupported;
-    }
     const diagnostics: FcstmDiagnostic[] = [];
     if (semantic.ast) diagnostics.push(...collectVariableRoleDiagnostics(semantic.ast));
     addImportMappingDiagnostics(semantic, document, diagnostics);

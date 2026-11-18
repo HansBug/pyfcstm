@@ -143,6 +143,8 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     force_transitions: FcstmAstForcedTransition[];
     /** ``[H]`` / ``[H*]`` declarations owned by this state. */
     histories: FcstmAstHistoryDefinition[];
+    /** Set on the state-shaped view of a region; see ``regionAsStateDefinition``. */
+    isRegionView?: boolean;
     /**
      * Absolute path of the file this state's definition was imported
      * from, if it came in through an ``import`` statement in another

@@ -10,12 +10,15 @@ describe('partial workspace capability boundaries', () => {
         }
     });
 
-    it('still rejects unsupported syntax when the semantic snapshot is unavailable', async () => {
+    it('builds a region model when the semantic snapshot is unavailable', async () => {
         const file = '/tmp/partial-region.fcstm';
-        const ast = await packageModule.parseAstDocument(createDocument('state Root { region Motor {} }', file));
+        const ast = await packageModule.parseAstDocument(createDocument(
+            'state Root { region Motor { state Idle; [*] -> Idle; } }', file));
         assert.ok(ast);
-        assert.equal(buildStateMachineModelFromWorkspaceSnapshot({nodes: {
+        const model = buildStateMachineModelFromWorkspaceSnapshot({nodes: {
             [file]: {ast, semantic: null},
-        }} as any, file), null);
+        }} as any, file);
+        assert.ok(model);
+        assert.deepEqual(Object.keys(model.rootState.regions), ['Motor']);
     });
 });

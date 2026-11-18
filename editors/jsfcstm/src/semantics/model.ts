@@ -96,6 +96,10 @@ export interface FcstmSemanticState {
     ast: FcstmAstStateDefinition;
     parentStateId?: string;
     childStateIds: string[];
+    /** ``true`` when this entry is a region of its parent rather than a state. */
+    isRegion?: boolean;
+    /** Declaration order of a region among its siblings, from ``0``. */
+    ordinal?: number;
 }
 
 /**

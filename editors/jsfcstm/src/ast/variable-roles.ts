@@ -1,5 +1,6 @@
 import type {FcstmAstDocument, FcstmAstExpression, FcstmAstOperationStatement, FcstmAstStateDefinition, VariableRole} from './model';
 import type {FcstmDiagnostic, TextRange} from '../utils/text';
+import {astNamespaceChildren} from './region';
 
 /** Reject unknown serialized roles while retaining the default control declaration. */
 export function requireVariableRole(role: VariableRole | undefined): VariableRole {
@@ -58,7 +59,7 @@ export function collectVariableRoleDiagnostics(ast: FcstmAstDocument): FcstmDiag
         for (const action of [...state.enters, ...state.durings, ...state.exits, ...state.duringAspects]) {
             check(action.operationsList);
         }
-        for (const child of state.substates) visit(child);
+        for (const child of astNamespaceChildren(state)) visit(child);
     }
     if (ast.rootState) visit(ast.rootState);
     return diagnostics;

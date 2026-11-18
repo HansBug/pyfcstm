@@ -266,7 +266,7 @@ class SemanticBuilder {
                 this.buildState(
                     regionAsStateDefinition(statement),
                     ownerState,
-                    this.states.filter(item => item.parentStateId === ownerState.identity.id && item.isRegion).length,
+                    this.states.filter(item => item.parentStateId === ownerState.identity.id && item.isRegion).length + 1,
                 );
                 break;
             case 'eventDefinition':

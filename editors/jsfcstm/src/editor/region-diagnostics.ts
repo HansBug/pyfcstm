@@ -65,8 +65,8 @@ function checkStructure(
     }
     const seen = new Map<string, FcstmAstRegionDefinition>();
     for (const region of regions) {
-        const first = seen.get(region.name);
-        if (first) {
+        const previous = seen.get(region.name);
+        if (previous) {
             invalid = true;
             diagnostics.push({
                 range: findIdentifierRange(document, region.name, region.range),
@@ -77,13 +77,12 @@ function checkStructure(
                 data: {
                     region_name: region.name,
                     owner_path: here.join('.'),
-                    previous_span: first.range,
+                    previous_span: previous.range,
                     source_path: sourcePath,
                 },
             });
-        } else {
-            seen.set(region.name, region);
         }
+        seen.set(region.name, region);
     }
     for (const child of [...node.substates, ...regions]) {
         invalid = checkStructure(child, here, document, sourcePath, diagnostics) || invalid;

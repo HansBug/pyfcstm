@@ -167,4 +167,11 @@ describe('region titles in the diagram graph', () => {
         assert.ok(text.includes('Parent (P)'));
         assert.ok(text.includes('region 1: A'));
     });
+
+    it('numbers the regions of the semantic document from one, like the model', async () => {
+        const ast = await packageModule.parseAstDocument(createDocument(SOURCE, '/tmp/region-semantic.fcstm'));
+        const regions = packageModule.buildSemanticDocument(ast!)!.states.filter(item => item.isRegion);
+        assert.deepEqual(regions.map(item => [item.name, item.ordinal]), [['Safety', 1], ['Motion', 2], ['Inner', 1]]);
+    });
 });
+

@@ -88,3 +88,52 @@ describe('region diagnostics without a root state', () => {
         }
     });
 });
+
+describe('region documents in the editor', () => {
+    async function publish(source: string) {
+        const document = createDocument(source, '/tmp/region-editor.fcstm');
+        const publications = await editorModule.collectDocumentDiagnosticsByUri(document);
+        return [...publications.values()].flat();
+    }
+
+    it('raises no diagnostics for a well-formed document with regions and queries', async () => {
+        const found = await publish(`def int x = 0;
+            state Root {
+                [*] -> Run;
+                state Run {
+                    region A { [*] -> S1; state S1; state S2; S1 -> S2 :: Go; S2 -> S1 :: Back; }
+                    region B { [*] -> T1; state T1; state T2; T1 -> T2 : if [active("Root.Run.A.S2")]; T2 -> T1 :: Back; }
+                }
+                state Off;
+                Run -> Off :: Stop;
+                Off -> Run :: Start;
+            }`);
+        assert.deepEqual(found.map(item => item.code), []);
+    });
+
+    it('raises no diagnostics for a well-formed document that only uses queries', async () => {
+        const found = await publish(`def int x = 0;
+            state Root {
+                [*] -> A;
+                state A { during { if [active("Root.B")] { x = 1; } } }
+                state B;
+                A -> B : if [active("Root.A") && x > 0];
+                B -> A :: Back;
+            }`);
+        assert.deepEqual(found.map(item => item.code), []);
+    });
+
+    it('points the repeated region at the previous one of the same name', async () => {
+        const document = createDocument(
+            `state Root {
+                region A { state X; [*] -> X; }
+                region A { state Y; [*] -> Y; }
+                region A { state Z; [*] -> Z; }
+            }`, '/tmp/region-triple.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        const found = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
+            packageModule.buildSemanticDocument(ast!)!, document).filter(item => item.code === 'E_DUPLICATE_REGION');
+        assert.deepEqual(found.map(item => (item.data?.previous_span as {start: {line: number}}).start.line), [1, 2]);
+    });
+});
+

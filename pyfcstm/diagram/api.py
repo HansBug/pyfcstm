@@ -538,7 +538,8 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
     Count the states, events, transitions and actions shown in a snapshot.
 
     Regions are not states, but the events, transitions and aspects declared in
-    them are counted.
+    them are counted. The flag writes that model construction adds for
+    ``active()`` queries are not counted: the diagram does not show them.
 
     :param machine: State machine being snapshotted.
     :return: ``(states, events, transitions, actions)``.
@@ -548,16 +549,19 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
     namespaces = list(walk_namespaces(machine.root_state))
     events = [event for ns in namespaces for event in ns.events.values()]
     transitions = [transition for ns in namespaces for transition in ns.transitions]
-    actions = [
-        action
-        for ns in namespaces
-        for action in [
-            *getattr(ns, "on_enters", ()),
-            *getattr(ns, "on_durings", ()),
-            *getattr(ns, "on_exits", ()),
-            *ns.on_during_aspects,
-        ]
-    ]
+    actions = []
+    for ns in namespaces:
+        paths = _active_paths(ns)
+        actions.extend(
+            action
+            for action in [
+                *getattr(ns, "on_enters", ()),
+                *getattr(ns, "on_durings", ()),
+                *getattr(ns, "on_exits", ()),
+                *ns.on_during_aspects,
+            ]
+            if not _is_active_flag_write(action, paths)
+        )
     return len(states), len(events), len(transitions), len(actions)
 
 
@@ -623,23 +627,24 @@ def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
         }
         for path in sorted(event_colors)
     ]
+    hidden_flags = {query.variable_name for query in machine.active_queries}
+    variables = [
+        {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
+        for item in machine.defines.values()
+        if item.name not in hidden_flags
+    ]
     result: Dict[str, Any] = {
         "kind": "diagram",
         "filePath": "" if machine.source_path is None else str(machine.source_path),
         "machineName": machine.root_state.name,
         "summary": {
-            "variables": len(machine.defines),
+            "variables": len(variables),
             "states": state_count,
             "events": event_count,
             "transitions": transition_count,
             "actions": action_count,
         },
-        "variables": [
-            {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
-            for item in machine.defines.values()
-            if item.name
-            not in {query.variable_name for query in machine.active_queries}
-        ],
+        "variables": variables,
         "eventLegend": event_legend,
         "rootState": root,
     }

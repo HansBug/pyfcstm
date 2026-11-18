@@ -137,6 +137,21 @@ def test_models_without_regions_gain_no_region_fields():
     ] == ['active("Root.B")']
 
 
+def test_summary_counts_only_what_the_diagram_shows_for_active_queries():
+    data = (
+        load_state_machine_from_text(
+            "def int x = 0; state Root { [*] -> A; state A; state B;"
+            ' A -> B : if [active("/B") && x > 0]; B -> A : if [active("Root")]; }'
+        )
+        .diagram()
+        .to_dict()
+    )
+    assert [item["name"] for item in data["variables"]] == ["x"]
+    assert data["summary"]["variables"] == 1
+    assert data["summary"]["actions"] == 0
+    assert data["summary"]["states"] == 3
+
+
 def test_active_queries_in_effects_keep_their_written_form():
     machine = load_state_machine_from_text("""def int x = 0;
     state Root {

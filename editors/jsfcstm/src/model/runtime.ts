@@ -1788,9 +1788,6 @@ export class StateMachine extends ModelNode {
     }
 
     /**
-     * Walk all states in the machine in preorder.
-     */
-    /**
      * Walk every region of the machine in declaration order.
      */
     *walk_regions(): Generator<State, void, void> {
@@ -1804,6 +1801,9 @@ export class StateMachine extends ModelNode {
         return this.walk_regions().next().done === false;
     }
 
+    /**
+     * Walk all states in the machine in preorder; regions are not states and are skipped.
+     */
     *walk_states(): Generator<State, void, void> {
         yield* this.rootState.walk_states();
     }

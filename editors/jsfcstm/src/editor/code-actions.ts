@@ -138,7 +138,7 @@ export async function collectCodeActions(
     const localModel = semantic ? buildStateMachineModel(semantic) : null;
     if (localModel) {
         const existing = new Set<string>();
-        const inspectDiagnostics = inspectModel(localModel).diagnostics;
+        const inspectDiagnostics = localModel.has_regions ? [] : inspectModel(localModel).diagnostics;
         const serverSuggestedKeysAtRange = new Set(
             collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
                 .filter(diagnostic => (

@@ -1336,20 +1336,40 @@ def test_aspects_run_while_trying_a_rejected_way_are_not_counted_for_the_next_wa
     assert runtime.vars["x"] == 1
 
 
+_LONG_GUARD = " + ".join(["x"] * 150)
+
+
 @pytest.mark.unittest
-def test_stack_overflow_outside_any_group_is_not_blamed_on_group_entries():
-    """A model with regions that overflows elsewhere keeps the interpreter's error."""
+@pytest.mark.parametrize(
+    ["source", "position"],
+    [
+        # The long guard sits on a transition of a plain state.
+        (
+            "def int x = 0; state Root { [*] -> A; state A; state B; "
+            "A -> B : if [%s > 0]; "
+            "state Q { region R { [*] -> L; state L; } } B -> Q; }" % _LONG_GUARD,
+            "Root.A",
+        ),
+        # The long guard sits on the initial transition of a region, so the
+        # stack runs out inside one group entry that nests in no other.
+        (
+            "def int x = 0; state Root { [*] -> A; state A; "
+            "state Q { region R { [*] -> L : if [%s >= 0]; state L; } } "
+            "A -> Q; }" % _LONG_GUARD,
+            "Root.A",
+        ),
+    ],
+)
+def test_stack_overflow_without_nested_group_entries_keeps_the_interpreter_error(
+    source, position
+):
+    """Only group entries nested in each other can come from re-entering a group."""
     import inspect
     import sys
 
-    guard = " + ".join(["x"] * 150)
-    source = (
-        "def int x = 0; state Root { [*] -> A; state A; state B; "
-        "A -> B : if [%s > 0]; "
-        "state Q { region R { [*] -> L; state L; } } B -> Q; }" % guard
-    )
     runtime = SimulationRuntime(load_state_machine_from_text(source))
     runtime.cycle()
+    assert str(runtime.configuration) == position
 
     def call_at_depth(depth):
         return runtime.cycle() if depth == 0 else call_at_depth(depth - 1)
@@ -1358,7 +1378,7 @@ def test_stack_overflow_outside_any_group_is_not_blamed_on_group_entries():
     depth = sys.getrecursionlimit() - len(inspect.stack()) - spare
     with pytest.raises(RecursionError):
         call_at_depth(depth)
-    assert str(runtime.configuration) == "Root.A"
+    assert str(runtime.configuration) == position
     assert runtime.cycle_count == 1
     runtime.cycle()
     assert runtime.cycle_count == 2

@@ -5202,9 +5202,11 @@ class SimulationRuntime:
             # exhaust the interpreter's call stack before it reaches the
             # explicit nesting limit when the caller's own stack is already
             # deep. No handler runs in this pass, so the engine itself ran out
-            # of stack. When the stack ran out anywhere else, as it can in any
-            # model, the error keeps propagating unchanged.
-            if self._overflow_depth is None:
+            # of stack. A stack that ran out anywhere else, or inside a single
+            # group entry that nests in no other, cannot come from re-entering
+            # a group; that can happen in any model whose caller is deep, and
+            # the error keeps propagating unchanged.
+            if self._overflow_depth is None or self._overflow_depth < 2:
                 raise
             raise SimulationRuntimeDfsError(
                 "The call stack was exhausted with group entries nested "

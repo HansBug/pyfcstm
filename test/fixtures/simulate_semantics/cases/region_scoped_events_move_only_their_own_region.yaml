@@ -1,0 +1,34 @@
+title: An event declared in a region, or local to a state inside it, moves that region only, even when another region
+  declares an event of the same name
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      seq: 0
+- cycle: Root.P.A.Tick
+  expect:
+    configuration: 'Root.P{A: A2, B: B1}'
+    vars:
+      seq: 1
+- cycle: Root.P.B.Tick
+  expect:
+    configuration: 'Root.P{A: A2, B: B2}'
+    vars:
+      seq: 13
+- cycle:
+  - Root.P.A.A2.Go
+  - Root.P.B.B2.Go
+  expect:
+    configuration: 'Root.P{A: A3, B: B3}'
+    vars:
+      seq: 1324

@@ -1,0 +1,36 @@
+title: Actions inside regions use block-local temporaries, if blocks and float arithmetic like anywhere else, and
+  a later region reads the value an earlier one just wrote
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 1
+      f: 2.0
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 2
+      f: 6.0
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 0
+      f: 12.0
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 1
+      f: 25.0

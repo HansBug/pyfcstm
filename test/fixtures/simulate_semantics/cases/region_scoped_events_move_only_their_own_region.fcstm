@@ -1,0 +1,24 @@
+def int seq = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A {
+            event Tick;
+            [*] -> A1;
+            state A1;
+            state A2;
+            state A3;
+            A1 -> A2 : Tick effect { seq = seq * 10 + 1; };
+            A2 -> A3 :: Go effect { seq = seq * 10 + 2; };
+        }
+        region B {
+            event Tick;
+            [*] -> B1;
+            state B1;
+            state B2;
+            state B3;
+            B1 -> B2 : Tick effect { seq = seq * 10 + 3; };
+            B2 -> B3 :: Go effect { seq = seq * 10 + 4; };
+        }
+    }
+}

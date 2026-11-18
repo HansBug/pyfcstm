@@ -1,0 +1,21 @@
+def int tick = 0;
+def int r1 = 0;
+def int r2 = 0;
+state Root {
+    event End;
+    >> during before { tick = tick + 1; }
+    [*] -> P;
+    state P {
+        region R1 {
+            >> during before { r1 = r1 + 1; }
+            [*] -> A;
+            state A;
+            A -> [*] : /End;
+        }
+        region R2 {
+            >> during before { r2 = r2 + 1; }
+            [*] -> B;
+            state B;
+        }
+    }
+}

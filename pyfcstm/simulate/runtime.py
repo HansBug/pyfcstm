@@ -77,6 +77,54 @@ a model with regions is a tree, exposed as an immutable
 :class:`pyfcstm.model.configuration.Configuration` through
 :attr:`SimulationRuntime.configuration`.
 
+The rules that decide the corner cases are:
+
+* **Completion.** A region that finishes while another one still works stays
+  done. The last region to finish is only accepted if the owner can continue in
+  the same cycle; this is checked before the completing transition is taken, on
+  a copy, and the check follows the chain of enclosing owners. Running the
+  owner's plain ``during after`` actions is part of every step of that check.
+  A region also finishes indirectly: a child leaving a composite through
+  ``[*]`` only hands control back to the composite, and the composite then
+  leaving through ``[*]`` finishes the region. A rejected completion leaves the
+  leaf working, and the event that triggered it is not kept for the next cycle.
+* **Continuation candidates.** When every region is done, the candidates are all
+  outgoing transitions of the owner, in the order of
+  :attr:`pyfcstm.model.model.State.transitions_from`. Forced transitions are
+  expanded by the model before ordinary ones, so they come first whatever the
+  order of writing; the simulator does not reorder them.
+* **Aspects.** A leaf counts as doing ``during`` work in a cycle when it runs its
+  ``during`` step, whether or not it declares a ``during`` action. A pseudo
+  leaf does not, and a region that is done does not. The ``before`` actions of a
+  scope run ahead of the first such step below it in the cycle. The ``after``
+  actions are owed and run when the region branch ends, after each region of a
+  group that is being entered, when a group ends and, for the remaining scopes,
+  when the cycle ends, deeper scopes first. They do not run when the cycle is a
+  Delta or ends the machine.
+* **Group entry.** The regions of a group are entered in order, each taking its
+  first initial candidate that can reach a stable position. A later region that
+  cannot enter rejects the whole entry; an earlier region's other candidates
+  are not tried. For a transition into the owner this rejects that candidate
+  and the next one is tried, so the source state simply keeps working. Only a
+  cold start has no source state to keep, which makes the whole cycle a Delta
+  that leaves every region ``[init]``.
+* **Loops.** An entry that comes back to the same position and variable values
+  through a chain of group entries and continuations is a dead path, like any
+  loop through pseudo states: another candidate is tried, and the loop is
+  reported only when nothing else works. An entry whose variable values keep
+  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`.
+* **Handlers.** No handler runs while a cycle is being tried, for a rejected
+  candidate or for a cycle that ends as a Delta, even when earlier regions
+  already moved. The configuration a handler sees is the position at the moment
+  of the call. While a group is being left, regions that have already left show
+  as ``[done]`` whether they finished or were preempted, so an ``exit`` action
+  of the owner cannot tell finished regions from interrupted ones; use a
+  variable to record that.
+* **Single-value queries.** :attr:`SimulationRuntime.brief_stack` refuses for a
+  model with regions. The ``state_before`` and ``state_after`` of a diagnostics
+  report give the deepest state common to every branch, and
+  ``configuration_before`` and ``configuration_after`` give the full position.
+
 Hot start, the ``pyfcstm simulate`` command line and position-dependent event
 names with several active leaves do not support regions yet.
 
@@ -370,6 +418,29 @@ class SimulationRuntimeTerminalStateError(IndexError):
 
         >>> err = SimulationRuntimeTerminalStateError("runtime has ended")
         >>> isinstance(err, IndexError)
+        True
+    """
+
+
+class SimulationRuntimeRegionQueryError(RuntimeError):
+    """
+    Raised when a query that describes a single active path meets regions.
+
+    With regions the position is a tree, so a flat stack of active states
+    would silently leave branches out. Queries such as
+    :attr:`SimulationRuntime.brief_stack` refuse instead and point to
+    :attr:`SimulationRuntime.configuration`, which describes every branch.
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> runtime = SimulationRuntime(load_state_machine_from_text(
+        ...     'state Root { region A { [*] -> X; state X; } }'
+        ... ))
+        >>> try:
+        ...     runtime.brief_stack
+        ... except SimulationRuntimeRegionQueryError as err:
+        ...     print('configuration' in str(err))
         True
     """
 
@@ -1091,6 +1162,9 @@ class SimulationRuntime:
         self._ledger: Dict[Tuple[str, ...], List[bool]] = {}
         # Nesting depth of group initializations running inside each other.
         self._init_depth = 0
+        # Owners whose continuation is being checked right now, to recognize a
+        # continuation that loops back to the same position.
+        self._continuation_trail: List[tuple] = []
         # Main stack of the committed execution pass, for handler snapshots.
         self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
@@ -3314,9 +3388,33 @@ class SimulationRuntime:
         sim_vars = copy.deepcopy(vars_)
         self._run_owner_plain_after(owner_frame.state, sim_vars, True)
         owner_frame.mode = "post_child_exit"
-        return self._validation_search_reaches_stable(
-            owner_stack, sim_vars, d_events, outer=outer.parent
-        )
+        signature = self._create_execution_signature(owner_stack, sim_vars)
+        key = (signature, self._enclosing_shapes(outer.parent))
+        if key in self._continuation_trail:
+            raise _SimulationRuntimeLivelockError((signature, signature))
+        self._continuation_trail.append(key)
+        try:
+            return self._validation_search_reaches_stable(
+                owner_stack, sim_vars, d_events, outer=outer.parent
+            )
+        finally:
+            self._continuation_trail.pop()
+
+    @staticmethod
+    def _enclosing_shapes(outer: Optional[_Outer]) -> tuple:
+        """
+        Summarize the stacks that enclose a branch, outermost last.
+
+        :param outer: Link from a branch stack to its owner, or ``None``.
+        :type outer: Optional[_Outer]
+        :return: Hashable shapes of every enclosing stack.
+        :rtype: tuple
+        """
+        shapes = []
+        while outer is not None:
+            shapes.append(SimulationRuntime._stack_shape(outer.stack))
+            outer = outer.parent
+        return tuple(shapes)
 
     def _select_valid_candidate(self, stack, vars_, d_events, transitions, validator):
         """Try later candidates before reporting a proven cyclic dead end."""
@@ -3997,9 +4095,17 @@ class SimulationRuntime:
             if isinstance(state, Region):
                 # Only a finished region can be on top of a searched stack: its
                 # initial transition already ran before the search started.
-                if self._continuation_viable(
-                    current_stack, current_vars, d_events, outer
-                ):
+                try:
+                    viable = self._continuation_viable(
+                        current_stack, current_vars, d_events, outer
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: the owner's continuation
+                    # leads back to the same position. That kills this path
+                    # only; other worklist items may still succeed.
+                    loop_error = error
+                    continue
+                if viable:
                     stack[:] = current_stack
                     vars_.clear()
                     vars_.update(current_vars)
@@ -4982,6 +5088,9 @@ class SimulationRuntime:
                 'delta' if delta else ('terminated' if prepared_ended else 'cycle'),
                 tuple(prepared_stack[-1].state.path) if prepared_stack else None,
                 prepared_vars,
+                str(self._configuration_of(prepared_stack))
+                if prepared_stack and self.state_machine.has_regions
+                else None,
             ) if self._cycle_diagnostics is not None else None),
         )
         changes = self._format_var_changes(snapshot_vars, prepared_vars)
@@ -5273,6 +5382,9 @@ class SimulationRuntime:
 
         :return: List of ``(state_path, mode)`` tuples from root to current state.
         :rtype: List[Tuple[Tuple[str, ...], str]]
+        :raises SimulationRuntimeRegionQueryError: If the model declares
+            regions: the position is then a tree, which one flat list cannot
+            describe. Use :attr:`configuration` instead.
 
         Example::
 
@@ -5306,6 +5418,11 @@ class SimulationRuntime:
            provides insight into the runtime's internal execution state without
            exposing the internal :class:`_Frame` objects.
         """
+        if self.state_machine.has_regions:
+            raise SimulationRuntimeRegionQueryError(
+                "brief_stack describes a single active path, but this model has "
+                "regions; use configuration, which shows every branch."
+            )
         return [(frame.state.path, frame.mode) for frame in self.stack]
 
     @property

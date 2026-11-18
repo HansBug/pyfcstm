@@ -1,0 +1,16 @@
+def int a = 5;
+state Root {
+    event Finish;
+    [*] -> P;
+    state P {
+        region R {
+            [*] -> W;
+            state W { exit { a = a - 3; } }
+            W -> [*] : /Finish;
+        }
+    }
+    state ViaForced;
+    state ViaOrdinary;
+    P -> ViaOrdinary;
+    !P -> ViaForced : if [a < 0];
+}

@@ -18,6 +18,12 @@ SimulationRuntimeTerminalStateError
 .. autoclass:: SimulationRuntimeTerminalStateError
 
 
+SimulationRuntimeRegionQueryError
+-----------------------------------------------------
+
+.. autoclass:: SimulationRuntimeRegionQueryError
+
+
 SimulationRuntimeEventError
 -----------------------------------------------------
 

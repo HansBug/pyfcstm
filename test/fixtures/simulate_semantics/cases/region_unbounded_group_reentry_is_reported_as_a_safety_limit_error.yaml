@@ -1,0 +1,20 @@
+title: A transition that keeps re-entering a group with new variable values ends in the documented safety-limit
+  error
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    vars:
+      x: 0
+    raises:
+      type: SimulationRuntimeDfsError
+      match: safety limit
+      match_kind: substring

@@ -1,0 +1,18 @@
+def int g = 0;
+def int leak = 0;
+def int picked = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region R {
+            [*] -> Inner : if [g == 0];
+            [*] -> Plain;
+            state Inner {
+                enter { leak = leak + 1; }
+                region A { [*] -> X; state X; }
+                region B { [*] -> Y : if [g != 0]; state Y; }
+            }
+            state Plain { enter { picked = picked + 1; } }
+        }
+    }
+}

@@ -1,0 +1,94 @@
+title: Handlers see the owner with regions still [init] before its first real child, the entered composite, and
+  every region [done] at hand-back
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+handlers:
+- action: Root.Owner.Pre
+  behavior: record_call
+- action: Root.Owner.Post
+  behavior: record_call
+- action: Root.Owner.R1.C.COn
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Owner{R1: C.L, R2: S}'
+    handler_calls:
+    - action: Root.Owner.Pre
+      state: Root.Owner
+      stage: during
+      vars: {}
+      active_leaf: Root.Owner
+      call_stage: during
+      abstract_target: Root.Owner.Pre
+      named_ref: null
+      configuration: 'Root.Owner{R1: [init], R2: [init]}'
+    - action: Root.Owner.R1.C.COn
+      state: Root.Owner.R1.C
+      stage: enter
+      vars: {}
+      active_leaf: Root.Owner.R1.C
+      call_stage: enter
+      abstract_target: Root.Owner.R1.C.COn
+      named_ref: null
+      configuration: 'Root.Owner{R1: C, R2: [init]}'
+- cycle: Root.Fin1
+  expect:
+    configuration: 'Root.Owner{R1: [done], R2: S}'
+    handler_calls:
+    - action: Root.Owner.Pre
+      state: Root.Owner
+      stage: during
+      vars: {}
+      active_leaf: Root.Owner
+      call_stage: during
+      abstract_target: Root.Owner.Pre
+      named_ref: null
+      configuration: 'Root.Owner{R1: [init], R2: [init]}'
+    - action: Root.Owner.R1.C.COn
+      state: Root.Owner.R1.C
+      stage: enter
+      vars: {}
+      active_leaf: Root.Owner.R1.C
+      call_stage: enter
+      abstract_target: Root.Owner.R1.C.COn
+      named_ref: null
+      configuration: 'Root.Owner{R1: C, R2: [init]}'
+- cycle: Root.Fin2
+  expect:
+    configuration: Root.Next
+    handler_calls:
+    - action: Root.Owner.Pre
+      state: Root.Owner
+      stage: during
+      vars: {}
+      active_leaf: Root.Owner
+      call_stage: during
+      abstract_target: Root.Owner.Pre
+      named_ref: null
+      configuration: 'Root.Owner{R1: [init], R2: [init]}'
+    - action: Root.Owner.R1.C.COn
+      state: Root.Owner.R1.C
+      stage: enter
+      vars: {}
+      active_leaf: Root.Owner.R1.C
+      call_stage: enter
+      abstract_target: Root.Owner.R1.C.COn
+      named_ref: null
+      configuration: 'Root.Owner{R1: C, R2: [init]}'
+    - action: Root.Owner.Post
+      state: Root.Owner
+      stage: during
+      vars: {}
+      active_leaf: Root.Owner
+      call_stage: during
+      abstract_target: Root.Owner.Post
+      named_ref: null
+      configuration: 'Root.Owner{R1: [done], R2: [done]}'

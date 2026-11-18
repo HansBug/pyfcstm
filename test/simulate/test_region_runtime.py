@@ -19,6 +19,7 @@ from pyfcstm.simulate import (
     SimulationRuntime,
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
+    SimulationRuntimeRegionQueryError,
     SimulationRuntimeTerminalStateError,
 )
 from pyfcstm.utils.validate import ModelValidationError
@@ -529,18 +530,110 @@ def test_regions_that_finish_while_initializing_hand_control_back_in_the_same_cy
 
 
 @pytest.mark.unittest
-def test_decision_diagnostics_work_on_a_region_model():
-    """Capturing diagnostics does not break region execution."""
+def test_diagnostics_report_the_common_state_and_the_full_configuration():
+    """The report keeps the single-path fields and adds the position as text."""
     runtime = _controller()
-    runtime.cycle(inputs={"fault": 0, "requested": 0})
+    first = runtime.cycle(inputs={"fault": 0, "requested": 0}, diagnostics=True)
+    assert first.diagnostics.configuration_before == "Controller"
+    assert first.diagnostics.configuration_after == "Controller.Idle"
     result = runtime.cycle(
         "Controller.Start",
         inputs={"fault": 0, "requested": 0},
         diagnostics=True,
     )
-    assert result.diagnostics.outcome == "cycle"
-    assert result.diagnostics.state_after == ("Controller", "Running")
-    assert str(runtime.configuration) == "Controller.Running{Safety: Watching, Motion: Off}"
+    report = result.diagnostics
+    assert report.outcome == "cycle"
+    assert report.state_before == ("Controller", "Idle")
+    # Two regions are active, so the deepest common state is the owner.
+    assert report.state_after == ("Controller", "Running")
+    assert report.configuration_before == "Controller.Idle"
+    assert report.configuration_after == (
+        "Controller.Running{Safety: Watching, Motion: Off}"
+    )
+    payload = report.to_dict()
+    assert payload["configuration_after"] == report.configuration_after
+    assert "Configuration: Controller.Idle -> Controller.Running{" in str(report)
+    assert str(runtime.configuration) == report.configuration_after
+
+
+@pytest.mark.unittest
+def test_diagnostics_of_a_delta_keep_the_configuration_unchanged():
+    """A rejected cycle reports the same position before and after."""
+    model = load_state_machine_from_text(
+        """
+        def int g = 0;
+        state Root {
+            region R1 { [*] -> X; state X; }
+            region R2 { [*] -> Y : if [g != 0]; state Y; }
+        }
+        """
+    )
+    report = SimulationRuntime(model).cycle(diagnostics=True).diagnostics
+    assert report.outcome == "delta"
+    assert report.configuration_before == "Root{R1: [init], R2: [init]}"
+    assert report.configuration_after == report.configuration_before
+
+
+@pytest.mark.unittest
+def test_diagnostics_of_ignored_calls_keep_or_drop_the_configuration():
+    """An ignored call keeps the position; after termination there is none."""
+    model = load_state_machine_from_text(
+        """
+        state Root {
+            event Stop;
+            region A { [*] -> X; state X { enter abstract Boom; } X -> [*] : /Stop; }
+        }
+        """
+    )
+    failing = SimulationRuntime(model, abstract_error_mode="raise")
+
+    def boom(ctx):
+        raise RuntimeError("handler failed")
+
+    failing.register_abstract_handler("Root.A.X.Boom", boom)
+    with pytest.raises(RuntimeError, match="handler failed"):
+        failing.cycle()
+    ignored = failing.cycle(diagnostics=True).diagnostics
+    assert ignored.outcome == "noop"
+    assert ignored.configuration_before == ignored.configuration_after == "Root{A: [init]}"
+
+    finished = SimulationRuntime(
+        load_state_machine_from_text(
+            "state Root { event Stop; region A { [*] -> X; state X; X -> [*] : /Stop; } }"
+        )
+    )
+    finished.cycle()
+    ended = finished.cycle("Root.Stop", diagnostics=True).diagnostics
+    assert ended.outcome == "terminated" and ended.configuration_after is None
+    after = finished.cycle(diagnostics=True).diagnostics
+    assert after.configuration_before is None and after.configuration_after is None
+    assert "Configuration: (terminated) -> (terminated)" not in str(after)
+
+
+@pytest.mark.unittest
+def test_models_without_regions_keep_their_diagnostics_payload():
+    """No configuration fields appear for a model without regions."""
+    runtime = SimulationRuntime(
+        load_state_machine_from_text("state Root { state A; [*] -> A; }")
+    )
+    report = runtime.cycle(diagnostics=True).diagnostics
+    assert report.configuration_before is None
+    assert "configuration_before" not in report.to_dict()
+    assert "Configuration:" not in str(report)
+
+
+@pytest.mark.unittest
+def test_brief_stack_refuses_models_with_regions_and_points_to_configuration():
+    """A flat stack would leave branches out, so the query refuses."""
+    runtime = _controller()
+    runtime.cycle(inputs={"fault": 0, "requested": 0})
+    with pytest.raises(SimulationRuntimeRegionQueryError, match="configuration"):
+        runtime.brief_stack
+    plain = SimulationRuntime(
+        load_state_machine_from_text("state Root { state A; [*] -> A; }")
+    )
+    plain.cycle()
+    assert plain.brief_stack[-1][0] == ("Root", "A")
 
 
 @pytest.mark.unittest
@@ -948,3 +1041,29 @@ def test_unbounded_reentry_of_a_group_reports_the_safety_limit():
         )
         with pytest.raises(SimulationRuntimeDfsError):
             runtime.cycle()
+
+
+@pytest.mark.unittest
+def test_looping_group_reentry_without_a_fallback_reports_a_livelock():
+    """Re-entering a group at the same position with nothing else to try is an error."""
+    source = """
+    def int b = 0;
+    state Root {
+        [*] -> Idle;
+        state Idle;
+        state P {
+            region R {
+                [*] -> X;
+                state X { region RR { [*] -> p; pseudo state p; p -> [*]; } }
+                X -> X effect { b = 3; }
+            }
+        }
+        Idle -> P :: Go;
+    }
+    """
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    runtime.cycle()
+    with pytest.raises(SimulationRuntimeDfsError, match="suspected loop"):
+        runtime.cycle("Root.Idle.Go")
+    assert str(runtime.configuration) == "Root.Idle"
+    assert runtime.vars["b"] == 0

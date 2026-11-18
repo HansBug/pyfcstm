@@ -1,0 +1,21 @@
+input int ok1;
+input int ok2;
+state Root {
+    event Finish;
+    [*] -> P;
+    state P {
+        region Outer {
+            [*] -> Inner;
+            state Inner {
+                region IR {
+                    [*] -> W;
+                    state W;
+                    W -> [*] : /Finish;
+                }
+            }
+            Inner -> [*] : if [ok1 != 0];
+        }
+    }
+    state After;
+    P -> After : if [ok2 != 0];
+}

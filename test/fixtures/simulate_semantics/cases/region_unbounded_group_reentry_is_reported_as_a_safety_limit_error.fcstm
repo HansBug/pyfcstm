@@ -1,0 +1,6 @@
+def int x = 0;
+state Root {
+    [*] -> S0;
+    state S0 { region R { [*] -> P; pseudo state P; P -> [*]; } }
+    S0 -> S0 : if [x >= 0] effect { x = x + 1; }
+}

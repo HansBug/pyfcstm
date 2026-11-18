@@ -1,0 +1,23 @@
+title: "A later region that cannot enter rejects the whole group entry; an earlier region's other initial candidates are not tried"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "An implementation that backtracks over the whole group would reach P with R1 in B and k == 2."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Idle'
+    vars:
+      k: 0
+- cycle: Root.Idle.Go
+  expect:
+    configuration: 'Root.Fallback'
+    vars:
+      k: 0

@@ -284,6 +284,29 @@ recorded only for region cases because the other runners do not expose it.
 Cold-start region cases rely on the simulator only; hot start of a region model
 is not part of the corpus yet.
 
+### Rules the region cases pin
+
+The comments in `pyfcstm/simulate/runtime.py` state them; each has at least one
+case in this corpus.
+
+- Completion: the last region to finish is accepted only if the owner can
+  continue in the same cycle, checked before the completing transition and along
+  the chain of enclosing owners; finishing through a composite counts.
+- Continuation candidates: all outgoing transitions of the owner in the model's
+  `transitions_from` order, so forced expansions precede ordinary transitions.
+- Aspects: "during work" means the leaf ran its during step, declared action or
+  not; `after` actions run at the end of a region branch, after each region of a
+  group being entered, at the end of a group and at the end of the cycle, deeper
+  scopes first, and never in a Delta cycle.
+- Group entry: later regions never make earlier regions try other candidates; a
+  failed entry rejects that candidate, and only a cold start is a Delta.
+- Handlers: nothing is called while a cycle is tried or when it ends as a Delta;
+  while a group is left, regions that already left show as `[done]`.
+- Loops: a loop back to the same position and values is a dead path; changing
+  values make it unbounded, which ends in `SimulationRuntimeDfsError`. A loop with
+  nothing left to try raises a private subclass of that error, so shared cases
+  cannot name it; it is covered by the pytest suite.
+
 ## Exceptions
 
 ```yaml

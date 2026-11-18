@@ -1,0 +1,7 @@
+state Root {
+    [*] -> S0;
+    pseudo state S0;
+    state S1 { region R { [*] -> S3; pseudo state S3; S3 -> S3; } }
+    S0 -> S1;
+    S0 -> [*];
+}

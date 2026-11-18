@@ -1,0 +1,34 @@
+title: "A region's after aspect runs when its branch ends and the owner's after aspect runs once the whole group ended"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "Pins the flush points: end of each region branch, then end of the group."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      x: 11
+      seen: 11
+      tail: 1111
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      x: 22
+      seen: 22
+      tail: 2222
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      x: 33
+      seen: 33
+      tail: 3333

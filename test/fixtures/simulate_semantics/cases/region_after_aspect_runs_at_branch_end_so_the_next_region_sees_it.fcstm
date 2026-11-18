@@ -1,0 +1,18 @@
+def int x = 0;
+def int seen = 0;
+def int tail = 0;
+state Root {
+    [*] -> P;
+    state P {
+        >> during after { tail = x * 100 + seen; }
+        region R1 {
+            >> during after { x = x + 1; }
+            [*] -> A;
+            state A { during { x = x + 10; } }
+        }
+        region R2 {
+            [*] -> B;
+            state B { during { seen = x; } }
+        }
+    }
+}

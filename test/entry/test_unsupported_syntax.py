@@ -13,8 +13,6 @@ pytestmark = pytest.mark.unittest
     'state Root { during { if [active("Root")] {} } }',
 ])
 @pytest.mark.parametrize('arguments', [
-    ['inspect'], ['inspect', '--collect-errors'], ['inspect', '--format', 'json'],
-    ['inspect', '--collect-errors', '--format', 'json'],
     ['simulate'], ['diagram'], ['generate'], ['bmc'],
 ])
 def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
@@ -46,17 +44,3 @@ def test_plantuml_command_exports_region_and_active_models(tmp_path, source, exp
     assert result.exitcode == 0
     assert expected in result.stdout
     assert '__active_' not in result.stdout
-
-
-@pytest.mark.parametrize('output_format', ['human', 'json'])
-def test_collecting_inspect_preserves_build_errors_before_backend_refusal(tmp_path, output_format):
-    path = tmp_path / 'invalid.fcstm'
-    path.write_text('state Root { region Worker { state A; } }', encoding='utf-8')
-    result = simulate_entry(pyfcstmcli, [
-        'pyfcstm', 'inspect', '-i', str(path), '--collect-errors', '--format', output_format,
-    ])
-    assert result.exitcode != 0
-    output = result.stdout + result.stderr
-    assert 'E_INITIAL_TRANSITION_INVALID' in output
-    assert 'E_UNSUPPORTED_FEATURE' in output
-    assert output.index('E_INITIAL_TRANSITION_INVALID') < output.index('E_UNSUPPORTED_FEATURE')

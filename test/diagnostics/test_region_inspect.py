@@ -286,6 +286,12 @@ ROW_CASES = [
     ('transition_effect_with_a_branch_does_not_matter',
      'state B { during { x = y; } } state C { during { x = y; } } [*] -> B; '
      'B -> C :: Go effect { if [y > 0] { z = 1; } else { z = 2; } };', None, 1),
+    ('write_in_a_nested_if_does_not_run_on_every_path',
+     ONE_STATE % 'if [y > 0] { if [z > 0] { x = 2; } } else { x = 3; }', None, 0),
+    ('write_in_a_nested_if_inside_else_does_not_run_on_every_path',
+     ONE_STATE % 'if [y > 0] { x = 2; } else { if [z > 0] { x = 3; } }', None, 0),
+    ('nested_if_else_that_covers_everywhere_counts',
+     ONE_STATE % 'if [y > 0] { if [z > 0] { x = 2; } else { x = 3; } } else { x = 4; }', None, 1),
     # --- aspects and pseudo states inside the later region
     ('own_after_aspect_reads_the_new_value', '>> during after { z = x; } ' + ONE_STATE % 'x = y + 2;', None, 1),
     ('pseudo_leaf_needs_no_write', 'pseudo state P; state B { during { x = y; } } [*] -> P; P -> B;', None, 1),
@@ -943,3 +949,9 @@ def test_backward_read_follows_what_the_region_wrote_before_reading(first, expec
     source = two_regions('state B { during { x = x + 1; } } [*] -> B;', first)
     found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
     assert len(found) == expected
+
+
+def test_a_write_in_a_nested_branch_does_not_hide_a_later_read_of_the_old_value():
+    source = two_regions(
+        'state B { during { if [y > 0] { if [z > 0] { x = 2; } } else { x = 3; } z = x; } } [*] -> B;')
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(source))

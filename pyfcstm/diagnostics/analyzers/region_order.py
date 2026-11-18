@@ -433,12 +433,29 @@ def _statements_events(statements, defined: Set[str], root, sure: bool = True) -
             events.append(('begin',))
             events.extend(inner)
             events.append(('end',))
-            branch_writes.append({
-                item[1]: item[2] for item in reversed(inner)
-                if item[0] == 'write'
-            })
+            branch_writes.append(_top_level_writes(inner))
         if statement.branches[-1].condition is None:
             for name, span in branch_writes[0].items():
                 if all(name in item for item in branch_writes):
                     events.append(('cover', name, span, sure))
     return events
+
+
+def _top_level_writes(events: List[_Event]) -> Dict[str, Optional[Span]]:
+    """Variables a branch writes on every path through it, with the site of the first.
+
+    Only writes at the branch's own top level count, and so do the variables a
+    nested ``if``/``else`` writes in all of its branches (its ``cover`` events);
+    a write inside a nested branch alone does not run on every path.
+    """
+    written: Dict[str, Optional[Span]] = {}
+    depth = 0
+    for event in events:
+        kind = event[0]
+        if kind == 'begin':
+            depth += 1
+        elif kind == 'end':
+            depth -= 1
+        elif depth == 0 and kind in ('write', 'cover'):
+            written.setdefault(event[1], event[2])
+    return written

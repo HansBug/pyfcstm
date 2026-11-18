@@ -21,6 +21,7 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
+import {collectRegionDiagnostics} from './region-diagnostics';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -1101,6 +1102,7 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
 ): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
     if (semantic.ast) diagnostics.push(...collectVariableRoleDiagnostics(semantic.ast));
+    if (semantic.ast) diagnostics.push(...collectRegionDiagnostics(semantic.ast, document));
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);

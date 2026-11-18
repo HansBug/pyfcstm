@@ -386,7 +386,7 @@ function buildStateNode(
         events: Object.values(state.events).map(buildEvent),
         actions,
         transitions: state.transitions.map(transition => buildTransition(transition, eventColors)),
-        children: [...Object.values(state.substates), ...Object.values(state.regions)]
+        children: [...Object.values(state.substates), ...Object.values(state.regions ?? {})]
             .map(child => buildStateNode(child, eventColors)),
         importedFromFile: state.importedFromFile,
         ...(state.isRegion ? {region: true, ordinal: state.ordinal} : {}),

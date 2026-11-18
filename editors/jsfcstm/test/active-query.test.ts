@@ -22,12 +22,12 @@ describe('active-state condition syntax', () => {
         });
     }
     for (const body of [
-        '[*] -> A : if [active("B")];', 'A -> B : if [active("A")];',
-        'A -> B :: go + [active("A")];', '! A -> B : if [active("A")];',
-        'during before { if [!active("A") && active("B") || False] {} }',
-        'enter { x = (active("A")) ? 1 : 0; }',
-        'A -> B effect { if [active("A") iff True] {} }',
-        '>> during after { if [(active("A")) ? active("B") : True] {} }',
+        '[*] -> A : if [active("Root.B")];', 'A -> B : if [active("Root.A")];',
+        'A -> B :: go + [active("Root.A")];', '! A -> B : if [active("Root.A")];',
+        'during before { if [!active("Root.A") && active("Root.B") || False] {} }',
+        'enter { x = (active("Root.A")) ? 1 : 0; }',
+        'A -> B effect { if [active("Root.A") iff True] {} }',
+        '>> during after { if [(active("Root.A")) ? active("Root.B") : True] {} }',
     ]) {
         it(`builds a model and raises no errors for ${body}`, async () => {
             const document = createDocument(`def int x = 0; state Root { state A; state B; [*] -> A; ${body} }`, '/tmp/active-model.fcstm');

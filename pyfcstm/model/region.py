@@ -916,6 +916,48 @@ class Region(AstExportable):
 
         yield from State.iter_on_during_after_aspect_recursively(self, is_abstract, with_ids)
 
+    def to_plantuml(self, options=None, current_depth: int = 0, event_colors=None) -> str:
+        """Convert this region to the body of a PlantUML concurrent section.
+
+        PlantUML concurrent sections (separated by ``--`` inside a composite
+        state) are anonymous, so the text starts with a floating note reading
+        ``region N: Name``, where ``N`` is the one-based declaration (and
+        therefore execution) position among the owner's regions, followed by
+        the region's ``>> during`` aspects when they are shown. Child states
+        and transitions come next; ``active("...")`` is shown as written.
+
+        The result is a fragment, not a diagram: it is meant to sit inside the
+        composite drawn by :meth:`pyfcstm.model.model.State.to_plantuml`, which
+        puts ``--`` between the fragments of its regions.
+
+        :param options: Detail level name, :class:`~pyfcstm.model.plantuml.PlantUMLOptions`
+            or ``None`` for the defaults, defaults to ``None``.
+        :type options: PlantUMLOptionsInput, optional
+        :param current_depth: Depth of this region; a region counts as one
+            level for ``max_depth``, defaults to ``0``.
+        :type current_depth: int, optional
+        :param event_colors: Event path to colour mapping used by the event
+            colouring modes, defaults to ``None`` (no colours).
+        :type event_colors: Optional[Dict[str, str]], optional
+        :return: PlantUML text of the region body without a trailing newline.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { region Motor { state Off; [*] -> Off; } }')
+            >>> print(machine.root_state.regions['Motor'].to_plantuml('minimal'))
+            note as root__motor
+                **region 1: Motor**
+            end note
+            state "Off" as root__motor__off
+            [*] --> root__motor__off
+        """
+        from .model import _region_to_plantuml
+
+        return _region_to_plantuml(self, options, current_depth, event_colors)
+
     def to_ast_node(self) -> dsl_nodes.RegionDefinition:
         """
         Export this region as a DSL ``region`` declaration.

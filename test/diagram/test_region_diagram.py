@@ -3,7 +3,6 @@
 import json
 import pathlib
 import re
-import xml.etree.ElementTree as ET
 
 import pytest
 from hbutils.testing import simulate_entry

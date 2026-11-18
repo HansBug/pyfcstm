@@ -2171,3 +2171,42 @@ export function hydrateStateMachine(raw: RawFcstmModelStateMachine): StateMachin
 
     return stateMachine;
 }
+
+function collectActiveQueries(expr: Expr, out: ActiveStateQuery[]): void {
+    if (expr instanceof ActiveStateQuery) {
+        out.push(expr);
+    } else if (expr instanceof UnaryOp || expr instanceof UFunc) {
+        collectActiveQueries(expr.x, out);
+    } else if (expr instanceof BinaryOp) {
+        collectActiveQueries(expr.x, out);
+        collectActiveQueries(expr.y, out);
+    } else if (expr instanceof ConditionalOp) {
+        collectActiveQueries(expr.cond, out);
+        collectActiveQueries(expr.ifTrue, out);
+        collectActiveQueries(expr.ifFalse, out);
+    }
+}
+
+const ACTIVE_QUERY_TEXT = /active\s*\(\s*"(?:[^"\\]|\\.)*"\s*\)/g;
+
+/**
+ * Render an expression as written, with every ``active("...")`` query showing
+ * the full dotted path of the state it names.
+ *
+ * Expressions without a query come back unchanged, so the text of every model
+ * that does not use ``active`` is exactly the text it had before.
+ *
+ * @param expr An expression of the model.
+ * @returns The source text of ``expr``, with the paths of its queries resolved.
+ */
+export function resolvedExprText(expr: Expr): string {
+    const queries: ActiveStateQuery[] = [];
+    collectActiveQueries(expr, queries);
+    if (queries.length === 0) return expr.text;
+    let index = 0;
+    return expr.text.replace(ACTIVE_QUERY_TEXT, match => {
+        const query = queries[index];
+        index += 1;
+        return query ? query.resolvedText : match;
+    });
+}

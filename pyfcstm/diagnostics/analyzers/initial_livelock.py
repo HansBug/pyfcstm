@@ -3,7 +3,7 @@
 from ...utils.validate import ModelDiagnostic
 
 
-def collect_initial_livelock_warnings(states, transitions):
+def collect_initial_livelock_warnings(states, transitions, regions=()):
     """Find closed same-cycle components, overapproximating guards and events.
 
     Composite entry and continuation after a child exits are separate nodes:
@@ -11,8 +11,37 @@ def collect_initial_livelock_warnings(states, transitions):
     Leaf entry stops the search unless the leaf is pseudo. Any edge leaving a
     component suppresses its warning, including guarded escapes; deciding
     which guards and events actually enable a loop remains a runtime concern.
+
+    A region is a container of its own: its initial transition starts a
+    separate routing entry, and reaching its ``[*]`` finishes the region, which
+    counts as an escape because the owner's continuation depends on all of
+    its regions.
+
+    :param states: Inspect state records.
+    :type states: Iterable[pyfcstm.diagnostics.inspect.StateInfo]
+    :param transitions: Inspect transition records.
+    :type transitions: Iterable[pyfcstm.diagnostics.inspect.TransitionInfo]
+    :param regions: Inspect region records, defaults to ``()``.
+    :type regions: Iterable[pyfcstm.diagnostics.inspect.RegionInfo], optional
+    :return: One ``W_INITIAL_LIVELOCK`` diagnostic per closed routing
+        component, or an empty list when endpoints are unresolved.
+    :rtype: List[pyfcstm.utils.validate.ModelDiagnostic]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region Work { pseudo state P; [*] -> P; P -> P; } }')
+        >>> report = inspect_model(machine)
+        >>> [item.code for item in report.diagnostics if item.code == 'W_INITIAL_LIVELOCK']
+        ['W_INITIAL_LIVELOCK']
     """
+    states = list(states)
+    regions = list(regions)
+    transitions = list(transitions)
     by_path = {state.path: state for state in states}
+    region_paths = {region.path for region in regions}
     # Collect-mode parsing preserves unresolved endpoints for error reporting.
     endpoints = set(by_path) | {'[*]'}
     if any(t.from_path not in endpoints or t.to_path not in endpoints for t in transitions):
@@ -23,6 +52,11 @@ def collect_initial_livelock_warnings(states, transitions):
         edges[(state.path, 'entry')] = []
         if state.is_composite:
             edges[(state.path, 'post_child_exit')] = []
+    for region in regions:
+        edges[(region.path, 'entry')] = []
+        edges[(region.path, 'done')] = []
+        # Entering the owner enters every one of its regions.
+        edges[(region.owner_path, 'entry')].append((region.path, 'entry'))
 
     for transition in transitions:
         if transition.from_path == '[*]':
@@ -34,8 +68,11 @@ def collect_initial_livelock_warnings(states, transitions):
             source = (state.path, 'post_child_exit' if state.is_composite else 'entry')
         if transition.to_path == '[*]':
             parent = by_path[transition.from_path].parent_path
-            # Exiting a direct child of the root terminates the whole machine.
-            target = (parent, 'post_child_exit') if by_path[parent].parent_path else ('', 'terminated')
+            if parent in region_paths:
+                target = (parent, 'done')
+            else:
+                # Exiting a direct child of the root terminates the whole machine.
+                target = (parent, 'post_child_exit') if by_path[parent].parent_path else ('', 'terminated')
         else:
             target = (transition.to_path, 'entry')
         edges[source].append(target)

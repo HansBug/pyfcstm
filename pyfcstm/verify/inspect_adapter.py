@@ -381,6 +381,8 @@ def project_inspect_eligibility(
     max_complexity_tier: ComplexityTier = "structural",
     max_call_count_scaling: CallCountScaling = "linear_in_transitions",
     registry: Optional[Mapping[str, VerifyAlgorithmMeta]] = None,
+    has_regions: bool = False,
+    has_active_queries: bool = False,
 ) -> Tuple[InspectEligibility, ...]:
     """Project inspect eligibility for every algorithm in registry order.
 
@@ -395,6 +397,16 @@ def project_inspect_eligibility(
     :param registry: Optional alternate registry. ``None`` uses the built-in
         verify registry.
     :type registry: Optional[Mapping[str, VerifyAlgorithmMeta]]
+    :param has_regions: Whether the inspected model declares regions, defaults
+        to ``False``. The structural topology algorithms follow one active
+        leaf path and cannot judge a model whose regions run side by side, so
+        they are excluded with the reason ``requires_single_active_path``.
+    :type has_regions: bool, optional
+    :param has_active_queries: Whether the inspected model uses ``active()``
+        queries, defaults to ``False``. The structural topology algorithms do
+        not model state activity, so they are excluded with the reason
+        ``active_query_unsupported``.
+    :type has_active_queries: bool, optional
     :return: Complete policy projection in registry order.
     :rtype: Tuple[InspectEligibility, ...]
 
@@ -426,6 +438,12 @@ def project_inspect_eligibility(
                 meta,
                 max_complexity_tier,
                 max_call_count_scaling,
+            ) or (
+                "requires_single_active_path"
+                if has_regions and meta.complexity_tier == "structural"
+                else "active_query_unsupported"
+                if has_active_queries and meta.complexity_tier == "structural"
+                else None
             ),
         )
     )
@@ -506,7 +524,9 @@ def _iter_model_transitions(machine) -> Iterator[object]:
         >>> len(tuple(_iter_model_transitions(machine)))
         1
     """
-    for state in machine.walk_states():
+    from ..model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             yield transition
 
@@ -719,6 +739,39 @@ def _normalize_algorithm_result(
     )
 
 
+def _inside_region(state) -> bool:
+    """Return whether ``state`` has a region among its ancestors.
+
+    :param state: Model state to check.
+    :type state: State
+    :return: ``True`` when some ancestor namespace of ``state`` is a region.
+    :rtype: bool
+    """
+    from ..model.region import Region
+
+    parent = state.parent
+    while parent is not None:
+        if isinstance(parent, Region):
+            return True
+        parent = parent.parent
+    return False
+
+
+def _region_leaf_skip_result() -> AlgorithmResult:
+    """Return the skip result for a state that lives inside a region.
+
+    The initial-lifecycle analysis follows the single initial path from the
+    root, which does not describe a state entered through a region.
+
+    :return: An ``undecidable_skip`` result stating that reason.
+    :rtype: AlgorithmResult
+    """
+    return AlgorithmResult(
+        kind="undecidable_skip",
+        reason="The state belongs to a region; the initial lifecycle analysis follows a single initial path.",
+    )
+
+
 def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     """Run one SMT algorithm inside a verify-run transition index scope."""
     from .encoding._core import _transition_index_scope
@@ -762,7 +815,9 @@ def _run_smt_algorithm_scoped(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms
         )
     if meta.name == "enter_postcondition_implies_during_precondition":
         return tuple(
-            meta.impl(
+            _region_leaf_skip_result()
+            if _inside_region(state)
+            else meta.impl(
                 state,
                 variables,
                 smt_timeout_ms=smt_timeout_ms,
@@ -826,6 +881,14 @@ def run_inspect_algorithms(
     results when they are otherwise eligible, and never emits diagnostics-layer
     objects directly.
 
+    A machine with regions is verified as far as the algorithms allow:
+    the structural topology algorithms follow one active leaf path and are not
+    run (they are left out of the results, as
+    :func:`project_inspect_eligibility` reports with ``has_regions=True``), the
+    solver-local algorithms visit the transitions of regions as well, and the
+    initial-lifecycle check of a state inside a region returns an
+    ``undecidable_skip`` result.
+
     :param machine: State machine to verify.
     :type machine: StateMachine
     :param max_complexity_tier: Maximum complexity tier allowed by the
@@ -861,9 +924,8 @@ def run_inspect_algorithms(
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
 
-    from ..model.support import require_supported_model
-
-    require_supported_model(machine, 'Inspect algorithm execution')
+    has_regions = machine.has_regions
+    has_active_queries = bool(machine.active_queries)
 
     if registry is None:
         from .registry import REGISTRY
@@ -875,6 +937,8 @@ def run_inspect_algorithms(
         max_complexity_tier=max_complexity_tier,
         max_call_count_scaling=max_call_count_scaling,
         registry=registry,
+        has_regions=has_regions,
+        has_active_queries=has_active_queries,
     ):
         if not item.eligible:
             continue

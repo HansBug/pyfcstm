@@ -184,4 +184,5 @@ def test_code_contract_is_aggregated_and_transition_scoped():
         'guard_false',
         'shadowed',
         'redundant',
+        'owner_never_completes',
     )

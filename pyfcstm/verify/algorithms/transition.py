@@ -59,7 +59,8 @@ def transition_shadowed_by_predecessor(
     This algorithm checks both ordinary state outgoing domains and composite
     initial-transition domains, translating each event/guard trigger into a
     predicate and asking whether a later trigger can ever be enabled after all
-    prior triggers are disabled.
+    prior triggers are disabled. The transitions of a ``region`` form their own
+    ordered domains, so shadowing inside regions is found too.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
@@ -158,9 +159,6 @@ def transition_shadowed_by_predecessor(
         z3,
     )
 
-    from pyfcstm.model.support import require_supported_model
-
-    require_supported_model(machine, 'Transition shadowing analysis')
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
@@ -363,7 +361,9 @@ def composite_init_guards_incomplete(
     may fail to choose an initial child for some valuation.  This algorithm
     checks each composite state's initial transitions and searches for a model
     variable and event input assignment that disables all initial-transition
-    triggers.
+    triggers. A ``region`` is checked like a composite state: each region has
+    its own initial transitions, while a state that owns regions has none of its
+    own and is skipped.
 
     For a composite state with initial transitions ``i_1, ..., i_n``, let
     ``H_k(V, E)`` be the trigger predicate for initial transition ``i_k``.
@@ -447,15 +447,13 @@ def composite_init_guards_incomplete(
         z3,
     )
 
-    from pyfcstm.model.support import require_supported_model
-
-    require_supported_model(machine, 'Initial transition completeness analysis')
+    from pyfcstm.model.region import walk_namespaces
 
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
-    for state in machine.walk_states():
-        if state.is_leaf_state:
+    for state in walk_namespaces(machine.root_state):
+        if getattr(state, 'is_leaf_state', False):
             continue
 
         init_transitions = state.init_transitions

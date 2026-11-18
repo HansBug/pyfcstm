@@ -71,7 +71,9 @@ def collect_data_flow_warnings(
     ``W_GUARD_VARS_NEVER_CHANGE``, with ``from_path``, ``to_path`` and
     ``guard_vars`` in ``refs``. Variables with any other role count as supplied
     from outside and never trigger it. Without ``machine`` this last check is
-    skipped because there is no transition list to scan.
+    skipped because there is no transition list to scan. The check walks the
+    transitions of regions as well as of states, so a guard inside a ``region``
+    block is judged like any other.
 
     :param variables: Variable summaries, normally
         :attr:`pyfcstm.diagnostics.inspect.ModelInspect.variables`.
@@ -106,11 +108,14 @@ def collect_data_flow_warnings(
         W_GUARD_VARS_NEVER_CHANGE ['limit']
         >>> [d.code for d in collect_data_flow_warnings(report.variables)]
         ['W_UNWRITTEN_READ_VAR', 'W_UNREFERENCED_VAR']
+        >>> region_machine = load_state_machine_from_text('''
+        ... def int unused = 0;
+        ... state Root { region Work { state A; [*] -> A; } }
+        ... ''')
+        >>> region_report = inspect_model(region_machine)
+        >>> [d.code for d in collect_data_flow_warnings(region_report.variables, region_machine)]
+        ['W_UNREFERENCED_VAR']
     """
-    from ...model.support import require_supported_model
-
-    if machine is not None:
-        require_supported_model(machine, 'Data-flow analysis')
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
     variable_spans = {variable.name: variable.span for variable in variables}
@@ -196,9 +201,11 @@ def _guard_vars_never_change_diagnostics(
         for variable in variables
         if variable.role != 'control' or variable.written_in_states or variable.written_in_effects
     }
+    from ...model.region import walk_namespaces
+
     declared_vars = {variable.name for variable in variables}
     diagnostics: List[ModelDiagnostic] = []
-    for state in machine.walk_states():
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             if transition.guard is None:
                 continue

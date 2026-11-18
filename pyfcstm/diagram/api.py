@@ -288,6 +288,15 @@ def _state_path_for(owner: State, value: Any) -> Optional[List[str]]:
 
 
 def _event_dict(event: Event) -> Dict[str, Any]:
+    """
+    Build the snapshot entry of one event.
+
+    :param event: Event declared by, or implied below, a state or region.
+    :type event: pyfcstm.model.model.Event
+    :return: JSON-compatible mapping with the event names, whether it was
+        declared, the states that use it, and its source range.
+    :rtype: Dict[str, Any]
+    """
     result = {
         "name": event.name,
         "qualifiedName": event.path_name,
@@ -508,6 +517,20 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
 
 
 def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
+    """
+    Build the complete renderer-facing snapshot of a state machine.
+
+    Counts, the event legend and event colours cover the transitions of every
+    region as well as of every state. The hidden variables that model
+    construction adds for ``active()`` queries are left out of the variable
+    list, and every node carries its source range and source path.
+
+    :param machine: Model to describe; it is only read.
+    :type machine: pyfcstm.model.model.StateMachine
+    :return: JSON-compatible mapping with ``filePath``, ``machineName``,
+        ``summary``, ``variables``, ``eventLegend`` and ``rootState``.
+    :rtype: Dict[str, Any]
+    """
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
     transitions = [
         transition
@@ -629,6 +652,25 @@ def _source_sidecar(
     source_override: Optional[str] = None,
     diagram: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
+    """
+    Build the source documents and the state-to-line mapping of a viewer.
+
+    :param machine: Model whose source text and imported documents are used.
+    :type machine: pyfcstm.model.model.StateMachine
+    :param source_override: Source text to show instead of the model's own,
+        defaults to ``None``.
+    :type source_override: str, optional
+    :param diagram: Snapshot to take ranges from; built from ``machine`` when
+        ``None``.
+    :type diagram: Mapping[str, Any], optional
+    :return: The main source text, the mapping from state id to source
+        location, the mapping from line to state id (or ids) and the source
+        documents by document id.
+    :rtype: Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]
+    :raises ValueError: If ``source_override`` differs from the model's source
+        in more than line endings, or a source range points past the end of
+        the text that is shown.
+    """
     _validate_source_override(machine, source_override)
     # A line-ending-only copy is the model's own source: treat it as such for
     # both the displayed text and the document registry, so the source pane and

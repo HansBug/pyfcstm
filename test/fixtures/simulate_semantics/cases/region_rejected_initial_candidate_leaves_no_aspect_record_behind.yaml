@@ -1,0 +1,24 @@
+title: An initial candidate that is tried and rejected does not use up the aspects of the cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Trying the first candidate lets x1 work, which runs the aspect on a copy, before region Y fails. The second
+    candidate must still get the aspect.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    vars:
+      n: 1
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    vars:
+      n: 2

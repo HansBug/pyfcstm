@@ -1,0 +1,5 @@
+def int y = 0;
+state Root {
+    region A { [*] -> A1; state A1 { enter { y = y + 1; } during abstract Tick; } }
+    region B { [*] -> B1 : if [y == 2]; state B1; }
+}

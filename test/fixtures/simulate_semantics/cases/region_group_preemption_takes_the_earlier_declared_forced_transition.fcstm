@@ -1,0 +1,12 @@
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; }
+    }
+    state First;
+    state Second;
+    !P -> First : /Stop;
+    !P -> Second : /Stop;
+}

@@ -1,0 +1,16 @@
+title: Owners whose regions finish on entry hand control on one after another within the same cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Done
+    vars:
+      seq: 123

@@ -1,0 +1,17 @@
+title: When several forced transitions of the owner are enabled, the one declared first takes the group
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+- cycle: Root.Stop
+  expect:
+    configuration: Root.First

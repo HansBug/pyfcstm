@@ -1,0 +1,17 @@
+title: With owners nested three scopes deep every before aspect runs once ahead of the first work below it, outermost
+  first, and every after aspect once after the last work below it, innermost first
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: Q{X: X1, Y: Y1}, B: B1}'
+    vars:
+      seq: 123457869

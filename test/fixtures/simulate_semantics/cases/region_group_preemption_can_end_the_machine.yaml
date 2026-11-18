@@ -1,0 +1,21 @@
+title: A forced transition of the owner to the final state exits the group in reverse order and ends the machine
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      seq: 0
+- cycle: Root.Kill
+  expect:
+    vars:
+      seq: 123
+    ended: true

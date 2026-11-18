@@ -1,0 +1,32 @@
+title: A root state that owns regions and cannot start every region makes the cycle a Delta with no value, entered
+  state or handler call left over
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region B can only start after region A has written twice, which one start never does. The failed start must
+    not be repeated on the values it left behind.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+handlers:
+- action: Root.A.A1.Tick
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root{A: [init], B: [init]}'
+    vars:
+      y: 0
+    delta: true
+    handler_calls: []
+- cycle: []
+  expect:
+    configuration: 'Root{A: [init], B: [init]}'
+    vars:
+      y: 0
+    delta: true
+    handler_calls: []

@@ -1,0 +1,31 @@
+title: Entering a group that only leads back to the same position with the same values, with no other candidate,
+  is reported as a loop and changes nothing
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    vars:
+      b: 0
+- cycle: Root.Go
+  expect:
+    configuration: Root.Idle
+    vars:
+      b: 0
+    raises:
+      type: SimulationRuntimeDfsError
+      match: suspected loop
+      match_kind: substring
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    vars:
+      b: 0

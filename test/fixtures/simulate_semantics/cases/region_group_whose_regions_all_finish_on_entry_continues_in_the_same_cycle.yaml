@@ -1,0 +1,17 @@
+title: When every region finishes while the group is entered, the owner runs its plain during after and continues
+  in the same cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Done
+    vars:
+      seq: 123

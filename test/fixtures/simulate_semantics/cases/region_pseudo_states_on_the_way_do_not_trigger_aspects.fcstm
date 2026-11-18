@@ -1,0 +1,14 @@
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P {
+        >> during before { n = n + 1; }
+        >> during after { n = n + 10; }
+        region A {
+            [*] -> j;
+            pseudo state j;
+            state A1;
+            j -> A1 effect { n = n * 2; };
+        }
+    }
+}

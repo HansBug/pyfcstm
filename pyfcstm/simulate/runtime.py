@@ -112,10 +112,13 @@ The rules that decide the corner cases are:
   through a chain of group entries and continuations is a dead path, like any
   loop through pseudo states: another candidate is tried, and the loop is
   reported only when nothing else works. An entry whose variable values keep
-  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. The
-  nesting of group entries is limited to 64 levels, so a finite loop that
-  re-enters a group more than about 64 times in one cycle ends in the same error,
-  where the same loop through plain composites is only limited by the step budget.
+  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. Whether
+  a finished group can continue is decided by entering what follows, one level
+  deeper each time, and that nesting is limited to 64 levels. A finite loop that
+  re-enters a group more than about 64 times in one cycle, or a chain of more
+  than about 64 owners that each finish on entry, therefore ends in the same
+  error, where the same model written with plain composites is only limited by
+  the step budget.
 * **Cost.** Whether a candidate can reach a stable position is asked again for
   every owner on the way: once on a copy, and once more at each level while the
   candidate is actually taken. Within one cycle the answer to a question that

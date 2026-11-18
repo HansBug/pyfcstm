@@ -73,7 +73,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from ...model.model import StateMachine
 
 # One event of an action chain: ``('read', name, span)``, ``('query', path,
-# span)`` or ``('write', name, span, unconditional)``.
+# span)``, ``('write', name, span, sure)``, ``('cover', name, span, sure)``
+# or a branch marker ``('begin',)`` / ``('end',)``; see ``_statements_events``.
 _Event = Tuple
 
 
@@ -242,7 +243,7 @@ def _blind_overwrite_diagnostics(owner_path: str, accesses: List[_RegionAccess])
                 severity='warning',
                 message=(
                     f'Region {access.path!r} overwrites variable {name!r} in every cycle without using '
-                    f'the value written by the earlier region {earlier.path!r}; that earlier write is lost.'
+                    f'the value written by the earlier region {earlier.path!r}; that earlier write is lost whenever it runs.'
                 ),
                 span=span,
                 refs={
@@ -309,6 +310,10 @@ def _walk(namespace, before, after, access, defined, root, nested: bool) -> None
             else:
                 _leaf(namespace, deeper_before, deeper_after, access, defined, root)
             return
+        # A composite's own ``during before`` / ``during after`` actions run when it
+        # is entered and left, not around every cycle of its leaves.
+        for action in namespace.on_durings:
+            _plain_action(access, action, defined, root)
     for child in namespace.substates.values():
         _walk(child, deeper_before, deeper_after, access, defined, root, nested)
 
@@ -321,7 +326,9 @@ def _leaf(state, before, after, access, defined, root) -> None:
             access.has_abstract = True
             continue
         chain.extend(_statements_events(action.operations, defined, root))
-    covered: Dict[str, Optional[Span]] = {}
+    covered: Set[str] = set()
+    stack: List[Set[str]] = []
+    sure: Dict[str, Optional[Span]] = {}
     for position, event in enumerate(chain):
         kind = event[0]
         if kind == 'read':
@@ -330,15 +337,24 @@ def _leaf(state, before, after, access, defined, root) -> None:
                 access.uncovered_reads.setdefault(event[1], event[2])
         elif kind == 'query':
             access.queries.setdefault(event[1], event[2])
+        elif kind == 'begin':
+            stack.append(set(covered))
+        elif kind == 'end':
+            covered = stack.pop()
+        elif kind == 'cover':
+            covered.add(event[1])
+            if event[3]:
+                sure.setdefault(event[1], event[2])
         else:
-            _, name, span, unconditional = event
+            _, name, span, is_sure = event
             write = _Write(span, consumed=any(
                 later[0] == 'read' and later[1] == name for later in chain[position + 1:]
             ))
             access.writes.setdefault(name, []).append(write)
-            if unconditional:
-                covered.setdefault(name, span)
-    access._leaf_covers.append(covered)
+            covered.add(name)
+            if is_sure:
+                sure.setdefault(name, span)
+    access._leaf_covers.append(sure)
 
 
 def _plain_action(access, action, defined, root) -> None:
@@ -358,7 +374,7 @@ def _plain(access, events: Iterable[_Event]) -> None:
             access.uncovered_reads.setdefault(event[1], event[2])
         elif kind == 'query':
             access.queries.setdefault(event[1], event[2])
-        else:
+        elif kind == 'write':
             write = _Write(event[2])
             access.writes.setdefault(event[1], []).append(write)
             access._plain_writes.append((event[1], write))
@@ -389,11 +405,16 @@ def _expression_events(expression, defined: Set[str], root, span) -> List[_Event
     return events
 
 
-def _statements_events(statements, defined: Set[str], root, unconditional: bool = True) -> List[_Event]:
+def _statements_events(statements, defined: Set[str], root, sure: bool = True) -> List[_Event]:
     """Flatten a statement list into events in textual order.
 
-    A statement inside an ``if`` branch is not unconditional. The right-hand
-    side of an assignment is read before the assignment writes.
+    The right-hand side of an assignment is read before the assignment writes.
+    A write event is ``('write', name, span, sure)``: ``sure`` is true only when
+    the statement runs on every path through the whole chain (it is not inside
+    any ``if``). Every write covers the reads that follow it in its own block. A branch is wrapped in ``('begin',)`` and ``('end',)`` so that
+    the covering done inside it ends with it. When an ``if`` has an ``else`` and
+    every branch writes a variable at its top level, a ``('cover', name, span,
+    sure)`` event follows the statement, because every path wrote the variable.
     """
     from ...model.model import Operation
 
@@ -403,9 +424,21 @@ def _statements_events(statements, defined: Set[str], root, unconditional: bool 
             span = _span_of(statement)
             events.extend(_expression_events(statement.expr, defined, root, span))
             if statement.var_name in defined:
-                events.append(('write', statement.var_name, span, unconditional))
-        else:
-            for branch in statement.branches:
-                events.extend(_expression_events(branch.condition, defined, root, _span_of(branch)))
-                events.extend(_statements_events(branch.statements, defined, root, False))
+                events.append(('write', statement.var_name, span, sure))
+            continue
+        branch_writes: List[Dict[str, Optional[Span]]] = []
+        for branch in statement.branches:
+            events.extend(_expression_events(branch.condition, defined, root, _span_of(branch)))
+            inner = _statements_events(branch.statements, defined, root, False)
+            events.append(('begin',))
+            events.extend(inner)
+            events.append(('end',))
+            branch_writes.append({
+                item[1]: item[2] for item in reversed(inner)
+                if item[0] == 'write'
+            })
+        if statement.branches[-1].condition is None:
+            for name, span in branch_writes[0].items():
+                if all(name in item for item in branch_writes):
+                    events.append(('cover', name, span, sure))
     return events

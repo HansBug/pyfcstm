@@ -208,7 +208,7 @@ Inspect 报告参考
 
    {
      "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
-     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost.",
+     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost whenever it runs.",
      "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
      "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out", "previous_write_span": {"line": 7, "column": 45, "end_line": 7, "end_column": 53}}
    }

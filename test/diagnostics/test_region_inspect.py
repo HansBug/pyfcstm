@@ -277,6 +277,15 @@ ROW_CASES = [
     ('abstract_enter_may_read', 'state B { enter abstract Setup; during { x = y; } } [*] -> B;', None, 0),
     ('nested_owner_is_not_judged', 'state C { region In { state D { during { x = y; } } [*] -> D; } } [*] -> C;', None, 0),
     ('nested_owner_with_its_own_aspect', 'state C { region In { >> during before { z = x; } state D { during { x = y; } } [*] -> D; } } [*] -> C;', None, 0),
+    ('composite_during_before_reads_old', 'state C { during before { z = x; } state D { during { x = y; } } [*] -> D; } [*] -> C;', None, 0),
+    ('composite_during_after_abstract', 'state C { during after abstract Peek; state D { during { x = y; } } [*] -> D; } [*] -> C;', None, 0),
+    ('if_else_writes_in_every_branch', ONE_STATE % 'if [y > 0] { x = 2; } else { x = 3; }', None, 1),
+    ('if_without_else_does_not_cover', ONE_STATE % 'if [y > 0] { x = 2; }', None, 0),
+    ('nested_if_else_covers_only_inside_its_branch',
+     ONE_STATE % 'if [y > 0] { if [z > 0] { x = 2; } else { x = 3; } } else { z = 1; }', None, 0),
+    ('transition_effect_with_a_branch_does_not_matter',
+     'state B { during { x = y; } } state C { during { x = y; } } [*] -> B; '
+     'B -> C :: Go effect { if [y > 0] { z = 1; } else { z = 2; } };', None, 1),
     # --- aspects and pseudo states inside the later region
     ('own_after_aspect_reads_the_new_value', '>> during after { z = x; } ' + ONE_STATE % 'x = y + 2;', None, 1),
     ('pseudo_leaf_needs_no_write', 'pseudo state P; state B { during { x = y; } } [*] -> P; P -> B;', None, 1),
@@ -288,6 +297,7 @@ ROW_CASES = [
     # --- the earlier write is used in its own cycle: nothing is lost
     ('earlier_region_uses_its_own_value', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; z = x; } } [*] -> A;', 0),
     ('earlier_region_after_aspect_reads', ONE_STATE % 'x = y + 2;', '>> during after { z = x; } state A { during { x = 1; } } [*] -> A;', 0),
+    ('earlier_region_reads_in_composite_during', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; } } [*] -> A;', 1),
     ('earlier_region_abstract_action', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; } during abstract Peek; } [*] -> A;', 0),
 ]
 
@@ -904,3 +914,32 @@ def test_ordering_analyzer_accepts_a_missing_model():
     from pyfcstm.diagnostics.analyzers.region_order import collect_region_order_diagnostics
 
     assert collect_region_order_diagnostics(None) == []
+
+
+def test_a_region_in_between_that_reads_in_a_composite_during_uses_the_old_value():
+    report = run_case(
+        ONE_STATE % 'x = y + 2;', None,
+        between='region Middle { state C { during before { z = x; } state Q; [*] -> Q; } [*] -> C; }')
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(report)
+
+
+def test_the_earlier_write_is_used_by_the_composite_during_that_follows_its_effect():
+    first = (
+        'state P; state C { during before { z = x; } state S { during { y = y + 1; } } [*] -> S; } '
+        '[*] -> P; P -> C :: Go effect { x = 1; }'
+    )
+    report = run_case(ONE_STATE % 'x = y + 2;', first)
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(report)
+
+
+@pytest.mark.parametrize('first, expected', [
+    ('state A { during { if [y > 0] { x = 1; z = x; } } } [*] -> A;', 0),
+    ('state A { during { if [y > 0] { x = 1; } else { x = 2; } z = x; } } [*] -> A;', 0),
+    ('state A { during { if [y > 0] { x = 1; } z = x; } } [*] -> A;', 1),
+    ('state C { during before { z = x; } state A; [*] -> A; } [*] -> C;', 1),
+    ('state C { during after { z = x; } state A; [*] -> A; } [*] -> C;', 1),
+])
+def test_backward_read_follows_what_the_region_wrote_before_reading(first, expected):
+    source = two_regions('state B { during { x = x + 1; } } [*] -> B;', first)
+    found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
+    assert len(found) == expected

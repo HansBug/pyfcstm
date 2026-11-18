@@ -1408,3 +1408,161 @@ def test_role_fixture_hot_start_missing_parameter_is_constructor_failure(tmp_pat
     data["steps"] = []
     dsl = "param int gain = 2; output int reading = 0; state Root { state Ready; [*] -> Ready; }"
     run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+_REGION_FIXTURE_DSL = """
+def int order = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during abstract Tick; } }
+        region B { [*] -> J; pseudo state J; J -> J; }
+    }
+}
+"""
+
+_REGION_FIXTURE_STABLE_DSL = """
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during abstract Tick; } }
+        region B { [*] -> B1; state B1; }
+    }
+}
+"""
+
+
+def _region_case_data():
+    return {
+        "title": "Region fixture used by schema tests",
+        "origin": {"files": ["test/example.py::test_example"]},
+        "categories": ["regions"],
+        "exclude_runners": ["generated_python_alignment", "bmc_core"],
+        "steps": [
+            {"cycle": [], "expect": {"configuration": "Root.P{A: A1, B: B1}"}},
+        ],
+    }
+
+
+@pytest.mark.unittest
+def test_region_fixture_with_canonical_position_runs(tmp_path):
+    data = _region_case_data()
+    path = _write_fixture(tmp_path, data, _REGION_FIXTURE_STABLE_DSL)
+    run_simulation_case(load_semantic_case(path))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["mutate", "message"],
+    [
+        (
+            lambda data: data["steps"][0]["expect"].update({"state": "Root.P"}),
+            "regions cases assert configuration instead of state",
+        ),
+        (
+            lambda data: data["steps"][0].update({"expect": {"vars": {}}}),
+            "must assert configuration or ended: true",
+        ),
+        (
+            lambda data: data["steps"][0]["expect"].update({"ended": True}),
+            "an ended machine has no configuration",
+        ),
+        (
+            lambda data: data.update({"initial": {"state": "Root.P"}}),
+            "regions cases cannot declare initial",
+        ),
+    ],
+)
+def test_region_fixture_schema_requires_the_position_after_every_step(
+    tmp_path, mutate, message
+):
+    data = _region_case_data()
+    mutate(data)
+    with pytest.raises(SemanticCaseError, match=message):
+        load_semantic_case(_write_fixture(tmp_path, data, _REGION_FIXTURE_STABLE_DSL))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda data: data["steps"][0]["expect"].update({"configuration": "Root.A"}),
+        lambda data: data["steps"][0]["expect"].update(
+            {
+                "handler_calls": [
+                    {"action": "Root.A.Tick", "state": "Root.A", "stage": "during",
+                     "vars": {}, "configuration": "Root.A"}
+                ]
+            }
+        ),
+    ],
+)
+def test_fixture_without_regions_cannot_assert_a_configuration(tmp_path, mutate):
+    data = _valid_case_data()
+    data["handlers"] = [{"action": "Root.A.Tick", "behavior": "record_call"}]
+    mutate(data)
+    dsl = "state Root { state A { during abstract Tick; } [*] -> A; }"
+    with pytest.raises(SemanticCaseError, match="only available to regions cases"):
+        load_semantic_case(_write_fixture(tmp_path, data, dsl))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["text", "message"],
+    [
+        ("Root.P{B: B1, A: A1}", "not in canonical form.*Root.P{A: A1, B: B1}"),
+        ("Root.P{A:A1,B:B1}", "not in canonical form"),
+        ("Root.P{A: A1}", "not a position the model can rest in"),
+        ("Root.P{A: Nope, B: B1}", "not a position the model can rest in"),
+        ("Root.P{A: A1, B: [init]}", "not a position the model can rest in"),
+    ],
+)
+def test_region_fixture_rejects_position_text_the_model_cannot_hold(
+    tmp_path, text, message
+):
+    data = _region_case_data()
+    data["steps"][0]["expect"]["configuration"] = text
+    case = load_semantic_case(_write_fixture(tmp_path, data, _REGION_FIXTURE_STABLE_DSL))
+    with pytest.raises(SemanticCaseError, match=message):
+        run_simulation_case(case)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ["text", "message"],
+    [
+        ("Root.P{B: [init], A: A1}", "not in canonical form"),
+        ("Root.P{A: Nope, B: [init]}", "not a position of the model"),
+    ],
+)
+def test_region_fixture_rejects_handler_position_text_the_model_cannot_hold(
+    tmp_path, text, message
+):
+    data = _region_case_data()
+    data["handlers"] = [{"action": "Root.P.A.A1.Tick", "behavior": "record_call"}]
+    data["steps"][0]["expect"]["handler_calls"] = [
+        {"action": "Root.P.A.A1.Tick", "state": "Root.P.A.A1", "stage": "during",
+         "vars": {}, "configuration": text}
+    ]
+    case = load_semantic_case(_write_fixture(tmp_path, data, _REGION_FIXTURE_STABLE_DSL))
+    with pytest.raises(SemanticCaseError, match=message):
+        run_simulation_case(case)
+
+
+@pytest.mark.unittest
+def test_region_fixture_names_a_loop_error_by_its_public_class(tmp_path):
+    data = _region_case_data()
+    data["steps"] = [
+        {
+            "cycle": [],
+            "expect": {
+                "raises": {
+                    "type": "SimulationRuntimeDfsError",
+                    "match": "suspected loop",
+                    "match_kind": "substring",
+                },
+                "configuration": "Root",
+            },
+        }
+    ]
+    run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, _REGION_FIXTURE_DSL)))

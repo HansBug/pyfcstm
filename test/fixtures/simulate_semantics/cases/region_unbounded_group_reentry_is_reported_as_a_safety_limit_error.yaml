@@ -12,6 +12,7 @@ exclude_runners:
 steps:
 - cycle: []
   expect:
+    configuration: Root
     vars:
       x: 0
     raises:

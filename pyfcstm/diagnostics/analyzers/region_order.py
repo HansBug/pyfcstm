@@ -11,30 +11,40 @@ as written, before ``active()`` queries are lowered to hidden flag variables:
   that a later region writes, or queries with ``active()`` a state that sits in
   a later region. The earlier region reads the previous cycle's value. That is
   the defined behavior of ordered regions, so it is only reported to let the
-  author confirm the order.
-* ``W_REGION_BLIND_OVERWRITE`` (warning): a later region assigns a variable
-  that an earlier region also writes, without using the earlier value. Several
-  regions writing one variable is fine when the later write builds on the
-  earlier one (``x = x + y``); it is a warning only when the earlier write is
-  lost for certain.
+  author confirm the order. A read that follows a write of the same variable
+  in the same action chain reads the region's own fresh value and is not
+  reported.
+* ``W_REGION_BLIND_OVERWRITE`` (warning): a later region overwrites, in every
+  cycle and without ever looking at it, a variable that an earlier region
+  wrote, so the earlier write is lost every cycle. Writing one variable from
+  several regions is fine on its own, and so is the common "default value in
+  front, override behind" pattern; only a certain loss is reported.
+
+A later region ``B`` overwrites a variable ``v`` *blindly in every cycle* when
+all of these hold:
+
+* every non-pseudo leaf state of ``B`` writes ``v`` unconditionally at the top
+  level of its ``during`` actions (or of a ``>> during before`` aspect that
+  runs ahead of them), so whichever state ``B`` rests in, ``v`` is overwritten;
+* nothing in ``B`` reads ``v`` ahead of that write: no guard, effect,
+  ``enter``, ``exit``, right-hand side, ``if`` condition or earlier statement,
+  and no state that does not write ``v``;
+* ``B`` cannot finish (it has no ``[*]`` exit, because a finished region stops
+  writing), contains no nested parallel owner, and has no abstract or ``ref``
+  action that a handler could use to read ``v``.
+
+The earlier write of region ``A`` is lost when no statement that runs after it
+in the same cycle reads ``v`` (later statements of the same block, the same
+leaf's other ``during`` actions and ``>> during after`` aspects), no region
+between ``A`` and ``B`` reads ``v`` or has an abstract action, and ``A`` has no
+abstract action. Aspects declared on the owner or further out run once per cycle
+around the whole group of regions, so they neither use ``A``'s value nor shield
+it; they are ignored here.
 
 The module contains:
 
 * :func:`collect_region_order_diagnostics` - Collect both diagnostics for a
   state machine.
-
-A write is "blind" when its new value does not read the old one, nothing read
-the old value earlier in the same action or effect block (including the
-conditions of enclosing and preceding ``if`` branches), the guard of the owning
-transition does not read it, the guards of the state's outgoing transitions do
-not read it (they are checked before the state's ``during`` runs), and no
-region between the two writers reads it. A read of the variable in some other
-state of the same region does not make the write non-blind, because the
-analysis cannot tell which state is active when the earlier region wrote.
-Aspects declared outside the regions (``>> during before`` / ``after`` on the
-owner or an outer state) run around every leaf inside them, so what they read
-counts as read by each region; a ``before`` aspect also counts as reading the
-old value ahead of the leaf's own actions.
 
 Example::
 
@@ -54,7 +64,7 @@ Example::
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Tuple
 
 from ...utils.validate import ModelDiagnostic, Span
 from .use_def import collect_expr_variables
@@ -62,19 +72,22 @@ from .use_def import collect_expr_variables
 if TYPE_CHECKING:  # pragma: no cover
     from ...model.model import StateMachine
 
+# One event of an action chain: ``('read', name, span)``, ``('query', path,
+# span)`` or ``('write', name, span, unconditional)``.
+_Event = Tuple
+
 
 @dataclass
 class _Write:
     """One assignment to a model variable inside a region.
 
     :ivar span: Source span of the assignment statement.
-    :ivar blind: ``True`` when nothing in the same block, the owning guard or
-        the state's outgoing guards reads the old value, and the statement is
-        the first write of that variable in its block.
+    :ivar consumed: ``True`` when something that runs after it in the same
+        cycle may read the value it stored.
     """
 
     span: Optional[Span]
-    blind: bool
+    consumed: bool = False
 
 
 @dataclass
@@ -82,15 +95,31 @@ class _RegionAccess:
     """Variable and ``active()`` accesses collected from one region subtree.
 
     :ivar path: Dotted path of the region.
-    :ivar reads: First read site (span) of each variable, in encounter order.
-    :ivar queries: First query site (span) of each queried state path.
+    :ivar uncovered_reads: First site of each variable read before the region
+        wrote it in the same chain, in encounter order. Reads that follow an
+        unconditional write of the same variable in the same chain read the
+        region's own value and are not listed.
+    :ivar any_reads: Every variable read anywhere in the subtree.
+    :ivar queries: First query site of each queried state path.
     :ivar writes: All assignments of each variable, in encounter order.
+    :ivar certain: Variables the region overwrites in every cycle, mapped to the
+        site of the overwriting statement.
+    :ivar has_abstract: An abstract or ``ref`` action exists in the subtree.
+    :ivar has_exit: A transition to ``[*]`` exists in the subtree.
+    :ivar has_nested_owner: A state with regions is nested in the subtree.
     """
 
     path: str
-    reads: Dict[str, Optional[Span]] = field(default_factory=dict)
+    uncovered_reads: Dict[str, Optional[Span]] = field(default_factory=dict)
+    any_reads: Set[str] = field(default_factory=set)
     queries: Dict[Tuple[str, ...], Optional[Span]] = field(default_factory=dict)
     writes: Dict[str, List[_Write]] = field(default_factory=dict)
+    certain: Dict[str, Optional[Span]] = field(default_factory=dict)
+    has_abstract: bool = False
+    has_exit: bool = False
+    has_nested_owner: bool = False
+    _leaf_covers: List[Dict[str, Optional[Span]]] = field(default_factory=list)
+    _plain_writes: List[Tuple[str, _Write]] = field(default_factory=list)
 
 
 def collect_region_order_diagnostics(machine: Optional['StateMachine']) -> List[ModelDiagnostic]:
@@ -151,7 +180,7 @@ def _backward_read_diagnostics(owner_path: str, accesses: List[_RegionAccess]) -
     diagnostics: List[ModelDiagnostic] = []
     for index, reader in enumerate(accesses):
         later = accesses[index + 1:]
-        for name, span in reader.reads.items():
+        for name, span in reader.uncovered_reads.items():
             writers = [item.path for item in later if name in item.writes]
             if writers:
                 diagnostics.append(_backward_read(owner_path, reader.path, 'variable', name, writers, span))
@@ -189,160 +218,194 @@ def _backward_read(owner_path, reader_path, kind, target, writers, span) -> Mode
 
 
 def _blind_overwrite_diagnostics(owner_path: str, accesses: List[_RegionAccess]) -> List[ModelDiagnostic]:
-    """Warnings for later-region writes that discard an earlier region's value."""
+    """Warnings for later regions that overwrite an earlier region's value in every cycle."""
     diagnostics: List[ModelDiagnostic] = []
     for index, access in enumerate(accesses):
-        for name, writes in access.writes.items():
+        for name, span in access.certain.items():
             previous = next(
                 (position for position in range(index - 1, -1, -1) if name in accesses[position].writes),
                 None,
             )
             if previous is None:
                 continue
-            if any(name in item.reads for item in accesses[previous + 1:index]):
+            earlier = accesses[previous]
+            if earlier.has_abstract or any(
+                    name in item.uncovered_reads or item.has_abstract
+                    for item in accesses[previous + 1:index]
+            ):
                 continue
-            for write in writes:
-                if write.blind:
-                    diagnostics.append(ModelDiagnostic(
-                        code='W_REGION_BLIND_OVERWRITE',
-                        severity='warning',
-                        message=(
-                            f'Region {access.path!r} overwrites variable {name!r} without using '
-                            f'the value written by the earlier region {accesses[previous].path!r}.'
-                        ),
-                        span=write.span,
-                        refs={
-                            'owner_path': owner_path,
-                            'region': access.path,
-                            'previous_region': accesses[previous].path,
-                            'variable': name,
-                        },
-                    ))
+            lost = [write for write in earlier.writes[name] if not write.consumed]
+            if not lost:
+                continue
+            diagnostics.append(ModelDiagnostic(
+                code='W_REGION_BLIND_OVERWRITE',
+                severity='warning',
+                message=(
+                    f'Region {access.path!r} overwrites variable {name!r} in every cycle without using '
+                    f'the value written by the earlier region {earlier.path!r}; that earlier write is lost.'
+                ),
+                span=span,
+                refs={
+                    'owner_path': owner_path,
+                    'region': access.path,
+                    'previous_region': earlier.path,
+                    'variable': name,
+                    'previous_write_span': lost[0].span,
+                },
+            ))
     return diagnostics
 
 
 def _collect_region_access(region, defined: Set[str], root) -> _RegionAccess:
-    """Collect every access in the subtree of ``region``, in source order."""
-    from ...model.model import State
-    from ...model.region import walk_namespaces
-
+    """Collect every access in the subtree of ``region`` and judge what it overwrites."""
     access = _RegionAccess(path='.'.join(region.path))
-    before_reads = _note_inherited_aspect_reads(access, region, defined, root)
-    for namespace in walk_namespaces(region):
-        outgoing = _outgoing_guard_reads(namespace, defined)
-        for transition in namespace.transitions:
-            guard_reads = _note_expression(access, transition.guard, defined, root, getattr(transition, '_span', None))
-            _scan_block(access, transition.effects, defined, root, frozenset(guard_reads))
-        actions = (
-            (*namespace.on_enters, *namespace.on_durings, *namespace.on_exits, *namespace.on_during_aspects)
-            if isinstance(namespace, State) else namespace.on_during_aspects
-        )
-        for action in actions:
-            # The guards of a state's outgoing transitions are checked before its
-            # ``during`` and aspect actions run, and before its ``exit`` runs.
-            initial = (
-                frozenset() if getattr(action, 'stage', None) == 'enter'
-                else outgoing | before_reads
-            )
-            _scan_block(access, action.operations or (), defined, root, initial)
+    _walk(region, (), (), access, defined, root, nested=False)
+    for name, write in access._plain_writes:
+        write.consumed = name in access.any_reads
+    leaves = access._leaf_covers
+    if leaves and not (access.has_abstract or access.has_exit or access.has_nested_owner):
+        for name, span in leaves[0].items():
+            if name not in access.uncovered_reads and all(name in leaf for leaf in leaves):
+                access.certain[name] = span
     return access
 
 
-def _note_inherited_aspect_reads(access, region, defined: Set[str], root) -> FrozenSet[str]:
-    """Record what the aspects of enclosing states and regions read for this region.
+def _walk(namespace, before, after, access, defined, root, nested: bool) -> None:
+    """Visit a state or region, recording plain blocks and leaf action chains.
 
-    A ``>> during before`` / ``after`` action declared outside the region runs
-    around the during action of every leaf inside it, so what it reads counts
-    as read by the region. Only reads are taken over: they feed the backward
-    read information and, for ``before`` aspects, mark the old value as used
-    before the leaf's own actions run.
-
-    :param access: Accumulator of the region being collected.
-    :param region: Region whose enclosing namespaces are examined.
-    :param defined: Names of the model variables.
-    :param root: Root state, used to resolve ``active()`` queries.
-    :return: Variables read by enclosing ``before`` aspects.
+    ``before`` and ``after`` are the ``>> during`` actions of the enclosing
+    namespaces inside the region being collected, outermost first for
+    ``before`` and innermost first for ``after``, which is the order a leaf runs
+    them in. Inside a nested parallel owner (``nested``) nothing is treated as a
+    certain per-cycle chain: every block is recorded as a plain block.
     """
-    before: Set[str] = set()
-    namespace = region.parent
-    while namespace is not None:
-        for action in namespace.on_during_aspects:
-            scratch = _RegionAccess(path='')
-            _scan_block(scratch, action.operations or (), defined, root, frozenset())
-            for name, span in scratch.reads.items():
-                access.reads.setdefault(name, span)
-            for target, span in scratch.queries.items():
-                access.queries.setdefault(target, span)
-            if action.aspect == 'before':
-                before |= set(scratch.reads)
-        namespace = namespace.parent
-    return frozenset(before)
-
-
-def _outgoing_guard_reads(namespace, defined: Set[str]) -> FrozenSet[str]:
-    """Variables read by the guards of the transitions leaving a state."""
+    from ...dsl import EXIT_STATE
     from ...model.model import State
 
-    parent = namespace.parent if isinstance(namespace, State) else None
-    if parent is None:
-        return frozenset()
-    names: Set[str] = set()
-    for transition in parent.transitions:
-        if transition.from_state == namespace.name and transition.guard is not None:
-            names |= {item for item in collect_expr_variables(transition.guard) if item in defined}
-    return frozenset(names)
+    for transition in namespace.transitions:
+        if transition.to_state is EXIT_STATE:
+            access.has_exit = True
+        _plain(access, _expression_events(transition.guard, defined, root, _span_of(transition)))
+        _plain(access, _statements_events(transition.effects, defined, root))
+
+    own_before = [item for item in namespace.on_during_aspects if item.aspect == 'before']
+    own_after = [item for item in namespace.on_during_aspects if item.aspect == 'after']
+    if nested:
+        for action in (*own_before, *own_after):
+            _plain_action(access, action, defined, root)
+    deeper_before, deeper_after = [*before, *own_before], [*own_after, *after]
+
+    if isinstance(namespace, State):
+        for action in (*namespace.on_enters, *namespace.on_exits):
+            _plain_action(access, action, defined, root)
+        if namespace.regions:
+            access.has_nested_owner = True
+            for region in namespace.regions.values():
+                _walk(region, (), (), access, defined, root, True)
+        if not (namespace.substates or namespace.regions):
+            if nested or namespace.is_pseudo:
+                for action in namespace.on_durings:
+                    _plain_action(access, action, defined, root)
+            else:
+                _leaf(namespace, deeper_before, deeper_after, access, defined, root)
+            return
+    for child in namespace.substates.values():
+        _walk(child, deeper_before, deeper_after, access, defined, root, nested)
 
 
-def _note_expression(access, expression, defined, root, span) -> Set[str]:
-    """Record the reads and ``active()`` queries of an expression; return its variables."""
+def _leaf(state, before, after, access, defined, root) -> None:
+    """Scan the action chain a leaf runs in a cycle: before aspects, during, after aspects."""
+    chain: List[_Event] = []
+    for action in (*before, *(item for item in state.on_durings if item.aspect is None), *after):
+        if action.is_abstract or action.is_ref:
+            access.has_abstract = True
+            continue
+        chain.extend(_statements_events(action.operations, defined, root))
+    covered: Dict[str, Optional[Span]] = {}
+    for position, event in enumerate(chain):
+        kind = event[0]
+        if kind == 'read':
+            access.any_reads.add(event[1])
+            if event[1] not in covered:
+                access.uncovered_reads.setdefault(event[1], event[2])
+        elif kind == 'query':
+            access.queries.setdefault(event[1], event[2])
+        else:
+            _, name, span, unconditional = event
+            write = _Write(span, consumed=any(
+                later[0] == 'read' and later[1] == name for later in chain[position + 1:]
+            ))
+            access.writes.setdefault(name, []).append(write)
+            if unconditional:
+                covered.setdefault(name, span)
+    access._leaf_covers.append(covered)
+
+
+def _plain_action(access, action, defined, root) -> None:
+    """Record an action that is not part of a leaf's per-cycle chain."""
+    if action.is_abstract or action.is_ref:
+        access.has_abstract = True
+        return
+    _plain(access, _statements_events(action.operations, defined, root))
+
+
+def _plain(access, events: Iterable[_Event]) -> None:
+    """Record events of a block outside every leaf chain: all its reads are uncovered."""
+    for event in events:
+        kind = event[0]
+        if kind == 'read':
+            access.any_reads.add(event[1])
+            access.uncovered_reads.setdefault(event[1], event[2])
+        elif kind == 'query':
+            access.queries.setdefault(event[1], event[2])
+        else:
+            write = _Write(event[2])
+            access.writes.setdefault(event[1], []).append(write)
+            access._plain_writes.append((event[1], write))
+
+
+def _span_of(node) -> Optional[Span]:
+    """Source span of a model node, when it has one."""
+    return getattr(node, '_span', None)
+
+
+def _expression_events(expression, defined: Set[str], root, span) -> List[_Event]:
+    """Events of one expression: its variable reads and ``active()`` queries."""
     from ...model.active import _target
     from ...model.expr import ActiveStateQuery
 
     if expression is None:
-        return set()
-    names = {item for item in collect_expr_variables(expression) if item in defined}
-    for name in dict.fromkeys(item for item in collect_expr_variables(expression) if item in defined):
-        access.reads.setdefault(name, span)
+        return []
+    events: List[_Event] = [
+        ('read', name, span)
+        for name in dict.fromkeys(item for item in collect_expr_variables(expression) if item in defined)
+    ]
     for node in expression._iter_all_subs():
         if isinstance(node, ActiveStateQuery):
             # Model construction already rejected every query that names no
             # state, so the target always resolves here.
             target, _ = _target(root, node)
-            access.queries.setdefault(tuple(target.path), span)
-    return names
+            events.append(('query', tuple(target.path), span))
+    return events
 
 
-def _scan_block(access, statements, defined, root, reads_before: FrozenSet[str]) -> Set[str]:
-    """Scan a statement list; return every variable read so far, including leaks from branches.
+def _statements_events(statements, defined: Set[str], root, unconditional: bool = True) -> List[_Event]:
+    """Flatten a statement list into events in textual order.
 
-    ``reads_before`` holds variables whose old value was already used before the
-    block starts (the owning guard, or outgoing guards). A write is blind only
-    when its variable is not read by its own expression, by ``reads_before``, by
-    any earlier statement or enclosing condition, and was not written earlier in
-    a straight line of the same block.
+    A statement inside an ``if`` branch is not unconditional. The right-hand
+    side of an assignment is read before the assignment writes.
     """
-    return _scan(access, statements, defined, root, set(reads_before), frozenset())
-
-
-def _scan(access, statements, defined, root, reads: Set[str], written: FrozenSet[str]) -> Set[str]:
-    """Recursive worker of :func:`_scan_block`."""
     from ...model.model import Operation
 
-    written = set(written)
+    events: List[_Event] = []
     for statement in statements:
         if isinstance(statement, Operation):
-            used = _note_expression(access, statement.expr, defined, root, getattr(statement, '_span', None))
-            name = statement.var_name
-            if name in defined:
-                blind = name not in used and name not in reads and name not in written
-                access.writes.setdefault(name, []).append(_Write(getattr(statement, '_span', None), blind))
-                written.add(name)
-            reads |= used
+            span = _span_of(statement)
+            events.extend(_expression_events(statement.expr, defined, root, span))
+            if statement.var_name in defined:
+                events.append(('write', statement.var_name, span, unconditional))
         else:
-            seen = set(reads)
             for branch in statement.branches:
-                if branch.condition is not None:
-                    seen |= _note_expression(access, branch.condition, defined, root, getattr(branch, '_span', None))
-                seen |= _scan(access, branch.statements, defined, root, set(seen), frozenset(written))
-            reads |= seen
-    return reads
+                events.extend(_expression_events(branch.condition, defined, root, _span_of(branch)))
+                events.extend(_statements_events(branch.statements, defined, root, False))
+    return events

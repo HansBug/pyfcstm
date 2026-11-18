@@ -4537,13 +4537,18 @@ W_REGION_BLIND_OVERWRITE:
   capability: pure_static
   emit_tier: partial_static_pipeline
   description: >-
-    A later region assigns a variable that an earlier region of the same
-    parallel owner also writes, without using the earlier value: the new value
-    does not depend on the old one, no earlier statement of the same block
-    reads it, the owning transition's guard or the state's outgoing guards do
-    not read it, and no region in between reads it. The earlier region's write
-    is lost every cycle in which both statements run. Several regions writing
-    the same variable is otherwise fine.
+    A later region overwrites, in every cycle and without ever looking at it, a
+    variable that an earlier region of the same parallel owner writes, so the
+    earlier write is lost every cycle. The later region does so when each of
+    its non-pseudo leaf states writes the variable unconditionally at the top
+    level of its ``during`` actions, nothing in the region reads the variable
+    before that write (no guard, effect, ``enter``, ``exit``, right-hand side,
+    ``if`` condition or earlier statement), and the region cannot finish, has no
+    nested parallel owner and no abstract action. The earlier write is lost when
+    no statement running after it in the same cycle reads the variable and no
+    region in between reads it or has an abstract action. Writing one variable
+    from several regions is otherwise fine, including a default value in front
+    and an override behind that only some states perform.
   refs:
     owner_path:
       type: str
@@ -4561,10 +4566,14 @@ W_REGION_BLIND_OVERWRITE:
       type: str
       required: true
       description: Name of the overwritten variable.
+    previous_write_span:
+      type: Span
+      required: true
+      description: Source span of the earlier region's write that is lost.
   for_llm:
     summary: >-
-      A later region overwrites a variable written by an earlier region
-      without using the earlier value, so the earlier write has no effect.
+      A later region overwrites, in every cycle and without looking at it, a
+      variable written by an earlier region, so the earlier write has no effect.
     recommended_actions:
       - kind: use_previous_value
         target: statement
@@ -4574,6 +4583,7 @@ W_REGION_BLIND_OVERWRITE:
         rationale: Give each region its own variable when the writes are independent.
     do_not:
       - "Do not remove the earlier write without checking that no other state of that region depends on it."
+      - "Do not report a default value that a later region overrides only in some states or under a condition."
   example_dsl: |
     def int out = 0;
     def int y = 0;

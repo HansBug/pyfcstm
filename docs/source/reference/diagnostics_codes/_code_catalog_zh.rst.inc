@@ -6659,15 +6659,16 @@ W_REGION_BLIND_OVERWRITE
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE region type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_region type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE variable type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_write_span type=Span required=true enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary W_REGION_BLIND_OVERWRITE kind=partial_static_boundary
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``partial_static_pipeline``；能力层级 ``pure_static``；源码对象 ``effect_statement``。
 
-**含义。** 靠后的区域给某个变量赋值，而同一所属状态下靠前的区域也写过它，且没有用到靠前区域写入的值：新值不依赖旧值，同一代码块里更早的语句没有读它，所在转换的守卫和离开该状态的守卫都没有读它，中间的区域也没有读它。只要两条语句在同一周期都会执行，靠前区域的写入就会被丢掉。多个区域写同一个变量本身没有问题。
+**含义。** 靠后的区域在每个周期都会覆盖同一所属状态下靠前区域写入的变量，而且从不看它一眼，所以靠前区域的写入每个周期都被丢掉。靠后的区域满足下面全部条件才算：它的每个非伪状态叶子都在 ``during`` 动作的最外层无条件地写这个变量；区域里没有任何地方在这次写入之前读它（守卫、效果、``enter``、``exit``、右侧表达式、``if`` 条件、更早的语句都不算）；区域不可能完成，没有嵌套的并行状态，也没有抽象动作。靠前的写入被丢掉，是指同一周期里它之后执行的语句都没有读这个变量，中间的区域也没有读它、没有抽象动作。诊断指向覆盖的那条语句，``previous_write_span`` 指出被丢掉的写入。多个区域写同一个变量本身没有问题，“前面给默认值、后面只在部分状态覆盖”的写法同样不报。
 
-**面向 LLM 的修复摘要。** 靠后的区域没有用到旧值就覆盖了靠前区域写的变量，靠前的写入因此没有效果。两次写入都要生效时，让新值建立在旧值之上（例如 ``x = x + y;``）；两个区域互相独立时，各用各的变量。
+**面向 LLM 的修复摘要。** 靠后的区域在每个周期都不看旧值就覆盖了靠前区域写的变量，靠前的写入因此没有效果。两次写入都要生效时，让新值建立在旧值之上（例如 ``x = x + y;``）；两个区域互相独立时，各用各的变量。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -6693,6 +6694,10 @@ W_REGION_BLIND_OVERWRITE
      - ``str``
      - 是
      - 被覆盖的变量名。
+   * - ``previous_write_span``
+     - ``Span``
+     - 是
+     - 靠前区域中被丢掉的那次写入的源码位置。
 
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 1 repro_cli
 
@@ -6722,4 +6727,4 @@ W_REGION_BLIND_OVERWRITE
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``W_REGION_BLIND_OVERWRITE`` 的反例边界。
-不要报告或删除建立在旧值之上的写入（``x = x + y;``）、由旧值决定是否执行的写入（``if [x > 0] { x = 0; }``），以及先读后写的写入（``z = x; x = 0;``）。同一区域里另一个状态读取了该变量，并不能让这次覆盖变得安全。
+不要报告或删除建立在旧值之上的写入（``x = x + y;``）、由旧值决定是否执行的写入（``if [x > 0] { x = 0; }``），以及先读后写的写入（``z = x; x = 0;``）。也不要报告只在部分状态或某个条件下才被覆盖的默认值，以及靠前区域自己在同一周期里随后读取了的写入。

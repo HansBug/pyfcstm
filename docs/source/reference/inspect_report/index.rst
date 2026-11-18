@@ -232,17 +232,23 @@ diagnostics are:
 
    {
      "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
-     "message": "Region 'Root.Writer' overwrites variable 'out' without using the value written by the earlier region 'Root.Reader'.",
+     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost.",
      "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
-     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out"}
+     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out", "previous_write_span": {"line": 7, "column": 45, "end_line": 7, "end_column": 53}}
    }
 
 ``I_REGION_BACKWARD_READ`` is informational: an earlier region reads what a
 later region writes or contains (through ``active()``), so it sees the previous
-cycle's value. ``W_REGION_BLIND_OVERWRITE`` marks an assignment in a later
-region that discards an earlier region's value without reading it; ``out = out
-+ y + 2;`` would not be reported. Both are judged statically and do not check
-whether the two statements can run in the same cycle.
+cycle's value. ``W_REGION_BLIND_OVERWRITE`` is reported only when a later region
+overwrites the variable in *every* cycle and never reads it first: every
+non-pseudo leaf state writes it unconditionally at the top of its ``during``,
+nothing in the region reads it before that write, the region cannot finish, and
+nothing that runs after the earlier write reads it. It points at the overwriting
+statement and ``previous_write_span`` names the lost write. ``out = out + y +
+2;``, a conditional overwrite, an overwrite performed by only some states (a
+default value in front, an override behind) and a region that reads the
+variable first are not reported. Aspects declared on the owner run once around
+the whole group of regions and neither use nor shield the earlier value.
 
 Reachability follows region semantics. Entering a state that owns regions
 reaches the initial targets of every region. The owner's ordinary outgoing

@@ -208,12 +208,12 @@ Inspect 报告参考
 
    {
      "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
-     "message": "Region 'Root.Writer' overwrites variable 'out' without using the value written by the earlier region 'Root.Reader'.",
+     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost.",
      "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
-     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out"}
+     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out", "previous_write_span": {"line": 7, "column": 45, "end_line": 7, "end_column": 53}}
    }
 
-``I_REGION_BACKWARD_READ`` 是提示级：靠前的区域读取了靠后区域写入或包含（通过 ``active()``\ ）的内容，读到的是上一周期的值。``W_REGION_BLIND_OVERWRITE`` 标出靠后区域中没有读取旧值就丢掉靠前区域写入的赋值；写成 ``out = out + y + 2;`` 就不会被报告。两者都是静态判断，不检查两条语句是否真的会在同一周期执行。
+``I_REGION_BACKWARD_READ`` 是提示级：靠前的区域读取了靠后区域写入或包含（通过 ``active()``\ ）的内容，读到的是上一周期的值。``W_REGION_BLIND_OVERWRITE`` 只在靠后区域\ **每个周期**\ 都覆盖这个变量、而且从不先读它时才报告：它的每个非伪状态叶子都在 ``during`` 最外层无条件地写它，区域里没有任何地方在这次写入之前读它，区域不可能完成，靠前那次写入之后执行的语句也都没有读它。诊断指向覆盖的那条语句，``previous_write_span`` 指出被丢掉的写入。写成 ``out = out + y + 2;``、有条件地覆盖、只有部分状态覆盖（前面给默认值、后面覆盖），或者区域先读了这个变量，都不会被报告。声明在所属状态上的切面每周期只在整组区域外围执行一次，既不用到旧值，也不保护旧值。
 
 可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
 

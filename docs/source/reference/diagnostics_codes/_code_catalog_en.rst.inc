@@ -6683,15 +6683,16 @@ W_REGION_BLIND_OVERWRITE
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE region type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_region type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_REGION_BLIND_OVERWRITE variable type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_write_span type=Span required=true enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary W_REGION_BLIND_OVERWRITE kind=partial_static_boundary
 
 **Registry facts.** Severity ``warning``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``effect_statement``.
 
-**Meaning.** A later region assigns a variable that an earlier region of the same owner also writes, without using the earlier value. The new value does not depend on the old one, no earlier statement of the same block reads it, the guard of the owning transition and the guards leaving the state do not read it, and no region in between reads it. The earlier write is lost in every cycle in which both statements run. Several regions writing one variable is otherwise fine.
+**Meaning.** A later region overwrites, in every cycle and without ever looking at it, a variable that an earlier region of the same owner writes, so the earlier write is lost every cycle. The later region does so when each of its non-pseudo leaf states writes the variable unconditionally at the top level of its ``during`` actions, nothing in the region reads the variable before that write (no guard, effect, ``enter``, ``exit``, right-hand side, ``if`` condition or earlier statement), and the region cannot finish, has no nested parallel owner and no abstract action. The earlier write is lost when no statement running after it in the same cycle reads the variable and no region in between reads it or has an abstract action. The diagnostic points at the overwriting statement and ``previous_write_span`` names the lost write. Several regions writing one variable is otherwise fine, including a default value in front and an override behind that only some states perform.
 
-**LLM repair summary.** A later region overwrites a variable written by an earlier region without using the earlier value, so the earlier write has no effect. Combine with the earlier value, for example ``x = x + y;``, or give each region its own variable.
+**LLM repair summary.** A later region overwrites, in every cycle and without looking at it, a variable written by an earlier region, so the earlier write has no effect. Combine with the earlier value, for example ``x = x + y;``, or give each region its own variable.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -6717,6 +6718,10 @@ W_REGION_BLIND_OVERWRITE
      - ``str``
      - yes
      - Name of the overwritten variable.
+   * - ``previous_write_span``
+     - ``Span``
+     - yes
+     - Source span of the earlier region's write that is lost.
 
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 1 repro_cli
 
@@ -6746,4 +6751,4 @@ A typical repair is ``use_previous_value`` on ``statement``: write ``out = out +
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 3 boundary_only
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REGION_BLIND_OVERWRITE``.
-Do not report or remove a write that is built on the earlier value (``x = x + y;``), guarded by it (``if [x > 0] { x = 0; }``), or read before it is overwritten (``z = x; x = 0;``). A read of the variable in a different state of the same region does not make the overwrite safe.
+Do not report or remove a write that is built on the earlier value (``x = x + y;``), guarded by it (``if [x > 0] { x = 0; }``), or read before it is overwritten (``z = x; x = 0;``). Do not report a default value that a later region overrides only in some states or under a condition, nor an earlier write that its own region reads later in the same cycle.

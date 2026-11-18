@@ -44,6 +44,24 @@ state Plant {
 '''
 
 
+ORDER_DEMO = '''
+def int level = 0;
+def int seen = 0;
+def int out = 0;
+def int y = 0;
+state Root {
+    region Reader {
+        state Idle { during { seen = level; out = 1; } }
+        [*] -> Idle;
+    }
+    region Writer {
+        state Busy { during { level = level + 1; out = y + 2; } }
+        [*] -> Busy;
+    }
+}
+'''
+
+
 def inspect_text(source, **kwargs):
     return inspect_model(load_state_machine_from_text(source), **kwargs)
 
@@ -209,65 +227,127 @@ def int z = 0;
 '''
 
 
-def two_regions(second):
+def two_regions(second, first='state A { during { x = 1; } } [*] -> A;', before='', between=''):
     return ORDER_PROLOGUE + '''
     state Root {
-        region First { state A { during { x = 1; } } [*] -> A; }
+    %s
+        region First { %s }
+    %s
         region Second { %s }
     }
-    ''' % second
+    ''' % (before, first, between, second)
 
 
+ONE_STATE = 'state B { during { %s } } [*] -> B;'
+TWO_STATES = '''
+    state B { during { %s } }
+    state C { during { %s } }
+    [*] -> B;
+    B -> C :: Go;
+    C -> B :: Back;
+'''
+
+# (name, second region, first region, expected count)
+# The first region is expected to lose its write in every case that counts.
 ROW_CASES = [
-    # (name, second-region body, expected count of blind overwrites)
-    ('plain_overwrite', 'state B { during { x = y + 2; } } [*] -> B;', 1),
-    ('uses_old_value', 'state B { during { x = x + y + 2; } } [*] -> B;', 0),
-    ('branch_condition_reads_old', 'state B { during { if [x > 0] { x = y + 2; } } } [*] -> B;', 0),
-    ('earlier_else_branch_condition', 'state B { during { if [x > 0] { z = 1; } else { x = y; } } } [*] -> B;', 0),
-    ('guard_reads_old_in_effect', '''
-        state B; state C;
-        [*] -> B;
-        B -> C : if [x > 0] effect { x = 0; };
-    ''', 0),
-    ('read_before_write_in_block', 'state B { during { z = x; x = 0; } } [*] -> B;', 0),
-    ('read_after_write_in_block', 'state B { during { x = 0; z = x; } } [*] -> B;', 1),
-    ('other_state_reads', '''
-        state P { during { x = 0; } }
-        state Q { during { z = x; } }
-        [*] -> P;
-        P -> Q :: Switch;
-    ''', 1),
-    ('outgoing_guard_reads_old', '''
-        state P { during { x = 0; } }
-        state Q;
-        [*] -> P;
-        P -> Q : if [x > 3];
-    ''', 0),
-    ('second_straight_line_write_is_not_a_new_loss', 'state B { during { x = 5; x = 7; } } [*] -> B;', 1),
-    ('independent_variable', 'state B { during { y = 3; } } [*] -> B;', 0),
+    # --- the later region overwrites in every cycle without looking: reported
+    ('plain_overwrite', ONE_STATE % 'x = y + 2;', None, 1),
+    ('write_after_unrelated_statement', ONE_STATE % 'z = y; x = y + 2;', None, 1),
+    ('read_after_write_in_block', ONE_STATE % 'x = 0; z = x;', None, 1),
+    ('second_straight_line_write', ONE_STATE % 'x = 5; x = 7;', None, 1),
+    ('every_state_overwrites', TWO_STATES % ('x = y + 2;', 'x = y + 3;'), None, 1),
+    ('earlier_write_in_enter_is_lost_too', ONE_STATE % 'x = y + 2;', 'state A { enter { x = 1; } } [*] -> A;', 1),
+    # --- the later region uses the old value somewhere: not reported
+    ('uses_old_value', ONE_STATE % 'x = x + y + 2;', None, 0),
+    ('branch_condition_reads_old', ONE_STATE % 'if [x > 0] { x = y + 2; }', None, 0),
+    ('earlier_else_branch_condition', ONE_STATE % 'if [x > 0] { z = 1; } else { x = y; }', None, 0),
+    ('read_before_write_in_block', ONE_STATE % 'z = x; x = 0;', None, 0),
+    ('guard_reads_old_in_effect', 'state B; state C; [*] -> B; B -> C : if [x > 0] effect { x = 0; };', None, 0),
+    ('outgoing_guard_reads_old', 'state B { during { x = 0; } } state C; [*] -> B; B -> C : if [x > 3];', None, 0),
+    ('enter_reads_old', 'state B { enter { z = x; } during { x = y; } } [*] -> B;', None, 0),
+    ('own_before_aspect_reads_old', '>> during before { z = x; } ' + ONE_STATE % 'x = y + 2;', None, 0),
+    # --- the later region does not overwrite in every cycle: not reported
+    ('write_is_conditional', ONE_STATE % 'if [y > 0] { x = y + 2; }', None, 0),
+    ('only_one_state_writes', TWO_STATES % ('x = y + 2;', 'z = 1;'), None, 0),
+    ('other_state_reads', TWO_STATES % ('x = 0;', 'z = x;'), None, 0),
+    ('state_without_during_does_not_write', 'state B { during { x = y; } } state C; [*] -> B; B -> C :: Go;', None, 0),
+    ('region_can_finish', 'state B { during { x = y; } } state C; [*] -> B; B -> C :: Go; C -> [*];', None, 0),
+    ('abstract_action_may_read', 'state B { during abstract Peek; during { x = y; } } [*] -> B;', None, 0),
+    ('independent_variable', ONE_STATE % 'y = 3;', None, 0),
+    ('abstract_enter_may_read', 'state B { enter abstract Setup; during { x = y; } } [*] -> B;', None, 0),
+    ('nested_owner_is_not_judged', 'state C { region In { state D { during { x = y; } } [*] -> D; } } [*] -> C;', None, 0),
+    ('nested_owner_with_its_own_aspect', 'state C { region In { >> during before { z = x; } state D { during { x = y; } } [*] -> D; } } [*] -> C;', None, 0),
+    # --- aspects and pseudo states inside the later region
+    ('own_after_aspect_reads_the_new_value', '>> during after { z = x; } ' + ONE_STATE % 'x = y + 2;', None, 1),
+    ('pseudo_leaf_needs_no_write', 'pseudo state P; state B { during { x = y; } } [*] -> P; P -> B;', None, 1),
+    ('composite_before_aspect_covers_every_leaf',
+     'state C { >> during before { x = y; } state D1; state D2; [*] -> D1; D1 -> D2 :: Go; D2 -> D1 :: Back; } [*] -> C;',
+     None, 1),
+    ('composite_before_aspect_reads_old',
+     'state C { >> during before { z = x; } state D { during { x = y; } } [*] -> D; } [*] -> C;', None, 0),
+    # --- the earlier write is used in its own cycle: nothing is lost
+    ('earlier_region_uses_its_own_value', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; z = x; } } [*] -> A;', 0),
+    ('earlier_region_after_aspect_reads', ONE_STATE % 'x = y + 2;', '>> during after { z = x; } state A { during { x = 1; } } [*] -> A;', 0),
+    ('earlier_region_abstract_action', ONE_STATE % 'x = y + 2;', 'state A { during { x = 1; } during abstract Peek; } [*] -> A;', 0),
 ]
 
 
-@pytest.mark.parametrize('name, second, expected', ROW_CASES, ids=[case[0] for case in ROW_CASES])
-def test_blind_overwrite_follows_the_rule_table(name, second, expected):
-    report = inspect_text(two_regions(second))
+def run_case(second, first, before='', between=''):
+    first = first or 'state A { during { x = 1; } } [*] -> A;'
+    return inspect_text(two_regions(second, first, before, between))
+
+
+@pytest.mark.parametrize('name, second, first, expected', ROW_CASES, ids=[case[0] for case in ROW_CASES])
+def test_blind_overwrite_follows_the_rule_table(name, second, first, expected):
+    report = run_case(second, first)
     found = [item for item in report.diagnostics if item.code == 'W_REGION_BLIND_OVERWRITE']
     assert len(found) == expected
     for item in found:
         assert item.severity == 'warning'
-        assert item.span is not None
-        assert item.refs == {
+        assert item.span is not None and item.refs['previous_write_span'] is not None
+        assert {key: value for key, value in item.refs.items() if key != 'previous_write_span'} == {
             'owner_path': 'Root', 'region': 'Root.Second', 'previous_region': 'Root.First',
             'variable': 'x',
         }
 
 
-def test_blind_overwrite_is_reported_at_the_overwriting_statement():
-    source = two_regions('state B { during { x = y + 2; } } [*] -> B;')
+def test_aspects_of_the_owner_run_around_the_whole_group_and_shield_nothing():
+    # They read the value left by the previous cycle, before and after the group,
+    # so they neither use the first region's value nor protect it.
+    for aspect in ('before', 'after'):
+        report = inspect_text(two_regions(
+            ONE_STATE % 'x = y + 2;', before='>> during %s { z = x; }' % aspect))
+        assert codes(report, 'W_REGION', 'I_REGION') == ['W_REGION_BLIND_OVERWRITE']
+
+
+def test_a_region_in_between_that_has_an_abstract_action_may_read_the_old_value():
+    report = run_case(
+        ONE_STATE % 'x = y + 2;', None,
+        between='region Middle { state M { during abstract Peek; } [*] -> M; }')
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(report)
+
+
+def test_the_warning_points_at_the_overwrite_and_names_the_lost_write():
+    source = two_regions(ONE_STATE % 'x = y + 2;')
     report = inspect_text(source)
     item = next(d for d in report.diagnostics if d.code == 'W_REGION_BLIND_OVERWRITE')
-    line = source.splitlines()[item.span.line - 1]
-    assert line[item.span.column - 1:].startswith('x = y + 2;')
+    lines = source.splitlines()
+    span, lost = item.span, item.refs['previous_write_span']
+    assert lines[span.line - 1][span.column - 1:].startswith('x = y + 2;')
+    assert lines[lost.line - 1][lost.column - 1:].startswith('x = 1;')
+
+
+def test_only_the_write_that_nothing_reads_is_named_as_lost():
+    first = 'state A { during { x = 1; z = x; x = 2; } } [*] -> A;'
+    source = two_regions(ONE_STATE % 'x = y + 2;', first)
+    item = next(d for d in inspect_text(source).diagnostics if d.code == 'W_REGION_BLIND_OVERWRITE')
+    lost = item.refs['previous_write_span']
+    assert source.splitlines()[lost.line - 1][lost.column - 1:].startswith('x = 2;')
+
+
+def test_reading_the_regions_own_fresh_value_is_not_a_backward_read():
+    report = run_case(ONE_STATE % 'x = 3;', 'state A { during { x = 1; z = x; } } [*] -> A;')
+    assert 'I_REGION_BACKWARD_READ' not in codes(report)
 
 
 def test_overwrite_is_not_blind_when_a_region_in_between_reads_the_old_value():
@@ -365,10 +445,9 @@ def test_active_queries_do_not_leak_hidden_flag_variables():
         assert '__active' not in item.message
     assert [item.refs['target'] for item in report.diagnostics
             if item.code == 'I_REGION_BACKWARD_READ'] == ['duty', 'Plant.Run.Ctrl.Cool']
-    overwrites = [item for item in report.diagnostics if item.code == 'W_REGION_BLIND_OVERWRITE']
-    assert [(item.refs['variable'], item.refs['region']) for item in overwrites] == [
-        ('duty', 'Plant.Run.Ctrl'),
-    ]
+    # ``Cool`` reads ``duty`` before writing it, so ``Ctrl`` does not overwrite
+    # ``duty`` blindly in every cycle.
+    assert 'W_REGION_BLIND_OVERWRITE' not in codes(report)
 
 
 def test_single_region_gets_no_ordering_diagnostics():
@@ -536,19 +615,22 @@ def run_cli(tmp_path, source, *arguments):
 
 
 def test_cli_json_report_lists_regions_and_ordering_diagnostics(tmp_path):
-    result = run_cli(tmp_path, PLANT, '--format', 'json')
+    result = run_cli(tmp_path, ORDER_DEMO, '--format', 'json')
     assert result.exitcode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert [item['path'] for item in payload['regions']] == ['Plant.Run.Sense', 'Plant.Run.Ctrl']
+    assert [item['path'] for item in payload['regions']] == ['Root.Reader', 'Root.Writer']
     assert {'I_REGION_BACKWARD_READ', 'W_REGION_BLIND_OVERWRITE'} <= {
         item['code'] for item in payload['diagnostics']}
+    blind = next(item for item in payload['diagnostics'] if item['code'] == 'W_REGION_BLIND_OVERWRITE')
+    assert blind['refs']['previous_write_span'] == {
+        'line': 8, 'column': 45, 'end_line': 8, 'end_column': 53}
 
 
 def test_cli_human_report_lists_regions_and_ordering_diagnostics(tmp_path):
-    result = run_cli(tmp_path, PLANT)
+    result = run_cli(tmp_path, ORDER_DEMO)
     assert result.exitcode == 0, result.stderr
     assert 'regions: 2' in result.stdout
-    assert 'Plant.Run.Sense' in result.stdout and 'Plant.Run.Ctrl' in result.stdout
+    assert 'Root.Reader' in result.stdout and 'Root.Writer' in result.stdout
     assert 'W_REGION_BLIND_OVERWRITE' in result.stdout
     assert 'I_REGION_BACKWARD_READ' in result.stdout
     assert 'Traceback' not in result.stdout + result.stderr
@@ -700,7 +782,7 @@ def test_history_entry_inside_a_region_reaches_the_default_path():
 
 @pytest.mark.parametrize('output_format', ['llm-md', 'llm-json'])
 def test_cli_llm_reports_carry_the_region_diagnostics(tmp_path, output_format):
-    result = run_cli(tmp_path, PLANT, '--format', output_format)
+    result = run_cli(tmp_path, ORDER_DEMO, '--format', output_format)
     assert result.exitcode == 0, result.stderr
     assert 'W_REGION_BLIND_OVERWRITE' in result.stdout
     assert 'I_REGION_BACKWARD_READ' in result.stdout
@@ -796,30 +878,6 @@ def run_cli_text_verify(source):
         return simulate_entry(pyfcstmcli, ['pyfcstm', 'inspect', '-i', str(path), '--enable-verify'])
 
 
-def test_enclosing_aspects_count_as_reads_of_the_regions_inside():
-    reading = '''
-    def int x = 0; def int y = 0; def int z = 0;
-    state R {
-        >> during %s { z = x; }
-        region A { state P { during { y = 1; } } [*] -> P; }
-        region B { state Q { during { x = y + 2; } } [*] -> Q; }
-    }
-    '''
-    for aspect in ('before', 'after'):
-        found = [d for d in inspect_text(reading % aspect).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
-        assert [(d.refs['reader_region'], d.refs['target']) for d in found] == [('R.A', 'x')]
-    overwriting = '''
-    def int x = 0; def int y = 0; def int z = 0;
-    state R {
-        >> during %s { z = x; }
-        region A { state P { during { x = 1; } } [*] -> P; }
-        region B { state Q { during { x = y + 2; } } [*] -> Q; }
-    }
-    '''
-    assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(overwriting % 'before'))
-    assert 'W_REGION_BLIND_OVERWRITE' in codes(inspect_text(overwriting % 'after'))
-
-
 @pytest.mark.parametrize('exits', ['s -> [*]; s -> [*];', 's -> [*]; s -> [*] :: Ev;'])
 def test_verify_handles_repeated_region_exits(exits):
     source = 'state T { [*] -> A; state A { region r { [*] -> s; state s; %s } } }' % exits
@@ -830,7 +888,7 @@ def test_verify_handles_repeated_region_exits(exits):
     validate_against_shipped_schema(report)
 
 
-def test_enclosing_aspect_active_queries_count_for_the_regions_inside():
+def test_aspects_of_the_owner_are_not_reads_of_the_regions_inside():
     source = '''
     def int z = 0;
     state R {
@@ -839,9 +897,7 @@ def test_enclosing_aspect_active_queries_count_for_the_regions_inside():
         region B { state Q; [*] -> Q; }
     }
     '''
-    found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
-    assert [(d.refs['reader_region'], d.refs['target_kind'], d.refs['target']) for d in found] == [
-        ('R.A', 'active', 'R.B.Q')]
+    assert 'I_REGION_BACKWARD_READ' not in codes(inspect_text(source))
 
 
 def test_ordering_analyzer_accepts_a_missing_model():

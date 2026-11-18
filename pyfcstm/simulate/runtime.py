@@ -114,7 +114,9 @@ The rules that decide the corner cases are:
   reported only when nothing else works. That includes a candidate inside a
   region whose only way on, through the owner finishing and being entered
   again, leads back to the point where the candidate was chosen: the next
-  candidate of that state is taken instead. An entry whose variable values keep
+  candidate of that state is taken instead. Only the region that finishes last
+  is judged this way; an earlier region of the group finishes without asking
+  what follows, as *Group entry* says. An entry whose variable values keep
   changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. Whether
   a finished group can continue is decided by entering what follows, one level
   deeper each time, and that nesting is limited to 64 levels. A finite loop that
@@ -1169,16 +1171,22 @@ class SimulationRuntime:
         self._ledger: Dict[Tuple[str, ...], List[bool]] = {}
         # Nesting depth of group initializations running inside each other.
         self._init_depth = 0
-        # Owners whose continuation is being checked right now, to recognize a
-        # continuation that loops back to the same position.
+        # Points on the path being examined right now: the starting point of
+        # every check under way and the position of every owner whose
+        # continuation is being checked. Arriving at one of them again is a
+        # loop.
         self._continuation_trail: List[tuple] = []
         # Whether the model declares regions; fixed for the life of the runtime.
         self._has_regions = state_machine.has_regions
-        # Answers of candidate and continuation checks within one cycle, with
-        # the continuation positions each answer looked at.
+        # Answers of candidate and continuation checks within one cycle: the
+        # answer, the trail points it compared, and which of them were on the
+        # trail at the time.
         self._memo: Dict[tuple, Tuple[bool, frozenset, frozenset]] = {}
-        # Open computations: [positions looked at, whether one was on the trail].
+        # One set per check under way: the trail points that check compared.
         self._memo_deps: List[set] = []
+        # Nesting depth of group entries at which the call stack ran out in
+        # the cycle being tried, or None.
+        self._overflow_depth: Optional[int] = None
         # Main stack of the committed execution pass, for handler snapshots.
         self._root_stack: Optional[List[_Frame]] = None
         self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
@@ -2693,7 +2701,12 @@ class SimulationRuntime:
                     if self._memo_deps:
                         self._memo_deps[-1].add(origin)
                     if origin in self._continuation_trail:
-                        signature = self._create_execution_signature(stack, vars_)
+                        # A region is not a state: a loop met while it picks
+                        # its initial transition is reported at its owner.
+                        where = stack
+                        if isinstance(stack[-1].state, Region):
+                            where = self._current_outer().stack
+                        signature = self._create_execution_signature(where, vars_)
                         raise _SimulationRuntimeLivelockError((signature, signature))
                     accepted = self._memo_get(memo_key)
                     if accepted is None:
@@ -3020,10 +3033,13 @@ class SimulationRuntime:
         ``'init_wait'`` mode and immediately attempt their initial transition
         chain. Once an initial child is selected, the composite's plain
         ``during before`` actions run before entering that selected child.
-        A state that owns regions only switches into ``'init_wait'`` mode here:
-        starting its regions changes values region by region and can fail half
-        way, so that step belongs to :meth:`_advance_owner`, which makes the
-        whole attempt fail instead of leaving a half-started group behind.
+        In a model with regions every non-leaf state only switches into
+        ``'init_wait'`` mode here and is started by the main loop. A cycle is
+        then taken through exactly the frame states it was tried through, which
+        is what remembered answers and loop detection compare. Starting the
+        regions of an owner also changes values region by region and can fail
+        half way, and only :meth:`_advance_owner` in the loop makes the whole
+        attempt fail instead of leaving a half-started group behind.
 
         :param stack: Target execution stack.
         :type stack: List[_Frame]
@@ -3067,7 +3083,7 @@ class SimulationRuntime:
                 stack[-1].branches = [
                     _Branch(region, []) for region in state.regions.values()
                 ]
-            if attempt_initial_transition and not state.regions:
+            if attempt_initial_transition and not self._has_regions:
                 # Trying a composite's initial transition changes nothing when
                 # no candidate is usable, so the unused result is harmless.
                 self._attempt_init_transition(
@@ -3231,6 +3247,14 @@ class SimulationRuntime:
             frame.plain_before_pending = False
             self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
             return True
+        except RecursionError:
+            # RecursionError: the interpreter's call stack ran out somewhere
+            # below this group entry. Only note how deep the entries were
+            # nested, so that the cycle can say so; nothing else is safe to do
+            # this close to the limit.
+            if self._overflow_depth is None:
+                self._overflow_depth = self._init_depth
+            raise
         finally:
             self._init_depth -= 1
 
@@ -3429,6 +3453,9 @@ class SimulationRuntime:
         key = (signature, self._enclosing_shapes(outer.parent))
         # A region only finishes inside a check started by _check_candidate.
         self._memo_deps[-1].add(key)
+        # Seeing this position again is the loop that the starting points of
+        # the checks would find one round later; stopping here keeps the
+        # nesting one level lower.
         if key in self._continuation_trail:
             raise _SimulationRuntimeLivelockError((signature, signature))
         self._continuation_trail.append(key)
@@ -3462,7 +3489,9 @@ class SimulationRuntime:
         """
         shapes = []
         while outer is not None:
-            shapes.append(SimulationRuntime._stack_shape(outer.stack))
+            # The branch being examined is described by its own stack; what the
+            # enclosing stack still holds in that slot may be out of date.
+            shapes.append(SimulationRuntime._stack_shape(outer.stack, outer.index))
             outer = outer.parent
         return tuple(shapes)
 
@@ -4145,6 +4174,7 @@ class SimulationRuntime:
             if isinstance(state, Region):
                 # Only a finished region can be on top of a searched stack: its
                 # initial transition already ran before the search started.
+                self._ledger = self._copy_ledger(current_ledger)
                 try:
                     viable = self._continuation_viable(
                         current_stack, current_vars, d_events, outer
@@ -5127,6 +5157,7 @@ class SimulationRuntime:
         self._outer_chain = []
         self._memo = {}
         self._memo_deps = []
+        self._overflow_depth = None
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
@@ -5167,18 +5198,19 @@ class SimulationRuntime:
             )
         except RecursionError as err:
             # RecursionError: entering or re-entering an owner nests one group
-            # initialization per owner within a cycle, so a loop through owners
-            # can exhaust the interpreter's call stack before it reaches the
+            # entry per owner within a cycle, so a loop through owners can
+            # exhaust the interpreter's call stack before it reaches the
             # explicit nesting limit when the caller's own stack is already
             # deep. No handler runs in this pass, so the engine itself ran out
-            # of stack. Models without regions never nest here; for them the
-            # error keeps propagating unchanged.
-            if not self._has_regions:
+            # of stack. When the stack ran out anywhere else, as it can in any
+            # model, the error keeps propagating unchanged.
+            if self._overflow_depth is None:
                 raise
             raise SimulationRuntimeDfsError(
-                "The call stack was exhausted while entering nested or re-entered "
-                "owners of regions within one cycle; the state machine likely "
-                "re-enters a group without bound."
+                "The call stack was exhausted with group entries nested "
+                f"{self._overflow_depth} deep within one cycle; the state machine "
+                "likely re-enters a group without bound, or the caller's own "
+                "stack was already deep."
             ) from err
 
         # A validation dead end is a successful Delta boundary. The speculative

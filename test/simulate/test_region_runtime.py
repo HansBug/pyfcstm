@@ -1101,6 +1101,34 @@ def test_unbounded_reentry_is_reported_even_when_the_caller_stack_is_deep():
 
 
 @pytest.mark.unittest
+def test_model_without_regions_still_raises_the_interpreter_error_on_a_deep_stack():
+    """Running out of call stack is only reworded for models that have regions."""
+    import inspect
+    import sys
+
+    # A guard this long needs a few hundred nested calls to evaluate.
+    guard = " + ".join(["x"] * 150)
+    source = (
+        "def int x = 0; state Root { [*] -> A; state A; state B; "
+        "A -> B : if [%s > 0]; }" % guard
+    )
+    runtime = SimulationRuntime(load_state_machine_from_text(source))
+    runtime.cycle()
+
+    def call_at_depth(depth):
+        return runtime.cycle() if depth == 0 else call_at_depth(depth - 1)
+
+    spare = 120
+    depth = sys.getrecursionlimit() - len(inspect.stack()) - spare
+    with pytest.raises(RecursionError):
+        call_at_depth(depth)
+    assert runtime.current_state.path == ("Root", "A")
+    assert runtime.cycle_count == 1
+    runtime.cycle()
+    assert runtime.cycle_count == 2
+
+
+@pytest.mark.unittest
 def test_root_group_that_cannot_start_is_not_started_again_on_changed_values():
     """A failed start of a root that owns regions leaves no trace of the attempt."""
     source = """

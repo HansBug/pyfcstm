@@ -1,0 +1,21 @@
+def int x = 0;
+def int z = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during { z = (z * 4 + 1) % 97; } } }
+        region B {
+            [*] -> Q;
+            state Q {
+                region R {
+                    [*] -> j effect { x = (x + 1) % 5; };
+                    pseudo state j;
+                    state Rest;
+                    j -> [*];
+                    j -> Rest;
+                }
+            }
+            Q -> Q : if [z % 4 == 1];
+        }
+    }
+}

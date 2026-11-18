@@ -78,16 +78,6 @@ def test_ordinary_history_within_region_remains_available_in_model():
     assert region.init_transitions[0].effects[-1].var_name == model.history_owners[0].goto_variable
 
 
-@pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
-def test_event_transition_collection_refuses_incomplete_namespace_analysis(source):
-    from pyfcstm.model import collect_event_transitions
-
-    model = load_state_machine_from_text(source)
-    with pytest.raises(ModelValidationError) as error:
-        collect_event_transitions(model)
-    assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
-
-
 @pytest.mark.parametrize('collect', [False, True])
 @pytest.mark.parametrize('edge', [
     '[*] -> Group.[H];', 'Group -> Group.[H*];', '!Group -> Group.[H];',

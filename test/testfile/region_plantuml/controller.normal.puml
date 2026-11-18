@@ -1,0 +1,46 @@
+@startuml
+hide empty description
+
+skinparam state {
+  BackgroundColor<<pseudo>> LightGray
+  BackgroundColor<<composite>> LightBlue
+  BorderColor<<pseudo>> Gray
+  FontStyle<<pseudo>> italic
+}
+
+legend top left
+|= Variable |= Type |= Initial Value |= Role |
+| fault | int | N/A | input |
+| requested | int | N/A | input |
+| permit | int | 0 | control |
+| motor | int | 0 | output |
+endlegend
+
+state "Controller" as controller <<composite>> {
+    state "Idle" as controller__idle
+    state "Running" as controller__running <<composite>> {
+        note as controller__running__safety
+            **region 1: Safety**
+        end note
+        state "Normal" as controller__running__safety__normal
+        state "Tripped" as controller__running__safety__tripped
+        [*] --> controller__running__safety__normal
+        controller__running__safety__normal --> controller__running__safety__tripped : fault != 0
+        --
+        note as controller__running__motion
+            **region 2: Motion**
+        end note
+        state "Off" as controller__running__motion__off
+        state "On" as controller__running__motion__on
+        [*] --> controller__running__motion__off
+        controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+        controller__running__motion__on --> controller__running__motion__off : active("Controller.Running.Safety.Tripped")
+        controller__running__motion__on --> controller__running__motion__off : Kick
+    }
+    controller__running --> controller__idle : Stop
+    [*] --> controller__idle
+    controller__idle --> controller__running : Start
+}
+[*] --> controller
+controller --> [*]
+@enduml

@@ -120,7 +120,7 @@ describe('diagnostics that regions do not double up', () => {
     });
 
     it('reports an empty region as E_REGION_STRUCTURE only, not as a missing initial transition', async () => {
-        const found = await codesOf('state Root { region E {} }');
+        const found = await codesOf('state Root { region Empty {} }');
         assert.equal(found.filter(item => item.code === 'E_REGION_STRUCTURE').length, 1);
         assert.deepEqual(found.filter(item => item.code === 'E_INITIAL_TRANSITION_INVALID'), []);
     });

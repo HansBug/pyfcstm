@@ -1705,13 +1705,9 @@ class StateMachineModelBuilder {
                 this.activeQueries.push(query);
                 return query;
             }
-            // 'parenthesized' is the last kind of expression.
-            default:
-                return this.buildExpression(expression.expression);
         }
-        // The switch is exhaustive and every case returns; the implicit exit
-        // after it is never reached.
-        /* c8 ignore next */
+        // Only a parenthesized expression is left once every other kind has returned.
+        return this.buildExpression(expression.expression);
     }
 }
 

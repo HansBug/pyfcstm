@@ -1202,6 +1202,25 @@ def test_diagnostics_grow_with_the_model_and_not_with_repeated_checks(build):
 
 
 @pytest.mark.unittest
+@pytest.mark.parametrize("build", [_chained_groups, _nested_groups])
+def test_more_groups_than_the_nesting_limit_in_one_cycle_are_reported(build):
+    """Sixty-four groups entered in one cycle work; one more names the limit and its causes."""
+    within = SimulationRuntime(load_state_machine_from_text(build(64)))
+    within.cycle()
+    assert within.cycle_count == 1
+
+    beyond = SimulationRuntime(load_state_machine_from_text(build(65)))
+    with pytest.raises(
+        SimulationRuntimeDfsError,
+        match=r"limit \(64\) within one cycle.*more than 64 groups inside one "
+        r"another or one after another in the same cycle.*without bound",
+    ):
+        beyond.cycle()
+    assert beyond.cycle_count == 0
+    assert str(beyond.configuration) == "Root"
+
+
+@pytest.mark.unittest
 def test_diagnostics_describe_a_combo_transition_declared_in_a_region():
     """A combo transition owned by a region is reported with the trigger as written."""
     source = """

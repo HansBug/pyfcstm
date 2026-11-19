@@ -3214,16 +3214,21 @@ class SimulationRuntime:
         :return: ``True`` if every region was initialized.
         :rtype: bool
         :raises SimulationRuntimeDfsError: If group initializations nest deeper
-            than the structural safety limit, which means a transition keeps
+            than the structural safety limit within one cycle. That happens
+            when more groups than the limit are entered inside one another or
+            one after another in the same cycle, and when a transition keeps
             re-entering a group without bound.
         """
         self._init_depth += 1
         try:
             if self._init_depth > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                limit = self._DFS_STRUCTURAL_DEPTH_LIMIT
                 raise SimulationRuntimeDfsError(
                     "Group initialization nested deeper than the structural safety "
-                    f"limit ({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without converging; "
-                    "the state machine likely re-enters a group without bound."
+                    f"limit ({limit}) within one cycle; the state machine either "
+                    f"enters more than {limit} groups inside one another or one "
+                    "after another in the same cycle, or re-enters a group without "
+                    "bound."
                 )
             frame = stack[-1]
             pending = frame.plain_before_pending

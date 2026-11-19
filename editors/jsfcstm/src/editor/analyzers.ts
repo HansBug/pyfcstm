@@ -232,7 +232,7 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         let current = statesById.get(ownerId)!;
         const path: string[] = [];
         for (const name of defaultPath) {
-            const next = current.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
+            const next = current.childStateIds.map(id => statesById.get(id)!).find(child => child.name === name);
             if (!next) return current.ast.imports.some(item => item.alias === name) ? path : undefined;
             current = next;
             path.push(next.identity.id);

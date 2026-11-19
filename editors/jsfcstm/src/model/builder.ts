@@ -1705,7 +1705,8 @@ class StateMachineModelBuilder {
                 this.activeQueries.push(query);
                 return query;
             }
-            case 'parenthesized':
+            // 'parenthesized' is the last kind of expression.
+            default:
                 return this.buildExpression(expression.expression);
         }
     }

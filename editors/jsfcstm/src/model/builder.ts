@@ -1709,6 +1709,9 @@ class StateMachineModelBuilder {
             default:
                 return this.buildExpression(expression.expression);
         }
+        // The switch is exhaustive and every case returns; the implicit exit
+        // after it is never reached.
+        /* c8 ignore next */
     }
 }
 

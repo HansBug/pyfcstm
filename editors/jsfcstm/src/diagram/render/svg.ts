@@ -422,7 +422,7 @@ function drawEdge(
 ): void {
     const meta = edge.fcstm;
     // Order edges only steer the layout; they have no visual form.
-    if (meta!.kind === 'regionOrder') return;
+    if (meta?.kind === 'regionOrder') return;
     const kind = meta?.transitionKind || 'normal';
     const forced = Boolean(meta?.forced);
     const color = meta?.eventColor || P.edgeStroke;

@@ -169,9 +169,17 @@ describe('diagram SVG: graphs that are handed to the renderer incomplete', () =>
                 targets: ['Wrapped'],
                 sections: [{startPoint: {x: 0, y: 0}, endPoint: {x: 20, y: 20}}],
                 fcstm: {kind: 'transition', transitionId: 'T0', transitionKind: 'normal'},
+            }, {
+                // A transition without an id of its own is addressed by its edge id.
+                id: 'canvas-edge-anonymous',
+                sources: ['Wrapped'],
+                targets: ['Wrapped'],
+                sections: [{startPoint: {x: 5, y: 5}, endPoint: {x: 30, y: 30}}],
+                fcstm: {kind: 'transition', transitionId: '', transitionKind: 'normal'},
             }],
         }), NORMAL_OPTIONS);
         assert.match(svg, /<path d="M0\.00,0\.00 L20\.00,20\.00"[^>]*data-fcstm-id="T0"/);
+        assert.match(svg, /<path d="M5\.00,5\.00 L30\.00,30\.00"[^>]*data-fcstm-id="canvas-edge-anonymous"/);
         assert.match(svg, /data-fcstm-id="Wrapped"/);
     });
 
@@ -194,6 +202,8 @@ describe('diagram SVG: graphs that are handed to the renderer incomplete', () =>
         assert.match(svg, /<g data-fcstm-kind="chevron" data-fcstm-id="Group"/);
         assert.match(svg, /<g data-fcstm-kind="chevron" data-fcstm-id="Folded"/);
         assert.match(svg, /data-fcstm-id="Folded"[^>]*data-fcstm-collapsed="true"/);
+        // Missing sizes and positions are drawn as zero, never as NaN or undefined.
+        assert.equal(/NaN|undefined/.test(svg), false);
         // A state without any event or action rows draws no detail band.
         assert.equal(svg.includes('data-fcstm-kind="state-event"'), false);
         assert.equal(svg.includes('data-fcstm-kind="state-action"'), false);
@@ -260,6 +270,16 @@ describe('code actions: fallback entry transitions among several composites', ()
             'the other composite is not selected, so its fix is not offered',
         );
     });
+
+    it('does not offer the fallback entry when only an ordinary transition of the composite is selected', async () => {
+        const document = createDocument(SOURCE, '/tmp/fallback-entry-ordinary.fcstm');
+        const actions = await packageModule.collectCodeActions(document, rangeOf(SOURCE, 'R1 -> R2;'), []);
+        assert.equal(
+            actions.some(item => /fallback entry transition/.test(item.title)),
+            false,
+            JSON.stringify(actions.map(item => item.title)),
+        );
+    });
 });
 
 describe('code actions: stale client diagnostics', () => {
@@ -306,3 +326,22 @@ describe('code actions: stale client diagnostics', () => {
         assert.deepEqual(actions, []);
     });
 });
+
+describe('diagram SVG: an edge without renderer metadata', () => {
+    it('draws a bare edge handed to the renderer without failing', () => {
+        const canvas: FcstmElkNode = {
+            id: '__canvas__',
+            edges: [{
+                id: 'bare-edge',
+                sources: ['a'],
+                targets: ['b'],
+                sections: [{startPoint: {x: 0, y: 0}, endPoint: {x: 20, y: 20}}],
+                labels: [{text: 'Go', width: 20, height: 12}],
+            } as FcstmElkEdge],
+        } as FcstmElkNode;
+        const svg = renderSvg(canvas, resolveFcstmDiagramPreviewOptions('normal')).svg;
+        assert.match(svg, /data-fcstm-id="bare-edge"/);
+        assert.doesNotMatch(svg, /stroke-dasharray/);
+    });
+});
+

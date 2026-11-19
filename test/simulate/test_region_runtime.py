@@ -1415,3 +1415,72 @@ def test_loop_report_names_the_owner_and_not_its_region():
         runtime.cycle()
     assert "Root.Q -> Root.Q" in str(info.value)
     assert "Root.Q.R" not in str(info.value)
+
+
+TWO_FORCED = """
+def int seq = 0;
+state Root {
+    event Alpha;
+    event Beta;
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { exit { seq = seq * 10 + 1; } } }
+        region B { [*] -> B1; state B1 { exit { seq = seq * 10 + 2; } } }
+    }
+    state ToAlpha { enter { seq = seq * 10 + 7; } }
+    state ToBeta { enter { seq = seq * 10 + 8; } }
+    !P -> ToAlpha : /Alpha;
+    !P -> ToBeta : /Beta;
+}
+"""
+
+
+@pytest.mark.unittest
+def test_forced_group_exit_uses_the_event_once_and_traces_the_exits_in_order():
+    """The event counts once however many levels carry the declaration out."""
+    runtime = SimulationRuntime(load_state_machine_from_text(TWO_FORCED))
+    runtime.cycle()
+    result = runtime.cycle("Root.Beta", trace=True)
+    assert result.consumed_events == ("Root.Beta",)
+    assert result.unconsumed_events == ()
+    assert [
+        (entry.kind, entry.state_path[-1])
+        for entry in result.trace
+        if entry.kind in ("state_exit", "state_enter")
+    ] == [
+        ("state_exit", "B1"),
+        ("state_exit", "A1"),
+        ("state_exit", "P"),
+        ("state_enter", "ToBeta"),
+    ]
+    assert str(runtime.configuration) == "Root.ToBeta"
+    assert runtime.vars["seq"] == 218
+
+
+@pytest.mark.unittest
+def test_two_forced_events_in_one_cycle_take_the_earlier_declaration_only():
+    """A second event of another declaration stays unused, whichever order it is given in."""
+    for events in (["Root.Alpha", "Root.Beta"], ["Root.Beta", "Root.Alpha"]):
+        runtime = SimulationRuntime(load_state_machine_from_text(TWO_FORCED))
+        runtime.cycle()
+        result = runtime.cycle(events)
+        assert str(runtime.configuration) == "Root.ToAlpha"
+        assert result.consumed_events == ("Root.Alpha",)
+        assert result.unconsumed_events == ("Root.Beta",)
+        assert runtime.vars["seq"] == 217
+
+
+@pytest.mark.unittest
+def test_diagnostics_of_a_forced_group_exit_name_the_candidate_that_was_taken():
+    """The leaf's exit-group transition is a decision like any other."""
+    runtime = SimulationRuntime(load_state_machine_from_text(TWO_FORCED))
+    runtime.cycle()
+    report = runtime.cycle("Root.Alpha", diagnostics=True).diagnostics
+    committed = [
+        item
+        for item in report.decisions
+        if item.outcome == "selected" or item.outcome == "committed"
+    ]
+    assert any(item.transition_label.endswith("A1->[*]") for item in committed)
+    assert "A1->[*]" in str(report)
+    assert report.to_dict()["configuration_after"] == "Root.ToAlpha"

@@ -69,10 +69,11 @@ one, starting with a frame for the region itself. Within a cycle the regions
 advance in declaration order, so a later region reads the values and states an
 earlier one produced in the same cycle. A region whose child exits through
 ``[*]`` is done and stays done; when the last region finishes, the owner
-continues through its own outgoing transitions in the same cycle. Forced
-transitions declared on the owner take the whole group away before any region
-runs. Aspects declared on the owner or above run once per cycle around the whole
-group, and aspects declared on a region only around that region. The position of
+continues through its own outgoing transitions in the same cycle. A forced
+transition that reaches the regions takes the whole group away before any region
+does work in the cycle, as described under *Forced transitions* below. Aspects
+declared on the owner or above run once per cycle around the whole group, and
+aspects declared on a region only around that region. The position of
 a model with regions is a tree, exposed as an immutable
 :class:`pyfcstm.model.configuration.Configuration` through
 :attr:`SimulationRuntime.configuration`.
@@ -93,6 +94,24 @@ The rules that decide the corner cases are:
   :attr:`pyfcstm.model.model.State.transitions_from`. Forced transitions are
   expanded by the model before ordinary ones, so they come first whatever the
   order of writing; the simulator does not reorder them.
+* **Forced transitions.** A forced transition is syntactic sugar: the simulator
+  knows only the transitions that the model expanded it into (see
+  :mod:`pyfcstm.model.forced`), and owners are not special. A state resting in a
+  region holds an *exit-group* transition for every forced declaration above it,
+  with the declared event and condition. It is a candidate only for a state of the
+  first working region of each owner it names, and only in a cycle that did not
+  enter the state, which puts the decision ahead of any work that regions do in
+  the cycle: what later regions would read or write cannot change it. It is
+  checked like any transition, on a copy: the whole group has to be able to leave
+  and the owner has to continue through its outgoing transitions. A forced
+  transition whose target cannot be entered therefore takes nothing, and no other
+  outgoing transition of the owner takes over. When it is chosen, regions leave in
+  reverse declaration order with the deepest state first, the effect runs, and
+  the owner continues in the same cycle; its ``exit`` runs when the declared
+  transition on its level is taken. The event and the condition are judged once,
+  where the state rests, and a hidden variable carries the decision up through
+  the owners and composites on the way, so an exit action that changes what the
+  condition reads cannot turn the decision around. The event counts as used once.
 * **Aspects.** A leaf counts as doing ``during`` work in a cycle when it runs its
   ``during`` step, whether or not it declares a ``during`` action. A pseudo
   leaf does not, and a region that is done does not. The ``before`` actions of a
@@ -138,7 +157,9 @@ The rules that decide the corner cases are:
   of the call. While a group is being left, regions that have already left show
   as ``[done]`` whether they finished or were preempted, so an ``exit`` action
   of the owner cannot tell finished regions from interrupted ones; use a
-  variable to record that.
+  variable to record that. A handler also sees the hidden variable of a forced
+  declaration, raised from the moment the group left until the declared
+  transition has been taken, so the ``exit`` of the owner sees it raised.
 * **Single-value queries.** :attr:`SimulationRuntime.brief_stack` refuses for a
   model with regions. The ``state_before`` and ``state_after`` of a diagnostics
   report give the deepest state common to every branch, and
@@ -850,11 +871,16 @@ class _Outer(NamedTuple):
     :type index: int
     :param parent: Link of ``stack`` itself, or ``None`` for the main stack.
     :type parent: Optional[_Outer]
+    :param leads: Whether the branch is the first one its owner advances in this
+        step. Only such a branch may take its owner's group away, which keeps
+        the decision ahead of any work a region does in the cycle.
+    :type leads: bool
     """
 
     stack: List[_Frame]
     index: int
     parent: Optional["_Outer"]
+    leads: bool = True
 
 
 class _Run:
@@ -868,6 +894,10 @@ class _Run:
     :param validate_post_child_exit: Whether transitions chosen after a child
         exits should be validated for a stable continuation.
     :type validate_post_child_exit: bool
+    :ivar group_exit: While a state resting inside a region has chosen an
+        exit-group transition and the owners are being unwound: the transition,
+        the state it leaves and how many owners are still to be passed.
+    :vartype group_exit: Optional[Tuple[Transition, State, int]]
     """
 
     def __init__(
@@ -881,6 +911,7 @@ class _Run:
         self.validate_post_child_exit = validate_post_child_exit
         self.steps_taken = 0
         self.seen_signatures = set()
+        self.group_exit = None
 
 
 _UNSET = object()
@@ -889,6 +920,7 @@ _ENDED = "ended"
 _FAILED = "failed"
 _CONTINUE = "continue"
 _REGION_DONE = "region_done"
+_GROUP_EXIT = "group_exit"
 
 
 class SimulationRuntime:
@@ -3162,8 +3194,8 @@ class SimulationRuntime:
         Run the plain ``during after`` actions of a state that owns regions.
 
         The actions run once, at the moment the whole group hands control back
-        to the owner, whether through the last region finishing or through a
-        group preemption.
+        to the owner, whether through the last region finishing or through an
+        exit-group transition.
 
         :param owner: State that owns regions.
         :type owner: State
@@ -3307,13 +3339,14 @@ class SimulationRuntime:
         """
         Advance the owner on top of ``stack`` by one step of its group.
 
-        A group that is still waiting is initialized. A working group first
-        checks the forced transitions of the owner: a selected one takes the
-        whole group away and no region does ordinary work in this cycle.
-        Otherwise every working region advances in declaration order until it
-        stops on a stable leaf or finishes. When the last region finishes the
-        owner switches to ``post_child_exit`` so the loop continues through its
-        outgoing transitions.
+        A group that is still waiting is initialized. Otherwise every working
+        region advances in declaration order until it stops on a stable leaf or
+        finishes. A leaf of the first region advanced may choose an exit-group
+        transition, which expansion of a forced transition puts there; the whole
+        group then leaves, regions in reverse declaration order, and the owner
+        switches to ``post_child_exit`` like it does when the last region
+        finishes, so the loop continues through its outgoing transitions. No
+        region does ordinary work in a cycle that starts that way.
 
         :param stack: Stack whose top frame owns regions.
         :type stack: List[_Frame]
@@ -3325,8 +3358,9 @@ class SimulationRuntime:
         :type run: _Run
         :return: ``continue`` when the loop must look at the stack again,
             ``stable`` when every working region rests on a stable leaf,
-            ``ended`` when a forced transition terminated the machine and
-            ``failed`` when the group cannot reach a valid configuration.
+            ``group_exit`` when the exit-group transition chosen below names an
+            owner further out, and ``failed`` when the group cannot reach a
+            valid configuration.
         :rtype: str
         """
         frame = stack[-1]
@@ -3341,29 +3375,26 @@ class SimulationRuntime:
             )
             return _CONTINUE if ok else _FAILED
 
-        forced = [item for item in frame.state.transitions_from if item.is_forced]
-        transition = self._select_valid_candidate(
-            stack, vars_, d_events, forced, self._validate_transition
-        )
-        if transition is not None:
-            ended = self._execute_transition_on_context(
-                stack,
-                vars_,
-                transition,
-                d_events,
-                consumed_events=run.consumed_events,
-                is_validation_mode=run.is_validation_mode,
-            )
-            return _ENDED if ended else _CONTINUE
-
+        leads = True
         for index, branch in enumerate(frame.branches):
             if branch.status != "live":
                 continue
-            self._outer_chain.append(_Outer(stack, index, self._current_outer()))
+            self._outer_chain.append(
+                _Outer(stack, index, self._current_outer(), leads)
+            )
+            leads = False
             try:
                 outcome = self._advance_stack(branch.stack, vars_, d_events, run)
             finally:
                 self._outer_chain.pop()
+            if outcome == _GROUP_EXIT:
+                transition, source, levels = run.group_exit
+                if levels > 1:
+                    # The transition names an owner further out.
+                    run.group_exit = (transition, source, levels - 1)
+                    return _GROUP_EXIT
+                self._perform_group_exit(frame, vars_, run)
+                return _CONTINUE
             if outcome not in (_STABLE, _REGION_DONE):
                 return _FAILED
             self._flush_after_aspects(
@@ -3454,9 +3485,42 @@ class SimulationRuntime:
         sim_vars = copy.deepcopy(vars_)
         self._run_owner_plain_after(owner_frame.state, sim_vars, True)
         owner_frame.mode = "post_child_exit"
-        signature = self._create_execution_signature(owner_stack, sim_vars)
-        key = (signature, self._enclosing_shapes(outer.parent))
-        # A region only finishes inside a check started by _check_candidate.
+        return self._owner_can_continue(owner_stack, sim_vars, d_events, outer.parent)
+
+    def _owner_can_continue(
+        self,
+        owner_stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        outer: Optional[_Outer],
+    ) -> bool:
+        """
+        Decide whether an owner that was handed control back can go on.
+
+        The owner is in ``post_child_exit`` on ``owner_stack``, either because
+        its last region finished or because its group was taken away. The
+        search runs its outgoing transitions on a copy and asks the same
+        question one level up if that empties the enclosing region too. Coming
+        back to a position that is being examined further out is a loop.
+
+        :param owner_stack: Simulated stack whose top frame is the owner.
+        :type owner_stack: List[_Frame]
+        :param vars_: Variable mapping at the moment control came back.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param outer: Link from ``owner_stack`` to the owner that encloses it,
+            or ``None`` for the main stack.
+        :type outer: Optional[_Outer]
+        :return: ``True`` if the owner reaches a stable position.
+        :rtype: bool
+        :raises _SimulationRuntimeLivelockError: If the continuation comes back
+            to a position that is already being examined.
+        """
+        signature = self._create_execution_signature(owner_stack, vars_)
+        key = (signature, self._enclosing_shapes(outer))
+        # A group only hands control back inside a check started by
+        # _check_candidate.
         self._memo_deps[-1].add(key)
         # Seeing this position again is the loop that the starting points of
         # the checks would find one round later; stopping here keeps the
@@ -3465,15 +3529,13 @@ class SimulationRuntime:
             raise _SimulationRuntimeLivelockError((signature, signature))
         self._continuation_trail.append(key)
         try:
-            memo_key = self._memo_key(
-                ("continuation",), owner_stack, sim_vars, outer.parent
-            )
+            memo_key = self._memo_key(("continuation",), owner_stack, vars_, outer)
             viable = self._memo_get(memo_key)
             if viable is None:
                 self._memo_deps.append(set())
                 try:
                     viable = self._validation_search_reaches_stable(
-                        owner_stack, sim_vars, d_events, outer=outer.parent
+                        owner_stack, vars_, d_events, outer=outer
                     )
                 finally:
                     positions = self._memo_close()
@@ -3481,6 +3543,154 @@ class SimulationRuntime:
             return viable
         finally:
             self._continuation_trail.pop()
+
+    def _group_exit_allowed(self, transition: Transition) -> bool:
+        """
+        Tell whether a state may choose an exit-group transition now.
+
+        Only a state of the first region that each of the named owners advances
+        in this step may. Regions after the first would already see what the
+        first one did in the same cycle, so the group is taken away before any
+        of that happens or not at all.
+
+        :param transition: Exit-group transition on the state.
+        :type transition: Transition
+        :return: ``True`` if no region of the named owners went before.
+        :rtype: bool
+        """
+        outer = self._current_outer()
+        for _ in range(transition.exit_group_levels):
+            if not outer.leads:
+                return False
+            outer = outer.parent
+        return True
+
+    def _validate_leaf_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Validate a transition chosen on a leaf, whatever kind it is.
+
+        :param stack: Current execution stack.
+        :type stack: List[_Frame]
+        :param vars_: Current variable mapping.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Candidate transition to validate.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if the transition leads to a valid continuation.
+        :rtype: bool
+        """
+        if transition.exit_group_levels:
+            return self._validate_group_exit(stack, vars_, transition, d_events)
+        return self._validate_transition(stack, vars_, transition, d_events)
+
+    def _validate_group_exit(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Decide whether taking a group away leaves a position that can go on.
+
+        On a copy the whole group of the named owner leaves, the transition's
+        effect runs, and the owner continues through its outgoing transitions.
+        The exit is acceptable only if that reaches a stable position, so a
+        forced transition whose target cannot be entered does not take the
+        group away.
+
+        :param stack: Stack of the region branch whose leaf chose ``transition``.
+        :type stack: List[_Frame]
+        :param vars_: Current variable mapping.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Exit-group transition to validate.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if the owner can continue after the group left.
+        :rtype: bool
+        """
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            outer = self._current_outer()
+            owner_stack = self._clone_stack(stack)
+            link = outer
+            for _ in range(transition.exit_group_levels):
+                # Put the simulated branch into a copy of the owner's stack,
+                # then that stack into the next owner's, outwards.
+                link = outer
+                branch_stack = owner_stack
+                owner_stack = self._clone_stack(outer.stack)
+                owner_stack[-1].branches[outer.index].stack = branch_stack
+                outer = outer.parent
+            owner_frame = owner_stack[-1]
+            sim_vars = copy.deepcopy(vars_)
+            self._exit_group(owner_frame, sim_vars, True)
+            self._execute_transition_effect(transition, sim_vars, is_validation_mode=True)
+            owner_frame.mode = "post_child_exit"
+            return self._owner_can_continue(
+                owner_stack, sim_vars, d_events, link.parent
+            )
+        finally:
+            self._ledger = saved
+
+    def _perform_group_exit(
+        self,
+        frame: _Frame,
+        vars_: Dict[str, Union[int, float]],
+        run: _Run,
+    ) -> None:
+        """
+        Take the group of an owner away and hand control back to it.
+
+        The regions leave in reverse declaration order, then the transition's
+        effect runs. The event that triggered the transition counts as used. The
+        owner is left in ``post_child_exit``, so the loop continues through its
+        outgoing transitions as when its last region finished.
+
+        :param frame: Frame of the owner whose group leaves.
+        :type frame: _Frame
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param run: Mode flags of this attempt; ``run.group_exit`` names the
+            transition and the state it leaves.
+        :type run: _Run
+        :return: ``None``.
+        :rtype: None
+        """
+        transition, source, _ = run.group_exit
+        run.group_exit = None
+        event_name = transition.event.path_name if transition.event else "none"
+        if run.is_validation_mode:
+            self.logger.debug(
+                "[VALIDATION] Execute exit-group transition: %s (event=%s)",
+                ".".join(source.path),
+                event_name,
+            )
+        else:
+            self.logger.info(
+                "Execute exit-group transition: %s (event=%s)",
+                ".".join(source.path),
+                event_name,
+            )
+            if transition.event is not None and run.consumed_events is not None:
+                run.consumed_events.append(transition.event.path_name)
+        self._exit_group(frame, vars_, run.is_validation_mode)
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=run.is_validation_mode
+        )
+        self._record_transition_trace(
+            source, transition, vars_, run.is_validation_mode
+        )
+        frame.mode = "post_child_exit"
 
     @staticmethod
     def _enclosing_shapes(outer: Optional[_Outer]) -> tuple:
@@ -3793,10 +4003,6 @@ class SimulationRuntime:
             "[*]" if transition.to_state == EXIT_STATE else transition.to_state
         )
         current_state_path = ".".join(current_state.path)
-        if stack[-1].branches is not None and stack[-1].mode != "post_child_exit":
-            # Leaving a state whose regions are still working: hand control
-            # back from every region before the owner itself exits.
-            self._exit_group(stack[-1], vars_, is_validation_mode)
 
         if is_validation_mode:
             self.logger.debug(
@@ -3894,10 +4100,12 @@ class SimulationRuntime:
         Select the next executable transition for the current stack-top state.
 
         Transitions are considered in declaration order from
-        ``current_state.transitions_from``. For stoppable source states, each
-        candidate may also pass :meth:`_validate_transition`, which simulates the
-        remainder of the chain and rejects transitions that cannot eventually
-        reach another stoppable configuration or end the machine.
+        ``current_state.transitions_from``, leaving out the exit-group
+        transitions that :meth:`_group_exit_allowed` refuses. For stoppable
+        source states, each candidate may also pass
+        :meth:`_validate_leaf_transition`, which simulates the remainder of the
+        chain and rejects transitions that cannot eventually reach another
+        stoppable configuration or end the machine.
 
         :param stack: Execution stack to inspect.
         :type stack: List[_Frame]
@@ -3914,12 +4122,16 @@ class SimulationRuntime:
         :return: The first acceptable transition, or ``None``.
         :rtype: Optional[Transition]
         """
-        if not stack:
-            return None
         current_state = stack[-1].state
-        transitions = current_state.transitions_from
+        # An exit-group transition is only a candidate for the first region
+        # its owners advance, so it decides before any region did work.
+        transitions = [
+            item
+            for item in current_state.transitions_from
+            if not item.exit_group_levels or self._group_exit_allowed(item)
+        ]
         validator = (
-            self._validate_transition
+            self._validate_leaf_transition
             if validate_stoppable and (current_state.is_stoppable or force_validate)
             else None
         )
@@ -4756,6 +4968,14 @@ class SimulationRuntime:
                     force_validate=not state.is_stoppable,
                 )
                 if transition is not None:
+                    if transition.exit_group_levels:
+                        run.steps_taken += 1
+                        run.group_exit = (
+                            transition,
+                            state,
+                            transition.exit_group_levels,
+                        )
+                        return _GROUP_EXIT
                     ended = self._execute_transition_on_context(
                         stack,
                         vars_,

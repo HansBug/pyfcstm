@@ -71,19 +71,29 @@ def test_region_event_ownership_and_completion_edges():
     assert right.events['Go'].path_name == 'Root.Job.Right.Go'
     assert left.events['Go'].path_name == 'Root.Job.Left.Go'
     assert right.substates['Off'].events['Finish'].path_name == 'Root.Job.Right.Off.Finish'
-    assert right.transitions[1].event is right.events['Go']
-    assert right.transitions[2].parent is right
-    assert right.substates['On'].transitions_from == [right.transitions[1]]
+    go_edge = next(edge for edge in right.transitions if edge.event is right.events['Go'])
+    assert (go_edge.from_state, go_edge.to_state) == ('On', 'Off')
+    assert go_edge.parent is right
+    # The forced declaration of the owner puts a group exit in front of the
+    # ordinary edges of every region.
+    assert [edge for edge in right.substates['On'].transitions_from
+            if not edge.exit_group_levels] == [go_edge]
 
 
-def test_owner_forced_edge_does_not_become_per_region_completion():
+def test_owner_forced_edge_reaches_every_region_as_a_group_exit():
     model = load_state_machine_from_text(ORDERED)
     owner = model.root_state.substates['Job']
+    # On the level of the declaration: the copy that decides once comes first,
+    # the declared edge stays behind it.
     assert [(edge.from_state, edge.to_state) for edge in model.root_state.transitions
-            if edge.is_forced] == [('Job', 'Idle')]
+            if edge.is_forced] == [('Job', 'Idle'), ('Job', 'Idle')]
     assert owner.transitions == []
-    assert all(not edge.is_forced for region in owner.regions.values()
-               for edge in region.transitions)
+    for region in owner.regions.values():
+        forced = [edge for edge in region.transitions if edge.is_forced]
+        # One per state that can be rested in, and always a group exit, never
+        # the completion of the region.
+        assert [edge.from_state for edge in forced] == list(region.substates)
+        assert all(edge.exit_group_levels == 1 for edge in forced)
     assert model.forced_transitions[0]['from_path'] == 'Root.Job'
 
 

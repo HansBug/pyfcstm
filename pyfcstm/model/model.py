@@ -47,7 +47,7 @@ import json
 import os
 import weakref
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
-from itertools import chain
+from itertools import chain, count
 from textwrap import indent
 from types import MappingProxyType
 from typing import (
@@ -815,6 +815,13 @@ class Transition(AstExportable):
     :param forced_origin: Original forced transition text when
         ``is_forced`` is true.
     :type forced_origin: Optional[str]
+    :param exit_group_levels: ``0`` for an ordinary transition. A positive
+        value marks the transition that forced expansion places on a state
+        resting inside a region: instead of leaving the single source state it
+        takes the whole group of the owner that many owners outward away (see
+        :mod:`pyfcstm.model.forced`), and the owner then continues through its
+        own outgoing transitions.
+    :type exit_group_levels: int
     :param combo_origin_refs: References from this generated transition back
         to original combo trigger terms.
     :type combo_origin_refs: Tuple[ComboOriginRef, ...]
@@ -867,6 +874,7 @@ class Transition(AstExportable):
     event_scope: Optional[str] = field(default=None, compare=False)
     is_forced: bool = field(default=False, compare=False)
     forced_origin: Optional[str] = field(default=None, compare=False)
+    exit_group_levels: int = field(default=0, compare=False)
     combo_origin_refs: Tuple[ComboOriginRef, ...] = field(
         default_factory=tuple, compare=False
     )
@@ -1593,6 +1601,10 @@ def _write_plantuml_transitions(
     from .active import restore_active_expression, restore_active_statements
 
     for trans in namespace.transitions:
+        if getattr(trans, "_forced_hidden", False):
+            # Carries out a forced declaration reaching regions; the
+            # declaration is drawn once, as the transition written on its level.
+            continue
         with io.StringIO() as tf:
             print(
                 "[*]"
@@ -1635,8 +1647,12 @@ def _write_plantuml_transitions(
                 )
                 print(f" : {formatted_event}", file=tf, end="")
             elif config.show_transition_guards and trans.guard is not None:
-                guard = restore_active_expression(trans.guard, active_paths)
-                print(f" : {guard.to_ast_node()}", file=tf, end="")
+                # A transition that gives way to a forced declaration shows the
+                # guard it had before.
+                guard = getattr(trans, "_forced_authored_guard", (trans.guard,))[0]
+                if guard is not None:
+                    guard = restore_active_expression(guard, active_paths)
+                    print(f" : {guard.to_ast_node()}", file=tf, end="")
 
             # Show transition effects if enabled
             if config.show_transition_effects and len(trans.effects) > 0:
@@ -3732,7 +3748,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
     def _as_written(self) -> "StateMachine":
         """
-        Return this model as written, before history and activity lowering.
+        Return this model as written, before history, activity and forced lowering.
 
         Static analyses judge this model (see
         :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
@@ -3740,7 +3756,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
         no lowered variable, gate state, route or record-writing exit exists.
         It is built from the same import-assembled program on first use; its
         diagnostics repeat those of the original build and are dropped. A
-        machine that lowered neither history nor activity is its own model as written.
+        machine that lowered no history, activity or forced transition is its own
+        model as written. A forced transition that reaches regions keeps its plain
+        expansion here, which stops at the owners.
 
         Activity queries retain their source expressions, and no generated
         activity flags or lifecycle writes exist in this view.
@@ -3884,11 +3902,14 @@ class StateMachine(AstExportable, PlantUMLExportable):
         # Resolve configuration
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
-        # Hidden activity flags are an implementation detail of ``active()``.
+        # Hidden activity flags are an implementation detail of ``active()``,
+        # and the flags of forced transitions of the declaration lowering.
+        hidden_flags = {query.variable_name for query in self.active_queries}
+        hidden_flags |= getattr(self.root_state, "_forced_flags", frozenset())
         shown_defines = {
             name: item
             for name, item in self.defines.items()
-            if name not in {query.variable_name for query in self.active_queries}
+            if name not in hidden_flags
         }
 
         with io.StringIO() as sf:
@@ -4486,7 +4507,11 @@ def parse_dsl_node_to_state_machine(
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
         return None, sink.diagnostics
-    if machine.history_owners or machine.active_queries:
+    if (
+        machine.history_owners
+        or machine.active_queries
+        or getattr(machine.root_state, "_forced_flags", None)
+    ):
         # Inspect and verify judge the model as written; keep what is needed
         # to build it on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
@@ -5328,6 +5353,96 @@ def _build_assembled_state_machine(
     root_state = _recursive_build_states(dnode.root_state, current_path=())
     forced_transition_declarations = []
 
+    forced_ids = count()
+
+    def _scope_has_regions(scope: Any) -> bool:
+        """
+        Tell whether a declaration scope contains a state that owns regions.
+
+        :param scope: A state or region declaration.
+        :type scope: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :return: ``True`` if ``scope`` or anything below it owns regions.
+        :rtype: bool
+        """
+        return bool(getattr(scope, "regions", ())) or any(
+            _scope_has_regions(substate) for substate in scope.substates
+        )
+
+    def _force_reaches_regions(node: Any, from_state: Any) -> bool:
+        """
+        Tell whether a forced declaration acts on a state that owns regions.
+
+        A declaration is expanded into regions only when the states it applies
+        to contain an owner. Every other declaration keeps its plain expansion,
+        so a machine without regions never changes.
+
+        :param node: Declaration scope the transition is written in.
+        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param from_state: Source of the declaration, a state name or ``*``.
+        :type from_state: Union[str, pyfcstm.dsl.node._StateSingletonMark]
+        :return: ``True`` if one of the states the declaration applies to owns
+            regions or contains a state that does.
+        :rtype: bool
+        """
+        return any(
+            _scope_has_regions(substate)
+            for substate in node.substates
+            if from_state is dsl_nodes.ALL or substate.name == from_state
+        )
+
+    def _forced_node(
+        event_id: Any,
+        condition_expr: Any,
+        event_scope: Any,
+        origin: Any,
+        span: Any,
+        source_path: Optional[str],
+        forced_id: Optional[int],
+        exit_levels: int,
+    ) -> dsl_nodes.ForceTransitionDefinition:
+        """
+        Build the node that carries a forced declaration one level deeper.
+
+        :param event_id: Event of the declaration, if any.
+        :type event_id: Optional[pyfcstm.dsl.node.ChainID]
+        :param condition_expr: Guard of the declaration, if any.
+        :type condition_expr: Optional[pyfcstm.dsl.node.Expr]
+        :param event_scope: Scope of ``event_id``.
+        :type event_scope: Optional[str]
+        :param origin: Original text of the declaration.
+        :type origin: Optional[str]
+        :param span: Source span of the declaration.
+        :type span: Optional[Span]
+        :param source_path: File the declaration was written in.
+        :type source_path: Optional[str]
+        :param forced_id: Number of the declaration when it reaches regions.
+        :type forced_id: Optional[int]
+        :param exit_levels: Number of owners crossed so far.
+        :type exit_levels: int
+        :return: A node that applies to every state of the next level.
+        :rtype: pyfcstm.dsl.node.ForceTransitionDefinition
+        """
+        carried = dsl_nodes.ForceTransitionDefinition(
+            from_state=dsl_nodes.ALL,
+            to_state=dsl_nodes.EXIT_STATE,
+            event_id=event_id,
+            condition_expr=condition_expr,
+            event_scope=event_scope,
+            source_raw=origin,
+            _span=span,
+        )
+        if source_path is not None:
+            # This node is synthesised to carry the declaration one level
+            # deeper, and it keeps the declaration's span, so it has to keep
+            # its file too.  Without this the descent stops having an answer
+            # after the first level, and the span alone cannot supply one
+            # across documents.
+            setattr(carried, "_source_path", source_path)
+        if forced_id is not None:
+            setattr(carried, "_forced_id", forced_id)
+            setattr(carried, "_exit_levels", exit_levels)
+        return carried
+
     def _recursive_finish_states(
         node: dsl_nodes.StateDefinition,
         current_state: State,
@@ -5341,9 +5456,10 @@ def _build_assembled_state_machine(
         region exists. Expands forced transitions (including those inherited
         from enclosing states), resolves transition events against the event
         scope rules, builds :class:`Transition` objects and attaches them, and
-        finally repeats the process for each child. A state that owns regions
-        drops the forced transitions it inherited instead of passing them on
-        to its regions.
+        finally repeats the process for each child. A declaration whose reach
+        contains a state that owns regions is expanded into the regions as
+        well (see :mod:`pyfcstm.model.forced`); every other declaration stops
+        at an owner, as it always did.
 
         :param node: Declaration being finished.
         :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
@@ -5358,7 +5474,15 @@ def _build_assembled_state_machine(
         :rtype: None
         """
         current_path = tuple((*current_path, current_state.name))
-        force_transitions = [] if getattr(current_state, "regions", {}) else list(force_transitions or [])
+        force_transitions = list(force_transitions or [])
+        if getattr(current_state, "regions", {}):
+            # An owner has no substates to pass a declaration to. Only the
+            # declarations that reach regions continue below it.
+            force_transitions = [
+                item
+                for item in force_transitions
+                if getattr(item, "_forced_id", None) is not None
+            ]
 
         force_transition_tuples_to_inherit = []
         local_force_ids = {id(item) for item in node.force_transitions}
@@ -5545,6 +5669,17 @@ def _build_assembled_state_machine(
                     }
                 )
 
+            if id(f_transnode) in local_force_ids:
+                # The declaration is shared with the other build of the same
+                # program, so what is decided here stays in the tuple.
+                forced_id = (
+                    next(forced_ids)
+                    if lower and _force_reaches_regions(node, from_state)
+                    else None
+                )
+            else:
+                forced_id = getattr(f_transnode, "_forced_id", None)
+
             force_transition_tuples_to_inherit.append(
                 (
                     from_state,
@@ -5565,6 +5700,9 @@ def _build_assembled_state_machine(
                     getattr(f_transnode, "_source_path", None),
                     getattr(f_transnode, "doc", None),
                     getattr(f_transnode, "target_history", None),
+                    forced_id,
+                    getattr(f_transnode, "_exit_levels", 0),
+                    id(f_transnode) in local_force_ids,
                 )
             )
 
@@ -5584,42 +5722,55 @@ def _build_assembled_state_machine(
                 forced_source_path,
                 forced_doc,
                 forced_target_history,
+                forced_id,
+                exit_levels,
+                forced_local,
             ) in force_transition_tuples_to_inherit:
-                if from_state is dsl_nodes.ALL or from_state == subnode.name:
-                    transitions.append(
-                        Transition(
-                            from_state=subnode.name,
-                            to_state=to_state,
-                            event=trans_event,
-                            guard=guard,
-                            effects=[],
-                            doc=forced_doc,
-                            event_scope=event_scope,
-                            is_forced=True,
-                            forced_origin=forced_origin,
-                            _span=forced_span,
-                            target_history=forced_target_history,
-                        )
-                    )
-                    if forced_source_path is not None:
-                        setattr(transitions[-1], "_source_path", forced_source_path)
-                    inherited = dsl_nodes.ForceTransitionDefinition(
-                        from_state=dsl_nodes.ALL,
-                        to_state=dsl_nodes.EXIT_STATE,
-                        event_id=my_event_id,
-                        condition_expr=condition_expr,
+                if not (from_state is dsl_nodes.ALL or from_state == subnode.name):
+                    continue
+                substate = current_state.substates[subnode.name]
+                if forced_id is not None and not forced_local and substate.is_pseudo:
+                    # A pseudo state is never rested in, so there is nothing to
+                    # take away from it; control only passes through.
+                    continue
+
+                carried = _forced_node(
+                    my_event_id,
+                    condition_expr,
+                    event_scope,
+                    forced_origin,
+                    forced_span,
+                    forced_source_path,
+                    forced_id,
+                    exit_levels,
+                )
+                if exit_levels and (substate.substates or substate.regions):
+                    # Inside a region only a state that can be rested in holds
+                    # the transition; a composite or owner passes it down.
+                    _inner_force_transitions.append(carried)
+                    continue
+                transitions.append(
+                    Transition(
+                        from_state=subnode.name,
+                        to_state=to_state,
+                        event=trans_event,
+                        guard=guard,
+                        effects=[],
+                        doc=forced_doc,
                         event_scope=event_scope,
-                        source_raw=forced_origin,
+                        is_forced=True,
+                        forced_origin=forced_origin,
+                        exit_group_levels=exit_levels,
                         _span=forced_span,
+                        target_history=forced_target_history,
                     )
-                    if forced_source_path is not None:
-                        # This node is synthesised to carry the declaration one
-                        # level deeper, and it keeps the declaration's span, so it
-                        # has to keep its file too.  Without this the descent stops
-                        # having an answer after the first level, and the span alone
-                        # cannot supply one across documents.
-                        setattr(inherited, "_source_path", forced_source_path)
-                    _inner_force_transitions.append(inherited)
+                )
+                if forced_source_path is not None:
+                    setattr(transitions[-1], "_source_path", forced_source_path)
+                if forced_id is not None:
+                    setattr(transitions[-1], "_forced_id", forced_id)
+                    setattr(transitions[-1], "_forced_declared", forced_local)
+                _inner_force_transitions.append(carried)
 
             _recursive_finish_states(
                 node=subnode,
@@ -5629,8 +5780,43 @@ def _build_assembled_state_machine(
             )
 
         for region_node in getattr(node, "regions", ()):
+            # An owner only holds declarations that reach regions (see the top
+            # of this function), and what it inherited applies to every state.
+            _region_force_transitions = []
+            for (
+                _,
+                _,
+                item_event_id,
+                _,
+                item_condition,
+                _,
+                item_scope,
+                item_origin,
+                item_span,
+                item_source_path,
+                _,
+                _,
+                item_id,
+                item_levels,
+                _,
+            ) in force_transition_tuples_to_inherit:
+                _region_force_transitions.append(
+                    _forced_node(
+                        item_event_id,
+                        item_condition,
+                        item_scope,
+                        item_origin,
+                        item_span,
+                        item_source_path,
+                        item_id,
+                        item_levels + 1,
+                    )
+                )
             _recursive_finish_states(
-                region_node, current_state.regions[region_node.name], current_path,
+                region_node,
+                current_state.regions[region_node.name],
+                current_path,
+                force_transitions=_region_force_transitions,
             )
 
         def _emit_dangling_transition_diagnostics(transnode) -> bool:
@@ -6694,6 +6880,12 @@ def _build_assembled_state_machine(
     from .active import lower_active
 
     active_queries = lower_active(root_state, d_defines, sink, apply=lower)
+
+    # Forced transitions that reach regions decide their event and guard once.
+    # The marks the expansion left are only present when ``lower`` is true.
+    from .forced import lower_forced
+
+    lower_forced(root_state, d_defines)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,

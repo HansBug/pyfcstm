@@ -6,6 +6,9 @@ origin:
   notes:
   - While a group is being left, regions that already left show as [done] in the configuration text, whether they
     finished or were preempted.
+  - The forced declaration reaches the regions, so the model carries a hidden variable that records that the
+    event was already decided. The state that is resting raises it after the group left, and the declared
+    transition of the owner lowers it again after the exit action of the owner, which therefore sees it raised.
 categories:
 - regions
 - runtime
@@ -33,7 +36,8 @@ steps:
     - action: Root.P.POn
       state: Root.P
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P
       call_stage: enter
       abstract_target: Root.P.POn
@@ -42,7 +46,8 @@ steps:
     - action: Root.P.R1.A.AOn
       state: Root.P.R1.A
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R1.A
       call_stage: enter
       abstract_target: Root.P.R1.A.AOn
@@ -51,7 +56,8 @@ steps:
     - action: Root.P.R2.B.BOn
       state: Root.P.R2.B
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R2.B
       call_stage: enter
       abstract_target: Root.P.R2.B.BOn
@@ -64,7 +70,8 @@ steps:
     - action: Root.P.POn
       state: Root.P
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P
       call_stage: enter
       abstract_target: Root.P.POn
@@ -73,7 +80,8 @@ steps:
     - action: Root.P.R1.A.AOn
       state: Root.P.R1.A
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R1.A
       call_stage: enter
       abstract_target: Root.P.R1.A.AOn
@@ -82,7 +90,8 @@ steps:
     - action: Root.P.R2.B.BOn
       state: Root.P.R2.B
       stage: enter
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R2.B
       call_stage: enter
       abstract_target: Root.P.R2.B.BOn
@@ -91,7 +100,8 @@ steps:
     - action: Root.P.R2.B.BOff
       state: Root.P.R2.B
       stage: exit
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R2.B
       call_stage: exit
       abstract_target: Root.P.R2.B.BOff
@@ -100,7 +110,8 @@ steps:
     - action: Root.P.R1.A.AOff
       state: Root.P.R1.A
       stage: exit
-      vars: {}
+      vars:
+        __forced_0: 0
       active_leaf: Root.P.R1.A
       call_stage: exit
       abstract_target: Root.P.R1.A.AOff
@@ -109,7 +120,8 @@ steps:
     - action: Root.P.POff
       state: Root.P
       stage: exit
-      vars: {}
+      vars:
+        __forced_0: 1
       active_leaf: Root.P
       call_stage: exit
       abstract_target: Root.P.POff

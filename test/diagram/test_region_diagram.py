@@ -251,87 +251,145 @@ def test_active_queries_of_an_imported_module_show_the_instance_path(tmp_path):
     assert guards == ['active("Host.Mod.A.X")', 'active("Host.Mod.A.Y")']
 
 
-def _region_boxes(svg):
-    """Bounding boxes ``(x0, y0, x1, y1)`` of the dashed, filled region sections.
+DIVIDER_DASH = 'stroke-dasharray="6 3"'
 
-    The exported SVG carries only paths. A region is the one filled shape with
-    the dashed region border; transitions that are dashed (forced ones) have no
-    fill. The boxes come in drawing order, which is the pre-order of the tree.
+
+def _path_points(tag):
+    numbers = [
+        float(item)
+        for item in re.findall(
+            r"-?\d+(?:\.\d+)?", re.search(r' d="([^"]*)"', tag).group(1)
+        )
+    ]
+    return list(zip(numbers[0::2], numbers[1::2]))
+
+
+def _dividers(svg):
+    """The region dividers ``(x0, y0, x1, y1)``, in drawing order.
+
+    The exported SVG carries only paths. A divider is the one dashed stroke
+    with the ``6 3`` pattern that is a single straight segment; the dashed
+    transitions (forced ones) use another pattern and have several segments.
     """
+    lines = []
+    for tag in re.findall(r"<path [^>]*>", svg):
+        if DIVIDER_DASH not in tag or 'fill="none"' not in tag:
+            continue
+        (x0, y0), (x1, y1) = _path_points(tag)
+        lines.append((x0, y0, x1, y1))
+    return lines
+
+
+def _leaf_boxes(svg):
+    """Bounding boxes of the leaf states: the large white rounded rectangles."""
     boxes = []
     for tag in re.findall(r"<path [^>]*>", svg):
-        if 'stroke-dasharray="6 3"' not in tag or 'fill="none"' in tag:
+        if 'fill="#ffffff"' not in tag:
             continue
-        numbers = [
-            float(item)
-            for item in re.findall(
-                r"-?\d+(?:\.\d+)?", re.search(r' d="([^"]*)"', tag).group(1)
-            )
-        ]
-        xs, ys = numbers[0::2], numbers[1::2]
-        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+        points = _path_points(tag)
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        box = (min(xs), min(ys), max(xs), max(ys))
+        if box[2] - box[0] >= 100 and box[3] - box[1] >= 40:
+            boxes.append(box)
     return boxes
 
 
-def _boxes_by_region(machine, svg):
-    boxes = _region_boxes(svg)
-    regions = [".".join(region.path) for region in machine.walk_regions()]
-    assert len(boxes) == len(regions)
-    return dict(zip(regions, boxes))
+def _crosses(line, box):
+    x0, y0, x1, y1 = line
+    if x0 == x1:
+        return box[0] < x0 < box[2] and y0 < box[3] and box[1] < y1
+    return box[1] < y0 < box[3] and x0 < box[2] and box[0] < x1
 
 
-def _overlap(a, b):
-    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+def _leaves_per_tile(svg, direction):
+    """For every owner with regions, how many leaf states lie in each tile.
+
+    The dividers of one owner share one extent across the direction of the
+    diagram and split it along that direction, so the tiles come out in
+    layout order. The result holds one list per owner, in drawing order.
+    """
+    vertical = direction == "TB"
+    groups = {}
+    for x0, y0, x1, y1 in _dividers(svg):
+        if vertical:
+            assert x0 == x1
+            groups.setdefault((y0, y1), []).append(x0)
+        else:
+            assert y0 == y1
+            groups.setdefault((x0, x1), []).append(y0)
+    leaves = _leaf_boxes(svg)
+    result = []
+    for (low, high), positions in groups.items():
+        positions.sort()
+        counts = [0] * (len(positions) + 1)
+        for box in leaves:
+            across = (box[1] + box[3]) / 2 if vertical else (box[0] + box[2]) / 2
+            along = (box[0] + box[2]) / 2 if vertical else (box[1] + box[3]) / 2
+            if low <= across <= high:
+                counts[sum(along > position for position in positions)] += 1
+        result.append(counts)
+    return result
 
 
-def test_svg_draws_one_dashed_section_per_region_and_no_generated_flags():
-    machine = _model("controller")
-    svg = machine.diagram().to_svg()
-    assert sorted(_boxes_by_region(machine, svg)) == [
-        "Controller.Running.Motion",
-        "Controller.Running.Safety",
+@pytest.mark.parametrize("direction", ["TB", "LR"])
+@pytest.mark.parametrize("name", ["controller", "job", "nested", "elevator", "wide"])
+def test_svg_separates_the_regions_of_an_owner_with_dashed_dividers(name, direction):
+    machine = _model(name)
+    svg = machine.diagram(options=DiagramOptions(direction=direction)).to_svg()
+    expected = sum(
+        len(state.regions) - 1 for state in machine.walk_states() if state.regions
+    )
+    dividers = _dividers(svg)
+    assert len(dividers) == expected > 0
+    for x0, y0, x1, y1 in dividers:
+        # Vertical lines between side-by-side sections (TB), horizontal ones
+        # between stacked sections (LR).
+        assert (x0 == x1) if direction == "TB" else (y0 == y1)
+    # A region has no border of its own: nothing filled is dashed with the divider pattern.
+    filled_dashed = [
+        tag
+        for tag in re.findall(r"<path [^>]*>", svg)
+        if DIVIDER_DASH in tag and 'fill="none"' not in tag
     ]
+    assert filled_dashed == []
     assert "__active_" not in svg
 
 
 @pytest.mark.parametrize("direction", ["TB", "LR"])
+@pytest.mark.parametrize("name", ["controller", "job", "nested", "elevator", "wide"])
+def test_dividers_never_cross_a_state(name, direction):
+    machine = _model(name)
+    svg = machine.diagram(options=DiagramOptions(direction=direction)).to_svg()
+    leaves = _leaf_boxes(svg)
+    assert leaves
+    for line in _dividers(svg):
+        assert [box for box in leaves if _crosses(line, box)] == []
+
+
+@pytest.mark.parametrize("direction", ["TB", "LR"])
 @pytest.mark.parametrize(
-    "name,owner",
+    "name,leaves_per_region",
     [
-        ("controller", "Controller.Running"),
-        ("job", "Workflow.Job"),
-        ("nested", "Workflow.Job"),
-        ("nested", "Workflow.Job.A.Q"),
-        ("elevator", "Elevator.Serving"),
-        ("wide", "Plant.Run"),
+        ("controller", [2, 2]),  # Safety: Normal, Tripped; Motion: Off, On
+        ("wide", [2, 1, 3, 2, 1, 4]),  # R1 to R6
     ],
 )
-def test_regions_are_drawn_in_declaration_order_without_overlap(name, owner, direction):
+def test_regions_follow_the_declaration_order_along_the_diagram(
+    name, leaves_per_region, direction
+):
     machine = _model(name)
-    diagram = machine.diagram(options=DiagramOptions(direction=direction))
-    boxes = _boxes_by_region(machine, diagram.to_svg())
-    owner_state = _find(diagram.to_dict()["rootState"], owner.split(".")[1:])
-    ordered = [
-        child["qualifiedName"]
-        for child in owner_state["children"]
-        if child.get("region")
-    ]
-    assert len(ordered) >= 2
-    axis = 0 if direction == "TB" else 1  # same row in TB, same column in LR
-    positions = [boxes[item][axis] for item in ordered]
-    assert positions == sorted(positions) and len(set(positions)) == len(positions)
-    for index, left in enumerate(ordered):
-        for right in ordered[index + 1 :]:
-            assert not _overlap(boxes[left], boxes[right])
+    svg = machine.diagram(options=DiagramOptions(direction=direction)).to_svg()
+    assert _leaves_per_tile(svg, direction) == [leaves_per_region]
 
 
-def test_regions_of_one_owner_start_on_the_same_line():
+@pytest.mark.parametrize("direction", ["TB", "LR"])
+def test_nested_regions_are_tiled_in_declaration_order(direction):
     machine = _model("nested")
-    boxes = _boxes_by_region(machine, machine.diagram().to_svg())
-    assert len({boxes["Workflow.Job.%s" % name][1] for name in ("A", "B", "C")}) == 1
-    machine = _model("elevator")
-    boxes = _boxes_by_region(machine, machine.diagram().to_svg())
-    assert len({box[1] for box in boxes.values()}) == 1
+    svg = machine.diagram(options=DiagramOptions(direction=direction)).to_svg()
+    # Job owns regions A (Q with two regions, and Packing: three leaves), B and C.
+    tiles = _leaves_per_tile(svg, direction)
+    assert [3, 1, 1] in tiles
+    assert len(tiles) == 2
 
 
 def test_exports_cover_every_format_for_region_models():

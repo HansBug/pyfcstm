@@ -265,7 +265,8 @@ class HistoryLowering {
     ): Array<[Transition, Path, FcstmHistoryKind]> {
         const found: Array<[Transition, Path, FcstmHistoryKind]> = [];
         const reported = new Set<string>();
-        for (const scope of this.states.values()) {
+        // Transitions of a region enter history like those of a state.
+        for (const scope of this.namespaces) {
             for (const transition of scope.transitions) {
                 const kind = transition.targetHistory;
                 if (!kind) continue;
@@ -432,7 +433,7 @@ class HistoryLowering {
     run(): HistoryLoweringResult {
         const astStates = walkAst(this.input.astRoot);
         const usesHistory = astStates.some(([, node]) => node.histories.length > 0)
-            || [...this.states.values()].some(state => state.transitions.some(item => item.targetHistory));
+            || this.namespaces.some(scope => scope.transitions.some(item => item.targetHistory));
         this.checkReservedNames(usesHistory);
         if (!usesHistory) return {owners: [], diagnostics: this.diagnostics};
 

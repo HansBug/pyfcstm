@@ -59,6 +59,7 @@ describe('region diagnostics', () => {
     const targets: Array<[string, string, string]> = [
         ['active("Other.A")', 'invalid_path', 'Other.A'],
         ['active("Root.Missing")', 'not_found', 'Root.Missing'],
+        ['active("Root.P.A.Nothing")', 'not_found', 'Root.P.A.Nothing'],
         ['active("Root.P.A")', 'region', 'Root.P.A'],
         ['active("Root.Ghost")', 'pseudo', 'Root.Ghost'],
         ['active("Root..P")', 'invalid_path', 'Root..P'],

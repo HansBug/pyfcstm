@@ -1,10 +1,12 @@
 Region 模型与配置
 =================
 
-本页介绍 Python 模型构建和位置值。目前执行、代码生成、图形以及 inspect/verify
+本页介绍 Python 模型构建和位置值。目前执行、代码生成以及 inspect/verify
 分析遇到含区域或活动查询的模型，会以 ``E_UNSUPPORTED_FEATURE`` 拒绝操作。
 能够解析和构建模型，不代表这些消费者已经可以执行它。
-JavaScript 模型前端目前仍在构建阶段拒绝这些功能。
+图形（``StateMachine.diagram()`` 与 ``pyfcstm diagram``）以及 JavaScript 前端
+（模型、语义分析和图形预览）已经支持区域与活动查询；JavaScript 的结构检查器与
+``pyfcstm inspect`` 一样，不对它们作出判断。
 
 命名空间与结构
 --------------

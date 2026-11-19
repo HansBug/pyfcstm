@@ -152,4 +152,25 @@ describe('region diagram snapshot', () => {
         assert.ok(transitions.some(item => item.effectLines.includes('        if [active("Host.Mod.A.Y")] {')
             || item.effectLines.includes('    if [active("Host.Mod.A.Y")] {')));
     });
+
+    it('resolves an absolute event path of a region transition in an imported module', async () => {
+        const directory = trackTempDir('jsfcstm-region-diagram-event-');
+        const module = path.join(directory, 'm.fcstm');
+        const host = path.join(directory, 'h.fcstm');
+        writeFile(module, `state M { region R { event Tick; state On; state Off; [*] -> On;
+            On -> Off : /R.Tick; Off -> On : Tick; } }`);
+        writeFile(host, 'state Root { import "./m.fcstm" as A; [*] -> A; }');
+        const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
+        const diagram = buildFcstmDiagramFromWorkspaceSnapshot(snapshot, host)!;
+        assert.ok(diagram);
+        const events: Array<string | undefined> = [];
+        const visit = (state: FcstmDiagramState): void => {
+            events.push(...state.transitions.map(item => item.eventQualifiedName));
+            state.children.forEach(visit);
+        };
+        visit(diagram.rootState);
+        assert.deepEqual(events.filter(Boolean), ['Root.A.R.Tick', 'Root.A.R.Tick']);
+        assert.deepEqual(diagram.eventLegend.map(item => [item.qualifiedName, item.transitionCount]), [['Root.A.R.Tick', 2]]);
+    });
 });
+

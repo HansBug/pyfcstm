@@ -175,3 +175,31 @@ describe('region titles in the diagram graph', () => {
     });
 });
 
+describe('history inside regions', () => {
+    const HISTORY_SOURCE = `state Root { state P {
+        region R {
+            state S { [H*] -> A.Q; state A { state Q; [*] -> Q; } state B; [*] -> A; A -> B :: G; B -> A :: H; }
+            state T; [*] -> S; S -> T :: Out; T -> S.[H*] :: Re;
+        }
+        region R2 { state Y; [*] -> Y; }
+    } [*] -> P; }`;
+
+    it('counts a transition of a region as entering history and lowers the history', async () => {
+        const document = createDocument(HISTORY_SOURCE, '/tmp/region-history.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        const machine = packageModule.buildStateMachineModel(ast!)!;
+        assert.deepEqual(machine.historyOwners.map(owner => owner.ownerPath.join('.')), ['Root.P.R.S']);
+        const codes = (await editorModule.collectDocumentDiagnostics(document)).map(item => item.code);
+        assert.ok(!codes.includes('W_HISTORY_UNUSED'), codes.join(','));
+    });
+
+    it('reports a region transition that enters history its target does not declare', async () => {
+        const document = createDocument(`state Root { state P {
+            region R { state S; state T; [*] -> S; S -> T :: Out; T -> S.[H] :: Re; }
+            region R2 { state Y; [*] -> Y; }
+        } [*] -> P; }`, '/tmp/region-history-undeclared.fcstm');
+        const codes = (await editorModule.collectDocumentDiagnostics(document)).map(item => item.code);
+        assert.ok(codes.includes('E_HISTORY_TARGET_UNDECLARED'), codes.join(','));
+    });
+});
+

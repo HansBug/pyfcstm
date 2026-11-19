@@ -886,7 +886,8 @@ function rewriteTransitionEventId(
     sourceEventNames: Map<string, string | undefined>,
     sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
-    pendingRegistrations: PendingEventRegistration[]
+    pendingRegistrations: PendingEventRegistration[],
+    insideRegion: boolean
 ): void {
     if (!transition.eventId) {
         return;
@@ -913,7 +914,9 @@ function rewriteTransitionEventId(
             sourceDoc,
             sourcePath,
         });
-    } else if (transition.eventId.isAbsolute) {
+    } else if (transition.eventId.isAbsolute && !insideRegion) {
+        // Inside a region an absolute path is already relative to the module
+        // root, as in pyfcstm; only the instance prefix is added later.
         transition.eventId.path = [...currentScopePath, ...transition.eventId.path];
         transition.eventId.segments = [...transition.eventId.path];
         transition.eventId.text = chainPathText(transition.eventId.path, true);
@@ -926,10 +929,12 @@ function rewriteImportedStateEventPaths(
     sourceEventNames: Map<string, string | undefined>,
     sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
-    pendingRegistrations: PendingEventRegistration[]
+    pendingRegistrations: PendingEventRegistration[],
+    outerInsideRegion = false
 ): void {
     const currentStatePath = [...currentPath, node.name];
     const currentScopePath = currentStatePath.slice(1);
+    const insideRegion = outerInsideRegion || Boolean(node.isRegionView);
 
     for (const transition of node.transitions) {
         rewriteTransitionEventId(
@@ -938,7 +943,8 @@ function rewriteImportedStateEventPaths(
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 
@@ -949,7 +955,8 @@ function rewriteImportedStateEventPaths(
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 
@@ -960,7 +967,8 @@ function rewriteImportedStateEventPaths(
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 }

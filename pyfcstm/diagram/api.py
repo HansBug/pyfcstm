@@ -58,7 +58,6 @@ from ..highlight import FcstmLexer
 from ..utils.logging import get_logger
 from ..model.model import (
     Event,
-    IfBlock,
     Operation,
     OperationStatement,
     State,
@@ -232,26 +231,23 @@ def _operation_lines(
     if isinstance(statement, Operation):
         shown = Operation(statement.var_name, _shown_expr(statement.expr, active_paths))
         return [prefix + _text(shown.to_ast_node()).strip()]
-    if isinstance(statement, IfBlock):
-        lines: List[str] = []
-        for index, branch in enumerate(statement.branches):
-            if index == 0:
-                head = "if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
-            elif branch.condition is None:
-                head = "else {"
-            else:
-                head = "else if [%s] {" % _text(
-                    _shown_expr(branch.condition, active_paths)
-                )
-            lines.append(prefix + head)
-            if branch.statements:
-                for child in branch.statements:
-                    lines.extend(_operation_lines(child, active_paths, depth + 1))
-            else:
-                lines.append(prefix + "    ...")
-            lines.append(prefix + "}")
-        return lines
-    return [prefix + _text(statement).strip()]
+    # Operation and IfBlock are the only operation statements of a model.
+    lines: List[str] = []
+    for index, branch in enumerate(statement.branches):
+        if index == 0:
+            head = "if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
+        elif branch.condition is None:
+            head = "else {"
+        else:
+            head = "else if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
+        lines.append(prefix + head)
+        if branch.statements:
+            for child in branch.statements:
+                lines.extend(_operation_lines(child, active_paths, depth + 1))
+        else:
+            lines.append(prefix + "    ...")
+        lines.append(prefix + "}")
+    return lines
 
 
 def _effect_lines(transition: Transition, active_paths: Mapping[str, str]) -> List[str]:
@@ -700,20 +696,19 @@ def _validate_source_override(
 
 def _source_sidecar(
     machine: StateMachine,
-    source_override: Optional[str] = None,
-    diagram: Optional[Mapping[str, Any]] = None,
+    source_override: Optional[str],
+    diagram: Mapping[str, Any],
 ) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
     """
     Build the source documents and the state-to-line mapping of a viewer.
 
     :param machine: Model whose source text and imported documents are used.
     :type machine: pyfcstm.model.model.StateMachine
-    :param source_override: Source text to show instead of the model's own,
-        defaults to ``None``.
-    :type source_override: str, optional
-    :param diagram: Snapshot to take ranges from; built from ``machine`` when
-        ``None``.
-    :type diagram: Mapping[str, Any], optional
+    :param source_override: Source text to show instead of the model's own, or
+        ``None`` to show the model's own.
+    :type source_override: Optional[str]
+    :param diagram: Snapshot of ``machine`` to take the source ranges from.
+    :type diagram: Mapping[str, Any]
     :return: The main source text, the mapping from state id to source
         location, the mapping from line to state id (or ids) and the source
         documents by document id.
@@ -744,8 +739,6 @@ def _source_sidecar(
         _source_document_id(machine, path): text for path, text in source_paths.items()
     }
     main_document_id = _source_document_id(machine, machine.source_path or "<memory>")
-    if diagram is None:
-        diagram = _build_diagram_dict(machine)
     mapping: Dict[str, Any] = {}
     line_to_id: Dict[str, Union[str, List[str]]] = {}
 
@@ -2619,7 +2612,7 @@ class Diagram:
             self._source_map,
             self._source_line_map,
             self._source_documents,
-        ) = _source_sidecar(model, self.source_text, diagram=renderer_diagram)
+        ) = _source_sidecar(model, self.source_text, renderer_diagram)
         self._source_document_id = _source_document_id(
             model, model.source_path or "<memory>"
         )

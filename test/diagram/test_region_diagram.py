@@ -9,7 +9,13 @@ from hbutils.testing import simulate_entry
 
 from pyfcstm.diagram import DiagramOptions
 from pyfcstm.entry import pyfcstmcli
-from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
+from pyfcstm.model import (
+    State,
+    StateMachine,
+    Transition,
+    load_state_machine_from_file,
+    load_state_machine_from_text,
+)
 
 pytestmark = pytest.mark.unittest
 
@@ -182,6 +188,44 @@ def test_active_queries_in_effects_keep_their_written_form():
         "    }",
         "}",
     ]
+
+
+def test_effect_with_an_empty_branch_is_shown_with_a_placeholder():
+    machine = load_state_machine_from_text(
+        "def int x = 0; state Root { state A; state B; [*] -> A;"
+        " A -> B effect { if [x > 0] { } else { x = 1; } } }"
+    )
+    effect = [
+        t
+        for t in machine.diagram().to_dict()["rootState"]["transitions"]
+        if t["effectLines"]
+    ][0]["effectLines"]
+    assert effect == [
+        "effect {",
+        "    if [x > 0] {",
+        "        ...",
+        "    }",
+        "    else {",
+        "        x = 1;",
+        "    }",
+        "}",
+    ]
+
+
+def test_transition_without_a_source_range_still_gets_a_diagram():
+    root = State(
+        name="Root",
+        path=("Root",),
+        substates={
+            "A": State(name="A", path=("Root", "A"), substates={}),
+            "B": State(name="B", path=("Root", "B"), substates={}),
+        },
+        transitions=[
+            Transition(from_state="A", to_state="B", event=None, guard=None, effects=[])
+        ],
+    )
+    data = StateMachine(defines={}, root_state=root).diagram().to_dict()
+    assert [t["label"] for t in data["rootState"]["transitions"]] == ["A -> B"]
 
 
 def test_active_queries_of_an_imported_module_show_the_instance_path(tmp_path):

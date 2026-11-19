@@ -535,12 +535,13 @@ class SemanticBuilder {
         for (let length = ownerStatePath.length; length >= 1; length--) {
             const candidatePath = [...ownerStatePath.slice(0, length), stateName];
             const candidate = this.statesByPath.get(pathKey(candidatePath));
-            if (candidate) {
+            // A region is a scope, not a state, and cannot be a transition target.
+            if (candidate && !candidate.isRegion) {
                 return candidate;
             }
         }
 
-        const globalMatches = this.states.filter(state => state.name === stateName);
+        const globalMatches = this.states.filter(state => state.name === stateName && !state.isRegion);
         return globalMatches.length === 1 ? globalMatches[0] : undefined;
     }
 

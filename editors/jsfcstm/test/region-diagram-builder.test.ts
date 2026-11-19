@@ -192,5 +192,18 @@ describe('region diagram snapshot', () => {
         visit(diagram.rootState);
         assert.ok(events.includes('Host.Unit.Worker.Tick'), JSON.stringify(events));
     });
+
+    it('shows the path of every active query whichever quote the guard uses', async () => {
+        const diagram = await build(`state Root { [*] -> P; state P {
+            region R { state X; [*] -> X; X -> X : if [active('/P.R.X') && !active("/P.S.B")]; }
+            region S { state B; [*] -> B; } } }`);
+        const labels: string[] = [];
+        const visit = (state: FcstmDiagramState): void => {
+            labels.push(...state.transitions.map(item => item.label));
+            state.children.forEach(visit);
+        };
+        visit(diagram.rootState);
+        assert.ok(labels.includes('X -> X if [active("Root.P.R.X")&&!active("Root.P.S.B")]'), labels.join('\n'));
+    });
 });
 

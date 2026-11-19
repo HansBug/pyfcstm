@@ -336,7 +336,8 @@ function addUnreachableStateDiagnostics(
 ): void {
     const reachable = collectReachableStateIds(semantic);
     for (const state of semantic.states) {
-        if (state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
+        // A region starts with its owner and is not a state to report on its own.
+        if (state.isRegion || state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
             continue;
         }
 

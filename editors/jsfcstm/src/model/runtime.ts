@@ -2190,7 +2190,8 @@ function collectActiveQueries(expr: Expr, out: ActiveStateQuery[]): void {
     }
 }
 
-const ACTIVE_QUERY_TEXT = /active\s*\(\s*"(?:[^"\\]|\\.)*"\s*\)/g;
+// One query as written: its path is a double- or single-quoted string.
+const ACTIVE_QUERY_TEXT = /active\s*\(\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*\)/g;
 
 /**
  * Render an expression as written, with every ``active("...")`` query showing

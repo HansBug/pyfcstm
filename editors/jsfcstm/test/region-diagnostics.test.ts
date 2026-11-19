@@ -212,3 +212,26 @@ describe('queries shared by one transition and the public inspect collector', ()
     });
 });
 
+describe('regions are not states for transitions and reachability', () => {
+    async function codesOf(source: string) {
+        const document = createDocument(source, '/tmp/region-scope.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        return editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
+            packageModule.buildSemanticDocument(ast!)!, document);
+    }
+
+    it('reports a transition whose target is only the name of a region as dangling', async () => {
+        const found = await codesOf(`state Root { state P {
+            region R1 { state A; [*] -> A; A -> R2 :: Go; }
+            region R2 { state B; [*] -> B; } } [*] -> P; }`);
+        assert.deepEqual(found.filter(item => item.code === 'E_DANGLING_TRANSITION').length, 1);
+    });
+
+    it('does not report the regions of an unreachable owner as states', async () => {
+        const found = await codesOf(`state Root { [*] -> A; state A;
+            state P { region R { state X; [*] -> X; } region S { state B; [*] -> B; } } }`);
+        const unreachable = found.filter(item => item.code === 'W_UNREACHABLE_STATE');
+        assert.deepEqual(unreachable.map(item => item.data?.state_path), ['Root.P']);
+    });
+});
+

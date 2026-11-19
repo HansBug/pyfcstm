@@ -230,8 +230,10 @@ describe('regions are not states for transitions and reachability', () => {
     it('does not report the regions of an unreachable owner as states', async () => {
         const found = await codesOf(`state Root { [*] -> A; state A;
             state P { region R { state X; [*] -> X; } region S { state B; [*] -> B; } } }`);
-        const unreachable = found.filter(item => item.code === 'W_UNREACHABLE_STATE');
-        assert.deepEqual(unreachable.map(item => item.data?.state_path), ['Root.P']);
+        const unreachable = found.filter(item => item.code === 'W_UNREACHABLE_STATE').map(item => item.data?.state_path);
+        // The owner and the states inside its regions are reported, like the substates of
+        // any unreachable state; the regions themselves are scopes and are not.
+        assert.deepEqual(unreachable, ['Root.P', 'Root.P.R.X', 'Root.P.S.B']);
     });
 });
 

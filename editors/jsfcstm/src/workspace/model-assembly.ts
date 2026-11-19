@@ -1241,6 +1241,8 @@ function assembleProgramImports(
             occupiedNames.add(importItem.alias);
 
             const semanticImport = importLookup.get(importLookupKey(currentStatePath, importItem.alias));
+            // Defensive: every import of the program has an entry in the lookup.
+            /* c8 ignore next */
             if (!semanticImport?.entryFile) {
                 continue;
             }

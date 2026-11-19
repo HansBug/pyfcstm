@@ -229,11 +229,11 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // default through an import alias leaves the local model, so the states
     // before the alias are what it enters here.
     const resolveDefault = (ownerId: string, defaultPath: string[]): string[] | undefined => {
-        let current = statesById.get(ownerId);
+        let current = statesById.get(ownerId)!;
         const path: string[] = [];
         for (const name of defaultPath) {
-            const next = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
-            if (!next) return current?.ast.imports.some(item => item.alias === name) ? path : undefined;
+            const next = current.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
+            if (!next) return current.ast.imports.some(item => item.alias === name) ? path : undefined;
             current = next;
             path.push(next.identity.id);
         }
@@ -242,7 +242,7 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // The first valid declaration of the kind, as pyfcstm keeps: a shallow
     // default names one child, and no default names a pseudo state.
     const historyDefault = (ownerId: string, kind: string): string[] => {
-        for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
+        for (const declaration of statesById.get(ownerId)!.ast.histories) {
             if (declaration.historyKind !== kind) continue;
             if (kind === 'shallow' && declaration.defaultPath.length !== 1) continue;
             const path = resolveDefault(ownerId, declaration.defaultPath);

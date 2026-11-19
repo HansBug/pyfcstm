@@ -1647,9 +1647,9 @@ export class State extends ModelNode {
             if (!remainingPath) {
                 throw new Error(`Parent-relative event reference cannot end with dots: ${JSON.stringify(eventRef)}`);
             }
-            let currentState: State | undefined = this;
+            let currentState: State = this;
             for (let index = 0; index < dotCount; index += 1) {
-                if (!currentState?.parent) {
+                if (!currentState.parent) {
                     throw new Error(
                         `Parent-relative event reference ${JSON.stringify(eventRef)} goes beyond root state`
                     );
@@ -1661,7 +1661,7 @@ export class State extends ModelNode {
                 throw new Error(`Invalid parent-relative event reference: ${JSON.stringify(eventRef)}`);
             }
             eventName = pathParts[pathParts.length - 1];
-            targetStatePath = [...(currentState?.path || []), ...pathParts.slice(0, -1)];
+            targetStatePath = [...currentState.path, ...pathParts.slice(0, -1)];
         } else {
             const pathParts = eventRef.split('.');
             if (!pathParts.every(Boolean)) {

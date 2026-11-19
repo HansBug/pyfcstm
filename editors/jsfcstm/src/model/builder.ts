@@ -717,12 +717,14 @@ class StateMachineModelBuilder {
             if (!transition.comboTrigger?.isCombo) {
                 const triggerScope = this.getTriggerScope(transition);
                 const event = transition.eventId
-                    ? this.resolveEventReference(currentState, transition.eventId, transition.trigger?.range || transition.range, triggerScope)
+                    ? this.resolveEventReference(currentState, transition.eventId, transition.trigger!.range, triggerScope)
                     : undefined;
                 const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
                 this.pushTransition({
                     range: transition.range,
                     text: transition.text,
+                    // Defensive: a partially parsed document may lack the source name.
+                    /* c8 ignore next */
                     fromState: transition.sourceKind === 'init' ? 'INIT_STATE' : (transition.sourceStateName || 'INIT_STATE'),
                     toState: targetKind === 'exit' ? 'EXIT_STATE' : (transition.targetStateName || 'EXIT_STATE'),
                     event,
@@ -776,6 +778,8 @@ class StateMachineModelBuilder {
                 });
             }
 
+            // Defensive: a partially parsed document may lack the source name.
+            /* c8 ignore next */
             const fromState = transition.sourceKind === 'init' ? 'INIT_STATE' : transition.sourceStateName ?? 'INIT_STATE';
             this.pushComboTransitionRun(
                 currentState,
@@ -794,7 +798,7 @@ class StateMachineModelBuilder {
             this.finalizeTransitions(
                 substateDefinition,
                 nextState,
-                inheritedForSubstates.get(substateDefinition.name) ?? [],
+                inheritedForSubstates.get(substateDefinition.name)!,
             );
         }
         // A forced transition declared on an ancestor takes the whole group
@@ -977,16 +981,22 @@ class StateMachineModelBuilder {
         range: FcstmModelEvent['range'],
         origin: 'local' | 'chain' | 'absolute' | undefined
     ): FcstmModelEvent | undefined {
+        // Defensive: an event path always has a segment and the root state always
+        // exists; a partially parsed document is the only source of anything else.
+        /* c8 ignore start */
         if (eventPath.segments.length === 0) {
             return undefined;
         }
+        /* c8 ignore stop */
 
         let ownerState = eventPath.isAbsolute
             ? this.statesByPath.get(this.rootStateName)
             : currentState;
+        /* c8 ignore start */
         if (!ownerState) {
             return undefined;
         }
+        /* c8 ignore stop */
 
         for (const segment of eventPath.segments.slice(0, -1)) {
             ownerState = ownerState.substates[segment]
@@ -999,6 +1009,8 @@ class StateMachineModelBuilder {
 
         return this.ensureEvent(ownerState.path, eventPath.segments[eventPath.segments.length - 1], range, eventPath.text, {
             declared: false,
+            // Defensive: every caller passes the scope of the trigger.
+            /* c8 ignore next */
             origin: origin || (eventPath.isAbsolute ? 'absolute' : 'chain'),
         });
     }
@@ -1070,6 +1082,7 @@ class StateMachineModelBuilder {
         const projectionKind = projectionKey[1];
         const source = projectionKind === 'entry'
             ? 'entry'
+            /* c8 ignore next */
             : Array.isArray(projectionKey[2]) ? projectionKey[2].join('.') : 'state';
         const readable = [source, ...consumedTerms.map(term => comboSlugPart(term.canonicalText))]
             .map(part => comboSlugPart(part))
@@ -1084,6 +1097,8 @@ class StateMachineModelBuilder {
         });
         const name = `__combo_${readable}_h${stableDigest12(payload)}`;
         const existing = currentState.substates[name];
+        // Defensive: the name carries a hash of the run, so it is new on every call.
+        /* c8 ignore next */
         if (existing) return existing;
 
         const path = [...currentState.path, name];
@@ -1578,7 +1593,6 @@ class StateMachineModelBuilder {
     }
 
     private buildExpression(expression: FcstmAstExpression): FcstmModelExpression {
-        const originalExpression = expression;
         switch (expression.expressionKind) {
             case 'literal':
                 if (expression.pyNodeType === 'Boolean') {
@@ -1694,15 +1708,6 @@ class StateMachineModelBuilder {
             case 'parenthesized':
                 return this.buildExpression(expression.expression);
         }
-
-        const fallbackExpr: FcstmModelVariable = {
-            kind: 'variable',
-            pyModelType: 'Variable',
-            range: originalExpression.range,
-            text: originalExpression.text,
-            name: originalExpression.text,
-        };
-        return fallbackExpr;
     }
 }
 

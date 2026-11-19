@@ -1159,6 +1159,20 @@ function rewriteAbsolutePathsForImportedRoot(
             transition.eventId.segments = [...transition.eventId.path];
             transition.eventId.text = chainPathText(transition.eventId.path, true);
         }
+        // The event terms of a combo trigger are rebased like a plain event id.
+        for (const term of transition.comboTrigger?.terms ?? []) {
+            const eventPath = term.eventPath;
+            if (
+                term.termKind === 'event'
+                && eventPath
+                && eventPath.isAbsolute
+                && !preservedAbsoluteEventPaths.has(pathKey(eventPath.path))
+            ) {
+                eventPath.path = [...instancePrefix, ...eventPath.path];
+                eventPath.segments = [...eventPath.path];
+                eventPath.text = chainPathText(eventPath.path, true);
+            }
+        }
     }
 
     for (const transition of node.forceTransitions) {

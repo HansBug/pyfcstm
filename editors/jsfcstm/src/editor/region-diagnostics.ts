@@ -122,13 +122,16 @@ function checkQueries(
     diagnostics: FcstmDiagnostic[],
 ): void {
     const visited = new Set<object>();
+    // A query shared by the guard fields of one transition is reported once.
+    const reported = new Set<string>();
     const visit = (value: unknown): void => {
         if (value === null || typeof value !== 'object' || visited.has(value)) return;
         visited.add(value);
         const node = value as FcstmAstNodeBase & {path?: string};
         if (node.pyNodeType === 'ActiveStateQuery' && typeof node.path === 'string') {
             const reason = bindQuery(root, node.path);
-            if (reason !== null) {
+            if (reason !== null && !reported.has(JSON.stringify(node.range))) {
+                reported.add(JSON.stringify(node.range));
                 diagnostics.push({
                     range: node.range,
                     message: `Active query ${JSON.stringify(node.path)} cannot be bound (${reason}).`,

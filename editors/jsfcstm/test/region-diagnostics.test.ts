@@ -188,3 +188,27 @@ describe('structural inspector support', () => {
     });
 });
 
+describe('queries shared by one transition and the public inspect collector', () => {
+    it('reports a bad query of a guard-only combo trigger once', async () => {
+        const document = createDocument(
+            'state Root { state On; [*] -> On; On -> [*] : [active("Root.Missing")]; }', '/tmp/region-combo.fcstm');
+        const ast = await packageModule.parseAstDocument(document);
+        const found = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
+            packageModule.buildSemanticDocument(ast!)!, document).filter(item => item.code === 'E_ACTIVE_QUERY_TARGET');
+        assert.equal(found.length, 1);
+    });
+
+    it('returns no inspect diagnostics for machines with regions or active queries', async () => {
+        for (const source of [
+            'state Root { region A { state X; [*] -> X; } }',
+            'state Root { state A; [*] -> A; A -> A : if [active("Root.A")]; }',
+        ]) {
+            const document = createDocument(source, '/tmp/inspect-collector.fcstm');
+            const ast = await packageModule.parseAstDocument(document);
+            const semantic = packageModule.buildSemanticDocument(ast!)!;
+            const machine = packageModule.buildStateMachineModel(ast!)!;
+            assert.deepEqual(editorModule.collectInspectModelDiagnostics(document, semantic, machine), []);
+        }
+    });
+});
+

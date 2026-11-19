@@ -172,5 +172,25 @@ describe('region diagram snapshot', () => {
         assert.deepEqual(events.filter(Boolean), ['Root.A.R.Tick', 'Root.A.R.Tick']);
         assert.deepEqual(diagram.eventLegend.map(item => [item.qualifiedName, item.transitionCount]), [['Root.A.R.Tick', 2]]);
     });
+
+    it('resolves the absolute event of a combo trigger of a region transition in an imported module', async () => {
+        const directory = trackTempDir('jsfcstm-region-diagram-combo-');
+        const module = path.join(directory, 'module.fcstm');
+        const host = path.join(directory, 'main.fcstm');
+        writeFile(module, `def int value = 0;
+            state Module { region Worker { event Tick; state On; state Off; [*] -> On;
+                On -> Off : /Worker.Tick + [value == 0]; } }`);
+        writeFile(host, 'def int value = 0; state Host { import "module.fcstm" as Unit; [*] -> Unit; }');
+        const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
+        const diagram = buildFcstmDiagramFromWorkspaceSnapshot(snapshot, host)!;
+        assert.ok(diagram);
+        const events: Array<string | undefined> = [];
+        const visit = (state: FcstmDiagramState): void => {
+            events.push(...state.transitions.map(item => item.eventQualifiedName));
+            state.children.forEach(visit);
+        };
+        visit(diagram.rootState);
+        assert.ok(events.includes('Host.Unit.Worker.Tick'), JSON.stringify(events));
+    });
 });
 

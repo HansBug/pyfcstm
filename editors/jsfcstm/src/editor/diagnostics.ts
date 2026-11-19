@@ -414,6 +414,9 @@ export function collectInspectModelDiagnostics(
     existingDiagnostics: FcstmDiagnostic[] = [],
     options: CollectInspectModelDiagnosticsOptions = {},
 ): FcstmDiagnostic[] {
+    // The structural inspector does not judge machines with regions or
+    // active() queries, like ``pyfcstm inspect``.
+    if (!isInspectable(model)) return [];
     return collectInspectDiagnosticsFromItems(
         document,
         semantic,
@@ -502,10 +505,7 @@ export async function collectDocumentDiagnosticsByUri(
                 code: item.code,
                 data: {...item.refs},
             })));
-            // The structural inspector does not judge machines with regions or
-            // active() queries, like ``pyfcstm inspect``; the semantic analysis
-            // above does.
-            const localInspectDiagnostics = !isInspectable(localModel) ? [] : collectInspectModelDiagnostics(
+            const localInspectDiagnostics = collectInspectModelDiagnostics(
                 document,
                 node.semantic,
                 localModel,

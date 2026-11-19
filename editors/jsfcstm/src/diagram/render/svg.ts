@@ -173,6 +173,11 @@ function drawNode(
         return;
     }
 
+    if (meta.region) {
+        drawRegion(node, x, y, depth, out, P, crossings);
+        return;
+    }
+
     const isComposite = Boolean(meta.composite) && !meta.collapsed;
     const isPseudo = Boolean(meta.pseudo);
     const labelText = node.labels?.[0]?.text || meta.qualifiedName || node.id;
@@ -191,15 +196,6 @@ function drawNode(
         strokeWidth = P.leafStrokeWidth;
         radius = P.leafRadius;
         extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
-    } else if (isComposite && meta.region) {
-        // An ordered region: a composite-like section drawn with a dashed
-        // border so it reads as a concurrent section, not as a state.
-        variant = 'region';
-        fill = P.compositeFill;
-        stroke = P.compositeStroke;
-        strokeWidth = P.compositeStrokeWidth;
-        radius = P.compositeRadius;
-        extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
     } else if (isComposite) {
         variant = 'composite';
         fill = P.compositeFill;
@@ -212,11 +208,6 @@ function drawNode(
         stroke = P.leafStroke;
         strokeWidth = P.leafStrokeWidth;
         radius = P.leafRadius;
-        if (meta.region) {
-            // A collapsed region keeps its dashed border.
-            variant = 'region';
-            extraAttrs = `stroke-dasharray="${P.pseudoDash}" `;
-        }
     }
 
     out.push(
@@ -358,6 +349,83 @@ function drawNode(
 
     out.push('</g>');
 
+    if (!meta.collapsed) {
+        for (const child of node.children || []) {
+            drawNode(child, x, y, depth + 1, out, P, crossings);
+        }
+        for (const edge of node.edges || []) {
+            drawEdge(edge, x, y, out, P, crossings);
+        }
+    }
+}
+
+/**
+ * Draw an ordered region of a state that runs several of them.
+ *
+ * A region has no border: it fills a slice of its owner's body and a dashed
+ * divider on the edge it shares with the previous region (``dividerBefore``,
+ * set by ``layoutFcstmGraph``) is all that separates the two. The invisible
+ * ``fcstm-region-hit`` rectangle keeps the whole slice clickable and is what
+ * the viewer tints when the region is hovered or selected, now that there is
+ * no outline to recolour. ``pointer-events="all"`` is what lets a rectangle
+ * with no fill take the click.
+ */
+function drawRegion(
+    node: PreviewElkNode,
+    x: number,
+    y: number,
+    depth: number,
+    out: string[],
+    P: SvgPalette,
+    crossings: CrossingIndex,
+): void {
+    const w = node.width as number;
+    const h = node.height as number;
+    const meta = node.fcstm!;
+    const id = meta.qualifiedName as string;
+    out.push(
+        `<g ${attr('data-fcstm-kind', meta.composite && !meta.collapsed ? 'composite-state' : 'state')} ` +
+        `${attr('data-fcstm-id', id)} ` +
+        `${attr('data-fcstm-variant', 'region')} ` +
+        `${attr('data-fcstm-pseudo', 'false')} ` +
+        `${attr('data-fcstm-composite', String(Boolean(meta.composite)))} ` +
+        `${attr('data-fcstm-collapsed', String(Boolean(meta.collapsed)))} ` +
+        `${rangeAttrs('fcstm-range', meta.sourceRange)}>`
+    );
+    out.push(
+        `<rect class="fcstm-region-hit" x="${x}" y="${y}" width="${w}" height="${h}" ` +
+        `fill="none" stroke="none" pointer-events="all" />`
+    );
+    if (meta.dividerBefore) {
+        const to = meta.dividerBefore === 'vertical' ? `${x},${y + h}` : `${x + w},${y}`;
+        out.push(
+            `<path d="M${x},${y} L${to}" fill="none" stroke="${P.compositeStroke}" ` +
+            `stroke-width="1.4" stroke-dasharray="${P.pseudoDash}" />`
+        );
+    }
+    out.push(
+        `<text x="${x + 16}" y="${y + 21}" fill="${P.titleColor}" ` +
+        `font-weight="700" font-size="14">${escapeXml(node.labels![0].text)}</text>`
+    );
+    const btnW = 30, btnH = 22;
+    const btnX = x + w - btnW - 6;
+    const btnY = y + 5;
+    const cx = btnX + btnW / 2;
+    const cy = btnY + btnH / 2;
+    const chevron = meta.collapsed
+        ? `M${cx - 4},${cy - 2} l4,4 l4,-4`
+        : `M${cx - 4},${cy + 2} l4,-4 l4,4`;
+    out.push(
+        `<g data-fcstm-kind="chevron" ` +
+        `${attr('data-fcstm-id', id)} ` +
+        `${rangeAttrs('fcstm-range', meta.sourceRange)}>` +
+        `<rect x="${btnX}" y="${btnY}" width="${btnW}" height="${btnH}" ` +
+        `rx="6" ry="6" fill="${P.chevronBtnFill}" stroke="${P.chevronBtnStroke}" stroke-width="1"/>` +
+        `<path d="${chevron}" fill="none" stroke="${P.titleColor}" ` +
+        `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `</g>`
+    );
+    out.push('</g>');
     if (!meta.collapsed) {
         for (const child of node.children || []) {
             drawNode(child, x, y, depth + 1, out, P, crossings);

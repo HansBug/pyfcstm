@@ -264,6 +264,13 @@ export interface FcstmElkNodeMeta {
     /** The node is an ordered region of its owner state. */
     region?: boolean;
     ordinal?: number;
+    /**
+     * Where the dashed divider between this region and the previous one is
+     * drawn, set by ``layoutFcstmGraph`` on every region but the first:
+     * ``vertical`` on the region's left edge (regions side by side),
+     * ``horizontal`` on its top edge (regions stacked).
+     */
+    dividerBefore?: 'vertical' | 'horizontal';
     sourceRange?: TextRange;
     // Fields carried for the effect side panel and state detail summary.
     eventLabels?: string[];

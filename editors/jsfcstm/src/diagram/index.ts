@@ -7,7 +7,7 @@ export {
     formatFcstmDiagramTransitionLabel,
 } from './builder';
 export {resolveFcstmDiagramPreviewOptions} from './options';
-export {layoutFcstmGraph, orderRegionSections, pinRegionOrder} from './region-order';
+export {layoutFcstmGraph, orderRegionSections, pinRegionOrder, tileRegionSections} from './region-order';
 export type {FcstmElkLayoutEngine} from './region-order';
 export {
     collectFcstmDiagramEffectNotes,

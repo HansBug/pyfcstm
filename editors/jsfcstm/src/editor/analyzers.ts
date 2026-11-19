@@ -844,6 +844,11 @@ function addDuplicateStateDiagnostics(
 ): void {
     const byParent = new Map<string | undefined, Map<string, typeof semantic.states[number]>>();
     for (const state of semantic.states) {
+        // Two regions of one owner sharing a name is E_DUPLICATE_REGION's to report;
+        // a region and a state cannot share an owner.
+        if (state.isRegion) {
+            continue;
+        }
         const parentKey = state.parentStateId;
         let group = byParent.get(parentKey);
         if (!group) {
@@ -852,10 +857,10 @@ function addDuplicateStateDiagnostics(
         }
         const first = group.get(state.name);
         if (first) {
-            const parentPath = (first.identity.qualifiedName || '').split('.').slice(0, -1).join('.');
+            const parentPath = first.identity.qualifiedName.split('.').slice(0, -1).join('.');
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
-                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath || '<root>')}.`,
+                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath)}.`,
                 severity: 'error',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.duplicateState,
@@ -1079,6 +1084,11 @@ function addInitialTransitionInvalidDiagnostics(
         }
         // A state that owns regions starts them all instead of choosing a child.
         if (semantic.states.some(item => item.parentStateId === state.identity.id && item.isRegion)) {
+            continue;
+        }
+        // A region without any state is E_REGION_STRUCTURE's to report (empty_region);
+        // there is no child for an initial transition to name.
+        if (state.isRegion && !semantic.states.some(item => item.parentStateId === state.identity.id)) {
             continue;
         }
         if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {

@@ -22,6 +22,7 @@
  */
 import {collectSegments, type ResolvedSegment} from './render/crossings';
 import {smoothGraphEdges} from './render/edge-smoother';
+import {regionTitleMinWidth} from './elk-graph';
 import type {FcstmElkEdge, FcstmElkGraph, FcstmElkNode} from './model';
 
 function regionChildren(node: FcstmElkNode): FcstmElkNode[] {
@@ -111,16 +112,6 @@ const DIVIDER_CONTENT_MARGIN = 8;
  * nearest the middle of the free corridor is taken.
  */
 const DIVIDER_EDGE_CLEARANCE = 24;
-/** A region title starts this far from the region's left edge (see ``render/svg.ts``). */
-const REGION_TITLE_INSET = 16;
-/**
- * Horizontal padding ``buildFcstmElkGraph`` adds on each side when it measures
- * a state title; what is left of the label width is the text itself.
- */
-const TITLE_LABEL_PADDING = 18;
-/** Room the collapse button takes at the right end of a region (30px wide, 6px from the edge) and a little air. */
-const REGION_BUTTON_RESERVE = 44;
-
 const num = (value: number | undefined): number => value as number;
 
 function sortedByOrdinal(regions: FcstmElkNode[]): FcstmElkNode[] {
@@ -274,25 +265,27 @@ export function tileRegionSections(laidOut: FcstmElkNode): void {
             })
             .map(segment => (row ? segment.x1 - ox : segment.y1 - oy));
 
-        const cuts = regions.slice(1).map((next, index) => {
+        const cuts: number[] = [];
+        regions.slice(1).forEach((next, index) => {
             const prev = regions[index];
             const [, prevEnd] = contentSpan(prev, row);
             const [nextStart] = contentSpan(next, row);
             const prevOrigin = num(row ? prev.x : prev.y);
             const nextOrigin = num(row ? next.x : next.y);
             let lo = prevOrigin + prevEnd + DIVIDER_CONTENT_MARGIN;
-            let hi = Math.max(lo, nextOrigin + nextStart - DIVIDER_CONTENT_MARGIN);
             if (row) {
-                // The title and collapse button of the region before the divider
-                // must stay on its own side, when the space allows it.
-                const titleText = prev.labels![0].width - 2 * TITLE_LABEL_PADDING;
-                const titleEnd = num(prev.x) + REGION_TITLE_INSET + titleText + REGION_BUTTON_RESERVE;
-                lo = Math.max(lo, Math.min(titleEnd, hi));
-            } else {
+                // The region before the divider starts at the previous divider
+                // (or the owner's edge) and has to hold its own title and
+                // collapse button; its box was made wide enough for them.
+                const tileStart = index === 0 ? 0 : cuts[index - 1];
+                lo = Math.max(lo, tileStart + regionTitleMinWidth(prev.labels![0].width));
+            }
+            let hi = Math.max(lo, nextOrigin + nextStart - DIVIDER_CONTENT_MARGIN);
+            if (!row) {
                 // The title of the region after the divider sits just below it.
                 hi = Math.max(lo, hi - OWNER_TITLE_BAR_HEIGHT);
             }
-            return pickDivider(lo, hi, crossing);
+            cuts.push(pickDivider(lo, hi, crossing));
         });
 
         regions.forEach((region, index) => {

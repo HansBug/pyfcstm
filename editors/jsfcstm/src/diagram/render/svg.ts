@@ -94,6 +94,22 @@ export interface RenderOptions {
     cjkLocale?: CjkLocale;
 }
 
+/**
+ * Draw a laid-out graph as SVG.
+ *
+ * A graph that has regions (a state that runs several ordered regions) must be
+ * laid out with ``layoutFcstmGraph``, not with ``elk.layout`` directly: that
+ * function keeps the regions in declaration order, tiles them over their owner
+ * with equal height (equal width for a left-to-right diagram) and records where
+ * the dashed dividers go. This renderer draws a region without a border and
+ * draws a divider only where the layout asked for one, so a graph laid out by
+ * ``elk.layout`` alone shows its regions as plain areas with no dividers. A
+ * graph without regions can be laid out either way.
+ *
+ * @param canvas The laid-out graph.
+ * @param options Resolved preview options (direction).
+ * @param renderOptions Palette, mode and CJK locale.
+ */
 export function renderSvg(
     canvas: PreviewElkNode,
     options: PreviewResolvedOptions,

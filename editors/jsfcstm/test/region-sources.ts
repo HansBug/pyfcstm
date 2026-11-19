@@ -190,6 +190,18 @@ state Plant {
 `;
 
 
+/** Region names far wider than the states they hold: the titles decide how wide a region is. */
+export const LONG_TITLES_SOURCE = `def int x = 0;
+state Root {
+    [*] -> O;
+    state O {
+        region TemperatureMonitoringSupervisor { [*] -> A; state A; }
+        region PressureSupervisionController { [*] -> C; state C; }
+        region Logger { [*] -> L; state L; }
+    }
+}
+`;
+
 /** Every source above with a readable name. */
 export const REGION_SOURCES: Array<[string, string]> = [
     ['controller', CONTROLLER_SOURCE],
@@ -197,6 +209,7 @@ export const REGION_SOURCES: Array<[string, string]> = [
     ['elevator', ELEVATOR_SOURCE],
     ['job', JOB_SOURCE],
     ['wide', WIDE_SOURCE],
+    ['long-titles', LONG_TITLES_SOURCE],
 ];
 
 /** A machine without regions: its drawing must stay what it was before regions existed. */

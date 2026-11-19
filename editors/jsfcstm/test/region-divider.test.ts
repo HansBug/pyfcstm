@@ -131,6 +131,17 @@ describe('regions tiled into their owner', () => {
                 }
             });
 
+            it(`gives every region room for its title and collapse button in ${name}, ${direction}`, async () => {
+                const {laid} = await layoutSource(source, direction);
+                for (const {owner} of regionOwners(laid)) {
+                    for (const region of regionsOf(owner)) {
+                        // 16px inset, the text (label width less its 36px padding) and 44px for the button.
+                        const needed = 16 + (region.labels![0].width - 36) + 44;
+                        assert.ok((region.width as number) >= needed, `${region.id} is ${region.width} wide, needs ${needed}`);
+                    }
+                }
+            });
+
             it(`keeps every divider at least 12px from the edges that run along it in ${name}, ${direction}`, async () => {
                 assertDividersClearOfEdges((await layoutSource(source, direction)).laid, direction);
             });
@@ -435,15 +446,16 @@ describe('where a divider goes in the space between two regions', () => {
         assert.equal(stacked.second.y, 201);
     });
 
-    it('keeps the title of the region before it on its own side when there is room', () => {
-        // Text 164px wide: the title and the collapse button end at 252.
+    it('keeps the title of the region before it on its own side', async () => {
+        // Text 164px wide: the title and the collapse button need 224px from the
+        // start of the owner, which is past the 204 the content alone would allow.
         const {canvas, second} = handLaidOut(true, {titleWidth: 200});
         tileRegionSections(canvas);
-        assert.equal(second.x, 258);
-        // A title too long for the space cannot be honoured; the divider goes as far over as it may.
+        assert.equal(second.x, 244);
+        // The next divider counts from this one, not from where the box was.
         const long = handLaidOut(true, {titleWidth: 600});
         tileRegionSections(long.canvas);
-        assert.equal(long.second.x, 264);
+        assert.equal(long.second.x, 624);
     });
 
     it('leaves room under the divider for the title of the region after it when regions are stacked', () => {

@@ -145,6 +145,24 @@ describe('region sections in the diagram graph', () => {
     });
 });
 
+describe('room for region titles in the graph handed to ELK', () => {
+    const paddingOf = (graph: FcstmElkNode, id: string) => (findNode(graph, id) as FcstmElkNode).layoutOptions!['elk.padding'];
+
+    it('widens only the regions whose title does not fit, and no other state', () => {
+        const long = region('Wide', 'TemperatureMonitoringSupervisor', 1, ['A']);
+        const short = region('Wide', 'B', 2, ['C']);
+        const owner = node('Wide', [long, short]);
+        const named = node('Root.AVeryLongCompositeStateNameThatIsWiderThanItsContent', [node('Root.AVeryLongCompositeStateNameThatIsWiderThanItsContent.X')]);
+        const diagram = diagramOf(node('Root', [owner, named]));
+        const {graph} = layoutOf(diagram);
+        // The title label is 373px wide, so the region needs 397px: 28px of left padding, a 140px state and 229px on the right.
+        assert.equal(paddingOf(graph, 'Wide.TemperatureMonitoringSupervisor'), '[top=54,left=28,bottom=28,right=229]');
+        assert.equal(paddingOf(graph, 'Wide.B'), '[top=54,left=28,bottom=28,right=28]');
+        assert.equal(paddingOf(graph, 'Wide'), '[top=54,left=28,bottom=28,right=28]');
+        assert.equal(paddingOf(graph, named.id), '[top=54,left=28,bottom=28,right=28]');
+    });
+});
+
 describe('layoutFcstmGraph', () => {
     for (const direction of ['TB', 'LR'] as const) {
         it(`places the regions of every owner in declaration order and tiles them, ${direction}`, async () => {

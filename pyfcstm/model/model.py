@@ -3805,16 +3805,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         if not self._forced_flags:
             return self
         if self._plain_forced_view is None:
-            view = _build_assembled_state_machine(
+            self._plain_forced_view = _build_assembled_state_machine(
                 self._assembled_program,
                 DiagnosticSink(collect=True),
                 lower=True,
                 plain_forced=True,
             )
-            view.source_text = self.source_text
-            view.source_path = self.source_path
-            view._source_documents = self._source_documents
-            self._plain_forced_view = view
         return self._plain_forced_view
 
     @property

@@ -1,0 +1,24 @@
+title: While a preempted owner runs its exit its regions are already inactive and the owner still counts as active;
+  once the target is entered only the target is
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      left: 0
+      seen: 0
+- cycle: Root.Stop
+  expect:
+    configuration: Root.Off
+    vars:
+      left: 2
+      seen: 4

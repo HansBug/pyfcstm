@@ -1,0 +1,20 @@
+def int seq = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> Q;
+            state Q {
+                region X {
+                    [*] -> R;
+                    state R {
+                        region M { [*] -> M1; state M1 { during { seq = seq * 10 + 1; } } }
+                        region N { [*] -> N1; state N1 { during { seq = seq * 10 + 2; } } }
+                    }
+                }
+                region Y { [*] -> Y1; state Y1 { during { seq = seq * 10 + 3; } } }
+            }
+        }
+        region B { [*] -> B1; state B1 { during { seq = seq * 10 + 4; } } }
+    }
+}

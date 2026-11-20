@@ -1,0 +1,43 @@
+input int call_floor;
+input int overload;
+control int door_blocked = 0;
+output int motor_cmd = 0;
+output int door_cmd = 0;
+output int alarm = 0;
+
+state Elevator {
+    event Dispatch;
+    event Reset;
+    [*] -> Idle;
+    state Idle { during { motor_cmd = 0; door_cmd = 0; } }
+
+    state Serving {
+        region Door {
+            [*] -> Closed;
+            state Closed { during { door_cmd = 0; } }
+            state Opening { during { door_cmd = 1; } }
+            state Open { during { door_cmd = 1; } }
+            Closed -> Opening : if [active("Elevator.Serving.Motion.Stopped") && call_floor != 0];
+            Opening -> Open;
+            Open -> Closed : if [door_blocked == 0 && overload == 0];
+        }
+        region Motion {
+            >> during after { if [overload != 0] { motor_cmd = 0; } }
+            [*] -> Stopped;
+            state Stopped { during { motor_cmd = 0; } }
+            state Moving { during { motor_cmd = 1; } }
+            Stopped -> Moving : if [active("Elevator.Serving.Door.Closed") && call_floor != 0];
+            Moving -> Stopped : if [call_floor == 0] effect { motor_cmd = 0; }
+        }
+        region Alarm {
+            [*] -> Quiet;
+            state Quiet { during { alarm = 0; } }
+            state Ringing { during { alarm = 1; } }
+            Quiet -> Ringing : if [overload != 0 || door_blocked != 0];
+            Ringing -> Quiet : if [overload == 0 && door_blocked == 0];
+        }
+    }
+
+    Idle -> Serving : /Dispatch;
+    !Serving -> Idle : /Reset;
+}

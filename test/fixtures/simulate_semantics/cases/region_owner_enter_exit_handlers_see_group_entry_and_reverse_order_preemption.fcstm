@@ -1,0 +1,12 @@
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        enter abstract POn;
+        exit abstract POff;
+        region R1 { [*] -> A; state A { enter abstract AOn; exit abstract AOff; } }
+        region R2 { [*] -> B; state B { enter abstract BOn; exit abstract BOff; } }
+    }
+    state Idle;
+    !P -> Idle : /Stop;
+}

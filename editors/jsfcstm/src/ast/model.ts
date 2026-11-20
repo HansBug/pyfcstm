@@ -12,6 +12,8 @@ export type FcstmPyNodeType =
     | 'DefAssignment'
     | 'ChainID'
     | 'StateDefinition'
+    | 'RegionDefinition'
+    | 'ActiveStateQuery'
     | 'EventDefinition'
     | 'TransitionDefinition'
     | 'ForceTransitionDefinition'
@@ -129,6 +131,8 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     events: FcstmAstEventDefinition[];
     imports: FcstmAstImportStatement[];
     substates: FcstmAstStateDefinition[];
+    /** Ordered regions. Parsers emit an array; older programmatic ASTs may omit it. */
+    regions: FcstmAstRegionDefinition[];
     transitions: FcstmAstTransition[];
     enters: FcstmAstAction[];
     durings: FcstmAstAction[];
@@ -139,6 +143,8 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     force_transitions: FcstmAstForcedTransition[];
     /** ``[H]`` / ``[H*]`` declarations owned by this state. */
     histories: FcstmAstHistoryDefinition[];
+    /** Set on the state-shaped view of a region; see ``regionAsStateDefinition``. */
+    isRegionView?: boolean;
     /**
      * Absolute path of the file this state's definition was imported
      * from, if it came in through an ``import`` statement in another
@@ -152,12 +158,37 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
 
 export type FcstmAstStateStatement =
     | FcstmAstStateDefinition
+    | FcstmAstRegionDefinition
     | FcstmAstTransition
     | FcstmAstForcedTransition
     | FcstmAstHistoryDefinition
     | FcstmAstAction
     | FcstmAstEventDefinition
     | FcstmAstImportStatement;
+
+export type FcstmAstRegionStatement =
+    | FcstmAstStateDefinition
+    | FcstmAstTransition
+    | FcstmAstForcedTransition
+    | FcstmAstAction
+    | FcstmAstEventDefinition;
+
+/** A named region is an ordered scope owned by a state, not itself a state. */
+export interface FcstmAstRegionDefinition extends FcstmAstNodeBase {
+    kind: 'regionDefinition';
+    pyNodeType: 'RegionDefinition';
+    name: string;
+    nameRange: TextRange;
+    statements: FcstmAstRegionStatement[];
+    substates: FcstmAstStateDefinition[];
+    transitions: FcstmAstTransition[];
+    forceTransitions: FcstmAstForcedTransition[];
+    force_transitions: FcstmAstForcedTransition[];
+    events: FcstmAstEventDefinition[];
+    duringAspects: FcstmAstAction[];
+    during_aspects: FcstmAstAction[];
+    doc?: string;
+}
 
 export type FcstmHistoryKind = 'shallow' | 'deep';
 
@@ -477,6 +508,7 @@ export interface FcstmAstEmptyStatement extends FcstmAstNodeBase {
 
 export type FcstmAstExpression =
     | FcstmAstLiteralExpression
+    | FcstmAstActiveStateQuery
     | FcstmAstIdentifierExpression
     | FcstmAstMathConstExpression
     | FcstmAstUnaryExpression
@@ -496,6 +528,7 @@ export interface FcstmAstExpressionBase extends FcstmAstNodeBase {
         | 'Float'
         | 'Constant'
         | 'Name'
+        | 'ActiveStateQuery'
         | 'Paren'
         | 'UnaryOp'
         | 'BinaryOp'
@@ -503,6 +536,15 @@ export interface FcstmAstExpressionBase extends FcstmAstNodeBase {
         | 'UFunc';
     expressionKind: string;
     expressionType: 'init' | 'num' | 'cond';
+}
+
+/** A boolean query retaining its decoded path for later model resolution. */
+export interface FcstmAstActiveStateQuery extends FcstmAstExpressionBase {
+    kind: 'expression';
+    expressionKind: 'activeStateQuery';
+    pyNodeType: 'ActiveStateQuery';
+    expressionType: 'cond';
+    path: string;
 }
 
 export interface FcstmAstLiteralExpression extends FcstmAstExpressionBase {

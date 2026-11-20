@@ -36,6 +36,92 @@
 # the intended trigger shape before the emitting analyzer lands. The loader
 # in `codes.py` verifies the schema at import time.
 
+E_UNSUPPORTED_FEATURE:
+  severity: error
+  span_object: syntax_construct
+  description: >-
+    The selected consumer cannot preserve this language feature and refuses
+    the operation rather than producing partial results. Python model building,
+    cold-start simulation with SimulationRuntime, the diagram snapshot and
+    exports, and the JavaScript frontend's model, semantic analysis and diagram
+    preview support regions and activity queries; hot start, the pyfcstm
+    simulate command, BMC, rendering and inspect/verify analysis consumers still
+    reject them.
+  refs:
+    feature:
+      type: str
+      required: true
+      enum: ['region', 'active']
+      description: The unsupported language feature.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Absolute originating source file, when known.
+  example_dsl: 'state Root { region Motor { state Idle; [*] -> Idle; } }'
+
+E_ACTIVE_QUERY_TARGET:
+  severity: error
+  span_object: expression
+  description: An activity query has an invalid target or appears in a persistent initializer.
+  refs:
+    state_path:
+      type: str
+      required: true
+      description: State path written in the query after import rebasing.
+    reason:
+      type: str
+      required: true
+      enum: ['invalid_path', 'not_found', 'region', 'pseudo', 'initializer']
+      description: Why the query cannot be bound to an activity flag.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+  example_dsl: 'state Root { during { if [active("Root.Unknown")] {} } }'
+
+E_REGION_STRUCTURE:
+  severity: error
+  span_object: syntax_construct
+  description: A region is empty or a parallel owner mixes incompatible direct declarations.
+  refs:
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+    namespace_path:
+      type: str
+      required: true
+      description: Full path of the invalid namespace.
+    reason:
+      type: str
+      required: true
+      enum: ['empty_region', 'mixed_children', 'owner_statements', 'history_boundary']
+      description: Structural rule that was violated.
+  example_dsl: 'state Root { region Empty {} }'
+
+E_DUPLICATE_REGION:
+  severity: error
+  span_object: syntax_construct
+  description: Two regions have the same name within one owner state.
+  refs:
+    source_path:
+      type: str_or_null
+      required: false
+      description: Originating source file, including imported modules.
+    region_name:
+      type: str
+      required: true
+      description: Repeated region identifier.
+    owner_path:
+      type: str
+      required: true
+      description: Full path of the owner state.
+    previous_span:
+      type: Span
+      required: false
+      description: Source position of the first declaration, when available.
+  example_dsl: 'state Root { region A { state Leaf; [*] -> Leaf; } region A { state Leaf; [*] -> Leaf; } }'
+
 E_UNDEFINED_VAR:
   severity: error
   span_object: expression
@@ -2597,7 +2683,10 @@ W_UNREACHABLE_TRANSITION:
     An authored transition cannot be exercised under the available static or
     verification reachability evidence. The refs list the contributing
     reasons; multiple reasons are aggregated into one diagnostic per authored
-    transition.
+    transition. A transition leaving a state that owns regions is reported
+    with ``owner_never_completes`` when some region can never reach its
+    ``[*]`` exit, because the owner's ordinary transitions run only once every
+    region is done.
   refs:
     from_path:
       type: str
@@ -2647,6 +2736,7 @@ W_UNREACHABLE_TRANSITION:
         - guard_false
         - shadowed
         - redundant
+        - owner_never_completes
       description: >-
         One or more canonical reasons that make this authored transition
         unreachable. The list is sorted for stable output.
@@ -4380,4 +4470,132 @@ W_INITIAL_LIVELOCK:
         pseudo state P;
         [*] -> P;
         P -> P;
+    }
+
+I_REGION_BACKWARD_READ:
+  severity: info
+  span_object: expression
+  capability: pure_static
+  emit_tier: partial_static_pipeline
+  description: >-
+    An earlier region reads a variable, or queries with ``active()`` the
+    activity of a state, that a later region of the same parallel owner writes
+    or contains. Regions run in declaration order within one cycle, so the
+    earlier region observes the value from the previous cycle. This is the
+    normal result of ordered execution and is reported only so that the order
+    can be confirmed as intended.
+  refs:
+    owner_path:
+      type: str
+      required: true
+      description: Dotted path of the state that owns both regions.
+    reader_region:
+      type: str
+      required: true
+      description: Dotted path of the earlier region that reads.
+    target_kind:
+      type: str
+      required: true
+      enum: [variable, active]
+      description: "``variable`` for a variable read, ``active`` for an ``active()`` query."
+    target:
+      type: str
+      required: true
+      description: Variable name, or the dotted path of the queried state.
+    writer_regions:
+      type: list[str]
+      required: true
+      description: Dotted paths of the later regions that write the variable or contain the queried state.
+  for_llm:
+    summary: >-
+      An earlier region reads something a later region produces in the same
+      cycle, so it sees the previous cycle's value.
+    recommended_actions:
+      - kind: confirm_order
+        target: region
+        rationale: Keep the declaration order when reading the previous cycle's value is intended.
+      - kind: reorder_regions
+        target: region
+        rationale: Declare the producing region before the reading region when the current cycle's value is needed.
+    do_not:
+      - "Do not treat this as a defect; it is the defined behavior of ordered regions."
+  example_dsl: |
+    def int level = 0;
+    def int seen = 0;
+    state Root {
+        region Reader {
+            state Idle { during { seen = level; } }
+            [*] -> Idle;
+        }
+        region Writer {
+            state Busy { during { level = level + 1; } }
+            [*] -> Busy;
+        }
+    }
+
+W_REGION_BLIND_OVERWRITE:
+  severity: warning
+  span_object: effect_statement
+  capability: pure_static
+  emit_tier: partial_static_pipeline
+  description: >-
+    A later region overwrites, in every cycle and without ever looking at it, a
+    variable that an earlier region of the same parallel owner writes, so the
+    earlier write is lost every cycle. The later region does so when each of
+    its non-pseudo leaf states writes the variable unconditionally at the top
+    level of its ``during`` actions, nothing in the region reads the variable
+    before that write (no guard, effect, ``enter``, ``exit``, right-hand side,
+    ``if`` condition or earlier statement), and the region cannot finish, has no
+    nested parallel owner and no abstract action. The earlier write is lost when
+    no statement running after it in the same cycle reads the variable and no
+    region in between reads it or has an abstract action. Writing one variable
+    from several regions is otherwise fine, including a default value in front
+    and an override behind that only some states perform.
+  refs:
+    owner_path:
+      type: str
+      required: true
+      description: Dotted path of the state that owns both regions.
+    region:
+      type: str
+      required: true
+      description: Dotted path of the later region that overwrites.
+    previous_region:
+      type: str
+      required: true
+      description: Dotted path of the nearest earlier region that also writes the variable.
+    variable:
+      type: str
+      required: true
+      description: Name of the overwritten variable.
+    previous_write_span:
+      type: Span
+      required: true
+      description: Source span of the earlier region's write that is lost.
+  for_llm:
+    summary: >-
+      A later region overwrites, in every cycle and without looking at it, a
+      variable written by an earlier region, so the earlier write has no effect.
+    recommended_actions:
+      - kind: use_previous_value
+        target: statement
+        rationale: "Combine with the earlier value, for example ``x = x + y;``, when both writes are meant to count."
+      - kind: use_separate_variables
+        target: variable
+        rationale: Give each region its own variable when the writes are independent.
+    do_not:
+      - "Do not remove the earlier write without checking that no other state of that region depends on it."
+      - "Do not report a default value that a later region overrides only in some states or under a condition."
+  example_dsl: |
+    def int out = 0;
+    def int y = 0;
+    state Root {
+        region First {
+            state A { during { out = 1; } }
+            [*] -> A;
+        }
+        region Second {
+            state B { during { out = y + 2; } }
+            [*] -> B;
+        }
     }

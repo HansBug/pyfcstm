@@ -1,0 +1,32 @@
+title: A forced transition above two nested owners takes the outermost group away, deepest regions first and in reverse declaration order
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "The digits are the exit actions in order: region R2, then the nested owner with its regions Y and X in reverse order, then the owner itself; 9 is the entry of the target."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Outer{R1: Inner{X: X1, Y: Y1}, R2: Z1}'
+    vars:
+      seq: 0
+    delta: false
+- cycle:
+  - Root.Halt
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 321459
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 321459
+    delta: false

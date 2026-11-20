@@ -303,6 +303,18 @@ def render_inspect_human(
         )
     )
     lines.append(f"  transitions: {len(report.transitions)}")
+    regions = tuple(getattr(report, "regions", ()))
+    if regions:
+        lines.append(f"  regions: {len(regions)}")
+        for region in regions:
+            lines.append(
+                "    {path}: order {index} in {owner}; {count} states".format(
+                    path=region.path,
+                    index=region.index,
+                    owner=region.owner_path,
+                    count=len(region.substates),
+                )
+            )
     lines.append(f"  variables: {report.metrics.n_variables}")
     for variable in report.variables:
         lines.append(

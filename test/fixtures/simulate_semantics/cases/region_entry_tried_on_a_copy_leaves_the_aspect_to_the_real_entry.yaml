@@ -1,0 +1,22 @@
+title: Trying an initial candidate on a copy does not use up the aspect of the cycle; the real entry runs it and
+  the next region sees its write
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 1
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 2

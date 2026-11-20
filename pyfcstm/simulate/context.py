@@ -17,9 +17,30 @@ Example::
     ...     print(f"Counter: {ctx.get_var('counter')}")
 """
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping, Optional, Union, Tuple
+from typing import Any, Callable, Mapping, Optional, Union, Tuple  # noqa: F401 (type comment)
+
+#: Supplies the configuration snapshot of the cycle that is executing, so that
+#: every context built while handlers run carries the position at the moment
+#: of its construction. The runtime sets it for the duration of a committed
+#: cycle; outside a cycle it is ``None``.
+_configuration_provider = ContextVar(
+    "pyfcstm_simulate_configuration_provider", default=None
+)  # type: ContextVar[Optional[Callable[[], Any]]]
+
+
+def _current_configuration() -> Optional[Any]:
+    """
+    Snapshot the position of the cycle that is executing, if any.
+
+    :return: The configuration at this moment, or ``None`` when no committed
+        cycle is running, for example for a context built by hand.
+    :rtype: Optional[pyfcstm.model.configuration.Configuration]
+    """
+    provider = _configuration_provider.get()
+    return None if provider is None else provider()
 
 
 @dataclass(frozen=True)
@@ -38,7 +59,10 @@ class ReadOnlyExecutionContext:
         for leaf lifecycle actions and for ancestor aspect actions, which
         run for a descendant leaf's cycle; entering or leaving a composite
         state, or running a plain ``during`` action declared on one, gives
-        that composite state's own path.
+        that composite state's own path. In a model with regions, an aspect
+        reports the deepest state common to every active leaf it wraps: the
+        leaf when it wraps a single branch, and the owner of the regions when
+        it wraps several.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of current variable values (immutable mapping copy)
     :type vars: Mapping[str, Union[int, float]]
@@ -64,6 +88,13 @@ class ReadOnlyExecutionContext:
         reference's target, so a chain starting from an anonymous ``ref``
         reports ``None`` however many named actions it passes through.
     :type named_ref: Optional[str], optional
+    :param configuration: Immutable snapshot of the whole position at the
+        moment of the call, as a :class:`pyfcstm.model.configuration.Configuration`.
+        It shows regions that already moved earlier in the same cycle in their
+        new place and regions that have not yet been initialized as ``[init]``.
+        Contexts that the runtime builds for handlers always carry it; a context
+        built by hand, outside a running cycle, defaults to ``None``.
+    :type configuration: Optional[pyfcstm.model.configuration.Configuration], optional
 
     Example::
 
@@ -95,6 +126,7 @@ class ReadOnlyExecutionContext:
         default_factory=dict, repr=False
     )
     inputs: Mapping[str, Union[int, float]] = field(default_factory=dict, repr=False)
+    configuration: Optional[Any] = field(default_factory=_current_configuration, repr=False)
 
     def __post_init__(self) -> None:
         """

@@ -1,3 +1,4 @@
+import {astNamespaceChildren} from '../ast/region';
 import {collectVariableRoleDiagnostics, requireVariableRole} from '../ast/variable-roles';
 import type {FcstmDiagnostic} from '../utils/text';
 import type {
@@ -123,7 +124,7 @@ function markAuthoredTransitionFiles(
             transition.source_file_path = filePath;
         }
     }
-    for (const child of node.substates) {
+    for (const child of astNamespaceChildren(node)) {
         markAuthoredTransitionFiles(child, filePath);
     }
 }
@@ -180,7 +181,7 @@ function collectEventExtraNames(
         docs.set(bareKey, aggregateDocumentation([docs.get(bareKey), event.doc]));
     }
 
-    for (const substate of node.substates) {
+    for (const substate of astNamespaceChildren(node)) {
         collectEventExtraNames(substate, currentStatePath, output, docs);
     }
 }
@@ -218,7 +219,7 @@ function ensureStatePathExists(
 
     let state = root;
     for (const segment of statePath.slice(1)) {
-        const nextState = state.substates.find(item => item.name === segment);
+        const nextState = astNamespaceChildren(state).find(item => item.name === segment);
         if (!nextState) {
             /* c8 ignore start */
             throw new ModelAssemblyError(
@@ -337,7 +338,7 @@ function rewriteStateVariableReferences(
         }
     }
 
-    for (const substate of node.substates) {
+    for (const substate of astNamespaceChildren(node)) {
         rewriteStateVariableReferences(substate, sourceToTarget);
     }
 }
@@ -885,7 +886,8 @@ function rewriteTransitionEventId(
     sourceEventNames: Map<string, string | undefined>,
     sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
-    pendingRegistrations: PendingEventRegistration[]
+    pendingRegistrations: PendingEventRegistration[],
+    insideRegion: boolean
 ): void {
     if (!transition.eventId) {
         return;
@@ -912,7 +914,9 @@ function rewriteTransitionEventId(
             sourceDoc,
             sourcePath,
         });
-    } else if (transition.eventId.isAbsolute) {
+    } else if (transition.eventId.isAbsolute && !insideRegion) {
+        // Inside a region an absolute path is already relative to the module
+        // root, as in pyfcstm; only the instance prefix is added later.
         transition.eventId.path = [...currentScopePath, ...transition.eventId.path];
         transition.eventId.segments = [...transition.eventId.path];
         transition.eventId.text = chainPathText(transition.eventId.path, true);
@@ -925,10 +929,12 @@ function rewriteImportedStateEventPaths(
     sourceEventNames: Map<string, string | undefined>,
     sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
-    pendingRegistrations: PendingEventRegistration[]
+    pendingRegistrations: PendingEventRegistration[],
+    outerInsideRegion = false
 ): void {
     const currentStatePath = [...currentPath, node.name];
     const currentScopePath = currentStatePath.slice(1);
+    const insideRegion = outerInsideRegion || Boolean(node.isRegionView);
 
     for (const transition of node.transitions) {
         rewriteTransitionEventId(
@@ -937,7 +943,8 @@ function rewriteImportedStateEventPaths(
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 
@@ -948,18 +955,20 @@ function rewriteImportedStateEventPaths(
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 
-    for (const substate of node.substates) {
+    for (const substate of astNamespaceChildren(node)) {
         rewriteImportedStateEventPaths(
             substate,
             currentStatePath,
             sourceEventNames,
             sourceEventDocs,
             resolvedEventMappings,
-            pendingRegistrations
+            pendingRegistrations,
+            insideRegion
         );
     }
 }
@@ -971,11 +980,13 @@ function pruneMappedSourceEventDefinitions(
 ): void {
     const currentStatePath = [...currentPath, node.name];
     const currentScopePath = currentStatePath.slice(1);
-    node.events = node.events.filter(
+    // In place: a region's state-shaped view shares this array with the region.
+    const keptEvents = node.events.filter(
         item => !resolvedEventMappings.has(pathKey([...currentScopePath, item.name]))
     );
+    node.events.splice(0, node.events.length, ...keptEvents);
 
-    for (const substate of node.substates) {
+    for (const substate of astNamespaceChildren(node)) {
         pruneMappedSourceEventDefinitions(substate, currentStatePath, resolvedEventMappings);
     }
 }
@@ -1096,6 +1107,43 @@ function rewriteActionRefPath(action: FcstmAstAction, instancePrefix: string[]):
     action.refPath.text = chainPathText(action.refPath.path, true);
 }
 
+/**
+ * Rewrite the ``active("path")`` queries of an imported module onto its instance.
+ *
+ * A path that starts with ``/`` loses the slash and is prefixed by the instance
+ * path; a path whose first segment is the module's own root name has that
+ * segment replaced by the instance path; any other path is left alone. Each
+ * query is rewritten once, however many routes lead to it.
+ *
+ * @param node Any AST value: node, array or primitive.
+ * @param rootName The imported root's name before it was renamed to the alias.
+ * @param instancePath Host root down to the import alias.
+ */
+function rebaseActiveQueries(
+    node: unknown,
+    rootName: string,
+    instancePath: string[],
+    seen: WeakSet<object> = new WeakSet()
+): void {
+    if (node === null || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+        for (const item of node) rebaseActiveQueries(item, rootName, instancePath, seen);
+        return;
+    }
+    const candidate = node as {expressionKind?: string; path?: unknown};
+    if (candidate.expressionKind === 'activeStateQuery' && typeof candidate.path === 'string') {
+        const prefix = instancePath.join('.');
+        if (candidate.path.startsWith('/')) {
+            candidate.path = `${prefix}.${candidate.path.slice(1)}`;
+        } else if (candidate.path === rootName || candidate.path.startsWith(`${rootName}.`)) {
+            candidate.path = `${prefix}${candidate.path.slice(rootName.length)}`;
+        }
+        return;
+    }
+    for (const value of Object.values(node)) rebaseActiveQueries(value, rootName, instancePath, seen);
+}
+
 function rewriteAbsolutePathsForImportedRoot(
     node: FcstmAstStateDefinition,
     instancePrefix: string[],
@@ -1110,6 +1158,20 @@ function rewriteAbsolutePathsForImportedRoot(
             transition.eventId.path = [...instancePrefix, ...transition.eventId.path];
             transition.eventId.segments = [...transition.eventId.path];
             transition.eventId.text = chainPathText(transition.eventId.path, true);
+        }
+        // The event terms of a combo trigger are rebased like a plain event id.
+        for (const term of transition.comboTrigger?.terms ?? []) {
+            const eventPath = term.eventPath;
+            if (
+                term.termKind === 'event'
+                && eventPath
+                && eventPath.isAbsolute
+                && !preservedAbsoluteEventPaths.has(pathKey(eventPath.path))
+            ) {
+                eventPath.path = [...instancePrefix, ...eventPath.path];
+                eventPath.segments = [...eventPath.path];
+                eventPath.text = chainPathText(eventPath.path, true);
+            }
         }
     }
 
@@ -1138,7 +1200,7 @@ function rewriteAbsolutePathsForImportedRoot(
         rewriteActionRefPath(action, instancePrefix);
     }
 
-    for (const substate of node.substates) {
+    for (const substate of astNamespaceChildren(node)) {
         rewriteAbsolutePathsForImportedRoot(
             substate,
             instancePrefix,
@@ -1179,6 +1241,8 @@ function assembleProgramImports(
             occupiedNames.add(importItem.alias);
 
             const semanticImport = importLookup.get(importLookupKey(currentStatePath, importItem.alias));
+            // Defensive: every import of the program has an entry in the lookup.
+            /* c8 ignore next */
             if (!semanticImport?.entryFile) {
                 continue;
             }
@@ -1193,6 +1257,7 @@ function assembleProgramImports(
 
             const importedRoot = importedProgram.rootState;
             const eventMappings = resolveImportEventMappings(importItem, currentStatePath);
+            const importedRootName = importedRoot.name;
             importedRoot.name = importItem.alias;
             importedRoot.displayName = importItem.extraName || importedRoot.displayName;
             importedRoot.extraName = importItem.extraName || importedRoot.extraName;
@@ -1214,12 +1279,13 @@ function assembleProgramImports(
                 [...currentStatePath.slice(1), importItem.alias],
                 preservedAbsoluteEventPaths
             );
+            rebaseActiveQueries(importedRoot, importedRootName, [...currentStatePath, importItem.alias]);
             importedSubstates.push(importedRoot);
         }
 
         node.imports = [];
 
-        for (const substate of node.substates) {
+        for (const substate of astNamespaceChildren(node)) {
             assembleState(substate, [...currentStatePath, substate.name]);
         }
 
@@ -1232,7 +1298,7 @@ function assembleProgramImports(
         // no separate ``imports`` array to check here. The AST builder
         // computes ``composite`` differently (``substates ∪ imports >
         // 0``) because it runs BEFORE imports have been resolved.
-        node.composite = node.substates.length > 0;
+        node.composite = node.substates.length > 0 || node.regions.length > 0;
     };
 
     assembleState(program.rootState, [program.rootState.name]);
@@ -1247,7 +1313,8 @@ function assembleAstDocumentImports(
 
     const assembleProgramForFile = (filePath: string): FcstmAstDocument | null => {
         if (cache.has(filePath)) {
-            return cloneAstValue(cache.get(filePath) ?? null);
+            // The has() check establishes presence; a cached null is itself the result.
+            return cloneAstValue(cache.get(filePath) as FcstmAstDocument | null);
         }
         if (visiting.has(filePath)) {
             return null;

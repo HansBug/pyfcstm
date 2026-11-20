@@ -1,0 +1,43 @@
+title: After a forced transition took the group away, the owner can be entered and forced again, and its ordinary
+  transitions work as before
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The decision of a forced transition is carried by a hidden variable that the declared transition lowers again. If
+    it stayed raised, the ordinary transition of the owner would give way to the forced one forever.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    delta: false
+- cycle: Root.Go
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    delta: false
+- cycle: Root.Stop
+  expect:
+    configuration: Root.Off
+    delta: false
+- cycle: Root.Again
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    delta: false
+- cycle: Root.Stop
+  expect:
+    configuration: Root.Off
+    delta: false
+- cycle: Root.Again
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    delta: false
+- cycle: Root.Fin
+  expect:
+    configuration: Root.Done
+    delta: false

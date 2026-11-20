@@ -1,0 +1,16 @@
+def int v = 0;
+state Root {
+    [*] -> P;
+    state P {
+        >> during after { v = v * 5 + 1; }
+        region R {
+            >> during after { v = v + 3; }
+            [*] -> C;
+            state C {
+                >> during after { v = v * 2; }
+                [*] -> L;
+                state L { during { v = 1; } }
+            }
+        }
+    }
+}

@@ -6,6 +6,7 @@ import type {
     StateMachine,
     Transition,
 } from '../model';
+import {resolvedExprText, resolvedOperationText} from '../model';
 import {getWorkspaceGraph, type FcstmWorkspaceGraphSnapshot} from '../workspace';
 import type {TextDocumentLike} from '../utils/text';
 import type {
@@ -197,13 +198,13 @@ function ensureTerminatedStatement(text: string): string {
 function formatOperationStatementLines(statement: { kind?: string; text?: string; branches?: Array<{ condition?: { text?: string } | null; statements?: unknown[] }> }, depth: number): string[] {
     const prefix = '    '.repeat(depth);
     if (statement.kind === 'operation') {
-        return [`${prefix}${ensureTerminatedStatement(statement.text || '')}`];
+        return [`${prefix}${ensureTerminatedStatement(resolvedOperationText(statement as never))}`];
     }
 
     if (statement.kind === 'ifBlock' && Array.isArray(statement.branches) && statement.branches.length > 0) {
         const lines: string[] = [];
         for (const [index, branch] of statement.branches.entries()) {
-            const conditionText = branch.condition?.text || '';
+            const conditionText = branch.condition ? resolvedExprText(branch.condition as never) : '';
             if (index === 0) {
                 lines.push(`${prefix}if [${conditionText}] {`);
             } else if (branch.condition) {
@@ -276,7 +277,7 @@ function buildTransition(
     const sourceLabel = transition.fromState === 'INIT_STATE' ? '[*]' : transition.fromState;
     const targetLabel = transition.toState === 'EXIT_STATE' ? '[*]' : transition.toState;
     const triggerLabel = formatTriggerLabel(transition);
-    const guardLabel = transition.guard ? transition.guard.text || '' : undefined;
+    const guardLabel = transition.guard ? resolvedExprText(transition.guard) : undefined;
     const effectLines = buildEffectLines(transition);
     const eventQualifiedName = transition.event?.pathName;
     const eventName = transition.event?.name;
@@ -385,8 +386,10 @@ function buildStateNode(
         events: Object.values(state.events).map(buildEvent),
         actions,
         transitions: state.transitions.map(transition => buildTransition(transition, eventColors)),
-        children: Object.values(state.substates).map(child => buildStateNode(child, eventColors)),
+        children: [...Object.values(state.substates), ...Object.values(state.regions ?? {})]
+            .map(child => buildStateNode(child, eventColors)),
         importedFromFile: state.importedFromFile,
+        ...(state.isRegion ? {region: true, ordinal: state.ordinal} : {}),
     };
 }
 

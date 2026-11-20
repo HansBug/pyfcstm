@@ -1,0 +1,16 @@
+def int seq = 0;
+state Root {
+    event Reset;
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> A1;
+            state A1 { exit { seq = seq * 10 + 1; } }
+            state A2 { exit { seq = seq * 10 + 2; } }
+            state Home;
+            A1 -> A2;
+            !* -> Home : /Reset;
+        }
+        region B { [*] -> B1; state B1 { during { seq = seq * 10 + 7; } } }
+    }
+}

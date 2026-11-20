@@ -678,6 +678,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
         }
+        | {case.id for case in cases.values() if "regions" in case.data["categories"]}
     )
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
     assert not (RUNTIME_ERROR_PREFIX_CASES & excluded_in_yaml)
@@ -700,7 +701,8 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
             for case in cases.values()
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
-        ),
+        )
+        + sum(1 for case in cases.values() if "regions" in case.data["categories"]),
         "long_term_exclude": 5,
     }
 

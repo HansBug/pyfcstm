@@ -1,0 +1,32 @@
+title: An inner owner continues in the same cycle when its regions all finish even if an outer region
+  is still working
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: Q{A1: W1, A2: W2}, B: N}'
+    vars:
+      n: 1
+- cycle: Root.D1
+  expect:
+    configuration: 'Root.P{A: Q{A1: [done], A2: W2}, B: N}'
+    vars:
+      n: 2
+- cycle: Root.D2
+  expect:
+    configuration: 'Root.P{A: R, B: N}'
+    vars:
+      n: 3
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: R, B: N}'
+    vars:
+      n: 4

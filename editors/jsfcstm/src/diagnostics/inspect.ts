@@ -537,9 +537,30 @@ export interface ModelDiagnosticJson {
 }
 
 /**
+ * Tell whether the structural inspector can judge a machine.
+ *
+ * Machines that declare regions or use ``active()`` queries are not judged,
+ * as in ``pyfcstm inspect``; the semantic analysis still checks them.
+ *
+ * @param machine A state-machine model.
+ * @returns ``true`` when :func:`inspectModel` accepts ``machine``.
+ */
+export function isInspectable(machine: StateMachine): boolean {
+    return !machine.has_regions && !machine.has_active_queries;
+}
+
+/**
  * Run the structural inspector against a jsfcstm state-machine model.
+ *
+ * @param machine A state-machine model for which :func:`isInspectable` is ``true``.
+ * @param options Thresholds and policies of the inspection.
+ * @returns The inspection result.
+ * @throws Error When ``machine`` declares regions or uses ``active()`` queries.
  */
 export function inspectModel(machine: StateMachine, options: InspectModelOptions = {}): ModelInspect {
+    if (!isInspectable(machine)) {
+        throw new Error('inspectModel does not support machines with regions or active() queries');
+    }
     // A machine that uses history is judged as written, as in pyfcstm: the
     // builder keeps the model before lowering, where a history entry is an
     // ordinary transition that still carries its ``targetHistory``.

@@ -1,0 +1,23 @@
+title: Several regions write one variable and the last write in order wins
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B, R3: C}'
+    vars:
+      x: 2
+      y: 13
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B, R3: C}'
+    vars:
+      x: 2
+      y: 143

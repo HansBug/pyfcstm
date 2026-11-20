@@ -21,6 +21,7 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
+import {collectRegionDiagnostics} from './region-diagnostics';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -68,192 +69,12 @@ export const FCSTM_DIAGNOSTIC_CODES = {
 } as const;
 
 
-const EXPR_PRECEDENCE: Record<string, number> = {
-    'function_call': 90,
-    'unary+': 80,
-    'unary-': 80,
-    '!': 80,
-    'not': 80,
-    '**': 70,
-    '*': 60,
-    '/': 60,
-    '%': 60,
-    '+': 50,
-    '-': 50,
-    '<<': 40,
-    '>>': 40,
-    '&': 35,
-    '^': 30,
-    '|': 25,
-    '<': 20,
-    '>': 20,
-    '<=': 20,
-    '>=': 20,
-    '==': 20,
-    '!=': 20,
-    'iff': 20,
-    '&&': 15,
-    'and': 15,
-    'xor': 12,
-    '||': 10,
-    'or': 10,
-    '=>': 7,
-    '?:': 5,
-};
-const HEX_RADIX = 16;
-const BINARY_RADIX = 2;
-
-function canonicalBinaryOperator(op: string): string {
-    if (op === 'and') return '&&';
-    if (op === 'or') return '||';
-    if (op === 'implies') return '=>';
-    return op;
+// This diagnostic renderer is called only after isFalseLiteral narrows the AST.
+function astExprText(expression: FcstmAstLiteralExpression): string {
+    return expression.valueText.toLowerCase();
 }
 
-function canonicalUnaryOperator(op: string): string {
-    return op === 'not' ? '!' : op;
-}
-
-function unaryPrecedenceKey(op: string): string {
-    const canonical = canonicalUnaryOperator(op);
-    return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
-}
-
-function normalizeDecimalDigits(raw: string): string {
-    const normalized = raw.replace(/^0+/, '');
-    return normalized.length > 0 ? normalized : '0';
-}
-
-function addSmallDecimal(raw: string, value: number): string {
-    if (value === 0) return raw;
-    let carry = value;
-    const out: string[] = [];
-    for (let index = raw.length - 1; index >= 0; index -= 1) {
-        const total = Number(raw[index]) + carry;
-        out.push(String(total % 10));
-        carry = Math.floor(total / 10);
-    }
-    while (carry > 0) {
-        out.push(String(carry % 10));
-        carry = Math.floor(carry / 10);
-    }
-    return out.reverse().join('');
-}
-
-function multiplySmallDecimal(raw: string, factor: number): string {
-    if (raw === '0' || factor === 0) return '0';
-    let carry = 0;
-    const out: string[] = [];
-    for (let index = raw.length - 1; index >= 0; index -= 1) {
-        const total = Number(raw[index]) * factor + carry;
-        out.push(String(total % 10));
-        carry = Math.floor(total / 10);
-    }
-    while (carry > 0) {
-        out.push(String(carry % 10));
-        carry = Math.floor(carry / 10);
-    }
-    return out.reverse().join('');
-}
-
-function convertRadixDigitsToDecimal(digits: string, radix: number): string {
-    let value = '0';
-    for (const char of digits.toLowerCase()) {
-        const digit = parseInt(char, radix);
-        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
-    }
-    return value;
-}
-
-function numericAstText(expression: FcstmAstLiteralExpression): string {
-    const raw = expression.valueText.trim();
-    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
-    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), HEX_RADIX);
-    }
-    if (/^0[bB][01]+$/.test(raw)) {
-        return convertRadixDigitsToDecimal(raw.slice(2), BINARY_RADIX);
-    }
-    const value = Number(raw);
-    if (expression.pyNodeType === 'Float') {
-        return Number.isInteger(value) ? `${value}.0` : String(value);
-    }
-    return String(Math.trunc(value));
-}
-
-function astExprPrecedence(expression: FcstmAstExpression): number | null {
-    if (expression.expressionKind === 'binary') {
-        return EXPR_PRECEDENCE[canonicalBinaryOperator(expression.op)] ?? null;
-    }
-    if (expression.expressionKind === 'conditional') return EXPR_PRECEDENCE['?:'];
-    if (expression.expressionKind === 'unary') return EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)] ?? null;
-    return null;
-}
-
-function astExprText(expression: FcstmAstExpression | undefined): string | null {
-    if (!expression) return null;
-    switch (expression.expressionKind) {
-        case 'literal':
-            return expression.literalType === 'boolean'
-                ? expression.valueText.toLowerCase()
-                : numericAstText(expression);
-        case 'identifier':
-            return expression.name;
-        case 'mathConst':
-            return expression.name;
-        case 'parenthesized':
-            return astExprText(expression.expression);
-        case 'function': {
-            const argument = astExprText(expression.argument);
-            return argument === null ? null : `${expression.functionName}(${argument})`;
-        }
-        case 'unary': {
-            const op = canonicalUnaryOperator(expression.op);
-            const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
-            let value = astExprText(expression.operand);
-            if (value === null) return null;
-            const valuePrecedence = astExprPrecedence(expression.operand);
-            if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
-                value = `(${value})`;
-            }
-            return `${op}${value}`;
-        }
-        case 'binary': {
-            const op = canonicalBinaryOperator(expression.op);
-            const myPrecedence = EXPR_PRECEDENCE[op];
-            let left = astExprText(expression.left);
-            let right = astExprText(expression.right);
-            if (left === null || right === null) return null;
-            const leftPrecedence = astExprPrecedence(expression.left);
-            if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
-                left = `(${left})`;
-            }
-            const rightPrecedence = astExprPrecedence(expression.right);
-            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) {
-                right = `(${right})`;
-            }
-            return `${left} ${op} ${right}`;
-        }
-        case 'conditional': {
-            const myPrecedence = EXPR_PRECEDENCE['?:'];
-            const condition = astExprText(expression.condition);
-            let whenTrue = astExprText(expression.whenTrue);
-            let whenFalse = astExprText(expression.whenFalse);
-            if (condition === null || whenTrue === null || whenFalse === null) return null;
-            const truePrecedence = astExprPrecedence(expression.whenTrue);
-            if (truePrecedence !== null && truePrecedence <= myPrecedence) {
-                whenTrue = `(${whenTrue})`;
-            }
-            const falsePrecedence = astExprPrecedence(expression.whenFalse);
-            if (falsePrecedence !== null && falsePrecedence <= myPrecedence) {
-                whenFalse = `(${whenFalse})`;
-            }
-            return `(${condition}) ? ${whenTrue} : ${whenFalse}`;
-        }
-    }
-}
-
-function isFalseLiteral(expression: FcstmAstExpression): boolean {
+function isFalseLiteral(expression: FcstmAstExpression): expression is FcstmAstLiteralExpression {
     return expression.expressionKind === 'literal'
         && expression.literalType === 'boolean'
         && /^(false|False)$/i.test(expression.valueText);
@@ -393,17 +214,26 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         if (!reachable.has(stateId)) {
             reachable.add(stateId);
             worklist.push(stateId);
+            // Entering a state starts every one of its regions.
+            for (const childId of statesById.get(stateId)!.childStateIds) {
+                if (statesById.get(childId)!.isRegion) enter(childId);
+            }
         }
     };
+    if (semantic.machine.rootStateId) {
+        for (const childId of statesById.get(semantic.machine.rootStateId)!.childStateIds) {
+            if (statesById.get(childId)!.isRegion) enter(childId);
+        }
+    }
     // The states a default enters, or undefined when it names no state. A
     // default through an import alias leaves the local model, so the states
     // before the alias are what it enters here.
     const resolveDefault = (ownerId: string, defaultPath: string[]): string[] | undefined => {
-        let current = statesById.get(ownerId);
+        let current = statesById.get(ownerId)!;
         const path: string[] = [];
         for (const name of defaultPath) {
-            const next = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
-            if (!next) return current?.ast.imports.some(item => item.alias === name) ? path : undefined;
+            const next = current.childStateIds.map(id => statesById.get(id)!).find(child => child.name === name);
+            if (!next) return current.ast.imports.some(item => item.alias === name) ? path : undefined;
             current = next;
             path.push(next.identity.id);
         }
@@ -412,7 +242,7 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // The first valid declaration of the kind, as pyfcstm keeps: a shallow
     // default names one child, and no default names a pseudo state.
     const historyDefault = (ownerId: string, kind: string): string[] => {
-        for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
+        for (const declaration of statesById.get(ownerId)!.ast.histories) {
             if (declaration.historyKind !== kind) continue;
             if (kind === 'shallow' && declaration.defaultPath.length !== 1) continue;
             const path = resolveDefault(ownerId, declaration.defaultPath);
@@ -506,7 +336,8 @@ function addUnreachableStateDiagnostics(
 ): void {
     const reachable = collectReachableStateIds(semantic);
     for (const state of semantic.states) {
-        if (state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
+        // A region starts with its owner and is not a state to report on its own.
+        if (state.isRegion || state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
             continue;
         }
 
@@ -1013,6 +844,11 @@ function addDuplicateStateDiagnostics(
 ): void {
     const byParent = new Map<string | undefined, Map<string, typeof semantic.states[number]>>();
     for (const state of semantic.states) {
+        // Two regions of one owner sharing a name is E_DUPLICATE_REGION's to report;
+        // a region and a state cannot share an owner.
+        if (state.isRegion) {
+            continue;
+        }
         const parentKey = state.parentStateId;
         let group = byParent.get(parentKey);
         if (!group) {
@@ -1021,10 +857,10 @@ function addDuplicateStateDiagnostics(
         }
         const first = group.get(state.name);
         if (first) {
-            const parentPath = (first.identity.qualifiedName || '').split('.').slice(0, -1).join('.');
+            const parentPath = first.identity.qualifiedName.split('.').slice(0, -1).join('.');
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
-                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath || '<root>')}.`,
+                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath)}.`,
                 severity: 'error',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.duplicateState,
@@ -1246,6 +1082,15 @@ function addInitialTransitionInvalidDiagnostics(
         if (!state.composite || state.pseudo) {
             continue;
         }
+        // A state that owns regions starts them all instead of choosing a child.
+        if (semantic.states.some(item => item.parentStateId === state.identity.id && item.isRegion)) {
+            continue;
+        }
+        // A region without any state is E_REGION_STRUCTURE's to report (empty_region);
+        // there is no child for an initial transition to name.
+        if (state.isRegion && !semantic.states.some(item => item.parentStateId === state.identity.id)) {
+            continue;
+        }
         if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
@@ -1268,6 +1113,7 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
 ): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
     if (semantic.ast) diagnostics.push(...collectVariableRoleDiagnostics(semantic.ast));
+    if (semantic.ast) diagnostics.push(...collectRegionDiagnostics(semantic.ast, document));
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);

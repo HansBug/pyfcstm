@@ -1562,10 +1562,10 @@ class TestDSLTransition:
             ),  # Composite state with multiple nested states
             (
                 """
-                    state active named "Active State" { [*] -> ready; }
+                    state running named "Active State" { [*] -> ready; }
                     """,
                 StateDefinition(
-                    name="active",
+                    name="running",
                     extra_name="Active State",
                     substates=[],
                     transitions=[
@@ -2485,9 +2485,9 @@ class TestDSLTransition:
             ),  # Composite state with multiple nested states
             (
                 """
-                    state active named "Active State" { [*] -> ready; }
+                    state running named "Active State" { [*] -> ready; }
                     """,
-                "state active named 'Active State' {\n    [*] -> ready;\n}",
+                "state running named 'Active State' {\n    [*] -> ready;\n}",
             ),  # Composite state with entry transition
             (
                 """
@@ -2992,7 +2992,7 @@ class TestDSLTransition:
             ),  # State with unquoted name after named
             (
                 """
-                    state active named "Missing semicolon"
+                    state running named "Missing semicolon"
                     """,
             ),  # Leaf state missing semicolon
             (

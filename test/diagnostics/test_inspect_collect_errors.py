@@ -126,6 +126,17 @@ NON_MODEL_BUILD_ERROR_CODES = {
     # cross-version compatibility entry that the inspect exit filters out.
     'E_TYPE_MISMATCH',
     'E_COMBO_TRIGGER_NOT_EXPANDED',
+    # Model construction supports regions/queries; backend refusal is separate.
+    'E_UNSUPPORTED_FEATURE',
+}
+
+# Unsupported syntax is fatal even in collecting mode: there is no executable
+# model to inspect. Its diagnostics still have to survive the build boundary.
+FATAL_BUILD_ERROR_CASES = {
+    'E_ACTIVE_QUERY_TARGET': 'state Root { during { if [active("Root.Missing")] {} } }',
+    'E_REGION_STRUCTURE': 'state Root { region Motor {} }',
+    'E_DUPLICATE_REGION': ('state Root { region A { state Leaf; [*] -> Leaf; } '
+                           'region A { state Leaf; [*] -> Leaf; } }'),
 }
 
 
@@ -160,6 +171,12 @@ def _assert_code_survives_into_report(code, machine, diagnostics):
 
 @pytest.mark.unittest
 class TestEveryBuildErrorSurvivesCollection:
+    @pytest.mark.parametrize(('code', 'source'), sorted(FATAL_BUILD_ERROR_CASES.items()))
+    def test_fatal_error_returns_diagnostics_without_a_model(self, code, source):
+        machine, diagnostics = _collect_from_text(source)
+        assert machine is None
+        assert code in {item.code for item in diagnostics}
+
     @pytest.mark.parametrize(('code', 'source'), sorted(SINGLE_FILE_CASES.items()))
     def test_single_file_error_reaches_the_report(self, code, source):
         machine, diagnostics = _collect_from_text(source)
@@ -191,7 +208,8 @@ class TestEveryBuildErrorSurvivesCollection:
 
     def test_every_model_build_error_code_is_covered_or_recorded(self):
         """No build error code may be silently left out of this suite."""
-        covered = set(SINGLE_FILE_CASES) | set(IMPORT_CASES) | {'E_INITIALIZER_VARIABLE_REFERENCE'}
+        covered = (set(SINGLE_FILE_CASES) | set(IMPORT_CASES)
+                   | set(FATAL_BUILD_ERROR_CASES) | {'E_INITIALIZER_VARIABLE_REFERENCE'})
         expected = _build_error_codes()
 
         assert covered <= expected, covered - expected

@@ -1,0 +1,40 @@
+title: A forced transition of an owner does not take the group in the cycle that entered it, even through a pseudo state, and does in the next cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The event of the forced transition is given together with the event that enters the owner and stays unused in that cycle.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    vars:
+      seq: 0
+    delta: false
+- cycle:
+  - Root.Go
+  - Root.Stop
+  expect:
+    configuration: 'Root.P.Work{A: A1, B: B1}'
+    vars:
+      seq: 1
+    delta: false
+- cycle:
+  - Root.Stop
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 1
+    delta: false

@@ -60,6 +60,114 @@ later cycle to find a stoppable leaf state. Because hot start simulates an
 already-entered boundary, it does not replay plain composite ``during before``
 actions before that delayed child entry.
 
+**Ordered regions**:
+
+A state may own several ordered regions that run in parallel inside one cycle.
+The execution stack then becomes a tree: the frame of the owning state holds one
+branch per region, and every branch is a stack of the same shape as the main
+one, starting with a frame for the region itself. Within a cycle the regions
+advance in declaration order, so a later region reads the values and states an
+earlier one produced in the same cycle. A region whose child exits through
+``[*]`` is done and stays done; when the last region finishes, the owner
+continues through its own outgoing transitions in the same cycle. A forced
+transition that reaches the regions takes the whole group away before any region
+does work in the cycle, as described under *Forced transitions* below. Aspects
+declared on the owner or above run once per cycle around the whole group, and
+aspects declared on a region only around that region. The position of
+a model with regions is a tree, exposed as an immutable
+:class:`pyfcstm.model.configuration.Configuration` through
+:attr:`SimulationRuntime.configuration`.
+
+The rules that decide the corner cases are:
+
+* **Completion.** A region that finishes while another one still works stays
+  done. The last region to finish is only accepted if the owner can continue in
+  the same cycle; this is checked before the completing transition is taken, on
+  a copy, and the check follows the chain of enclosing owners. Running the
+  owner's plain ``during after`` actions is part of every step of that check.
+  A region also finishes indirectly: a child leaving a composite through
+  ``[*]`` only hands control back to the composite, and the composite then
+  leaving through ``[*]`` finishes the region. A rejected completion leaves the
+  leaf working, and the event that triggered it is not kept for the next cycle.
+* **Continuation candidates.** When every region is done, the candidates are all
+  outgoing transitions of the owner, in the order of
+  :attr:`pyfcstm.model.model.State.transitions_from`. Forced transitions are
+  expanded by the model before ordinary ones, so they come first whatever the
+  order of writing; the simulator does not reorder them.
+* **Forced transitions.** A forced transition is syntactic sugar: the simulator
+  knows only the transitions that the model expanded it into (see
+  :mod:`pyfcstm.model.forced`), and owners are not special. A state resting in a
+  region holds an *exit-group* transition for every forced declaration above it,
+  with the declared event and condition. It is a candidate only for a state of the
+  first working region of each owner it names, and only in a cycle that did not
+  enter the state, which puts the decision ahead of any work that regions do in
+  the cycle: what later regions would read or write cannot change it. It is
+  checked like any transition, on a copy: the whole group has to be able to leave
+  and the owner has to continue through its outgoing transitions. A forced
+  transition whose target cannot be entered therefore takes nothing, and no other
+  outgoing transition of the owner takes over. When it is chosen, regions leave in
+  reverse declaration order with the deepest state first, the effect runs, and
+  the owner continues in the same cycle; its ``exit`` runs when the declared
+  transition on its level is taken. The event and the condition are judged once,
+  where the state rests, and a hidden variable carries the decision up through
+  the owners and composites on the way, so an exit action that changes what the
+  condition reads cannot turn the decision around. The event counts as used once.
+* **Aspects.** A leaf counts as doing ``during`` work in a cycle when it runs its
+  ``during`` step, whether or not it declares a ``during`` action. A pseudo
+  leaf does not, and a region that is done does not. The ``before`` actions of a
+  scope run ahead of the first such step below it in the cycle. The ``after``
+  actions are owed and run when the region branch ends, likewise after each
+  region of a group that is being entered, and for the remaining scopes when
+  the cycle ends, deeper scopes first. They do not run when the cycle is a
+  Delta or ends the machine.
+* **Group entry.** The regions of a group are entered in order, each taking its
+  first initial candidate that can reach a stable position. A later region that
+  cannot enter rejects the whole entry; an earlier region's other candidates
+  are not tried. For a transition into the owner this rejects that candidate
+  and the next one is tried, so the source state simply keeps working. Only a
+  cold start has no source state to keep, which makes the whole cycle a Delta
+  that leaves every region ``[init]``.
+* **Loops.** An entry that comes back to the same position and variable values
+  through a chain of group entries and continuations is a dead path, like any
+  loop through pseudo states: another candidate is tried, and the loop is
+  reported only when nothing else works. That includes a candidate inside a
+  region whose only way on, through the owner finishing and being entered
+  again, leads back to the point where the candidate was chosen: the next
+  candidate of that state is taken instead. Only the region that finishes last
+  is judged this way; an earlier region of the group finishes without asking
+  what follows, as *Group entry* says. An entry whose variable values keep
+  changing is unbounded and ends in :class:`SimulationRuntimeDfsError`. Whether
+  a finished group can continue is decided by entering what follows, one level
+  deeper each time, and that nesting is limited to 64 levels. A finite loop that
+  re-enters a group more than about 64 times in one cycle, or a chain of more
+  than about 64 owners that each finish on entry, therefore ends in the same
+  error, where the same model written with plain composites is only limited by
+  the step budget.
+* **Cost.** Whether a candidate can reach a stable position is asked again for
+  every owner on the way: once on a copy, and once more at each level while the
+  candidate is actually taken. Within one cycle the answer to a question that
+  was already asked at the same position, with the same variable values, is
+  reused, so the time grows with the size of the model instead of with a power
+  of the number of owners. A diagnostics report follows the same rule: a check
+  that repeats is listed with its result each time and expanded into its inner
+  checks only where it ran.
+* **Handlers.** No handler runs while a cycle is being tried, for a rejected
+  candidate or for a cycle that ends as a Delta, even when earlier regions
+  already moved. The configuration a handler sees is the position at the moment
+  of the call. While a group is being left, regions that have already left show
+  as ``[done]`` whether they finished or were preempted, so an ``exit`` action
+  of the owner cannot tell finished regions from interrupted ones; use a
+  variable to record that. A handler also sees the hidden variable of a forced
+  declaration, raised from the moment the group left until the declared
+  transition has been taken, so the ``exit`` of the owner sees it raised.
+* **Single-value queries.** :attr:`SimulationRuntime.brief_stack` refuses for a
+  model with regions. The ``state_before`` and ``state_after`` of a diagnostics
+  report give the deepest state common to every branch, and
+  ``configuration_before`` and ``configuration_after`` give the full position.
+
+Hot start, the ``pyfcstm simulate`` command line and position-dependent event
+names with several active leaves do not support regions yet.
+
 Basic usage::
 
     from pyfcstm.simulate import SimulationRuntime
@@ -100,6 +208,31 @@ Abstract handler registration::
             print(f"Counter: {ctx.get_var('counter')}")
 
     runtime.register_handlers_from_object(MyHandlers())
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.simulate import SimulationRuntime
+    >>> source = '''
+    ... def int counter = 0;
+    ... state Root {
+    ...     state Idle;
+    ...     state Busy {
+    ...         during { counter = counter + 1; }
+    ...     }
+    ...     [*] -> Idle;
+    ...     Idle -> Busy : Start;
+    ... }
+    ... '''
+    >>> runtime = SimulationRuntime(load_state_machine_from_text(source))
+    >>> runtime.cycle().value is None
+    True
+    >>> runtime.current_state.path, runtime.vars
+    (('Root', 'Idle'), {'counter': 0})
+    >>> runtime.cycle(['Root.Start']).value is None
+    True
+    >>> runtime.current_state.path, runtime.vars
+    (('Root', 'Busy'), {'counter': 1})
 """
 
 import copy
@@ -107,7 +240,7 @@ import types
 import warnings
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
 
 try:
     from typing import Literal
@@ -127,8 +260,10 @@ from ..model import (
     StateMachine,
     Transition,
 )
+from ..model.configuration import Configuration, _Position, _RegionInit
+from ..model.region import Region, walk_namespaces
 from .diagnostics import CycleDiagnostics, _DecisionCollector, _transition_label
-from .context import ReadOnlyExecutionContext
+from .context import ReadOnlyExecutionContext, _configuration_provider
 from .inputs import InputSourceSpec, _InputSources, _number
 from ..semantics.adapters import expression_from_model, statements_from_model
 from ..semantics.concrete import CONCRETE, normalize_persistent
@@ -327,6 +462,29 @@ class SimulationRuntimeTerminalStateError(IndexError):
     """
 
 
+class SimulationRuntimeRegionQueryError(RuntimeError):
+    """
+    Raised when a query that describes a single active path meets regions.
+
+    With regions the position is a tree, so a flat stack of active states
+    would silently leave branches out. Queries such as
+    :attr:`SimulationRuntime.brief_stack` refuse instead and point to
+    :attr:`SimulationRuntime.configuration`, which describes every branch.
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> runtime = SimulationRuntime(load_state_machine_from_text(
+        ...     'state Root { region A { [*] -> X; state X; } }'
+        ... ))
+        >>> try:
+        ...     runtime.brief_stack
+        ... except SimulationRuntimeRegionQueryError as err:
+        ...     print('configuration' in str(err))
+        True
+    """
+
+
 class SimulationRuntimeEventError(ValueError):
     """
     Raised when a user-supplied cycle event input is invalid.
@@ -497,7 +655,9 @@ class CycleResult:
         normalized input order.
     :type input_events: Tuple[str, ...]
     :param consumed_events: Canonical event paths for evented transitions that
-        executed during this cycle, in execution order.
+        executed during this cycle, in execution order. A path appears once per
+        executed transition, so one event that moves several regions of a model
+        is listed once for each of them.
     :type consumed_events: Tuple[str, ...]
     :param unconsumed_events: Canonical input event paths that did not
         correspond to an executed evented transition.
@@ -611,6 +771,19 @@ class _Frame:
       not set ``plain_before_pending`` because hot start skips entry boundary
       actions.
 
+    A frame may also stand for a :class:`~pyfcstm.model.region.Region`. Such a
+    region frame sits at the bottom of a branch stack (see :class:`_Branch`)
+    and behaves like a composite state that has no lifecycle actions of its
+    own: its initial transitions run in ``init_wait`` mode, and a child that
+    exits through ``[*]`` leaves it in ``post_child_exit`` mode, which means
+    the region is done.
+
+    A frame whose state owns regions carries ``branches``, one
+    :class:`_Branch` per region in declaration order. Its ``mode`` is
+    ``init_wait`` until the whole group has been initialized, ``active`` while
+    at least one region is still working, and ``post_child_exit`` once every
+    region is done.
+
     :param state: The active state represented by this frame.
     :type state: State
     :param mode: Internal execution phase controlling frame processing.
@@ -619,7 +792,9 @@ class _Frame:
         still needs to run plain ``during before`` boundary actions before
         entering the selected initial child.
     :type plain_before_pending: bool
-
+    :param branches: Ordered region branches of a state that owns regions,
+        or ``None`` for every other frame.
+    :type branches: Optional[List[_Branch]]
     Example::
 
         >>> # Internal frame structure (not directly created by users)
@@ -640,9 +815,112 @@ class _Frame:
        manipulating frames directly.
     """
 
-    state: State
+    state: Union[State, Region]
     mode: str
     plain_before_pending: bool = False
+    branches: Optional[List["_Branch"]] = None
+
+
+@dataclass
+class _Branch:
+    """
+    Execution state of one region of a state that owns regions.
+
+    The ``stack`` has the same shape as the runtime's main stack, except that
+    its bottom frame stands for the region itself. An empty list, or a lone
+    region frame that is not done, means the region holds no child yet, as
+    before its initial transition ran or while the child of that transition is
+    being entered; a lone region frame in ``post_child_exit`` mode means the
+    region is done.
+
+    :param region: The region this branch executes.
+    :type region: pyfcstm.model.region.Region
+    :param stack: Frames of the region, from the region frame to its leaf.
+    :type stack: List[_Frame]
+    """
+
+    region: Region
+    stack: List[_Frame]
+
+    @property
+    def status(self) -> str:
+        """
+        Classify the branch as ``pending``, ``live`` or ``done``.
+
+        :return: ``pending`` while the region holds no child frame, ``done``
+            once the region exited through ``[*]``, otherwise ``live``.
+        :rtype: str
+        """
+        if not self.stack:
+            return "pending"
+        if len(self.stack) == 1:
+            return "done" if self.stack[0].mode == "post_child_exit" else "pending"
+        return "live"
+
+
+class _Outer(NamedTuple):
+    """
+    Link from a branch stack to the stack that owns it.
+
+    The chain of links is what lets a transition inside one region ask whether
+    the owner could continue if that region finished.
+
+    :param stack: Stack whose top frame is the owner of the branch.
+    :type stack: List[_Frame]
+    :param index: Position of the branch among the owner's branches.
+    :type index: int
+    :param parent: Link of ``stack`` itself, or ``None`` for the main stack.
+    :type parent: Optional[_Outer]
+    :param leads: Whether the branch is the first one its owner advances in this
+        step. Only such a branch may take its owner's group away, which keeps
+        the decision ahead of any work a region does in the cycle.
+    :type leads: bool
+    """
+
+    stack: List[_Frame]
+    index: int
+    parent: Optional["_Outer"]
+    leads: bool = True
+
+
+class _Run:
+    """
+    Bookkeeping shared by one advance of the execution tree.
+
+    :param is_validation_mode: Whether handlers must stay silent.
+    :type is_validation_mode: bool
+    :param consumed_events: Collector for events used by committed transitions.
+    :type consumed_events: Optional[List[str]]
+    :param validate_post_child_exit: Whether transitions chosen after a child
+        exits should be validated for a stable continuation.
+    :type validate_post_child_exit: bool
+    :ivar group_exit: While a state resting inside a region has chosen an
+        exit-group transition and the owners are being unwound: the transition,
+        the state it leaves and how many owners are still to be passed.
+    :vartype group_exit: Optional[Tuple[Transition, State, int]]
+    """
+
+    def __init__(
+        self,
+        is_validation_mode: bool = False,
+        consumed_events: Optional[List[str]] = None,
+        validate_post_child_exit: bool = True,
+    ) -> None:
+        self.is_validation_mode = is_validation_mode
+        self.consumed_events = consumed_events
+        self.validate_post_child_exit = validate_post_child_exit
+        self.steps_taken = 0
+        self.seen_signatures = set()
+        self.group_exit = None
+
+
+_UNSET = object()
+_STABLE = "stable"
+_ENDED = "ended"
+_FAILED = "failed"
+_CONTINUE = "continue"
+_REGION_DONE = "region_done"
+_GROUP_EXIT = "group_exit"
 
 
 class SimulationRuntime:
@@ -835,6 +1113,9 @@ class SimulationRuntime:
             value cannot be normalized to its declared ``int`` / ``float`` type.
         :raises ValueError: If ``initial_state`` cannot be resolved to a
             state in this machine.
+        :raises pyfcstm.utils.validate.ModelValidationError: If hot start is
+            requested for a model that declares regions or ``active()`` queries,
+            which a cold start already supports.
 
         Example - Default initialization::
 
@@ -905,10 +1186,42 @@ class SimulationRuntime:
            but it does not replay the composite's plain ``during before``
            boundary actions before that child entry.
         """
+        if initial_state is not None:
+            from pyfcstm.model.support import require_supported_model
+
+            # Hot start has to derive the hidden activity flags and place every
+            # region, which the cold-start path does not need.
+            require_supported_model(state_machine, 'simulate hot start')
         if abstract_error_mode not in ("raise", "log"):
             raise ValueError("abstract_error_mode must be 'raise' or 'log'")
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
+        # Links from the branch stack being advanced up to the main stack.
+        self._outer_chain: List[_Outer] = []
+        # Per-cycle bookkeeping of aspects on scopes of a model with regions:
+        # scope path -> [before already ran, after still owed].
+        self._ledger: Dict[Tuple[str, ...], List[bool]] = {}
+        # Nesting depth of group initializations running inside each other.
+        self._init_depth = 0
+        # Points on the path being examined right now: the starting point of
+        # every check under way and the position of every owner whose
+        # continuation is being checked. Arriving at one of them again is a
+        # loop.
+        self._continuation_trail: List[tuple] = []
+        # Whether the model declares regions; fixed for the life of the runtime.
+        self._has_regions = state_machine.has_regions
+        # Answers of candidate and continuation checks within one cycle: the
+        # answer, the trail points it compared, and which of them were on the
+        # trail at the time.
+        self._memo: Dict[tuple, Tuple[bool, frozenset, frozenset]] = {}
+        # One set per check under way: the trail points that check compared.
+        self._memo_deps: List[set] = []
+        # Nesting depth of group entries at which the call stack ran out in
+        # the cycle being tried, or None.
+        self._overflow_depth: Optional[int] = None
+        # Main stack of the committed execution pass, for handler snapshots.
+        self._root_stack: Optional[List[_Frame]] = None
+        self._scopes: Optional[Dict[Tuple[str, ...], Union[State, Region]]] = None
         self.vars: Dict[str, Union[int, float]] = {}
         self._input_sources = _InputSources(state_machine.inputs, input_source)
         # Compiled expressions and operation blocks, keyed by the identity of
@@ -1477,11 +1790,22 @@ class SimulationRuntime:
 
         :param stack: Source stack to clone.
         :type stack: List[_Frame]
-        :return: A shallow structural copy of the frame stack.
+        :return: A structural copy of the frame stack, including the stacks of
+            every region branch.
         :rtype: List[_Frame]
         """
         return [
-            _Frame(frame.state, frame.mode, frame.plain_before_pending)
+            _Frame(
+                frame.state,
+                frame.mode,
+                frame.plain_before_pending,
+                None
+                if frame.branches is None
+                else [
+                    _Branch(branch.region, SimulationRuntime._clone_stack(branch.stack))
+                    for branch in frame.branches
+                ],
+            )
             for frame in stack
         ]
 
@@ -2004,6 +2328,9 @@ class SimulationRuntime:
         abstract actions are intentionally excluded because they cannot be
         dispatched by the handler registry.
 
+        Region aspects are included, because a region may declare
+        ``>> during before/after`` actions of its own.
+
         :return: Sorted canonical abstract action paths.
         :rtype: List[str]
 
@@ -2020,13 +2347,14 @@ class SimulationRuntime:
             True
         """
         paths = []
-        for state in self.state_machine.walk_states():
-            actions = (
-                list(state.on_enters)
-                + list(state.on_durings)
-                + list(state.on_exits)
-                + list(state.on_during_aspects)
-            )
+        for namespace in walk_namespaces(self.state_machine.root_state):
+            actions = list(namespace.on_during_aspects)
+            if isinstance(namespace, State):
+                actions += (
+                    list(namespace.on_enters)
+                    + list(namespace.on_durings)
+                    + list(namespace.on_exits)
+                )
             for action in actions:
                 if action.is_abstract and action.name is not None:
                     paths.append(action.func_name)
@@ -2390,7 +2718,40 @@ class SimulationRuntime:
                 if collector is not None:
                     previous_parent = collector.parent
                     collector.parent = record['id']
-                accepted = validator(stack, vars_, transition, d_events)
+                if self._has_regions:
+                    memo_key = self._memo_key(
+                        ("candidate", _transition_label(stack[-1].state, transition)),
+                        stack,
+                        vars_,
+                        self._current_outer(),
+                    )
+                    # A check that is under way owns the point it started
+                    # from. Coming back to that point further in is a loop,
+                    # whichever candidate is asked about there: taking it for
+                    # real would arrive here again and choose the same way.
+                    origin = ("origin",) + memo_key[1:]
+                    if self._memo_deps:
+                        self._memo_deps[-1].add(origin)
+                    if origin in self._continuation_trail:
+                        # A region is not a state: a loop met while it picks
+                        # its initial transition is reported at its owner.
+                        where = stack
+                        if isinstance(stack[-1].state, Region):
+                            where = self._current_outer().stack
+                        signature = self._create_execution_signature(where, vars_)
+                        raise _SimulationRuntimeLivelockError((signature, signature))
+                    accepted = self._memo_get(memo_key)
+                    if accepted is None:
+                        self._continuation_trail.append(origin)
+                        self._memo_deps.append(set())
+                        try:
+                            accepted = validator(stack, vars_, transition, d_events)
+                        finally:
+                            positions = self._memo_close()
+                            self._continuation_trail.pop()
+                        self._memo_put(memo_key, accepted, positions)
+                else:
+                    accepted = validator(stack, vars_, transition, d_events)
             except _SimulationRuntimeLivelockError:
                 # _SimulationRuntimeLivelockError: validator rejected a cyclic path;
                 # retain its evidence if a later stable candidate is selected.
@@ -2481,6 +2842,9 @@ class SimulationRuntime:
         :return: ``None``.
         :rtype: None
         """
+        if self._has_regions:
+            self._run_scoped_during(state, vars_, is_validation_mode)
+            return
         for _, func in state.iter_on_during_aspect_recursively():
             self._execute_func(
                 func,
@@ -2489,6 +2853,197 @@ class SimulationRuntime:
                 execution_state_path=state.path,
                 active_leaf_path=state.path,
             )
+
+    def _run_scoped_during(
+        self,
+        state: State,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """
+        Run a leaf's ``during`` chain with aspects counted per enclosing scope.
+
+        Each state or region that declares ``>> during before`` runs it ahead
+        of the first ``during`` work below it in the current cycle, however
+        many leaves work below it. The ``>> during after`` actions are only
+        marked as owed here; :meth:`_flush_after_aspects` runs them when the
+        scope has finished its work, so a scope enclosing several regions runs
+        them once after the last region.
+
+        :param state: Leaf whose ``during`` chain runs.
+        :type state: State
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        scopes = []
+        scope = state.parent
+        while scope is not None:
+            scopes.append(scope)
+            scope = scope.parent
+        scopes.reverse()
+        if not state.is_pseudo:
+            for scope in scopes:
+                entry = self._ledger.setdefault(scope.path, [False, False])
+                if not entry[0]:
+                    entry[0] = True
+                    for func in scope.list_on_during_aspects(aspect="before"):
+                        wrapped = (
+                            state.path
+                            if is_validation_mode
+                            else self._wrapped_state_path(scope)
+                        )
+                        self._execute_func(
+                            func,
+                            vars_,
+                            is_validation_mode=is_validation_mode,
+                            execution_state_path=wrapped,
+                            active_leaf_path=wrapped,
+                        )
+        for func in state.list_on_durings(aspect=None):
+            self._execute_func(
+                func,
+                vars_,
+                is_validation_mode=is_validation_mode,
+                execution_state_path=state.path,
+                active_leaf_path=state.path,
+            )
+        if not state.is_pseudo:
+            for scope in scopes:
+                self._ledger[scope.path][1] = True
+
+    def _call_time_configuration(self) -> Configuration:
+        """
+        Snapshot the position of the committed execution tree for a handler.
+
+        Handlers only run while a committed pass is executing, when the tree is
+        never empty, so this is the configuration at the moment of the call.
+
+        :return: The configuration of the tree being executed.
+        :rtype: pyfcstm.model.configuration.Configuration
+        """
+        return self._configuration_of(self._root_stack)
+
+    def _wrapped_state_path(self, scope: Union[State, Region]) -> Tuple[str, ...]:
+        """
+        Find the deepest state common to everything an aspect of ``scope`` wraps.
+
+        Starting at the frame of ``scope`` in the committed tree, the search
+        follows the single active chain downwards and stops at the first state
+        that owns several regions or at the active leaf; an owner of one region
+        is passed through, as the plain composite it behaves like. A scope that
+        wraps one branch therefore reports that branch's leaf, and a scope that wraps a whole
+        group of regions reports the owner of the group, even while some of its
+        regions are already done.
+
+        :param scope: State or region that declares the aspect being run.
+        :type scope: Union[State, Region]
+        :return: Path of the deepest common state.
+        :rtype: Tuple[str, ...]
+        """
+        stack, index = self._find_frame(self._root_stack, scope)
+        while True:
+            frame = stack[index]
+            if frame.branches is not None and len(frame.branches) == 1:
+                stack, index = frame.branches[0].stack, 0
+            elif (
+                isinstance(frame.state, Region) or frame.branches is None
+            ) and index + 1 < len(stack):
+                index += 1
+            else:
+                break
+        return stack[index].state.path
+
+    @staticmethod
+    def _find_frame(
+        stack: List[_Frame], scope: Union[State, Region]
+    ) -> Optional[Tuple[List[_Frame], int]]:
+        """
+        Locate the frame of ``scope`` in a stack tree.
+
+        :param stack: Stack to search, including the stacks of its branches.
+        :type stack: List[_Frame]
+        :param scope: State or region to look for.
+        :type scope: Union[State, Region]
+        :return: The stack holding the frame and the frame's index, or ``None``
+            when ``scope`` is not active.
+        :rtype: Optional[Tuple[List[_Frame], int]]
+        """
+        for index, frame in enumerate(stack):
+            if frame.state is scope:
+                return stack, index
+            for branch in frame.branches or ():
+                found = SimulationRuntime._find_frame(branch.stack, scope)
+                if found is not None:
+                    return found
+        return None
+
+    def _scope_at(self, path: Tuple[str, ...]) -> Union[State, Region]:
+        """
+        Return the state or region whose full path is ``path``.
+
+        :param path: Full path of a state or region of the machine.
+        :type path: Tuple[str, ...]
+        :return: The matching namespace object.
+        :rtype: Union[State, Region]
+        """
+        if self._scopes is None:
+            self._scopes = {
+                namespace.path: namespace
+                for namespace in walk_namespaces(self.state_machine.root_state)
+            }
+        return self._scopes[path]
+
+    def _flush_after_aspects(
+        self,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+        prefix: Tuple[str, ...] = (),
+    ) -> None:
+        """
+        Run the ``>> during after`` actions that are owed below ``prefix``.
+
+        Scopes run innermost first, matching the order a single leaf uses for
+        its ancestors. Calling it at the end of a region branch and at the end
+        of the cycle gives each scope its ``after`` exactly once, after its last
+        ``during`` work. The owner of a group needs no call of its own: a branch
+        that worked rests for the remainder of the cycle, so nothing can run
+        between the last region of the group and the end of the branch, or of
+        the cycle, that encloses the owner.
+
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :param prefix: Only scopes whose path starts with this prefix run.
+        :type prefix: Tuple[str, ...], optional
+        :return: ``None``.
+        :rtype: None
+        """
+        owed = [
+            path
+            for path, entry in self._ledger.items()
+            if entry[1] and path[: len(prefix)] == prefix
+        ]
+        for path in sorted(owed, key=lambda item: (-len(item), item)):
+            self._ledger[path][1] = False
+            scope = self._scope_at(path)
+            for func in scope.list_on_during_aspects(aspect="after"):
+                wrapped = (
+                    scope.path
+                    if is_validation_mode
+                    else self._wrapped_state_path(scope)
+                )
+                self._execute_func(
+                    func,
+                    vars_,
+                    is_validation_mode=is_validation_mode,
+                    execution_state_path=wrapped,
+                    active_leaf_path=wrapped,
+                )
 
     def _enter_state(
         self,
@@ -2510,6 +3065,13 @@ class SimulationRuntime:
         ``'init_wait'`` mode and immediately attempt their initial transition
         chain. Once an initial child is selected, the composite's plain
         ``during before`` actions run before entering that selected child.
+        In a model with regions every non-leaf state only switches into
+        ``'init_wait'`` mode here and is started by the main loop. A cycle is
+        then taken through exactly the frame states it was tried through, which
+        is what remembered answers and loop detection compare. Starting the
+        regions of an owner also changes values region by region and can fail
+        half way, and only :meth:`_advance_owner` in the loop makes the whole
+        attempt fail instead of leaving a half-started group behind.
 
         :param stack: Target execution stack.
         :type stack: List[_Frame]
@@ -2549,7 +3111,13 @@ class SimulationRuntime:
         else:
             stack[-1].mode = "init_wait"
             stack[-1].plain_before_pending = True
-            if attempt_initial_transition:
+            if state.regions:
+                stack[-1].branches = [
+                    _Branch(region, []) for region in state.regions.values()
+                ]
+            if attempt_initial_transition and not self._has_regions:
+                # Trying a composite's initial transition changes nothing when
+                # no candidate is usable, so the unused result is harmless.
                 self._attempt_init_transition(
                     stack,
                     vars_,
@@ -2589,12 +3157,7 @@ class SimulationRuntime:
         :return: ``True`` if an initial transition was taken.
         :rtype: bool
         """
-        if not stack:
-            return False
         state = stack[-1].state
-        if state.is_leaf_state:
-            return False
-
         transition = self._select_valid_candidate(
             stack, vars_, d_events, state.init_transitions,
             self._validate_initial_transition,
@@ -2611,6 +3174,541 @@ class SimulationRuntime:
             attempt_initial_transition=not is_validation_mode,
         )
         return True
+
+    def _current_outer(self) -> Optional[_Outer]:
+        """
+        Return the link from the branch stack being advanced to its owner.
+
+        :return: The innermost link, or ``None`` while the main stack runs.
+        :rtype: Optional[_Outer]
+        """
+        return self._outer_chain[-1] if self._outer_chain else None
+
+    def _run_owner_plain_after(
+        self,
+        owner: State,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """
+        Run the plain ``during after`` actions of a state that owns regions.
+
+        The actions run once, at the moment the whole group hands control back
+        to the owner, whether through the last region finishing or through an
+        exit-group transition.
+
+        :param owner: State that owns regions.
+        :type owner: State
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        for on_during_after in owner.list_on_durings(aspect="after"):
+            self._execute_func(
+                on_during_after, vars_, is_validation_mode=is_validation_mode
+            )
+
+    def _init_group(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        consumed_events: Optional[List[str]] = None,
+        is_validation_mode: bool = False,
+        outer: Optional[_Outer] = None,
+    ) -> bool:
+        """
+        Initialize every region of the owner on top of ``stack``, in order.
+
+        Each region picks its first initial transition that can reach a stable
+        position and runs until it stops, so a later region already sees the
+        writes and entered states of the earlier ones. A region that cannot
+        reach a stable position makes the whole entry fail; earlier regions
+        are not retried with other entries. When every region finished during
+        initialization the owner continues in the same cycle.
+
+        :param stack: Stack whose top frame owns the regions and is waiting
+            in ``init_wait`` mode.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param consumed_events: Optional collector for committed event use.
+        :type consumed_events: Optional[List[str]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :param outer: Link of ``stack`` itself, ``None`` for the main stack.
+        :type outer: Optional[_Outer]
+        :return: ``True`` if every region was initialized.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: If group initializations nest deeper
+            than the structural safety limit within one cycle. That happens
+            when more groups than the limit are entered inside one another or
+            one after another in the same cycle, and when a transition keeps
+            re-entering a group without bound.
+        """
+        self._init_depth += 1
+        try:
+            if self._init_depth > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                limit = self._DFS_STRUCTURAL_DEPTH_LIMIT
+                raise SimulationRuntimeDfsError(
+                    "Group initialization nested deeper than the structural safety "
+                    f"limit ({limit}) within one cycle; the state machine either "
+                    f"enters more than {limit} groups inside one another or one "
+                    "after another in the same cycle, or re-enters a group without "
+                    "bound."
+                )
+            frame = stack[-1]
+            pending = frame.plain_before_pending
+            for index, branch in enumerate(frame.branches):
+                region_frame = _Frame(branch.region, "init_wait", pending)
+                branch.stack = [region_frame]
+                run = _Run(
+                    is_validation_mode=is_validation_mode, consumed_events=consumed_events
+                )
+                self._outer_chain.append(_Outer(stack, index, outer))
+                try:
+                    outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+                finally:
+                    self._outer_chain.pop()
+                if outcome not in (_STABLE, _REGION_DONE):
+                    return False
+                self._flush_after_aspects(vars_, is_validation_mode, branch.region.path)
+                # The first non-pseudo child entered anywhere in the group consumes
+                # the owner's plain ``during before`` boundary actions.
+                pending = region_frame.plain_before_pending
+            frame.plain_before_pending = False
+            self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
+            return True
+        except RecursionError:
+            # RecursionError: the interpreter's call stack ran out somewhere
+            # below this group entry. Only note how deep the entries were
+            # nested, so that the cycle can say so; nothing else is safe to do
+            # this close to the limit.
+            if self._overflow_depth is None:
+                self._overflow_depth = self._init_depth
+            raise
+        finally:
+            self._init_depth -= 1
+
+    def _finish_group_advance(
+        self,
+        frame: _Frame,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+        entered: bool = False,
+    ) -> None:
+        """
+        Settle an owner frame after its regions were initialized or advanced.
+
+        When every region is done the owner runs its plain ``during after``
+        actions and switches to ``post_child_exit`` so the loop selects one of
+        its outgoing transitions. Otherwise it becomes ``active``, or
+        ``after_entry`` right after initialization, which like a freshly
+        entered leaf means the work of this cycle is already done.
+
+        :param frame: Frame of the state that owns regions.
+        :type frame: _Frame
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :param entered: Whether the regions were just initialized, defaults to
+            ``False``.
+        :type entered: bool, optional
+        :return: ``None``.
+        :rtype: None
+        """
+        if all(branch.status == "done" for branch in frame.branches):
+            self._run_owner_plain_after(frame.state, vars_, is_validation_mode)
+            frame.mode = "post_child_exit"
+        else:
+            frame.mode = "after_entry" if entered else "active"
+
+    def _advance_owner(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        run: _Run,
+    ) -> str:
+        """
+        Advance the owner on top of ``stack`` by one step of its group.
+
+        A group that is still waiting is initialized. Otherwise every working
+        region advances in declaration order until it stops on a stable leaf or
+        finishes. A leaf of the first region advanced may choose an exit-group
+        transition, which expansion of a forced transition puts there; the whole
+        group then leaves, regions in reverse declaration order, and the owner
+        switches to ``post_child_exit`` like it does when the last region
+        finishes, so the loop continues through its outgoing transitions. No
+        region does ordinary work in a cycle that starts that way.
+
+        :param stack: Stack whose top frame owns regions.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param run: Mode flags and the step budget of this attempt.
+        :type run: _Run
+        :return: ``continue`` when the loop must look at the stack again,
+            ``stable`` when every working region rests on a stable leaf,
+            ``group_exit`` when the exit-group transition chosen below names an
+            owner further out, and ``failed`` when the group cannot reach a
+            valid configuration.
+        :rtype: str
+        """
+        frame = stack[-1]
+        if frame.mode == "init_wait":
+            ok = self._init_group(
+                stack,
+                vars_,
+                d_events,
+                consumed_events=run.consumed_events,
+                is_validation_mode=run.is_validation_mode,
+                outer=self._current_outer(),
+            )
+            return _CONTINUE if ok else _FAILED
+
+        leads = True
+        for index, branch in enumerate(frame.branches):
+            if branch.status != "live":
+                continue
+            self._outer_chain.append(
+                _Outer(stack, index, self._current_outer(), leads)
+            )
+            leads = False
+            try:
+                outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+            finally:
+                self._outer_chain.pop()
+            if outcome == _GROUP_EXIT:
+                transition, source, levels = run.group_exit
+                if levels > 1:
+                    # The transition names an owner further out.
+                    run.group_exit = (transition, source, levels - 1)
+                    return _GROUP_EXIT
+                self._perform_group_exit(frame, vars_, run)
+                return _CONTINUE
+            if outcome not in (_STABLE, _REGION_DONE):
+                return _FAILED
+            self._flush_after_aspects(
+                vars_, run.is_validation_mode, branch.region.path
+            )
+        self._finish_group_advance(frame, vars_, run.is_validation_mode)
+        return _CONTINUE if frame.mode == "post_child_exit" else _STABLE
+
+    def _exit_group(
+        self,
+        frame: _Frame,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """
+        Take every working region out of an owner that is being left.
+
+        Regions leave in reverse declaration order and, inside a region, the
+        deepest state leaves first. A finished region has nothing to exit. A
+        composite or owner below the owner runs its plain ``during after``
+        actions before its ``exit``, exactly as it would when a leaf below it
+        exits through ``[*]``. Afterwards the owner runs its own plain
+        ``during after`` actions once; its ``exit`` is left to the caller.
+
+        :param frame: Frame of the owner being left.
+        :type frame: _Frame
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param is_validation_mode: Whether handlers must stay silent.
+        :type is_validation_mode: bool
+        :return: ``None``.
+        :rtype: None
+        """
+        for branch in reversed(frame.branches):
+            while len(branch.stack) > 1:
+                # The frame stays on the stack while its actions run, so a
+                # handler still sees the state it is leaving.
+                below = branch.stack[-1]
+                state = below.state
+                if below.branches is not None:
+                    self._exit_group(below, vars_, is_validation_mode)
+                elif not state.is_leaf_state:
+                    self._run_owner_plain_after(state, vars_, is_validation_mode)
+                for on_exit in state.on_exits:
+                    self._execute_func(
+                        on_exit, vars_, is_validation_mode=is_validation_mode
+                    )
+                branch.stack.pop()
+                self._record_state_trace(
+                    "state_exit", state, vars_, is_validation_mode
+                )
+            # Once emptied, the region counts as done in position snapshots.
+            branch.stack[0].mode = "post_child_exit"
+        self._run_owner_plain_after(frame.state, vars_, is_validation_mode)
+
+    def _continuation_viable(
+        self,
+        branch_stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        outer: _Outer,
+    ) -> bool:
+        """
+        Decide whether a region that just finished may stay finished.
+
+        A finished region is acceptable while another region of the same owner
+        still works. When it is the last one the owner has to continue in the
+        same cycle, so the speculative search runs the owner's outgoing
+        transitions and asks the same question one level up if that empties
+        the enclosing region too.
+
+        :param branch_stack: Simulated stack of the finished region.
+        :type branch_stack: List[_Frame]
+        :param vars_: Variable mapping at the moment the region finished.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param outer: Link from the region's stack to its owner.
+        :type outer: _Outer
+        :return: ``True`` if the finished region can be committed.
+        :rtype: bool
+        """
+        owner_stack = self._clone_stack(outer.stack)
+        owner_frame = owner_stack[-1]
+        owner_frame.branches[outer.index].stack = self._clone_stack(branch_stack)
+        if any(branch.status != "done" for branch in owner_frame.branches):
+            return True
+        sim_vars = copy.deepcopy(vars_)
+        self._run_owner_plain_after(owner_frame.state, sim_vars, True)
+        owner_frame.mode = "post_child_exit"
+        return self._owner_can_continue(owner_stack, sim_vars, d_events, outer.parent)
+
+    def _owner_can_continue(
+        self,
+        owner_stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        outer: Optional[_Outer],
+    ) -> bool:
+        """
+        Decide whether an owner that was handed control back can go on.
+
+        The owner is in ``post_child_exit`` on ``owner_stack``, either because
+        its last region finished or because its group was taken away. The
+        search runs its outgoing transitions on a copy and asks the same
+        question one level up if that empties the enclosing region too. Coming
+        back to a position that is being examined further out is a loop.
+
+        :param owner_stack: Simulated stack whose top frame is the owner.
+        :type owner_stack: List[_Frame]
+        :param vars_: Variable mapping at the moment control came back.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param outer: Link from ``owner_stack`` to the owner that encloses it,
+            or ``None`` for the main stack.
+        :type outer: Optional[_Outer]
+        :return: ``True`` if the owner reaches a stable position.
+        :rtype: bool
+        :raises _SimulationRuntimeLivelockError: If the continuation comes back
+            to a position that is already being examined.
+        """
+        signature = self._create_execution_signature(owner_stack, vars_)
+        key = (signature, self._enclosing_shapes(outer))
+        # A group only hands control back inside a check started by
+        # _check_candidate.
+        self._memo_deps[-1].add(key)
+        # Seeing this position again is the loop that the starting points of
+        # the checks would find one round later; stopping here keeps the
+        # nesting one level lower.
+        if key in self._continuation_trail:
+            raise _SimulationRuntimeLivelockError((signature, signature))
+        self._continuation_trail.append(key)
+        try:
+            memo_key = self._memo_key(("continuation",), owner_stack, vars_, outer)
+            viable = self._memo_get(memo_key)
+            if viable is None:
+                self._memo_deps.append(set())
+                try:
+                    viable = self._validation_search_reaches_stable(
+                        owner_stack, vars_, d_events, outer=outer
+                    )
+                finally:
+                    positions = self._memo_close()
+                self._memo_put(memo_key, viable, positions)
+            return viable
+        finally:
+            self._continuation_trail.pop()
+
+    def _group_exit_allowed(self, transition: Transition) -> bool:
+        """
+        Tell whether a state may choose an exit-group transition now.
+
+        Only a state of the first region that each of the named owners advances
+        in this step may. Regions after the first would already see what the
+        first one did in the same cycle, so the group is taken away before any
+        of that happens or not at all.
+
+        :param transition: Exit-group transition on the state.
+        :type transition: Transition
+        :return: ``True`` if no region of the named owners went before.
+        :rtype: bool
+        """
+        outer = self._current_outer()
+        for _ in range(transition.exit_group_levels):
+            if not outer.leads:
+                return False
+            outer = outer.parent
+        return True
+
+    def _validate_leaf_transition(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Validate a transition chosen on a leaf, whatever kind it is.
+
+        :param stack: Current execution stack.
+        :type stack: List[_Frame]
+        :param vars_: Current variable mapping.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Candidate transition to validate.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if the transition leads to a valid continuation.
+        :rtype: bool
+        """
+        if transition.exit_group_levels:
+            return self._validate_group_exit(stack, vars_, transition, d_events)
+        return self._validate_transition(stack, vars_, transition, d_events)
+
+    def _validate_group_exit(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        transition: Transition,
+        d_events: Dict[str, Event],
+    ) -> bool:
+        """
+        Decide whether taking a group away leaves a position that can go on.
+
+        On a copy the whole group of the named owner leaves, the transition's
+        effect runs, and the owner continues through its outgoing transitions.
+        The exit is acceptable only if that reaches a stable position, so a
+        forced transition whose target cannot be entered does not take the
+        group away.
+
+        :param stack: Stack of the region branch whose leaf chose ``transition``.
+        :type stack: List[_Frame]
+        :param vars_: Current variable mapping.
+        :type vars_: Dict[str, Union[int, float]]
+        :param transition: Exit-group transition to validate.
+        :type transition: Transition
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :return: ``True`` if the owner can continue after the group left.
+        :rtype: bool
+        """
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            outer = self._current_outer()
+            owner_stack = self._clone_stack(stack)
+            link = outer
+            for _ in range(transition.exit_group_levels):
+                # Put the simulated branch into a copy of the owner's stack,
+                # then that stack into the next owner's, outwards.
+                link = outer
+                branch_stack = owner_stack
+                owner_stack = self._clone_stack(outer.stack)
+                owner_stack[-1].branches[outer.index].stack = branch_stack
+                outer = outer.parent
+            owner_frame = owner_stack[-1]
+            sim_vars = copy.deepcopy(vars_)
+            self._exit_group(owner_frame, sim_vars, True)
+            self._execute_transition_effect(transition, sim_vars, is_validation_mode=True)
+            owner_frame.mode = "post_child_exit"
+            return self._owner_can_continue(
+                owner_stack, sim_vars, d_events, link.parent
+            )
+        finally:
+            self._ledger = saved
+
+    def _perform_group_exit(
+        self,
+        frame: _Frame,
+        vars_: Dict[str, Union[int, float]],
+        run: _Run,
+    ) -> None:
+        """
+        Take the group of an owner away and hand control back to it.
+
+        The regions leave in reverse declaration order, then the transition's
+        effect runs. The event that triggered the transition counts as used. The
+        owner is left in ``post_child_exit``, so the loop continues through its
+        outgoing transitions as when its last region finished.
+
+        :param frame: Frame of the owner whose group leaves.
+        :type frame: _Frame
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param run: Mode flags of this attempt; ``run.group_exit`` names the
+            transition and the state it leaves.
+        :type run: _Run
+        :return: ``None``.
+        :rtype: None
+        """
+        transition, source, _ = run.group_exit
+        run.group_exit = None
+        event_name = transition.event.path_name if transition.event else "none"
+        if run.is_validation_mode:
+            self.logger.debug(
+                "[VALIDATION] Execute exit-group transition: %s (event=%s)",
+                ".".join(source.path),
+                event_name,
+            )
+        else:
+            self.logger.info(
+                "Execute exit-group transition: %s (event=%s)",
+                ".".join(source.path),
+                event_name,
+            )
+            if transition.event is not None and run.consumed_events is not None:
+                run.consumed_events.append(transition.event.path_name)
+        self._exit_group(frame, vars_, run.is_validation_mode)
+        self._execute_transition_effect(
+            transition, vars_, is_validation_mode=run.is_validation_mode
+        )
+        self._record_transition_trace(
+            source, transition, vars_, run.is_validation_mode
+        )
+        frame.mode = "post_child_exit"
+
+    @staticmethod
+    def _enclosing_shapes(outer: Optional[_Outer]) -> tuple:
+        """
+        Summarize the stacks that enclose a branch, outermost last.
+
+        :param outer: Link from a branch stack to its owner, or ``None``.
+        :type outer: Optional[_Outer]
+        :return: Hashable shapes of every enclosing stack.
+        :rtype: tuple
+        """
+        shapes = []
+        while outer is not None:
+            # The branch being examined is described by its own stack; what the
+            # enclosing stack still holds in that slot may be out of date.
+            shapes.append(SimulationRuntime._stack_shape(outer.stack, outer.index))
+            outer = outer.parent
+        return tuple(shapes)
 
     def _select_valid_candidate(self, stack, vars_, d_events, transitions, validator):
         """Try later candidates before reporting a proven cyclic dead end."""
@@ -2728,7 +3826,8 @@ class SimulationRuntime:
         """
         if not frame.plain_before_pending:
             return
-        for on_during_before in frame.state.list_on_durings(aspect="before"):
+        owner = frame.state.parent if isinstance(frame.state, Region) else frame.state
+        for on_during_before in owner.list_on_durings(aspect="before"):
             self._execute_func(
                 on_during_before, vars_, is_validation_mode=is_validation_mode
             )
@@ -2756,6 +3855,7 @@ class SimulationRuntime:
         if (
             current_state.is_pseudo
             and stack
+            and not isinstance(stack[-1].state, Region)
             and stack[-1].state is current_state.parent
             and stack[-1].plain_before_pending
         ):
@@ -2790,18 +3890,23 @@ class SimulationRuntime:
         """
         sim_stack = self._clone_stack(stack)
         sim_vars = copy.deepcopy(vars_)
-        self._execute_initial_transition_on_context(
-            sim_stack,
-            sim_vars,
-            transition,
-            d_events,
-            is_validation_mode=True,
-            attempt_initial_transition=False,
-        )
-        return self._validation_search_reaches_stable(
-            sim_stack, sim_vars, d_events,
-            trail=(self._create_execution_signature(stack, vars_),),
-        )
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            self._execute_initial_transition_on_context(
+                sim_stack,
+                sim_vars,
+                transition,
+                d_events,
+                is_validation_mode=True,
+                attempt_initial_transition=False,
+            )
+            return self._validation_search_reaches_stable(
+                sim_stack, sim_vars, d_events,
+                trail=(self._create_execution_signature(stack, vars_),),
+            )
+        finally:
+            self._ledger = saved
 
     def _finalize_exit_to_parent(
         self,
@@ -2831,6 +3936,11 @@ class SimulationRuntime:
             return True
 
         parent = stack[-1].state
+        if isinstance(parent, Region):
+            # The child left through ``[*]`` directly under a region: the region
+            # is done. It has no ``during after`` action to run.
+            stack[-1].mode = "post_child_exit"
+            return False
         if parent.is_root_state:
             for on_during_after in parent.list_on_durings(aspect="after"):
                 self._execute_func(
@@ -2990,10 +4100,12 @@ class SimulationRuntime:
         Select the next executable transition for the current stack-top state.
 
         Transitions are considered in declaration order from
-        ``current_state.transitions_from``. For stoppable source states, each
-        candidate may also pass :meth:`_validate_transition`, which simulates the
-        remainder of the chain and rejects transitions that cannot eventually
-        reach another stoppable configuration or end the machine.
+        ``current_state.transitions_from``, leaving out the exit-group
+        transitions that :meth:`_group_exit_allowed` refuses. For stoppable
+        source states, each candidate may also pass
+        :meth:`_validate_leaf_transition`, which simulates the remainder of the
+        chain and rejects transitions that cannot eventually reach another
+        stoppable configuration or end the machine.
 
         :param stack: Execution stack to inspect.
         :type stack: List[_Frame]
@@ -3010,12 +4122,16 @@ class SimulationRuntime:
         :return: The first acceptable transition, or ``None``.
         :rtype: Optional[Transition]
         """
-        if not stack:
-            return None
         current_state = stack[-1].state
-        transitions = current_state.transitions_from
+        # An exit-group transition is only a candidate for the first region
+        # its owners advance, so it decides before any region did work.
+        transitions = [
+            item
+            for item in current_state.transitions_from
+            if not item.exit_group_levels or self._group_exit_allowed(item)
+        ]
         validator = (
-            self._validate_transition
+            self._validate_leaf_transition
             if validate_stoppable and (current_state.is_stoppable or force_validate)
             else None
         )
@@ -3063,47 +4179,102 @@ class SimulationRuntime:
         :return: ``True`` if the transition leads to a valid continuation.
         :rtype: bool
         """
-        sim_stack = self._clone_stack(stack)
-        sim_vars = copy.deepcopy(vars_)
-        stack_repr = [(".".join(frame.state.path), frame.mode) for frame in stack]
-        self.logger.debug(
-            "[VALIDATION] DFS validation start for transition %s -> %s with stack=%s vars=%s",
-            transition.from_state,
-            transition.to_state,
-            stack_repr,
-            _safe_runtime_repr(vars_),
-        )
-        ended = self._execute_transition_on_context(
-            sim_stack, sim_vars, transition, d_events, is_validation_mode=True
-        )
-        if ended:
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            sim_stack = self._clone_stack(stack)
+            sim_vars = copy.deepcopy(vars_)
+            stack_repr = [(".".join(frame.state.path), frame.mode) for frame in stack]
             self.logger.debug(
-                "[VALIDATION] DFS validation success for transition %s -> %s: runtime ended",
+                "[VALIDATION] DFS validation start for transition %s -> %s with stack=%s vars=%s",
                 transition.from_state,
                 transition.to_state,
+                stack_repr,
+                _safe_runtime_repr(vars_),
             )
-            return True
+            ended = self._execute_transition_on_context(
+                sim_stack, sim_vars, transition, d_events, is_validation_mode=True
+            )
+            if ended:
+                self.logger.debug(
+                    "[VALIDATION] DFS validation success for transition %s -> %s: runtime ended",
+                    transition.from_state,
+                    transition.to_state,
+                )
+                return True
 
-        success = self._validation_search_reaches_stable(
-            sim_stack,
-            sim_vars,
-            d_events,
-            ended=ended,
-            validate_post_child_exit=True,
-            trail=(self._create_execution_signature(stack, vars_),),
-        )
-        sim_stack_repr = [
-            (".".join(frame.state.path), frame.mode) for frame in sim_stack
-        ]
-        self.logger.debug(
-            "[VALIDATION] DFS validation result for transition %s -> %s: success=%s, stack=%s, vars=%s",
-            transition.from_state,
-            transition.to_state,
-            success,
-            sim_stack_repr,
-            _safe_runtime_repr(sim_vars),
-        )
-        return success
+            success = self._validation_search_reaches_stable(
+                sim_stack,
+                sim_vars,
+                d_events,
+                trail=(self._create_execution_signature(stack, vars_),),
+            )
+            sim_stack_repr = [
+                (".".join(frame.state.path), frame.mode) for frame in sim_stack
+            ]
+            self.logger.debug(
+                "[VALIDATION] DFS validation result for transition %s -> %s: success=%s, stack=%s, vars=%s",
+                transition.from_state,
+                transition.to_state,
+                success,
+                sim_stack_repr,
+                _safe_runtime_repr(sim_vars),
+            )
+            return success
+        finally:
+            self._ledger = saved
+
+    def _check_structural_limit(self, stack: List[_Frame]) -> None:
+        """
+        Reject a stack that nests deeper than the structural safety limit.
+
+        :param stack: Stack about to be explored.
+        :type stack: List[_Frame]
+        :return: ``None``.
+        :rtype: None
+        :raises SimulationRuntimeDfsError: If the stack is deeper than the
+            limit, which means the model nests without bound.
+        """
+        if len(self._create_structural_signature(stack)) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the structural stack-depth safety limit "
+                f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded nesting chain."
+            )
+
+    def _check_step_limit(self, steps_taken: int) -> None:
+        """
+        Reject a search that already took the maximum number of steps.
+
+        :param steps_taken: Steps spent so far by the current search.
+        :type steps_taken: int
+        :return: ``None``.
+        :rtype: None
+        :raises SimulationRuntimeDfsError: If the step budget is exhausted,
+            which means the model chains pseudo states or transitions without
+            bound.
+        """
+        if steps_taken >= self._DFS_STEP_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the step safety limit "
+                f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded pseudo-state "
+                "or transition chain."
+            )
+
+    @staticmethod
+    def _copy_ledger(
+        ledger: Dict[Tuple[str, ...], List[bool]],
+    ) -> Dict[Tuple[str, ...], List[bool]]:
+        """
+        Copy the per-cycle aspect ledger so a simulation cannot change it.
+
+        :param ledger: Mapping from scope path to ``[before ran, after owed]``.
+        :type ledger: Dict[Tuple[str, ...], List[bool]]
+        :return: Independent copy of the mapping.
+        :rtype: Dict[Tuple[str, ...], List[bool]]
+        """
+        return {path: list(entry) for path, entry in ledger.items()}
 
     def _validation_search_reaches_stable(
         self,
@@ -3111,9 +4282,38 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
         *,
-        ended: bool = False,
-        validate_post_child_exit: bool = True,
         trail: tuple = (),
+        outer: Any = _UNSET,
+    ) -> bool:
+        """
+        Search for a stable continuation without leaving traces in the ledger.
+
+        This is :meth:`_search_stable_continuation` with the per-cycle aspect
+        ledger restored afterwards, because the search executes aspects on
+        simulated paths and none of that may count in the real cycle. See that
+        method for the parameters.
+
+        :return: ``True`` if a stable continuation is reachable.
+        :rtype: bool
+        :raises SimulationRuntimeDfsError: As documented by
+            :meth:`_search_stable_continuation`.
+        """
+        saved = self._ledger
+        try:
+            return self._search_stable_continuation(
+                stack, vars_, d_events, trail=trail, outer=outer
+            )
+        finally:
+            self._ledger = saved
+
+    def _search_stable_continuation(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        *,
+        trail: tuple = (),
+        outer: Any = _UNSET,
     ) -> bool:
         """
         Search for a stable continuation without recursive Python calls.
@@ -3132,50 +4332,42 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for this validation attempt.
         :type d_events: Dict[str, Event]
-        :param ended: Whether the starting context has already ended, defaults
-            to ``False``.
-        :type ended: bool, optional
-        :param validate_post_child_exit: Whether post-child-exit transitions
-            should be considered during search, defaults to ``True``.
-        :type validate_post_child_exit: bool, optional
         :param trail: Execution signatures already visited by the candidate,
-            including its source configuration.
-        :type trail: tuple
+            including its source configuration, defaults to ``()``.
+        :type trail: tuple, optional
+        :param outer: Link from ``stack`` to the owner it belongs to when it is
+            a region branch; ``None`` for the main stack. Defaults to the link
+            of the branch currently being advanced.
+        :type outer: Optional[_Outer]
         :return: ``True`` if a stable continuation is reachable.
         :rtype: bool
         :raises SimulationRuntimeDfsError: If all continuations fail and a
             cyclic path exists, or the worklist exceeds safety limits.
         """
-        if ended:
-            stack.clear()
-            vars_.clear()
-            return True
-
-        worklist = [(self._clone_stack(stack), copy.deepcopy(vars_), False, trail)]
+        if outer is _UNSET:
+            outer = self._current_outer()
+        original_ledger = self._ledger
+        worklist = [
+            (
+                self._clone_stack(stack),
+                copy.deepcopy(vars_),
+                False,
+                trail,
+                self._copy_ledger(original_ledger),
+            )
+        ]
         loop_error = None
         seen_signatures = set()
         steps_taken = 0
 
         while worklist:
-            current_stack, current_vars, current_ended, trail = worklist.pop()
+            current_stack, current_vars, current_ended, trail, current_ledger = worklist.pop()
             if current_ended:
                 stack.clear()
                 vars_.clear()
                 vars_.update(current_vars)
                 return True
-            if not current_stack:
-                stack.clear()
-                vars_.clear()
-                vars_.update(current_vars)
-                return True
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    f"({self._DFS_STRUCTURAL_DEPTH_LIMIT}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                )
+            self._check_structural_limit(current_stack)
 
             signature = self._create_execution_signature(current_stack, current_vars)
             if signature in trail:
@@ -3190,28 +4382,89 @@ class SimulationRuntime:
             # use linked ancestry if that limit grows substantially.
             next_trail = trail + (signature,)
 
-            if steps_taken >= self._DFS_STEP_LIMIT:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    f"({self._DFS_STEP_LIMIT}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain."
-                )
+            self._check_step_limit(steps_taken)
             steps_taken += 1
 
             frame = current_stack[-1]
             state = frame.state
 
+            if isinstance(state, Region):
+                # Only a finished region can be on top of a searched stack: its
+                # initial transition already ran before the search started.
+                self._ledger = self._copy_ledger(current_ledger)
+                try:
+                    viable = self._continuation_viable(
+                        current_stack, current_vars, d_events, outer
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: the owner's continuation
+                    # leads back to the same position. That kills this path
+                    # only; other worklist items may still succeed.
+                    loop_error = error
+                    continue
+                if viable:
+                    stack[:] = current_stack
+                    vars_.clear()
+                    vars_.update(current_vars)
+                    return True
+                continue
+
+            if frame.branches is not None and frame.mode == "init_wait":
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._ledger = self._copy_ledger(current_ledger)
+                try:
+                    initialized = self._init_group(
+                        next_stack,
+                        next_vars,
+                        d_events,
+                        is_validation_mode=True,
+                        outer=outer,
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: a region's own initial
+                    # candidates loop without a stable exit. That only kills
+                    # this path; other items of the worklist may still succeed.
+                    loop_error = error
+                    continue
+                if initialized:
+                    worklist.append(
+                        (
+                            next_stack,
+                            next_vars,
+                            False,
+                            next_trail,
+                            self._ledger,
+                        )
+                    )
+                continue
+
+            if frame.branches is not None and frame.mode in ("active", "after_entry"):
+                # Every working region rests on a stable leaf.
+                stack[:] = current_stack
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+
             if state.is_leaf_state and frame.mode == "after_entry":
                 next_stack = self._clone_stack(current_stack)
                 next_vars = copy.deepcopy(current_vars)
+                self._ledger = self._copy_ledger(current_ledger)
                 next_stack[-1].mode = "active"
                 if state.is_stoppable:
                     stack[:] = next_stack
                     vars_.clear()
                     vars_.update(next_vars)
                     return True
-                worklist.append((next_stack, next_vars, False, next_trail))
+                worklist.append(
+                        (
+                            next_stack,
+                            next_vars,
+                            False,
+                            next_trail,
+                            self._ledger,
+                        )
+                    )
                 continue
 
             if state.is_leaf_state:
@@ -3224,6 +4477,7 @@ class SimulationRuntime:
                         continue
                     next_stack = self._clone_stack(current_stack)
                     next_vars = copy.deepcopy(current_vars)
+                    self._ledger = self._copy_ledger(current_ledger)
                     next_ended = self._execute_transition_on_context(
                         next_stack,
                         next_vars,
@@ -3231,11 +4485,18 @@ class SimulationRuntime:
                         d_events,
                         is_validation_mode=True,
                     )
-                    worklist.append((next_stack, next_vars, next_ended, next_trail))
+                    worklist.append(
+                        (
+                            next_stack,
+                            next_vars,
+                            next_ended,
+                            next_trail,
+                            self._ledger,
+                        )
+                    )
                 continue
 
             if frame.mode == "init_wait":
-                progressed = False
                 for transition in reversed(state.init_transitions):
                     if not self._check_candidate(
                         current_stack, current_vars, d_events, transition, search=True,
@@ -3243,6 +4504,7 @@ class SimulationRuntime:
                         continue
                     next_stack = self._clone_stack(current_stack)
                     next_vars = copy.deepcopy(current_vars)
+                    self._ledger = self._copy_ledger(current_ledger)
                     self._execute_initial_transition_on_context(
                         next_stack,
                         next_vars,
@@ -3251,31 +4513,43 @@ class SimulationRuntime:
                         is_validation_mode=True,
                         attempt_initial_transition=False,
                     )
-                    worklist.append((next_stack, next_vars, False, next_trail))
-                    progressed = True
-                if not progressed:
-                    continue
+                    worklist.append(
+                        (
+                            next_stack,
+                            next_vars,
+                            False,
+                            next_trail,
+                            self._ledger,
+                        )
+                    )
                 continue
 
-            if frame.mode == "post_child_exit":
-                if not validate_post_child_exit:
+            # Every other frame in the search is a parent whose child exited.
+            for transition in reversed(state.transitions_from):
+                if not self._check_candidate(
+                    current_stack, current_vars, d_events, transition, search=True,
+                ):
                     continue
-                for transition in reversed(state.transitions_from):
-                    if not self._check_candidate(
-                        current_stack, current_vars, d_events, transition, search=True,
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
-                    next_vars = copy.deepcopy(current_vars)
-                    next_ended = self._execute_transition_on_context(
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._ledger = self._copy_ledger(current_ledger)
+                next_ended = self._execute_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition,
+                    d_events,
+                    is_validation_mode=True,
+                )
+                worklist.append(
+                    (
                         next_stack,
                         next_vars,
-                        transition,
-                        d_events,
-                        is_validation_mode=True,
+                        next_ended,
+                        next_trail,
+                        self._ledger,
                     )
-                    worklist.append((next_stack, next_vars, next_ended, next_trail))
-                continue
+                )
+            continue
 
         if loop_error is not None:
             raise loop_error
@@ -3311,6 +4585,8 @@ class SimulationRuntime:
         :rtype: bool
         """
         stack.clear()
+        if not is_validation_mode:
+            self._root_stack = stack
         self._enter_state(
             stack,
             self.state_machine.root_state,
@@ -3345,10 +4621,7 @@ class SimulationRuntime:
         :return: Hashable execution signature.
         :rtype: Tuple[Tuple[Tuple[Tuple[str, ...], str, bool], ...], Tuple[Tuple[str, Union[int, float]], ...]]
         """
-        stack_signature = tuple(
-            (frame.state.path, frame.mode, frame.plain_before_pending)
-            for frame in stack
-        )
+        stack_signature = SimulationRuntime._stack_shape(stack)
         vars_signature = tuple((key, vars_[key]) for key in sorted(vars_))
         return stack_signature, vars_signature
 
@@ -3369,9 +4642,159 @@ class SimulationRuntime:
         :return: Hashable structural signature.
         :rtype: Tuple[Tuple[Tuple[str, ...], str, bool], ...]
         """
-        return tuple(
-            (frame.state.path, frame.mode, frame.plain_before_pending)
-            for frame in stack
+        return SimulationRuntime._stack_shape(stack)
+
+    @staticmethod
+    def _stack_shape(stack: List[_Frame], skip: Optional[int] = None) -> tuple:
+        """
+        Summarize a stack, including its region branches, as a hashable value.
+
+        A frame without branches contributes the same triple as before regions
+        existed, so signatures of ordinary models are unchanged. A frame that
+        owns regions appends the shapes of its branch stacks in declaration
+        order.
+
+        :param stack: Execution stack to summarize.
+        :type stack: List[_Frame]
+        :param skip: Index of a branch of the top frame to leave out, defaults
+            to ``None``. Used when that branch is described separately, so that
+            the summary does not depend on its current content.
+        :type skip: Optional[int], optional
+        :return: Nested tuples of ``(path, mode, plain_before_pending)`` items.
+        :rtype: tuple
+        """
+        shape = []
+        last = len(stack) - 1
+        for position, frame in enumerate(stack):
+            item = (frame.state.path, frame.mode, frame.plain_before_pending)
+            if frame.branches is not None:
+                item += (
+                    tuple(
+                        None
+                        if position == last and index == skip
+                        else SimulationRuntime._stack_shape(branch.stack)
+                        for index, branch in enumerate(frame.branches)
+                    ),
+                )
+            shape.append(item)
+        return tuple(shape)
+
+    def _memo_key(
+        self,
+        tag: tuple,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        outer: Optional[_Outer],
+    ) -> tuple:
+        """
+        Build the key under which the answer to one check is remembered.
+
+        The key holds everything the answer depends on within a cycle: the
+        stack being checked, the variable values, every enclosing stack with
+        the checked branch left out, and the aspect ledger. Events, inputs and
+        parameters are fixed for the cycle, and the remembered answers are
+        dropped when a cycle starts.
+
+        :param tag: What is being checked, for example the transition label.
+        :type tag: tuple
+        :param stack: Stack the check starts from.
+        :type stack: List[_Frame]
+        :param vars_: Variable values the check starts from.
+        :type vars_: Dict[str, Union[int, float]]
+        :param outer: Link from ``stack`` to its owner, or ``None``.
+        :type outer: Optional[_Outer]
+        :return: Hashable key.
+        :rtype: tuple
+        """
+        enclosing = []
+        while outer is not None:
+            enclosing.append(self._stack_shape(outer.stack, outer.index))
+            outer = outer.parent
+        ledger = tuple(
+            sorted((path, entry[0], entry[1]) for path, entry in self._ledger.items())
+        )
+        return (
+            tag,
+            self._stack_shape(stack),
+            tuple(sorted(vars_.items())),
+            tuple(enclosing),
+            ledger,
+        )
+
+    def _memo_get(self, key: tuple) -> Optional[bool]:
+        """
+        Look up the remembered answer of a check.
+
+        Entering a group asks the same question again and again: whether a
+        candidate can reach a stable position is first decided on a copy and
+        then decided once more for every nested owner while the candidate is
+        actually taken. Remembering the answer makes each question cost once
+        per cycle instead of once per enclosing level.
+
+        An answer may depend on the continuation positions that are being
+        examined further out (:attr:`_continuation_trail`), because coming back
+        to one of them counts as a loop. Each answer therefore records every
+        position it compared against that trail and which of them were on it.
+        It is reused exactly where the same ones are on the current trail:
+        every comparison then gives the same result, so a recomputation would
+        take the same steps and arrive at the same answer.
+
+        The three ``_memo_*`` helpers are called one after another instead of
+        wrapping the computation, so that remembering adds no frame to the
+        call stack of nested group initializations.
+
+        :param key: Key from :meth:`_memo_key`.
+        :type key: tuple
+        :return: The remembered answer, or ``None`` if the check has to run.
+        :rtype: Optional[bool]
+        """
+        entry = self._memo.get(key)
+        if entry is None:
+            return None
+        result, positions, on_trail = entry
+        if positions.intersection(self._continuation_trail) != on_trail:
+            return None
+        if self._memo_deps:
+            self._memo_deps[-1].update(positions)
+        return result
+
+    def _memo_close(self) -> set:
+        """
+        Finish the computation opened by appending to :attr:`_memo_deps`.
+
+        The positions the computation looked at also count for the
+        computation that encloses it.
+
+        :return: The continuation positions the computation compared against
+            the trail.
+        :rtype: set
+        """
+        positions = self._memo_deps.pop()
+        if self._memo_deps:
+            self._memo_deps[-1].update(positions)
+        return positions
+
+    def _memo_put(self, key: tuple, result: bool, positions: set) -> None:
+        """
+        Remember the answer of a check that returned normally.
+
+        The trail is back to what it was when the check started, so the
+        positions that are on it now are the ones the answer was reached with.
+        A check that ends in an error never reaches this point.
+
+        :param key: Key from :meth:`_memo_key`.
+        :type key: tuple
+        :param result: The answer.
+        :type result: bool
+        :param positions: Value returned by :meth:`_memo_close` for the check.
+        :type positions: set
+        :return: ``None``.
+        :rtype: None
+        """
+        self._memo[key] = (
+            result,
+            frozenset(positions),
+            frozenset(positions.intersection(self._continuation_trail)),
         )
 
     def _run_cycle_on_context(
@@ -3380,7 +4803,6 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
         *,
-        ended: bool = False,
         validate_post_child_exit: bool = True,
         consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
@@ -3403,8 +4825,6 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
-        :param ended: Whether the supplied context has already ended.
-        :type ended: bool
         :param validate_post_child_exit: Whether transitions selected after a
             child exits to its parent should still perform stoppable validation.
         :type validate_post_child_exit: bool
@@ -3418,70 +4838,127 @@ class SimulationRuntime:
         :raises SimulationRuntimeDfsError: If speculative DFS exceeds the safety
             limit without convergence or pruning.
         """
-        if ended:
+        run = _Run(
+            is_validation_mode=is_validation_mode,
+            consumed_events=consumed_events,
+            validate_post_child_exit=validate_post_child_exit,
+        )
+        self._outer_chain = []
+        if not is_validation_mode:
+            self._root_stack = stack
+        outcome = self._advance_stack(stack, vars_, d_events, run)
+        if outcome == _STABLE:
+            # Work is always followed by a stable boundary, so a cycle that
+            # ends the machine owes no aspect.
+            self._flush_after_aspects(vars_, is_validation_mode)
+            return True, False
+        if outcome == _ENDED:
             return True, True
+        return False, False
 
-        steps_taken = 0
-        max_steps = self._DFS_STEP_LIMIT
-        seen_signatures = set()
-        max_structural_depth = self._DFS_STRUCTURAL_DEPTH_LIMIT
+    def _advance_stack(
+        self,
+        stack: List[_Frame],
+        vars_: Dict[str, Union[int, float]],
+        d_events: Dict[str, Event],
+        run: "_Run",
+    ) -> str:
+        """
+        Advance one stack until it reaches a stable boundary for this cycle.
 
-        while not ended:
+        The stack is either the runtime's main stack or the stack of one region
+        branch. The loop is the single-path execution rule applied to the top
+        frame: leaves select a transition or run ``during``; composites pick an
+        initial child or, after a child exited through ``[*]``, one of their
+        own outgoing transitions. Two kinds of frame are new. A region frame
+        picks its initial transition and reports the region as done once a
+        child exited through ``[*]``. A frame that owns regions is handed to
+        :meth:`_advance_owner`.
+
+        :param stack: Stack to mutate.
+        :type stack: List[_Frame]
+        :param vars_: Variable mapping to mutate.
+        :type vars_: Dict[str, Union[int, float]]
+        :param d_events: Active events for the current execution attempt.
+        :type d_events: Dict[str, Event]
+        :param run: Mode flags and the step budget of this attempt.
+        :type run: _Run
+        :return: ``stable`` when the stack stops on a stoppable leaf,
+            ``ended`` when the machine terminated, ``region_done`` when the
+            stack belongs to a region that exited through ``[*]``, and
+            ``failed`` when no valid stoppable continuation exists.
+        :rtype: str
+        :raises SimulationRuntimeDfsError: If the speculative search exceeds the
+            step or nesting safety limits.
+        """
+        is_validation_mode = run.is_validation_mode
+        consumed_events = run.consumed_events
+        validate_post_child_exit = run.validate_post_child_exit
+
+        while True:
             if is_validation_mode:
                 stack_repr = [
                     (".".join(frame.state.path), frame.mode) for frame in stack
                 ]
                 self.logger.debug(
-                    "[VALIDATION] DFS step %s: stack=%s, vars=%s, ended=%s",
-                    steps_taken + 1,
+                    "[VALIDATION] DFS step %s: stack=%s, vars=%s",
+                    run.steps_taken + 1,
                     stack_repr,
                     _safe_runtime_repr(vars_),
-                    ended,
                 )
-            if not stack:
-                ended = True
-                break
-
             signature = self._create_execution_signature(stack, vars_)
-            if signature in seen_signatures:
+            if signature in run.seen_signatures:
                 self.logger.debug(
                     "[VALIDATION] Pruned repeated speculative execution state during DFS validation."
                 )
-                return False, False
-            seen_signatures.add(signature)
+                return _FAILED
+            run.seen_signatures.add(signature)
 
-            structural_signature = self._create_structural_signature(stack)
-            if len(structural_signature) > max_structural_depth:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    f"({max_structural_depth}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                )
-
-            if steps_taken >= max_steps:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    f"({max_steps}) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain."
-                )
+            self._check_structural_limit(stack)
+            self._check_step_limit(run.steps_taken)
 
             frame = stack[-1]
             state = frame.state
+
+            if isinstance(state, Region):
+                if frame.mode == "post_child_exit":
+                    return _REGION_DONE
+                progressed = self._attempt_init_transition(
+                    stack,
+                    vars_,
+                    d_events,
+                    consumed_events=consumed_events,
+                    is_validation_mode=is_validation_mode,
+                )
+                run.steps_taken += 1
+                if not progressed:
+                    return _FAILED
+                continue
 
             if self._is_no_outgoing_pseudo(state):
                 self.logger.debug(
                     "[VALIDATION] No-outgoing pseudo reached Delta boundary: %s",
                     ".".join(state.path),
                 )
-                return False, False
+                return _FAILED
+
+            if frame.branches is not None and frame.mode == "after_entry":
+                frame.mode = "active"
+                return _STABLE
+
+            if frame.branches is not None and frame.mode != "post_child_exit":
+                outcome = self._advance_owner(stack, vars_, d_events, run)
+                run.steps_taken += 1
+                if outcome == _CONTINUE:
+                    continue
+                return outcome
 
             if state.is_leaf_state:
                 if frame.mode == "after_entry":
                     frame.mode = "active"
                     if state.is_stoppable:
-                        return True, False
-                    steps_taken += 1
+                        return _STABLE
+                    run.steps_taken += 1
                     continue
 
                 transition = self._select_transition(
@@ -3491,6 +4968,14 @@ class SimulationRuntime:
                     force_validate=not state.is_stoppable,
                 )
                 if transition is not None:
+                    if transition.exit_group_levels:
+                        run.steps_taken += 1
+                        run.group_exit = (
+                            transition,
+                            state,
+                            transition.exit_group_levels,
+                        )
+                        return _GROUP_EXIT
                     ended = self._execute_transition_on_context(
                         stack,
                         vars_,
@@ -3499,29 +4984,16 @@ class SimulationRuntime:
                         consumed_events=consumed_events,
                         is_validation_mode=is_validation_mode,
                     )
-                    steps_taken += 1
+                    run.steps_taken += 1
                     if ended:
-                        return True, True
+                        return _ENDED
                     continue
 
                 self._run_leaf_during(
                     state, vars_, is_validation_mode=is_validation_mode
                 )
                 frame.mode = "after_entry"
-                steps_taken += 1
-                continue
-
-            if frame.mode == "init_wait":
-                progressed = self._attempt_init_transition(
-                    stack,
-                    vars_,
-                    d_events,
-                    consumed_events=consumed_events,
-                    is_validation_mode=is_validation_mode,
-                )
-                steps_taken += 1
-                if not progressed:
-                    return False, False
+                run.steps_taken += 1
                 continue
 
             if frame.mode == "post_child_exit":
@@ -3532,8 +5004,6 @@ class SimulationRuntime:
                     validate_stoppable=validate_post_child_exit,
                     force_validate=validate_post_child_exit,
                 )
-                if transition is None:
-                    return False, False
                 ended = self._execute_transition_on_context(
                     stack,
                     vars_,
@@ -3542,14 +5012,22 @@ class SimulationRuntime:
                     consumed_events=consumed_events,
                     is_validation_mode=is_validation_mode,
                 )
-                steps_taken += 1
+                run.steps_taken += 1
                 if ended:
-                    return True, True
+                    return _ENDED
                 continue
 
-            return False, False
-
-        return True, True
+            # A composite that is waiting for its initial transition.
+            progressed = self._attempt_init_transition(
+                stack,
+                vars_,
+                d_events,
+                consumed_events=consumed_events,
+                is_validation_mode=is_validation_mode,
+            )
+            run.steps_taken += 1
+            if not progressed:
+                return _FAILED
 
     def cycle(
         self,
@@ -3571,7 +5049,10 @@ class SimulationRuntime:
 
         :param diagnostics: Capture immutable candidate checks independently of
             committed tracing, defaults to ``False``. Reports survive Delta;
-            failures still raise without a partial report.
+            failures still raise without a partial report. For a model with
+            regions, a check that repeats within the cycle is listed with its
+            result each time and expanded into its inner checks only where it
+            ran.
         :type diagnostics: bool
         :param inputs: Optional partial input override mapping.
         :type inputs: Optional[Mapping[str, Union[int, float]]]
@@ -3898,6 +5379,10 @@ class SimulationRuntime:
     def _cycle_with_inputs(self, event_objects, d_events, trace, snapshot_inputs):
         """Execute using a single frozen input vector and commit after advance."""
         trace_entries: Optional[List[ExecutionTraceEntry]] = [] if trace else None
+        self._outer_chain = []
+        self._memo = {}
+        self._memo_deps = []
+        self._overflow_depth = None
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
@@ -3919,22 +5404,41 @@ class SimulationRuntime:
         validation_initialized = snapshot_initialized
         validation_ended = snapshot_ended
 
-        if not validation_initialized:
-            validation_ended = self._initialize_context(
+        self._ledger = {}
+        try:
+            if not validation_initialized:
+                validation_ended = self._initialize_context(
+                    validation_stack,
+                    validation_vars,
+                    d_events,
+                    is_validation_mode=True,
+                )
+                validation_initialized = True
+
+            success, validation_ended = self._run_cycle_on_context(
                 validation_stack,
                 validation_vars,
                 d_events,
                 is_validation_mode=True,
             )
-            validation_initialized = True
-
-        success, validation_ended = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            d_events,
-            ended=validation_ended,
-            is_validation_mode=True,
-        )
+        except RecursionError as err:
+            # RecursionError: entering or re-entering an owner nests one group
+            # entry per owner within a cycle, so a loop through owners can
+            # exhaust the interpreter's call stack before it reaches the
+            # explicit nesting limit when the caller's own stack is already
+            # deep. No handler runs in this pass, so the engine itself ran out
+            # of stack. A stack that ran out anywhere else, or inside a single
+            # group entry that nests in no other, cannot come from re-entering
+            # a group; that can happen in any model whose caller is deep, and
+            # the error keeps propagating unchanged.
+            if self._overflow_depth is None or self._overflow_depth < 2:
+                raise
+            raise SimulationRuntimeDfsError(
+                "The call stack was exhausted with group entries nested "
+                f"{self._overflow_depth} deep within one cycle; the state machine "
+                "likely re-enters a group without bound, or the caller's own "
+                "stack was already deep."
+            ) from err
 
         # A validation dead end is a successful Delta boundary. The speculative
         # context is intentionally discarded; the public runtime will commit
@@ -3948,7 +5452,9 @@ class SimulationRuntime:
             sim_ended = snapshot_ended
 
             metadata_committed = False
+            self._ledger = {}
             previous_trace = self._cycle_trace
+            provider_token = _configuration_provider.set(self._call_time_configuration)
             try:
                 self._cycle_trace = trace_entries
                 if self._cycle_diagnostics is not None:
@@ -3966,11 +5472,11 @@ class SimulationRuntime:
                     sim_stack,
                     sim_vars,
                     d_events,
-                    ended=sim_ended,
                     consumed_events=consumed_event_names,
                 )
                 metadata_committed = True
             finally:
+                _configuration_provider.reset(provider_token)
                 self._cycle_trace = previous_trace
                 if not metadata_committed:
                     self._warned_anonymous_abstracts = snapshot_warned_anonymous
@@ -4001,11 +5507,12 @@ class SimulationRuntime:
             prepared_warnings = self._warned_anonymous_abstracts
             prepared_errors = self._abstract_handler_errors
 
-        state_path = (
-            ".".join(prepared_stack[-1].state.path)
-            if prepared_stack
-            else "(terminated)"
-        )
+        if not prepared_stack:
+            state_path = "(terminated)"
+        elif self._has_regions:
+            state_path = str(self._configuration_of(prepared_stack))
+        else:
+            state_path = ".".join(prepared_stack[-1].state.path)
         prepared_count = self.cycle_count + 1
         history_entry = {
             "cycle": prepared_count,
@@ -4036,6 +5543,9 @@ class SimulationRuntime:
                 'delta' if delta else ('terminated' if prepared_ended else 'cycle'),
                 tuple(prepared_stack[-1].state.path) if prepared_stack else None,
                 prepared_vars,
+                str(self._configuration_of(prepared_stack))
+                if prepared_stack and self._has_regions
+                else None,
             ) if self._cycle_diagnostics is not None else None),
         )
         changes = self._format_var_changes(snapshot_vars, prepared_vars)
@@ -4136,12 +5646,16 @@ class SimulationRuntime:
         have terminated. Once the runtime has ended, there is no active state
         and the query raises :class:`SimulationRuntimeTerminalStateError`.
 
-        :return: The current active state.
-        :rtype: State
+        For a model that declares regions the position is a tree, so this
+        property returns the :class:`~pyfcstm.model.configuration.Configuration`
+        instead; the type depends only on the model, never on the run.
+        :attr:`configuration` returns the same object for every model.
+
+        :return: The current active state, or the current configuration for a
+            model with regions.
+        :rtype: Union[State, pyfcstm.model.configuration.Configuration]
         :raises SimulationRuntimeTerminalStateError: If the runtime has ended
             and the active stack is empty.
-        :raises RuntimeError: If the active stack is unexpectedly empty before
-            the runtime has ended.
 
         Example::
 
@@ -4182,19 +5696,127 @@ class SimulationRuntime:
            :class:`SimulationRuntimeTerminalStateError`.
         """
         if not self.stack:
-            if self._ended:
-                raise SimulationRuntimeTerminalStateError(
-                    "Cannot access current_state: runtime has ended and the "
-                    "active stack is empty. Check is_ended before querying "
-                    "current_state, or use terminal-safe queries such as "
-                    "brief_stack or history."
-                )
-            raise RuntimeError(
-                "Cannot access current_state: runtime active stack is empty "
-                "before termination. This indicates an internal runtime "
-                "invariant failure."
+            raise SimulationRuntimeTerminalStateError(
+                "Cannot access current_state: runtime has ended and the "
+                "active stack is empty. Check is_ended before querying "
+                "current_state, or use terminal-safe queries such as "
+                "brief_stack or history."
             )
+        if self._has_regions:
+            return self.configuration
         return self.stack[-1].state
+
+    @property
+    def configuration(self) -> Configuration:
+        """
+        Get the current position as an immutable configuration tree.
+
+        Available for every model. For a model without regions the
+        configuration is a single chain whose text equals the dotted state
+        path. Before the first cycle it names the root state with every
+        region still waiting for initialization.
+
+        :return: The configuration at the current stable boundary.
+        :rtype: pyfcstm.model.configuration.Configuration
+        :raises SimulationRuntimeTerminalStateError: If the runtime has ended.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { state Idle; [*] -> Idle; }'
+            ... )
+            >>> runtime = SimulationRuntime(model)
+            >>> _ = runtime.cycle()
+            >>> str(runtime.configuration)
+            'Root.Idle'
+        """
+        if not self.stack:
+            raise SimulationRuntimeTerminalStateError(
+                "Cannot access configuration: runtime has ended and the "
+                "active stack is empty. Check is_ended before querying "
+                "configuration."
+            )
+        return self._configuration_of(self.stack)
+
+    def _configuration_of(self, stack: List[_Frame]) -> Configuration:
+        """
+        Build the configuration that a stack represents.
+
+        The mode is ``stable`` when every working branch rests on a stoppable
+        leaf, ``initialization`` before the first cycle, and ``transient`` for
+        any intermediate shape, which only handler contexts can observe.
+
+        :param stack: Non-empty main stack of the runtime or a copy of it.
+        :type stack: List[_Frame]
+        :return: Immutable configuration of the stack.
+        :rtype: pyfcstm.model.configuration.Configuration
+        """
+        position = self._position_of(stack)
+        top = stack[-1]
+        if (
+            top.mode == "init_wait"
+            and top.state.is_root_state
+            and all(branch.status == "pending" for branch in top.branches or ())
+        ):
+            mode = "initialization"
+        elif self._is_resting(stack):
+            mode = "stable"
+        else:
+            mode = "transient"
+        return Configuration(self.state_machine, position, mode)
+
+    @staticmethod
+    def _position_of(stack: List[_Frame]) -> _Position:
+        """
+        Convert a frame stack into the position tree of a configuration.
+
+        :param stack: Frame stack, possibly starting with a region frame.
+        :type stack: List[_Frame]
+        :return: Position of the deepest state, with one entry per region of
+            an owner: ``None`` for done, the pending marker before
+            initialization, otherwise the nested position.
+        :rtype: pyfcstm.model.configuration._Position
+        """
+        top = [frame for frame in stack if not isinstance(frame.state, Region)][-1]
+        regions = []
+        if top.branches is not None:
+            for branch in top.branches:
+                if branch.status == "pending":
+                    child = _RegionInit.PENDING
+                elif branch.status == "done":
+                    child = None
+                else:
+                    child = SimulationRuntime._position_of(branch.stack)
+                regions.append((branch.region.name, child))
+        else:
+            regions = [
+                (name, _RegionInit.PENDING) for name in top.state.regions
+            ]
+        return _Position(top.state.path, tuple(regions))
+
+    @staticmethod
+    def _is_resting(stack: List[_Frame]) -> bool:
+        """
+        Tell whether every working part of a stack rests on a stoppable leaf.
+
+        :param stack: Frame stack, possibly starting with a region frame.
+        :type stack: List[_Frame]
+        :return: ``True`` for a stable configuration.
+        :rtype: bool
+        """
+        top = [frame for frame in stack if not isinstance(frame.state, Region)][-1]
+        if top.branches is None:
+            return top.state.is_stoppable
+        return (
+            top.mode in ("active", "after_entry")
+            and any(branch.status == "live" for branch in top.branches)
+            and all(
+                branch.status == "done" or SimulationRuntime._is_resting(branch.stack)
+                for branch in top.branches
+            )
+        )
 
     @property
     def brief_stack(self) -> List[Tuple[Tuple[str, ...], str]]:
@@ -4215,6 +5837,9 @@ class SimulationRuntime:
 
         :return: List of ``(state_path, mode)`` tuples from root to current state.
         :rtype: List[Tuple[Tuple[str, ...], str]]
+        :raises SimulationRuntimeRegionQueryError: If the model declares
+            regions: the position is then a tree, which one flat list cannot
+            describe. Use :attr:`configuration` instead.
 
         Example::
 
@@ -4248,6 +5873,11 @@ class SimulationRuntime:
            provides insight into the runtime's internal execution state without
            exposing the internal :class:`_Frame` objects.
         """
+        if self._has_regions:
+            raise SimulationRuntimeRegionQueryError(
+                "brief_stack describes a single active path, but this model has "
+                "regions; use configuration, which shows every branch."
+            )
         return [(frame.state.path, frame.mode) for frame in self.stack]
 
     @property

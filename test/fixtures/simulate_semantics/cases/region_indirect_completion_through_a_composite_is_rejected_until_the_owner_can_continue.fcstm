@@ -1,0 +1,23 @@
+input int go;
+state Root {
+    event Fin;
+    [*] -> P;
+    state P {
+        region R1 {
+            [*] -> C;
+            state C {
+                [*] -> L;
+                state L;
+                L -> [*] : /Fin;
+            }
+            C -> [*];
+        }
+        region R2 {
+            [*] -> D;
+            state D;
+            D -> [*] : /Fin;
+        }
+    }
+    state Next;
+    P -> Next : if [go == 1];
+}

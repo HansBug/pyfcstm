@@ -1,0 +1,7 @@
+state Root {
+    [*] -> P;
+    state P {
+        >> during before abstract Pre;
+        region A { [*] -> A1; state A1; }
+    }
+}

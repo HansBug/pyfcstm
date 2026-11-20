@@ -1,0 +1,34 @@
+title: A combo transition inside a region fires only in a cycle that carries all of its events; the other region
+  works either way
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 10
+- cycle: Root.Go
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      n: 20
+- cycle:
+  - Root.Go
+  - Root.Arm
+  expect:
+    configuration: 'Root.P{A: A2, B: B1}'
+    vars:
+      n: 31
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A2, B: B1}'
+    vars:
+      n: 41

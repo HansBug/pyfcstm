@@ -1,0 +1,41 @@
+input int fault;
+def int m = 0;
+def int x1 = 0;
+def int x2 = 0;
+def int y1 = 0;
+def int y2 = 0;
+def int z1 = 0;
+def int z2 = 0;
+state Root {
+    [*] -> P;
+    state P {
+
+        region Motion {
+            [*] -> Run;
+            state Run { during { m = m + 1; } }
+            state Stop;
+            Run -> Stop : if [active("Root.P.Safety.Tripped")];
+        }
+
+        region Safety {
+            [*] -> Normal;
+            state Normal {
+                exit {
+                    if [active("Root.P.Safety.Normal")] { x1 = 1; } else { x1 = 2; }
+                    if [active("Root.P.Safety.Tripped")] { x2 = 1; } else { x2 = 2; }
+                }
+            }
+            state Tripped {
+                enter {
+                    if [active("Root.P.Safety.Tripped")] { z1 = 1; } else { z1 = 2; }
+                    if [active("Root.P.Safety.Normal")] { z2 = 1; } else { z2 = 2; }
+                }
+            }
+            Normal -> Tripped : if [fault != 0] effect {
+                if [active("Root.P.Safety.Normal")] { y1 = 1; } else { y1 = 2; }
+                if [active("Root.P.Safety.Tripped")] { y2 = 1; } else { y2 = 2; }
+            }
+        }
+
+    }
+}

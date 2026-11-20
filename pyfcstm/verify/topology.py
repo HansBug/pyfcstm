@@ -514,11 +514,47 @@ def _history_projection(machine: StateMachine) -> Optional[_HistoryProjection]:
     to every entry (see :func:`_project_entry`). The reachable set stays the
     same, and every leaf-to-leaf relation a restore creates is kept.
 
+    The model's own :attr:`pyfcstm.model.model.StateMachine.history_owners` is
+    the source of truth: owners are indexed by dotted owner path, and ``None``
+    is returned when it is empty.  The returned projection is a fresh object
+    and the machine is not modified.
+
     :param machine: State machine to project.
     :type machine: StateMachine
-    :return: The projection, or ``None``.
+    :return: The projection with its root-reachable leaf paths, or ``None`` if
+        the machine declares no history owner.
     :rtype: Optional[_HistoryProjection]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.verify.topology import _history_projection
+        >>> machine = load_state_machine_from_text('''
+        ... state Root {
+        ...     [*] -> Work;
+        ...     state Work {
+        ...         [*] -> A;
+        ...         [H] -> A;
+        ...         state A;
+        ...         state B;
+        ...         A -> B :: Next;
+        ...     }
+        ...     state Pause;
+        ...     Work -> Pause :: Stop;
+        ...     Pause -> Work.[H] :: Resume;
+        ... }
+        ... ''')
+        >>> projection = _history_projection(machine)
+        >>> sorted(projection.owners)
+        ['Root.Work']
+        >>> sorted(projection.reached)
+        ['Root.Work.A', 'Root.Work.B']
+        >>> plain = load_state_machine_from_text('state Root { [*] -> A; state A; }')
+        >>> _history_projection(plain) is None
+        True
     """
+    from pyfcstm.model.support import require_supported_model
+    require_supported_model(machine, 'verify')
     if not machine.history_owners:
         return None
     base = _HistoryProjection({".".join(o.owner_path): o for o in machine.history_owners})

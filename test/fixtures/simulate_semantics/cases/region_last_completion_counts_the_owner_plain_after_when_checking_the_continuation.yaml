@@ -1,0 +1,22 @@
+title: Whether the owner can continue after the last region finishes is judged with the writes of its plain during
+  after already made
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    vars:
+      g: 0
+- cycle: Root.Go
+  expect:
+    configuration: Root.Done
+    vars:
+      g: 1

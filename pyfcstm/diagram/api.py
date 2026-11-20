@@ -6,6 +6,17 @@ The module keeps the portable data contract separate from editor metadata. A
 source ranges. Browser HTML may additionally carry an embedded source sidecar
 so the source and diagram panes can be linked without network access.
 
+The module contains:
+
+* :class:`DiagramData` - Portable, deterministic diagram data without
+  editor-only metadata
+* :class:`DiagramOptions` - Immutable renderer options shared by Python and
+  browser diagram views
+* :class:`DiagramViewState` - Immutable browser state for collapse, zoom, pan
+  and display mode
+* :class:`Diagram` - Immutable snapshot of a state machine, as portable data
+  or a self-contained viewer
+
 Example::
 
     >>> from pyfcstm.model import load_state_machine_from_text
@@ -47,7 +58,6 @@ from ..highlight import FcstmLexer
 from ..utils.logging import get_logger
 from ..model.model import (
     Event,
-    IfBlock,
     Operation,
     OperationStatement,
     State,
@@ -55,6 +65,8 @@ from ..model.model import (
     Transition,
 )
 from ..utils.validate import Span
+from ..model.region import Region, walk_namespaces
+from ..model.active import restore_active_expression
 from .engine import (
     MAX_EXPORT_PNG_BYTES,
     MAX_EXPORT_TEXT_BYTES,
@@ -180,37 +192,81 @@ def _span_range(span: Optional[Span]) -> Optional[Dict[str, Dict[str, int]]]:
     }
 
 
-def _operation_lines(statement: OperationStatement, depth: int = 1) -> List[str]:
-    """Render one model operation statement into display lines."""
+def _shown_expr(expression: Any, active_paths: Mapping[str, str]) -> Any:
+    """
+    Return the expression the diagram shows, with activity queries as written.
+
+    :param expression: Expression of the lowered model.
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for, as returned by :func:`_active_paths`; empty when the model
+        has no activity queries, in which case the expression is returned as it is.
+    :type active_paths: Mapping[str, str]
+    :return: ``expression`` itself, or a copy whose lowered flag tests are
+        ``active("path")`` queries again.
+    """
+    if not active_paths:
+        return expression
+    return restore_active_expression(expression, active_paths)
+
+
+def _operation_lines(
+    statement: OperationStatement, active_paths: Mapping[str, str], depth: int = 1
+) -> List[str]:
+    """
+    Render one model operation statement into display lines.
+
+    Assigned values and ``if`` conditions show activity queries as written, so
+    the hidden flag variables of a lowered model never reach the diagram.
+
+    :param statement: Operation or ``if`` block to render.
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for; see :func:`_active_paths`.
+    :type active_paths: Mapping[str, str]
+    :param depth: Nesting depth used for indentation, defaults to ``1``.
+    :type depth: int, optional
+    :return: Display lines, indented by ``depth`` levels.
+    :rtype: List[str]
+    """
     prefix = "    " * depth
     if isinstance(statement, Operation):
-        return [prefix + _text(statement.to_ast_node()).strip()]
-    if isinstance(statement, IfBlock):
-        lines: List[str] = []
-        for index, branch in enumerate(statement.branches):
-            if index == 0:
-                head = "if [%s] {" % _text(branch.condition)
-            elif branch.condition is None:
-                head = "else {"
-            else:
-                head = "else if [%s] {" % _text(branch.condition)
-            lines.append(prefix + head)
-            if branch.statements:
-                for child in branch.statements:
-                    lines.extend(_operation_lines(child, depth + 1))
-            else:
-                lines.append(prefix + "    ...")
-            lines.append(prefix + "}")
-        return lines
-    return [prefix + _text(statement).strip()]
+        shown = Operation(statement.var_name, _shown_expr(statement.expr, active_paths))
+        return [prefix + _text(shown.to_ast_node()).strip()]
+    # Operation and IfBlock are the only operation statements of a model.
+    lines: List[str] = []
+    for index, branch in enumerate(statement.branches):
+        if index == 0:
+            head = "if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
+        elif branch.condition is None:
+            head = "else {"
+        else:
+            head = "else if [%s] {" % _text(_shown_expr(branch.condition, active_paths))
+        lines.append(prefix + head)
+        if branch.statements:
+            for child in branch.statements:
+                lines.extend(_operation_lines(child, active_paths, depth + 1))
+        else:
+            lines.append(prefix + "    ...")
+        lines.append(prefix + "}")
+    return lines
 
 
-def _effect_lines(transition: Transition) -> List[str]:
+def _effect_lines(transition: Transition, active_paths: Mapping[str, str]) -> List[str]:
+    """
+    Render the effect block of a transition into display lines.
+
+    :param transition: Transition whose effects are shown.
+    :type transition: pyfcstm.model.model.Transition
+    :param active_paths: Hidden flag variable name mapped to the state path it
+        stands for; see :func:`_active_paths`.
+    :type active_paths: Mapping[str, str]
+    :return: ``effect {`` … ``}`` lines, or an empty list without effects.
+    :rtype: List[str]
+    """
     if not transition.effects:
         return []
     lines = ["effect {"]
     for statement in transition.effects:
-        lines.extend(_operation_lines(statement))
+        lines.extend(_operation_lines(statement, active_paths))
     lines.append("}")
     return lines
 
@@ -274,20 +330,92 @@ def _state_path_for(owner: State, value: Any) -> Optional[List[str]]:
     return list(candidate)
 
 
-def _event_dict(event: Event, include_ranges: bool) -> Dict[str, Any]:
+def _event_dict(event: Event) -> Dict[str, Any]:
+    """
+    Build the snapshot entry of one event.
+
+    :param event: Event declared by, or implied below, a state or region.
+    :type event: pyfcstm.model.model.Event
+    :return: JSON-compatible mapping with the event names, whether it was
+        declared, the states that use it, and its source range.
+    :rtype: Dict[str, Any]
+    """
     result = {
         "name": event.name,
         "qualifiedName": event.path_name,
         "displayName": event.extra_name,
         "declared": bool(event.declared),
         "origins": list(event.origins),
+        "range": _span_range(event._span),
     }
-    if include_ranges:
-        result["range"] = _span_range(event._span)
     return result
 
 
-def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
+def _active_paths(namespace: Any) -> Dict[str, str]:
+    """
+    Map the hidden activity flags of a model to the state paths they stand for.
+
+    Model construction lowers every ``active("path")`` into a hidden variable
+    that is set in ``enter`` and cleared in ``exit``. The diagram shows the query
+    as written instead, so it needs to know which variable stands for which
+    state.
+
+    :param namespace: A state or region of the model; a region is resolved
+        through its owner, which carries the flag metadata.
+    :return: Hidden flag variable name mapped to the dotted full state path;
+        empty when the model has no activity queries.
+    :rtype: Dict[str, str]
+    """
+    owner = namespace.parent if isinstance(namespace, Region) else namespace
+    return {
+        item.variable_name: ".".join(item.state_path)
+        for item in getattr(owner, "_active_queries", ())
+    }
+
+
+def _is_active_flag_write(action: Any, paths: Dict[str, str]) -> bool:
+    """
+    Tell whether an action is the flag write model construction added.
+
+    The write is an anonymous action holding exactly one assignment to a hidden
+    flag variable; a user cannot write one, because the flag names are generated
+    to avoid every declared name.
+
+    :param action: A lifecycle or aspect action of a state or region.
+    :param paths: Mapping returned by :func:`_active_paths`.
+    :return: ``True`` for the generated write, ``False`` for anything the user
+        wrote and whenever the model has no activity queries.
+    :rtype: bool
+    """
+    operations = getattr(action, "operations", ())
+    return bool(
+        paths
+        and getattr(action, "name", None) is None
+        and len(operations) == 1
+        and getattr(operations[0], "var_name", None) in paths
+    )
+
+
+def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Build the snapshot node of a state or region and, recursively, its children.
+
+    A region becomes a child node of its owner flagged with ``"region": True``
+    and its one-based ``"ordinal"`` among the owner's regions, which is also the
+    order in which the regions run. It carries the same keys as a state: its
+    states are ``children``, its own transitions are ``transitions`` and its
+    ``>> during`` aspects are ``actions``. ``active("path")`` is shown as
+    written in guards, and the flag writes model construction added are left
+    out of ``actions``.
+
+    :param state: State or region to describe.
+    :param ordinal: Position of a region among its siblings, ``None`` for a state.
+    :type ordinal: int, optional
+    :return: JSON-compatible node mapping.
+    :rtype: Dict[str, Any]
+    """
+    is_region = isinstance(state, Region)
+    active_paths = _active_paths(state)
     transitions = []
     for index, transition in enumerate(state.transitions):
         source_init = _is_marker(transition.from_state, "INIT_STATE")
@@ -295,8 +423,15 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
         source_label = "[*]" if source_init else _text(transition.from_state)
         target_label = "[*]" if target_exit else _text(transition.to_state)
         trigger = _event_reference(transition) if transition.event else ""
-        guard = _text(transition.guard) if transition.guard is not None else None
-        effects = _effect_lines(transition)
+        if transition.guard is None:
+            guard = None
+        elif active_paths:
+            guard = _text(
+                restore_active_expression(transition.guard, active_paths).to_ast_node()
+            )
+        else:
+            guard = _text(transition.guard)
+        effects = _effect_lines(transition, active_paths)
         transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
             "id": transition_id,
@@ -332,18 +467,19 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             else None,
             "eventColor": None,
         }
-        if include_ranges:
-            transition_dict["range"] = _span_range(transition._span)
-            transition_dict["_sourcePath"] = getattr(transition, "_source_path", None)
+        transition_dict["range"] = _span_range(transition._span)
+        transition_dict["_sourcePath"] = getattr(transition, "_source_path", None)
         transitions.append(transition_dict)
 
     actions = []
     for action in [
-        *state.on_enters,
-        *state.on_durings,
-        *state.on_exits,
+        *getattr(state, "on_enters", ()),
+        *getattr(state, "on_durings", ()),
+        *getattr(state, "on_exits", ()),
         *state.on_during_aspects,
     ]:
+        if _is_active_flag_write(action, active_paths):
+            continue
         item = {
             "name": action.name,
             "qualifiedName": ".".join(
@@ -360,56 +496,93 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             "operationCount": len(action.operations),
             "label": _action_label(action),
         }
-        if include_ranges:
-            item["range"] = _span_range(action._span)
+        item["range"] = _span_range(action._span)
         actions.append(item)
 
     result: Dict[str, Any] = {
         "id": _state_id(state.path),
         "name": state.name,
         "qualifiedName": _state_id(state.path),
-        "displayName": state.extra_name,
-        "pseudo": bool(state.is_pseudo),
-        "comboRelay": bool(state.is_combo_relay),
-        "leaf": bool(state.is_leaf_state),
-        "root": bool(state.is_root_state),
-        "events": [
-            _event_dict(event, include_ranges) for event in state.events.values()
-        ],
+        "displayName": getattr(state, "extra_name", None),
+        "pseudo": bool(getattr(state, "is_pseudo", False)),
+        "comboRelay": bool(getattr(state, "is_combo_relay", False)),
+        "leaf": bool(getattr(state, "is_leaf_state", False)),
+        "root": bool(getattr(state, "is_root_state", False)),
+        "events": [_event_dict(event) for event in state.events.values()],
         "actions": actions,
         "transitions": transitions,
         "children": [
-            _state_dict(child, include_ranges) for child in state.substates.values()
+            *(_state_dict(child) for child in state.substates.values()),
+            *(
+                _state_dict(region, ordinal=index)
+                for index, region in enumerate(
+                    getattr(state, "regions", {}).values(), 1
+                )
+            ),
         ],
     }
-    if include_ranges:
-        result["range"] = _span_range(state._span)
-        result["_sourcePath"] = getattr(state, "_source_path", None)
+    if is_region:
+        result["region"] = True
+        result["ordinal"] = ordinal
+    result["range"] = _span_range(state._span)
+    result["_sourcePath"] = getattr(state, "_source_path", None)
     return result
 
 
 def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
+    """
+    Count the states, events, transitions and actions shown in a snapshot.
+
+    Regions are not states, but the events, transitions and aspects declared in
+    them are counted. The flag writes that model construction adds for
+    ``active()`` queries are not counted: the diagram does not show them.
+
+    :param machine: State machine being snapshotted.
+    :return: ``(states, events, transitions, actions)``.
+    :rtype: Tuple[int, int, int, int]
+    """
     states = list(machine.walk_states())
-    events = [event for state in states for event in state.events.values()]
-    transitions = [transition for state in states for transition in state.transitions]
-    actions = [
-        action
-        for state in states
-        for action in [
-            *state.on_enters,
-            *state.on_durings,
-            *state.on_exits,
-            *state.on_during_aspects,
-        ]
-    ]
+    namespaces = list(walk_namespaces(machine.root_state))
+    events = [event for ns in namespaces for event in ns.events.values()]
+    transitions = [transition for ns in namespaces for transition in ns.transitions]
+    actions = []
+    for ns in namespaces:
+        paths = _active_paths(ns)
+        actions.extend(
+            action
+            for action in [
+                *getattr(ns, "on_enters", ()),
+                *getattr(ns, "on_durings", ()),
+                *getattr(ns, "on_exits", ()),
+                *ns.on_during_aspects,
+            ]
+            if not _is_active_flag_write(action, paths)
+        )
     return len(states), len(events), len(transitions), len(actions)
 
 
-def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str, Any]:
+def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
+    """
+    Build the complete renderer-facing snapshot of a state machine.
+
+    Counts, the event legend and event colours cover the transitions of every
+    region as well as of every state. The hidden variables that model
+    construction adds for ``active()`` queries are left out of the variable
+    list, and every node carries its source range and source path.
+
+    :param machine: Model to describe; it is only read.
+    :type machine: pyfcstm.model.model.StateMachine
+    :return: JSON-compatible mapping with ``filePath``, ``machineName``,
+        ``summary``, ``variables``, ``eventLegend`` and ``rootState``.
+    :rtype: Dict[str, Any]
+    """
+    # The snapshot shows the model as written: a lowered forced declaration is
+    # presented through the machine that keeps its plain expansion.
+    machine = machine._with_plain_forced()
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
     transitions = [
         transition
-        for state in machine.walk_states()
+        for state in walk_namespaces(machine.root_state)
         for transition in state.transitions
     ]
     event_counts: Dict[str, int] = {}
@@ -442,7 +615,7 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
         for child in state_dict["children"]:
             apply_colors(child)
 
-    root = _state_dict(machine.root_state, include_ranges)
+    root = _state_dict(machine.root_state)
     apply_colors(root)
     event_legend = [
         {
@@ -453,26 +626,27 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
         }
         for path in sorted(event_colors)
     ]
+    hidden_flags = {query.variable_name for query in machine.active_queries}
+    variables = [
+        {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
+        for item in machine.defines.values()
+        if item.name not in hidden_flags
+    ]
     result: Dict[str, Any] = {
         "kind": "diagram",
         "filePath": "" if machine.source_path is None else str(machine.source_path),
         "machineName": machine.root_state.name,
         "summary": {
-            "variables": len(machine.defines),
+            "variables": len(variables),
             "states": state_count,
             "events": event_count,
             "transitions": transition_count,
             "actions": action_count,
         },
-        "variables": [
-            {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
-            for item in machine.defines.values()
-        ],
+        "variables": variables,
         "eventLegend": event_legend,
         "rootState": root,
     }
-    if not include_ranges:
-        result.pop("filePath", None)
     return result
 
 
@@ -525,9 +699,27 @@ def _validate_source_override(
 
 def _source_sidecar(
     machine: StateMachine,
-    source_override: Optional[str] = None,
-    diagram: Optional[Mapping[str, Any]] = None,
+    source_override: Optional[str],
+    diagram: Mapping[str, Any],
 ) -> Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]:
+    """
+    Build the source documents and the state-to-line mapping of a viewer.
+
+    :param machine: Model whose source text and imported documents are used.
+    :type machine: pyfcstm.model.model.StateMachine
+    :param source_override: Source text to show instead of the model's own, or
+        ``None`` to show the model's own.
+    :type source_override: Optional[str]
+    :param diagram: Snapshot of ``machine`` to take the source ranges from.
+    :type diagram: Mapping[str, Any]
+    :return: The main source text, the mapping from state id to source
+        location, the mapping from line to state id (or ids) and the source
+        documents by document id.
+    :rtype: Tuple[str, Dict[str, Any], Dict[str, Union[str, List[str]]], Dict[str, str]]
+    :raises ValueError: If ``source_override`` differs from the model's source
+        in more than line endings, or a source range points past the end of
+        the text that is shown.
+    """
     _validate_source_override(machine, source_override)
     # A line-ending-only copy is the model's own source: treat it as such for
     # both the displayed text and the document registry, so the source pane and
@@ -550,8 +742,6 @@ def _source_sidecar(
         _source_document_id(machine, path): text for path, text in source_paths.items()
     }
     main_document_id = _source_document_id(machine, machine.source_path or "<memory>")
-    if diagram is None:
-        diagram = _build_diagram_dict(machine, include_ranges=True)
     mapping: Dict[str, Any] = {}
     line_to_id: Dict[str, Union[str, List[str]]] = {}
 
@@ -2146,6 +2336,13 @@ class DiagramData:
     """
     Portable, deterministic diagram data without editor-only metadata.
 
+    A state that owns regions lists them in ``children`` after its states, each
+    flagged with ``region`` and numbered by ``ordinal`` (``1`` for the first
+    region written, which is also the first to run). A region node has the same
+    keys as a state node: its states are ``children``, its own transitions are
+    ``transitions``, and its ``>> during`` aspects are ``actions``. A model
+    without regions gains neither key.
+
     :param value: Renderer data. Source ranges, local paths and other
         editor-only fields are removed when the value is stored.
     :type value: collections.abc.Mapping[str, object]
@@ -2155,6 +2352,12 @@ class DiagramData:
         >>> data = DiagramData({"kind": "diagram", "rootState": {"children": []}})
         >>> data.to_dict()["kind"]
         'diagram'
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }'
+        ... )
+        >>> [(item["name"], item["ordinal"]) for item in model.diagram().to_dict()["rootState"]["children"]]
+        [('A', 1), ('B', 2)]
     """
 
     value: Mapping[str, Any]
@@ -2364,12 +2567,47 @@ class Diagram:
             match the text the model was parsed from; programmatic models
             without source ranges accept any value.
         :type source_text: str, optional
+        :return: ``None``.
+        :rtype: None
+        :raises TypeError: If ``options`` or ``view_state`` is neither the
+            matching dataclass nor a mapping.
+        :raises ValueError: If a mapping contains an unknown field, a field
+            value is invalid, or ``source_text`` does not match the text the
+            model was parsed from.
+
+        Most callers obtain a snapshot through
+        :meth:`pyfcstm.model.model.StateMachine.diagram` instead of calling
+        the constructor directly.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.diagram.api import Diagram
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { [*] -> A; state A; state B; A -> B :: Go; }'
+            ... )
+            >>> view = Diagram(model, {'direction': 'LR'}, {'zoom': 2})
+            >>> view.options.direction
+            'LR'
+            >>> view.view_state.zoom
+            2.0
+            >>> view.source_text == model.source_text
+            True
+            >>> Diagram(model, options=5)
+            Traceback (most recent call last):
+            ...
+            TypeError: options must be DiagramOptions or a mapping
+            >>> Diagram(model, options={'bogus': 1})
+            Traceback (most recent call last):
+            ...
+            ValueError: unknown DiagramOptions field(s): bogus
         """
+
         self.model = model
         self.options = self._normalize_options(options)
         self.view_state = self._normalize_view_state(view_state)
         self.source_text = model.source_text if source_text is None else source_text
-        renderer_diagram = _build_diagram_dict(model, include_ranges=True)
+        renderer_diagram = _build_diagram_dict(model)
         self._renderer_diagram = _freeze_value(renderer_diagram)
         self.data = DiagramData(renderer_diagram)
         (
@@ -2377,7 +2615,7 @@ class Diagram:
             self._source_map,
             self._source_line_map,
             self._source_documents,
-        ) = _source_sidecar(model, self.source_text, diagram=renderer_diagram)
+        ) = _source_sidecar(model, self.source_text, renderer_diagram)
         self._source_document_id = _source_document_id(
             model, model.source_path or "<memory>"
         )

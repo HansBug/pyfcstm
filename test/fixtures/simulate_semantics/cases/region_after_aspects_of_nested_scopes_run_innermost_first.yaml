@@ -1,0 +1,23 @@
+title: "When several scopes owe an after aspect they run innermost first: composite, region, owner"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "v is reset by the leaf each cycle, so only the order of the three after aspects decides the result."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: C.L}'
+    vars:
+      v: 26
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: C.L}'
+    vars:
+      v: 26

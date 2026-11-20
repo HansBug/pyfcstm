@@ -5,6 +5,11 @@ current raw algorithm focuses on the entry path into a leaf state and the first
 ``during`` chain that can run immediately after entry.  Public callers should
 normally import the algorithm from :mod:`pyfcstm.verify`.
 
+The module contains:
+
+* :func:`enter_postcondition_implies_during_precondition` - Detect first-cycle
+  ``during`` branch conditions already determined by enter-time values
+
 Algorithm map:
 
 .. list-table::
@@ -49,6 +54,9 @@ def enter_postcondition_implies_during_precondition(
     entry path into the leaf state.  It is a local first-cycle check: it does
     not unroll repeated cycles and it skips pseudo states, composite states,
     abstract lifecycle actions, and leaves without concrete ``during`` logic.
+    The analysis follows one initial path from the root, so it does not apply
+    to a state inside a ``region``; the inspect adapter reports such a state as
+    skipped instead of judging it.
 
     Let ``C`` be the set of feasible initial-entry contexts for leaf state
     ``s``.  Each context ``c`` produces a post-entry symbolic store ``V_c``.

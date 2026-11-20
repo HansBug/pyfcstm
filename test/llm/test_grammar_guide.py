@@ -286,6 +286,7 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
     expected_sections = {
         "## Output Contract",
         "## Documentation Blocks",
+        "## Reserved Identifiers",
         "## Top-Level Structure",
         "## State Definitions",
         "## Variable Roles",

@@ -50,8 +50,8 @@ Example::
 
 import math
 import warnings
-from dataclasses import dataclass
-from typing import Iterator, List, Any
+from dataclasses import dataclass, field
+from typing import Iterator, List, Any, Optional
 
 try:
     from typing import Literal
@@ -60,6 +60,7 @@ except ImportError:
 
 from .base import AstExportable
 from ..dsl import node as dsl_nodes
+from ..utils.validate import Span
 
 __all__ = [
     'Expr',
@@ -72,6 +73,7 @@ __all__ = [
     'ConditionalOp',
     'UFunc',
     'Variable',
+    'ActiveStateQuery',
     'parse_expr_node_to_expr',
     'parse_expr_from_string',
     'parse_expr',
@@ -1487,6 +1489,61 @@ class Variable(Expr):
         return dsl_nodes.Name(name=self.name)
 
 
+@dataclass
+class ActiveStateQuery(Expr):
+    """
+    An authored query bound and lowered during model construction.
+
+    Written ``active("Root.Run.Motion.Move")`` in DSL conditions. Model
+    construction binds the path to a state and rewrites the query to a
+    comparison on a hidden flag variable (see :mod:`pyfcstm.model.active`), so
+    models returned to callers no longer contain this node.
+
+    :param path: Full State path or a root-relative path beginning with ``/``.
+    :type path: str
+    :param _span: Source location of the authored query, when available.
+    :type _span: Optional[pyfcstm.utils.validate.Span], optional
+
+    This expression can be inspected or exported before binding. Evaluation
+    requires model lowering; an unbound query is not a runnable expression.
+
+    Example::
+
+        >>> from pyfcstm.model import ActiveStateQuery
+        >>> query = ActiveStateQuery('Root.Run.Motion.Move')
+        >>> query
+        ActiveStateQuery(path='Root.Run.Motion.Move')
+        >>> str(query)
+        'active("Root.Run.Motion.Move")'
+        >>> ActiveStateQuery('/Run.Motion.Move').path
+        '/Run.Motion.Move'
+        >>> query == ActiveStateQuery('Root.Run.Motion.Move')
+        True
+    """
+
+    path: str
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def to_ast_node(self) -> dsl_nodes.ActiveStateQuery:
+        """
+        Convert this query back to its AST node.
+
+        The path spelling and source position are preserved, so exporting an
+        unbound query reproduces what was written.
+
+        :return: The equivalent :class:`pyfcstm.dsl.node.ActiveStateQuery`.
+        :rtype: pyfcstm.dsl.node.ActiveStateQuery
+
+        Example::
+
+            >>> from pyfcstm.model import ActiveStateQuery
+            >>> node = ActiveStateQuery('Root.Run.Motion.Move').to_ast_node()
+            >>> type(node).__name__, str(node)
+            ('ActiveStateQuery', 'active("Root.Run.Motion.Move")')
+        """
+        return dsl_nodes.ActiveStateQuery(self.path, _span=self._span)
+
+
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
     """
     Parse an AST expression node into an :class:`Expr` object.
@@ -1542,6 +1599,10 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
             func=node.func,
             x=parse_expr_node_to_expr(node.expr),
         )
+    elif isinstance(node, dsl_nodes.ActiveStateQuery):
+        query = ActiveStateQuery(node.path, _span=node._span)
+        query._source_path = getattr(node, '_source_path', None)
+        return query
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
 

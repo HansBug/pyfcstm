@@ -1,0 +1,22 @@
+state Root {
+    event Go;
+    [*] -> Idle;
+    state Idle { exit abstract IdleOut; }
+    state Q {
+        enter abstract QIn;
+        exit abstract QOut;
+        region R {
+            [*] -> C;
+            state C {
+                [*] -> p;
+                [*] -> Stay;
+                pseudo state p;
+                state Stay;
+                p -> [*];
+            }
+            C -> [*];
+        }
+    }
+    Idle -> Q : /Go;
+    Q -> Q;
+}

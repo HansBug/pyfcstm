@@ -1,0 +1,22 @@
+state Root {
+    event Fin1;
+    event Fin2;
+    [*] -> Owner;
+    state Owner {
+        during before abstract Pre;
+        during after abstract Post;
+        region R1 {
+            [*] -> C;
+            state C {
+                enter abstract COn;
+                [*] -> L;
+                state L;
+                L -> [*] : /Fin1;
+            }
+            C -> [*];
+        }
+        region R2 { [*] -> S; state S; S -> [*] : /Fin2; }
+    }
+    state Next;
+    Owner -> Next;
+}

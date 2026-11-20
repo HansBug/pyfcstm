@@ -1,0 +1,8 @@
+def int w = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region R1 { [*] -> A; state A { during abstract WorkA; } }
+        region R2 { [*] -> B; state B { during { w = w + 1; } during abstract WorkB; } }
+    }
+}

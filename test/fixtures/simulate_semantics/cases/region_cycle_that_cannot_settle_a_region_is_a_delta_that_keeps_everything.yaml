@@ -1,0 +1,45 @@
+title: After the start, a cycle in which one region cannot reach a stable state is a Delta that keeps the position
+  and every value, including what earlier regions wrote while it was tried
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The model came out of random testing. The values of the first two steps describe where it happens to be; the
+    point of the case is the third step, which must repeat them exactly and report a Delta, and the fourth, which
+    shows the machine still works.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.S3{R27: S30, R53: S54}'
+    vars:
+      x: 0
+      y: 1
+    delta: false
+- cycle:
+  - Root.E2
+  - Root.E3
+  expect:
+    configuration: 'Root.S3{R27: S30, R53: S55{R58: S59.S62, R65: S66}}'
+    vars:
+      x: 2
+      y: 3
+    delta: false
+- cycle:
+  - Root.E2
+  - Root.E3
+  expect:
+    configuration: 'Root.S3{R27: S30, R53: S55{R58: S59.S62, R65: S66}}'
+    vars:
+      x: 2
+      y: 3
+    delta: true
+- cycle: []
+  expect:
+    configuration: 'Root.S3{R27: S30, R53: S55{R58: S59.S62, R65: S66}}'
+    delta: false

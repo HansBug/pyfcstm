@@ -1,0 +1,63 @@
+title: 'Controller interlock prototype: later region sees the safety write in the same cycle'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+- design_example
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  inputs:
+    fault: 0
+    requested: 0
+  expect:
+    configuration: Controller.Idle
+    vars:
+      permit: 0
+    outputs:
+      motor: 0
+- cycle: Controller.Start
+  inputs:
+    fault: 0
+    requested: 0
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      permit: 1
+    outputs:
+      motor: 0
+- cycle: []
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: On}'
+    vars:
+      permit: 1
+    outputs:
+      motor: 1
+- cycle: []
+  inputs:
+    fault: 1
+    requested: 1
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      permit: 0
+    outputs:
+      motor: 0
+- cycle: Controller.Stop
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: Controller.Idle
+    vars:
+      permit: 0
+    outputs:
+      motor: 0

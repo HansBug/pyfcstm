@@ -1,0 +1,19 @@
+def int seq = 0;
+state Root {
+    event Stop;
+    [*] -> P;
+    state Quiet { exit { seq = seq * 10 + 7; } }
+    state P {
+        exit { seq = seq * 10 + 3; }
+        [*] -> Pick;
+        pseudo state Pick;
+        state Work {
+            region A { [*] -> A1; state A1 { exit { seq = seq * 10 + 1; } } }
+            region B { [*] -> B1; state B1 { exit { seq = seq * 10 + 2; } } }
+        }
+        Pick -> Work;
+    }
+    state Off;
+    !* -> Off : /Stop;
+    P -> Quiet : /Stop;
+}

@@ -34,6 +34,11 @@ Expression rendering:
 The module depends on :mod:`jinja2`, :mod:`pyyaml`, and :mod:`pathspec` for
 templating, YAML configuration, and ignore pattern handling.
 
+The module contains:
+
+* :class:`StateMachineCodeRenderer` - Render a state machine model into code
+  files using a template directory
+
 Example::
 
     >>> from pyfcstm.render.render import StateMachineCodeRenderer
@@ -573,15 +578,49 @@ class StateMachineCodeRenderer:
         """
         Render a single template file.
 
+        The template is read with automatic encoding detection and rendered
+        with ``model`` as the only variable passed to the render call. Missing
+        parent directories
+        of ``output_file`` are created, and the result is written as UTF-8 with
+        ``\\n`` line endings, replacing any existing file. :meth:`render` calls
+        this method once for every ``.j2`` file that the ``ignores`` patterns
+        do not exclude.
+
         :param model: The state machine model to render
-        :type model: StateMachine
+        :type model: pyfcstm.model.model.StateMachine
         :param output_file: Path to the output file
         :type output_file: str
         :param template_file: Path to the template file
         :type template_file: str
+        :return: ``None``.
+        :rtype: None
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
         :raises IOError: If there is an error reading or writing files
+
+        Example::
+
+            >>> import os, tempfile
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.render.render import StateMachineCodeRenderer
+            >>> from pyfcstm.template import extract_template
+            >>> machine = load_state_machine_from_text(
+            ...     'state Demo { [*] -> Idle; state Idle; }'
+            ... )
+            >>> with tempfile.TemporaryDirectory() as work:
+            ...     template_dir = extract_template('python', os.path.join(work, 'tpl'))
+            ...     template_file = os.path.join(work, 'name.txt.j2')
+            ...     with open(template_file, 'w') as stream:
+            ...         _ = stream.write('{{ model.root_state.name }}')
+            ...     output_file = os.path.join(work, 'sub', 'name.txt')
+            ...     StateMachineCodeRenderer(template_dir).render_one_file(
+            ...         machine, output_file, template_file
+            ...     )
+            ...     with open(output_file) as stream:
+            ...         print(stream.read())
+            Demo
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(model, 'generate')
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         _ensure_output_parent_dir(output_file)
         with self._statement_default_context(model):
@@ -627,6 +666,8 @@ class StateMachineCodeRenderer:
         :param clear_previous_directory: Whether to clear the output directory before rendering,
             defaults to ``False``
         :type clear_previous_directory: bool, optional
+        :return: ``None``.
+        :rtype: None
         :raises IOError: If there is an error accessing or writing to the output directory
 
         Example::
@@ -647,6 +688,8 @@ class StateMachineCodeRenderer:
             >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
             True
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(model, 'generate')
         output_dir = os.path.abspath(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         if clear_previous_directory:

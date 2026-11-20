@@ -1,0 +1,37 @@
+title: Only the first working region decides on the forced transition, before any region did work, so a condition that later regions work up to is met a cycle later
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region A raises x to 2 in the second cycle. If region B could still decide in that cycle it would see x = 2 and take the group at once; the group is taken in the third cycle instead.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      x: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      x: 2
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      x: 2
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      x: 2
+    delta: false

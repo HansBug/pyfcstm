@@ -1,0 +1,9 @@
+def int seq = 0;
+state Root {
+    [*] -> P;
+    state P {
+        during before { seq = seq * 10 + 1; }
+        region A { [*] -> j; pseudo state j; j -> [*]; }
+        region B { [*] -> B1; state B1 { enter { seq = seq * 10 + 2; } } }
+    }
+}

@@ -1479,6 +1479,8 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
     """
     if not isinstance(model, StateMachine):
         raise InvalidBmcDomain("model must be StateMachine.")
+    from ..model.support import require_supported_model
+    require_supported_model(model, "bmc")
     bound = _validate_positive_bound(bound)
 
     model_state_entries = _model_state_entries(model)

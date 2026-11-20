@@ -1,0 +1,12 @@
+def int n = 0;
+def float f = 0.5;
+state Root {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> A1;
+            state A1 { during { t = n + 1; if [t > 2] { n = 0; } else { n = t; } } }
+        }
+        region B { [*] -> B1; state B1 { during { f = f * 2.0 + n; } } }
+    }
+}

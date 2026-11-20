@@ -1471,26 +1471,15 @@ class TestInspectModelGuardAffectDataFlow:
             collect_expr_variables(UnknownExpr())
 
     def test_build_use_def_graph_rejects_unknown_statement_subclass(self):
-        from types import SimpleNamespace
-
         from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.model.model import OperationStatement
 
         class UnknownStatement(OperationStatement):
             pass
 
-        machine = SimpleNamespace(
-            walk_states=lambda: [SimpleNamespace(
-                on_enters=[SimpleNamespace(
-                    is_abstract=False,
-                    operations=[UnknownStatement()],
-                )],
-                on_durings=[],
-                on_exits=[],
-                on_during_aspects=[],
-                transitions=[],
-            )],
-        )
+        machine = load_state_machine_from_text('state Root { enter {} }')
+        machine.root_state.on_enters[0].operations.append(UnknownStatement())
 
         with pytest.raises(TypeError, match='UnknownStatement'):
             build_use_def_graph(machine)

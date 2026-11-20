@@ -28,6 +28,28 @@ The assembler provides:
 Event mappings support module-absolute event promotion into host-relative or
 host-absolute event paths, including display-name propagation and conflict
 checks. Declaration provenance retains authored names and recursive bindings.
+
+The module contains:
+
+* :func:`assemble_state_machine_imports` - Assemble the import statements of a
+  DSL program into one inline AST
+
+Example::
+
+    >>> import os, tempfile
+    >>> from pyfcstm.model import load_state_machine_from_file
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     child_path = os.path.join(directory, 'child.fcstm')
+    ...     main_path = os.path.join(directory, 'main.fcstm')
+    ...     with open(child_path, 'w') as handle:
+    ...         _ = handle.write('state Worker { state Idle; [*] -> Idle; }')
+    ...     with open(main_path, 'w') as handle:
+    ...         _ = handle.write(
+    ...             'state Root { import "child.fcstm" as Child; [*] -> Child; }'
+    ...         )
+    ...     machine = load_state_machine_from_file(main_path)
+    >>> ['.'.join(state.path) for state in machine.walk_states()]
+    ['Root', 'Root.Child', 'Root.Child.Idle']
 """
 
 import os
@@ -48,6 +70,7 @@ from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
+from .region import ast_namespace_children, validate_region_structure
 
 __all__ = [
     "assemble_state_machine_imports",
@@ -336,6 +359,41 @@ def _resolve_path_context(path: Optional[str]) -> Tuple[str, str, Optional[str]]
 
 
 def _clone_ast_node(node):
+    """Deep-copy an AST value while preserving importer-private metadata.
+
+    Lists, tuples and dicts are rebuilt (dict keys are cloned as well) and
+    dataclass nodes are reconstructed field by field through their own class.
+    The ``INIT_STATE``, ``EXIT_STATE`` and ``ALL`` sentinels are returned as the
+    same object so identity checks against them keep working, and any other
+    value (strings, numbers, ``None``) is returned as is.
+
+    Beyond the dataclass fields, three kinds of private state are carried over to
+    the clone so it behaves like the original for every later reader:
+
+    * ``_source_path``, ``_source_text`` and ``_source_declarations`` when the
+      original has them;
+    * the trusted generated combo-transition marker on a
+      :class:`pyfcstm.dsl.node.TransitionDefinition` that carries valid metadata;
+    * the generated combo pseudo-node marker on those children of a
+      :class:`pyfcstm.dsl.node.StateDefinition` or
+      :class:`pyfcstm.dsl.node.RegionDefinition` that are trusted pseudo nodes of
+      the original owner, re-bound to the cloned owner.
+
+    :param node: AST node, container of AST nodes, sentinel or plain value.
+    :type node: object
+    :return: A structurally equal copy that shares no mutable AST node with
+        ``node``.
+    :rtype: object
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model.imports import _clone_ast_node
+        >>> program = parse_with_grammar_entry('state Root;', entry_name='state_machine_dsl')
+        >>> copied = _clone_ast_node(program.root_state)
+        >>> copied is program.root_state, copied.name
+        (False, 'Root')
+    """
     if node is dsl_nodes.INIT_STATE:
         return dsl_nodes.INIT_STATE
     elif node is dsl_nodes.EXIT_STATE:
@@ -366,7 +424,7 @@ def _clone_ast_node(node):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
                 _mark_generated_combo_transition_node(cloned, metadata)
-        if isinstance(node, dsl_nodes.StateDefinition):
+        if isinstance(node, (dsl_nodes.StateDefinition, dsl_nodes.RegionDefinition)):
             for original_substate, cloned_substate in zip(
                 node.substates, cloned.substates
             ):
@@ -438,6 +496,38 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
+    """Expand every ``import`` statement of one parsed program in place.
+
+    The program's own region structure is validated first; when that reports an
+    error that prevents safe namespace construction, assembly stops there and
+    the program is left untouched.  Otherwise each variable definition that has
+    no ``_source_declarations`` yet gets one recording a clone of the declaration
+    as written, and :func:`_assemble_state` is run on the root state, which
+    merges imported programs into the tree and mutates ``program`` (its root
+    state, and its definitions through merging) in place.
+
+    After expansion the region structure is validated once more, because an
+    import can place a parallel descendant under a history owner.  That second
+    pass is skipped if an ``E_REGION_STRUCTURE`` or ``E_DUPLICATE_REGION``
+    diagnostic is already on the sink, so earlier errors are not repeated.
+
+    :param program: Parsed program to expand; mutated in place.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param import_base_dir: Directory against which relative import paths of this
+        program are resolved.
+    :type import_base_dir: str
+    :param import_stack: Absolute paths of the files currently being assembled,
+        outermost first; used for circular-import detection.
+    :type import_stack: List[str]
+    :param sink: Diagnostic sink that receives every problem found.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any diagnostic is emitted.
+    """
+    if program.root_state is not None and validate_region_structure(program.root_state, sink):
+        return
     if program.root_state is None:  # pragma: no cover
         # Defensive: grammar always emits at least one ``state X { ... }``
         # block, so a parsed program always has a non-None root_state.
@@ -477,6 +567,11 @@ def _assemble_program(
         host_explicit_def_names=host_explicit_def_names,
         sink=sink,
     )
+    # Import expansion can introduce a parallel descendant below a history
+    # owner. Validate that complete subtree without repeating earlier errors.
+    if not any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+               for item in sink.diagnostics):
+        validate_region_structure(program.root_state, sink)
 
 
 def _assemble_state(
@@ -488,13 +583,55 @@ def _assemble_state(
     host_explicit_def_names,
     sink: DiagnosticSink,
 ) -> None:
+    """Expand the imports declared on one state, then recurse into its children.
+
+    For each ``import`` of ``node`` (in declaration order) the alias is checked
+    against the names already occupied by child states and regions and earlier
+    aliases (``E_IMPORT_ALIAS_CONFLICT``), the file is resolved, checked for a
+    cycle against ``import_stack``, loaded and recursively assembled, its
+    read-only variables are checked for writes, and its variable and event
+    mappings are applied and its definitions merged into ``host_program``.
+    The imported root state is then renamed to the alias, absolute event and
+    reference paths inside it are rebased under the instance path, and it is
+    collected for insertion.  An import that fails any step is skipped and the
+    next one is tried; in collect mode its diagnostics stay on the sink.
+
+    After the loop ``node.imports`` is cleared (for a
+    :class:`pyfcstm.dsl.node.StateDefinition`), every child state and region is
+    assembled recursively, and finally the imported roots are prepended to
+    ``node.substates``, ahead of the existing ones.  ``node`` and
+    ``host_program`` are mutated in place.
+
+    :param node: State or region being processed.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param current_state_path: Names from the host root state down to ``node``;
+        used for diagnostics and for rebasing imported paths.
+    :type current_state_path: Tuple[str, ...]
+    :param import_base_dir: Directory against which relative import paths of
+        this file are resolved.
+    :type import_base_dir: str
+    :param import_stack: Absolute paths of the files currently being assembled,
+        outermost first.
+    :type import_stack: List[str]
+    :param host_program: Program that receives merged definitions and events.
+    :type host_program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param host_explicit_def_names: Names of the variables that the host
+        program declared itself, before any import was merged.
+    :type host_explicit_def_names: Set[str]
+    :param sink: Diagnostic sink that receives every problem found.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any diagnostic is emitted.
+    """
     occupied_names = []
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         if subnode.name not in occupied_names:
             occupied_names.append(subnode.name)
 
     imported_substates = []
-    for import_item in node.imports:
+    for import_item in getattr(node, "imports", ()):
         if import_item.alias in occupied_names:
             _emit_import_diag(
                 sink,
@@ -592,6 +729,10 @@ def _assemble_state(
                 continue
 
             imported_root = imported_program.root_state
+            _rebase_active_queries(
+                imported_program, imported_root.name,
+                (*current_state_path, import_item.alias),
+            )
             event_mappings = _resolve_import_event_mappings(
                 program=imported_program,
                 import_item=import_item,
@@ -643,9 +784,10 @@ def _assemble_state(
         # it will surface as a real bug instead of being silently
         # swallowed.
 
-    node.imports = []
+    if isinstance(node, dsl_nodes.StateDefinition):
+        node.imports = []
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _assemble_state(
             node=subnode,
             current_state_path=(*current_state_path, subnode.name),
@@ -837,11 +979,88 @@ def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> 
             _validate_imported_readonly_writes(item, readonly, sink)
 
 
+def _rebase_active_queries(node, root_name, instance_path, seen=None):
+    """Rewrite ``ActiveStateQuery`` paths of an imported program to instance paths.
+
+    Walks ``node`` (AST nodes via their dataclass fields, and lists) and edits
+    each :class:`pyfcstm.dsl.node.ActiveStateQuery` in place.  A path that starts
+    with ``/`` has the slash dropped and is prefixed by ``instance_path``; a
+    path whose first segment equals ``root_name`` has that segment replaced by
+    ``instance_path``.  Any other path is left unchanged.  Nested imports are
+    already part of the tree when this runs, so they are covered as well.  Each
+    query object is
+    rewritten at most once, tracked by ``id`` in ``seen``, so a query reachable
+    along several routes is not prefixed twice.  Tuples and dicts are not
+    descended into.
+
+    :param node: AST node, list, or other value to scan.
+    :type node: object
+    :param root_name: Name of the imported root state before it is renamed to the
+        import alias.
+    :type root_name: str
+    :param instance_path: Host-side path of the imported instance, starting at
+        the host root state and ending with the import alias.
+    :type instance_path: Tuple[str, ...]
+    :param seen: Ids of queries already rewritten; a fresh set is created when
+        ``None``, defaults to ``None``.
+    :type seen: Optional[Set[int]], optional
+    :return: ``None``.
+    :rtype: None
+    """
+    if seen is None:
+        seen = set()
+    if isinstance(node, dsl_nodes.ActiveStateQuery):
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        parts = tuple(node.path.split('.'))
+        if node.path.startswith('/'):
+            node.path = '.'.join((*instance_path, *node.path[1:].split('.')))
+        elif parts[0] == root_name:
+            node.path = '.'.join((*instance_path, *parts[1:]))
+    elif isinstance(node, dsl_nodes.ASTNode):
+        for item in fields(node):
+            _rebase_active_queries(getattr(node, item.name), root_name, instance_path, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _rebase_active_queries(item, root_name, instance_path, seen)
+
+
 def _rewrite_absolute_paths_for_imported_root(
     node: dsl_nodes.StateDefinition,
     instance_prefix: Tuple[str, ...],
     preserved_absolute_event_paths: Optional[set] = None,
 ) -> None:
+    """Prefix absolute event and reference paths in an imported subtree.
+
+    An absolute path inside an imported module is rooted at the module's own
+    root state.  Once the module is mounted under the alias, such a path must be
+    prefixed with ``instance_prefix`` to keep pointing into the same instance.
+    This walks ``node`` and every state and region below it and edits, in place:
+
+    * absolute event ids of transitions and forced transitions, and of the event
+      terms of combo triggers, unless the id's path is in
+      ``preserved_absolute_event_paths``;
+    * absolute ``ref`` targets of ``enter``, ``during``, ``exit`` and
+      ``during`` aspect actions.  These are always prefixed; the preserved set
+      does not apply to them.
+
+    Relative paths are not touched.  Event paths that an event mapping already
+    redirected to a host event are expected in the preserved set, so the host
+    path is not prefixed a second time.
+
+    :param node: Root of the imported subtree.
+    :type node: pyfcstm.dsl.node.StateDefinition
+    :param instance_prefix: Host-side path segments to prepend, excluding the
+        host root state name.
+    :type instance_prefix: Tuple[str, ...]
+    :param preserved_absolute_event_paths: Absolute event paths, without the
+        leading slash, that must stay as they are, defaults to ``None``
+        (nothing preserved).
+    :type preserved_absolute_event_paths: Optional[Set[Tuple[str, ...]]], optional
+    :return: ``None``.
+    :rtype: None
+    """
     preserved_absolute_event_paths = set(preserved_absolute_event_paths or set())
     for transition in node.transitions:
         if (
@@ -868,21 +1087,21 @@ def _rewrite_absolute_paths_for_imported_root(
         ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if (
             isinstance(enter_item, dsl_nodes.EnterRefFunction)
             and enter_item.ref.is_absolute
         ):
             enter_item.ref.path = [*instance_prefix, *enter_item.ref.path]
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if (
             isinstance(during_item, dsl_nodes.DuringRefFunction)
             and during_item.ref.is_absolute
         ):
             during_item.ref.path = [*instance_prefix, *during_item.ref.path]
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if (
             isinstance(exit_item, dsl_nodes.ExitRefFunction)
             and exit_item.ref.is_absolute
@@ -899,7 +1118,7 @@ def _rewrite_absolute_paths_for_imported_root(
                 *during_aspect_item.ref.path,
             ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_absolute_paths_for_imported_root(
             node=subnode,
             instance_prefix=instance_prefix,
@@ -1114,7 +1333,37 @@ def _aggregate_declared_import_event_docs(
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
 ) -> None:
-    """Apply docs from declaration-only mappings without creating events."""
+    """Merge source-event docs into host events that a mapping only declares.
+
+    A mapping whose target event is already in ``pending_targets`` is handled by
+    the registration path, which creates or updates the host event itself, so it
+    is skipped here.  For every other mapping (one whose source event is never
+    used by a transition of the imported module) the host state owning the
+    target is located with :func:`_ensure_state_path_exists`, and if that state
+    already declares an event with the target name, the event's ``doc`` becomes
+    the :func:`pyfcstm.utils.doc.aggregate_documentation` of its current doc and
+    the mapping's source doc.  No event is created: when the host state has no
+    such event, nothing changes.  Host events are mutated in place.
+
+    :param host_root: Root state of the host program.
+    :type host_root: pyfcstm.dsl.node.StateDefinition
+    :param mappings: Resolved event mappings of the import, keyed by source path.
+    :type mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :param pending_targets: Target keys, as host state path plus event name, that
+        pending registrations already cover.
+    :type pending_targets: Set[Tuple[str, ...]]
+    :param import_item: Import statement being processed; its alias is used in
+        diagnostics.
+    :type import_item: pyfcstm.dsl.node.ImportStatement
+    :param owner_state_path: Path of the state that declares the import.
+    :type owner_state_path: Tuple[str, ...]
+    :param sink: Diagnostic sink for an invalid target state path.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and the target state path does not exist in the host.
+    """
     for mapping in mappings.values():
         if (*mapping.target_state_path, mapping.target_event_name) in pending_targets:
             continue
@@ -1125,7 +1374,7 @@ def _aggregate_declared_import_event_docs(
             owner_state_path=owner_state_path,
             sink=sink,
         )
-        if not _state_path_matches(host_root, mapping.target_state_path, owner_state):
+        if owner_state is None:
             continue
         for event in owner_state.events:
             if event.name == mapping.target_event_name:
@@ -1133,30 +1382,38 @@ def _aggregate_declared_import_event_docs(
                 break
 
 
-def _state_path_matches(
-    root: dsl_nodes.StateDefinition,
-    state_path: Tuple[str, ...],
-    state: Optional[dsl_nodes.StateDefinition],
-) -> bool:
-    """Distinguish a valid target from collect-mode's diagnostic fallback."""
-    if state is None or not state_path or root.name != state_path[0]:
-        return False
-    current = root
-    for segment in state_path[1:]:
-        current = next(
-            (subnode for subnode in current.substates if subnode.name == segment),
-            None,
-        )
-        if current is None:
-            return False
-    return current is state
-
-
 def _collect_event_extra_names(
     node: dsl_nodes.StateDefinition,
     current_path: Tuple[str, ...],
     output: Dict[Tuple[str, ...], Optional[str]],
 ) -> None:
+    """Index the display names (``extra_name``) of source events by lookup key.
+
+    Walks ``node`` and every state and region below it, adding three keys for
+    each declared event into ``output``:
+
+    * ``(owner_state_name, event_name)``, kept if the key already exists, so the
+      first declaration visited wins;
+    * the path of the owner below the module root plus the event name, which is
+      the key a relative path resolves to; it overwrites any earlier value;
+    * the bare ``(event_name,)``, again first writer wins.
+
+    For events declared directly in the module root the second and third key
+    coincide, and the overwrite rule of the second then applies.
+
+    Values may be ``None`` for events declared without a display name.
+    ``output`` is mutated in place.
+
+    :param node: State or region to scan.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param output: Mapping filled in place.
+    :type output: Dict[Tuple[str, ...], Optional[str]]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     for event in node.events:
         output[(node.name, event.name)] = output.get(
@@ -1165,7 +1422,7 @@ def _collect_event_extra_names(
         output[(*current_state_path[1:], event.name)] = event.extra_name
         output[(event.name,)] = output.get((event.name,), event.extra_name)
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_extra_names(subnode, current_state_path, output)
 
 
@@ -1174,7 +1431,27 @@ def _collect_event_docs(
     current_path: Tuple[str, ...],
     output: Dict[Tuple[str, ...], Optional[str]],
 ) -> Dict[Tuple[str, ...], Optional[str]]:
-    """Collect source-event documentation under the same lookup keys as names."""
+    """Index source-event documentation under the keys used for display names.
+
+    Walks ``node`` and every state and region below it and, for each declared
+    event, stores its ``doc`` under the same three keys as
+    :func:`_collect_event_extra_names` (owner name plus event name, owner path
+    below the module root plus event name, and the bare event name).  Unlike the
+    display-name index, every key accumulates: the stored value is the
+    :func:`pyfcstm.utils.doc.aggregate_documentation` of the previous value and
+    the new doc, so events sharing a key contribute all their docs, in visiting
+    order and without duplicates.
+
+    :param node: State or region to scan.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param output: Mapping updated in place.
+    :type output: Dict[Tuple[str, ...], Optional[str]]
+    :return: ``output`` itself.
+    :rtype: Dict[Tuple[str, ...], Optional[str]]
+    """
     current_state_path = tuple((*current_path, node.name))
     for event in node.events:
         keys = (
@@ -1185,7 +1462,7 @@ def _collect_event_docs(
         for key in keys:
             output[key] = aggregate_documentation((output.get(key), event.doc))
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_docs(subnode, current_state_path, output)
     return output
 
@@ -1204,6 +1481,37 @@ def _rewrite_imported_state_event_paths(
     resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
     pending_registrations: List[_PendingEventRegistration],
 ) -> None:
+    """Redirect mapped event references of an imported subtree to host events.
+
+    Walks ``node`` and every state and region below it.  For the event id of each
+    transition and forced transition, and for each event term of each combo
+    trigger, the source path is computed (an absolute id as is, a relative id
+    prefixed by the scope of the declaring state, and a local-scope combo event
+    term additionally gets its source state name inserted).  If that source
+    path has an
+    entry in ``resolved_event_mappings``, the id is rewritten in place to the
+    absolute host event path of the mapping, and a
+    :class:`_PendingEventRegistration` is appended to ``pending_registrations``
+    so the host event can be created or updated later.  Unmapped ids are not
+    touched; absolute ones stay rooted at the imported module until
+    :func:`_rewrite_absolute_paths_for_imported_root` rebases them.
+
+    :param node: State or region to rewrite.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param source_event_names: Display-name index built by
+        :func:`_collect_event_extra_names`.
+    :type source_event_names: Dict[Tuple[str, ...], Optional[str]]
+    :param resolved_event_mappings: Resolved event mappings keyed by source path.
+    :type resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :param pending_registrations: Registrations list extended in place, one entry
+        per rewritten event reference.
+    :type pending_registrations: List[_PendingEventRegistration]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     current_scope_path = current_state_path[1:]
 
@@ -1233,7 +1541,7 @@ def _rewrite_imported_state_event_paths(
                 pending_registrations=pending_registrations,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_imported_state_event_paths(
             node=subnode,
             current_path=current_state_path,
@@ -1277,8 +1585,8 @@ def _rewrite_transition_event_id(
                 source_path=source_path,
             )
         )
-    elif transition.event_id.is_absolute:
-        transition.event_id.path = [*current_scope_path, *transition.event_id.path]
+    # Unmapped absolute paths are relative to the imported module root. The
+    # instance prefix is applied once by _rewrite_absolute_paths_for_imported_root.
 
 
 def _rewrite_combo_transition_event_ids(
@@ -1330,8 +1638,7 @@ def _rewrite_combo_transition_event_ids(
                     source_path=source_path,
                 )
             )
-        elif event_id.is_absolute:
-            event_id.path = [*current_scope_path, *event_id.path]
+        # Keep unmapped absolute paths rooted at the module until rebasing.
 
 
 def _prune_mapped_source_event_definitions(
@@ -1339,6 +1646,25 @@ def _prune_mapped_source_event_definitions(
     current_path: Tuple[str, ...],
     resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
 ) -> None:
+    """Drop event declarations that an import event mapping replaces.
+
+    Walks ``node`` and every state and region below it and rebuilds each
+    ``events`` list without the events whose source path (owner path below the
+    module root plus event name) is a key of ``resolved_event_mappings``.  Their
+    host counterparts are created or updated separately, so the imported module
+    does not also keep its own copy.  The remaining events keep their relative
+    order; ``node.events`` is reassigned to a new list on every visited node.
+
+    :param node: State or region to prune.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param current_path: Names of the ancestors of ``node``, starting at the
+        module root; empty for the module root itself.
+    :type current_path: Tuple[str, ...]
+    :param resolved_event_mappings: Resolved event mappings keyed by source path.
+    :type resolved_event_mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping]
+    :return: ``None``.
+    :rtype: None
+    """
     current_state_path = tuple((*current_path, node.name))
     current_scope_path = current_state_path[1:]
     node.events = [
@@ -1347,7 +1673,7 @@ def _prune_mapped_source_event_definitions(
         if tuple((*current_scope_path, item.name)) not in resolved_event_mappings
     ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _prune_mapped_source_event_definitions(
             node=subnode,
             current_path=current_state_path,
@@ -1470,6 +1796,38 @@ def _ensure_state_path_exists(
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
 ) -> dsl_nodes.StateDefinition:
+    """Find the host state or region addressed by an absolute state path.
+
+    ``state_path[0]`` must equal ``root.name``; every later segment is looked up
+    among the direct namespace children (child states, then regions) of the state
+    reached so far.  Nothing is created, despite the name: a missing state is a
+    reported error.
+
+    * A first segment that differs from the root name emits
+      ``E_IMPORT_MAPPING_INVALID`` with reason ``host_root_mismatch``, and the
+      walk then continues from ``root`` regardless.
+    * A segment with no matching child emits ``E_IMPORT_MAPPING_INVALID`` with
+      reason ``target_invalid``; in collect mode the function then returns
+      ``None`` instead of a state when the last segment is the one that failed.
+    * An empty ``state_path`` emits reason ``empty_path`` and returns ``root``.
+
+    :param root: Root state of the host program.
+    :type root: pyfcstm.dsl.node.StateDefinition
+    :param state_path: Absolute state path, starting with the root name.
+    :type state_path: Tuple[str, ...]
+    :param alias: Import alias, reported in diagnostics.
+    :type alias: str
+    :param owner_state_path: Path of the state that declares the import,
+        reported in diagnostics.
+    :type owner_state_path: Tuple[str, ...]
+    :param sink: Diagnostic sink that receives ``E_IMPORT_MAPPING_INVALID``.
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :return: The addressed state, or ``None`` after a ``target_invalid`` error
+        on the last segment in collect mode.
+    :rtype: Optional[pyfcstm.dsl.node.StateDefinition]
+    :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in strict
+        mode and any of the above diagnostics is emitted.
+    """
     # I1 explicit fallback (PR #116 re-review): emit-then-return early
     # on empty path instead of fall-throughing into ``state_path[0]``
     # IndexError that the outer safety net would have to swallow.
@@ -1506,7 +1864,7 @@ def _ensure_state_path_exists(
     state = root
     for segment in state_path[1:]:
         next_state = None
-        for subnode in state.substates:
+        for subnode in ast_namespace_children(state):
             if subnode.name == segment:
                 next_state = subnode
                 break
@@ -2126,6 +2484,23 @@ def _rewrite_state_variable_references(
     node: dsl_nodes.StateDefinition,
     source_to_target: Dict[str, str],
 ) -> None:
+    """Rename variables in every expression and operation of a state subtree.
+
+    Applies ``source_to_target`` in place to the guards and combo guard terms of
+    transitions and forced transitions, to the effect operations of ordinary
+    transitions (forced transitions have no effects rewritten), to the
+    operation blocks of concrete ``enter``, ``during``, ``exit`` and ``during``
+    aspect actions, and then recurses into every child state and region.  ``ref``
+    and abstract actions carry no operations and are skipped.
+
+    :param node: State or region whose subtree is rewritten.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param source_to_target: Mapping from original variable names to the names
+        they take in the host program.
+    :type source_to_target: Dict[str, str]
+    :return: ``None``.
+    :rtype: None
+    """
     for transition in node.transitions:
         _rewrite_transition_variables(
             transition,
@@ -2140,15 +2515,15 @@ def _rewrite_state_variable_references(
             rewrite_effects=False,
         )
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if isinstance(enter_item, dsl_nodes.EnterOperations):
             _rewrite_operation_block_variables(enter_item.operations, source_to_target)
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if isinstance(during_item, dsl_nodes.DuringOperations):
             _rewrite_operation_block_variables(during_item.operations, source_to_target)
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if isinstance(exit_item, dsl_nodes.ExitOperations):
             _rewrite_operation_block_variables(exit_item.operations, source_to_target)
 
@@ -2159,5 +2534,5 @@ def _rewrite_state_variable_references(
                 source_to_target,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_state_variable_references(subnode, source_to_target)

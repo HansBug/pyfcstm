@@ -1,0 +1,26 @@
+title: A forced transition declared inside a region moves the state of that region; the other region keeps working
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      seq: 7
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A2, B: B1}'
+    vars:
+      seq: 717
+- cycle: Root.Reset
+  expect:
+    configuration: 'Root.P{A: Home, B: B1}'
+    vars:
+      seq: 71727

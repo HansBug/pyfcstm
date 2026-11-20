@@ -77,6 +77,23 @@ async function assertFormatPreservesAst(source: string, label: string): Promise<
 }
 
 describe('jsfcstm formatter AST equivalence', () => {
+    it('preserves ordered regions, owner documentation and active-query atoms', async () => {
+        const source = 'state Root{/* motor */region Motor{state A;[*]->A;A->[*]:if[active("/Root.Sensor.Ready")];}region Sensor{state Ready;[*]->Ready;}}';
+        const formatted = await assertFormatPreservesAst(source, 'ordered-regions');
+        assert.ok(formatted.indexOf('region Motor') < formatted.indexOf('region Sensor'));
+        assert.ok(formatted.includes('active("/Root.Sensor.Ready")'));
+        assert.ok(formatted.includes('    /*\n     * motor\n     */\n    region Motor'), formatted);
+        const again = packageModule.formatDocumentText(createDocument(formatted, '/tmp/ordered-regions.fcstm'));
+        assert.equal(again.length === 0 ? formatted : again[0].newText, formatted);
+    });
+
+    it('preserves interleaved owner actions around regions', async () => {
+        const source = 'state Root{enter setup{}region Second{state A;[*]->A;}event start;during before init{}>>during before sample{}region First{state B;[*]->B;}during after finish{}exit cleanup{}}';
+        const formatted = await assertFormatPreservesAst(source, 'owner-regions');
+        assert.ok(formatted.indexOf('region Second') < formatted.indexOf('region First'));
+        assert.ok(formatted.includes('during before init'));
+    });
+
     it('preserves AST when the input is a small hand-rolled document', async () => {
         const source = [
             'def int  counter=0;',

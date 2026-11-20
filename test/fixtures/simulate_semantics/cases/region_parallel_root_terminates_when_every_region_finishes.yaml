@@ -1,0 +1,22 @@
+title: A parallel root state terminates the machine when its last region finishes
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root{R1: A, R2: B}'
+    ended: false
+- cycle: Root.E1
+  expect:
+    configuration: 'Root{R1: [done], R2: B}'
+    ended: false
+- cycle: Root.E2
+  expect:
+    ended: true

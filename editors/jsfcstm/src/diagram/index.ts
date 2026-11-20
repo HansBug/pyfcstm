@@ -7,6 +7,12 @@ export {
     formatFcstmDiagramTransitionLabel,
 } from './builder';
 export {resolveFcstmDiagramPreviewOptions} from './options';
+// ``layoutFcstmGraph`` is the layout entry point for any graph that has regions:
+// it orders them, tiles them over their owner and places the dividers that
+// ``renderSvg`` / ``renderFcstmDiagramSvg`` draw. Calling ``elk.layout`` directly
+// leaves regions without dividers.
+export {layoutFcstmGraph, orderRegionSections, pinRegionOrder, tileRegionSections} from './region-order';
+export type {FcstmElkLayoutEngine} from './region-order';
 export {
     collectFcstmDiagramEffectNotes,
     formatFcstmDiagramTransitionEventLabel,

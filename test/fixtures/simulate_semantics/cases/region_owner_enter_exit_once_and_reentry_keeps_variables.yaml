@@ -1,0 +1,48 @@
+title: Owner enter and exit run once; re-entry restarts every region without resetting variables
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    vars:
+      e: 0
+      a: 0
+- cycle: Root.Idle.Go
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      e: 1
+      x: 0
+      a: 1
+      b: 1
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      e: 1
+      a: 2
+      b: 2
+- cycle: Root.P.Leave
+  expect:
+    configuration: Root.Idle
+    vars:
+      e: 1
+      x: 1
+      a: 2
+      b: 2
+- cycle: Root.Idle.Go
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      e: 2
+      x: 1
+      a: 3
+      b: 3

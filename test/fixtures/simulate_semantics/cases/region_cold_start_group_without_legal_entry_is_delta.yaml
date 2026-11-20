@@ -1,0 +1,26 @@
+title: A cold start whose group has no legal entry is a whole-cycle Delta
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root{R1: [init], R2: [init]}'
+    vars:
+      leak: 0
+      g: 0
+    delta: true
+    ended: false
+- cycle: []
+  expect:
+    configuration: 'Root{R1: [init], R2: [init]}'
+    vars:
+      leak: 0
+    delta: true
+    ended: false

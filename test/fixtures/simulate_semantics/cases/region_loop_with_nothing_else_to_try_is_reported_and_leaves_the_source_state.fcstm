@@ -1,0 +1,14 @@
+def int b = 0;
+state Root {
+    event Go;
+    [*] -> Idle;
+    state Idle;
+    state P {
+        region R {
+            [*] -> X;
+            state X { region RR { [*] -> p; pseudo state p; p -> [*]; } }
+            X -> X effect { b = 3; };
+        }
+    }
+    Idle -> P : /Go;
+}

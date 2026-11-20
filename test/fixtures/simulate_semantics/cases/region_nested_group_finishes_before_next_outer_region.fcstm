@@ -1,0 +1,23 @@
+def int t = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> Q;
+            state Q {
+                region A1 {
+                    [*] -> M1;
+                    state M1 { during { t = t * 10 + 1; } }
+                }
+                region A2 {
+                    [*] -> M2;
+                    state M2 { during { t = t * 10 + 2; } }
+                }
+            }
+        }
+        region B {
+            [*] -> N;
+            state N { during { t = t * 10 + 3; } }
+        }
+    }
+}

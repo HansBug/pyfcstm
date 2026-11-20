@@ -1112,10 +1112,15 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
     """
     Collect all events and their associated transitions from a state machine.
 
+    Transitions are visited in declaration order through states and regions, so
+    for a transition written directly in a region the first tuple item is the
+    :class:`~pyfcstm.model.region.Region` that owns it, not a state.
+
     :param state_machine: The state machine to analyze
     :type state_machine: StateMachine
-    :return: Dictionary mapping event paths to list of (state, transition) tuples
-    :rtype: Dict[str, List[Tuple[State, Transition]]]
+    :return: Dictionary mapping event paths to list of (owner, transition) tuples,
+        where the owner is a state or a region
+    :rtype: Dict[str, List[Tuple[Union[State, Region], Transition]]]
 
     Example::
 
@@ -1140,11 +1145,23 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         ['System.ErrorEvent']
         >>> len(event_map['System.ErrorEvent']) >= 2
         True
+
+    A transition written inside a region is reported with the region as owner::
+
+        >>> regional = parse_dsl_node_to_state_machine(parse_with_grammar_entry('''state Root {
+        ...     event Go;
+        ...     region A { state X; [*] -> X; X -> [*] : /Go; }
+        ... }''', 'state_machine_dsl'))
+        >>> owner, transition = collect_event_transitions(regional)['Root.Go'][0]
+        >>> type(owner).__name__, owner.name
+        ('Region', 'A')
     """
     from collections import defaultdict
+    from .region import walk_namespaces
+
     event_map = defaultdict(list)
 
-    for state in state_machine.walk_states():
+    for state in walk_namespaces(state_machine.root_state):
         for transition in state.transitions:
             if transition.event is not None:
                 event_path = '.'.join(transition.event.path)

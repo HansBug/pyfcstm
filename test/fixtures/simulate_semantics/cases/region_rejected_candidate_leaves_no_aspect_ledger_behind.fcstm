@@ -1,0 +1,15 @@
+def int tick = 0;
+def int leak = 0;
+def int g = 0;
+state Root {
+    >> during before { tick = tick + 1; }
+    [*] -> Idle;
+    state Idle { during { } }
+    state P {
+        region R1 { [*] -> X; state X { during { leak = leak + 1; } } }
+        region R2 { [*] -> Y : if [g != 0]; state Y; }
+    }
+    state Fallback { during { } }
+    Idle -> P :: Go;
+    Idle -> Fallback :: Go;
+}

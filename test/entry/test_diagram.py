@@ -15,6 +15,31 @@ from pyfcstm.entry.cli import cli
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('replacement', ['missing', 'directory'])
+def test_diagram_cli_reports_input_changes_after_argument_validation(tmp_path, monkeypatch, replacement):
+    import importlib
+
+    module = importlib.import_module('pyfcstm.entry.diagram')
+    load = module.load_state_machine_from_file
+    source = tmp_path / 'machine.fcstm'
+    source.write_text('state Root;', encoding='utf-8')
+
+    def changed_input(path):
+        # Simulate another process changing a previously validated input path;
+        # the real loader still performs the filesystem operation and raises.
+        source.unlink()
+        if replacement == 'directory':
+            source.mkdir()
+        return load(path)
+
+    monkeypatch.setattr(module, 'load_state_machine_from_file', changed_input)
+    result = CliRunner().invoke(cli, ['diagram', '-i', str(source)])
+    assert result.exit_code != 0
+    message = 'Input DSL file not found' if replacement == 'missing' else 'Failed to read input DSL file'
+    assert message in result.output
+    assert 'Traceback' not in result.output
+
+
 def test_diagram_cli_json_and_html(tmp_path):
     source = tmp_path / "machine.fcstm"
     source.write_text("state Root;", encoding="utf-8")

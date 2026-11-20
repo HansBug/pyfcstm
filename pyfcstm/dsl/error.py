@@ -141,12 +141,34 @@ class SyntaxFailError(GrammarItemError):
         """
         Enhance ANTLR error messages with actionable suggestions.
 
+        The raw ANTLR text is lower-cased and matched against a series of
+        known failure shapes (unterminated comment, missing ``;``, ``}``,
+        ``{``, ``]``, ``[``, ``->`` or ``=``, extraneous input, mismatched
+        input, no viable alternative, token recognition error); the first
+        matching shape selects a replacement message, sometimes refined by
+        ``offending_symbol``. For
+        mismatched input, an offending ``<EOF>`` together with an expected
+        ``RBRACE`` (ANTLR's token name for ``}``) means the input ended
+        while a block was still open, and is reported as a missing closing
+        brace. When no shape matches, the original ANTLR message is
+        returned unchanged.
+
         :param msg: Original ANTLR error message.
         :type msg: str
         :param offending_symbol: The problematic symbol text.
         :type offending_symbol: str or None
         :return: Enhanced error message with suggestions.
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.dsl.error import GrammarParseError
+            >>> try:
+            ...     parse_with_grammar_entry("state A { state B;", "state_definition")
+            ... except GrammarParseError as error:
+            ...     print(str(error).splitlines()[-1])
+            Error 1: Syntax error at line 1, column 18, near '<EOF>': Missing closing brace - check for unclosed state definitions or action blocks
         """
         normalized_msg = msg.lower()
 
@@ -196,6 +218,8 @@ class SyntaxFailError(GrammarItemError):
             return f"Unexpected token '{offending_symbol}'"
 
         elif "mismatched input" in normalized_msg:
+            if offending_symbol == '<EOF>' and "rbrace" in normalized_msg:
+                return "Missing closing brace - check for unclosed state definitions or action blocks"
             if "expecting ';'" in normalized_msg or "expecting semi" in normalized_msg:
                 if offending_symbol == 'state':
                     return "Missing semicolon after previous state definition"

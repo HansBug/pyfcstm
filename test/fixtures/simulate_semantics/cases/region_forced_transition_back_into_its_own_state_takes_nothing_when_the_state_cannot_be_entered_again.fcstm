@@ -1,0 +1,15 @@
+def int n = 0;
+state Root {
+    event Stop;
+    [*] -> S;
+    state S {
+        enter { n = n + 1; }
+        [*] -> W : if [n == 1];
+        [*] -> D : if [n == 2];
+        [*] -> L : if [n == 3];
+        state W { region A { [*] -> A1; state A1; } }
+        state D { [*] -> X; pseudo state X; X -> [*]; }
+        state L;
+    }
+    !S -> S : /Stop;
+}

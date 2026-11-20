@@ -63,7 +63,9 @@ def transition_shadowed_by_predecessor(
     ordered domains, so shadowing inside regions is found too. A forced
     declaration is judged in its plain expansion, one transition on every
     state it applies to (see :mod:`pyfcstm.model.forced`), so a result names
-    the transitions an author wrote and nothing generated to carry them out.
+    the transitions an author wrote and nothing generated to carry them out;
+    the transition positions in a result count in that expansion, which is
+    also the model as it was loaded and not a later edit of the model object.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
@@ -369,7 +371,11 @@ def composite_init_guards_incomplete(
     variable and event input assignment that disables all initial-transition
     triggers. A ``region`` is checked like a composite state: each region has
     its own initial transitions, while a state that owns regions has none of its
-    own and is skipped.
+    own and is skipped. Like :func:`transition_shadowed_by_predecessor`, the
+    algorithm reads a model with forced declarations in their plain expansion
+    (see :mod:`pyfcstm.model.forced`): forced lowering leaves initial
+    transitions alone, but the transitions it generates would shift the
+    positions a result reports.
 
     For a composite state with initial transitions ``i_1, ..., i_n``, let
     ``H_k(V, E)`` be the trigger predicate for initial transition ``i_k``.
@@ -439,6 +445,9 @@ def composite_init_guards_incomplete(
         >>> composite_init_guards_incomplete(machine, variables(machine)).kind
         'unsat'
     """
+    # Positions in the result count in the plain expansion of forced
+    # declarations, as they do for every other analysis.
+    machine = machine._with_plain_forced()
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_init_constraints_or_result,

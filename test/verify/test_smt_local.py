@@ -7,6 +7,8 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
 from pyfcstm.verify import (
+    CALL_COUNT_SCALING_ORDER,
+    COMPLEXITY_TIER_ORDER,
     AlgorithmResult,
     composite_init_guards_incomplete,
     dead_guard,
@@ -15,6 +17,7 @@ from pyfcstm.verify import (
     enter_postcondition_implies_during_precondition,
     forced_guard_unsat_under_init,
     guard_tautology,
+    run_inspect_algorithms,
     transition_shadowed_by_predecessor,
 )
 from pyfcstm.verify.encoding import _core as encoding_core
@@ -5170,16 +5173,72 @@ class TestMachineLevelAlgorithmsOnForcedDeclarations:
             ),
         ]
 
-    def test_initial_guard_coverage_reads_what_lowering_leaves_alone(self):
+    def test_initial_guard_coverage_counts_positions_in_the_declaration_as_written(
+        self,
+    ):
         machine = parse_machine(self.SOURCE)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
         # Forced lowering adds no initial transition and changes none, so the
-        # one guarded initial of P is all there is to judge.
+        # one guarded initial of P is all there is to judge. Its position
+        # counts the transitions of the plain expansion; the relay and the
+        # gates of the machine that runs would move it to 10.
         assert result.kind == "sat"
         assert "__forced" not in repr(result.diagnostics)
-        assert [item["data"]["state"] for item in result.diagnostics] == ["Root.P"]
+        assert [
+            (
+                item["data"]["state"],
+                [
+                    (initial["to_state"], initial["guard"], initial["transition_index"])
+                    for initial in item["data"]["init_transitions"]
+                ],
+            )
+            for item in result.diagnostics
+        ] == [("Root.P", [("a1", "x >= 0", 7)])]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            SOURCE,
+            """
+            def int x = 0;
+            state Root {
+                event Stop;
+                [*] -> First : if [x >= 0];
+                state First {
+                    region A { [*] -> A1 : if [x > 0]; state A1; }
+                    region B { [*] -> B1; state B1; }
+                }
+                state Second;
+                !First -> Second : /Stop;
+                First -> Second : /Stop;
+            }
+            """,
+        ],
+        ids=["composite", "owner_of_regions"],
+    )
+    def test_a_direct_call_and_an_inspect_run_report_the_same(self, source):
+        machine = parse_machine(source)
+        assert machine.forced_variables == ("__forced_0",)
+        through_inspect = {
+            item.algorithm_name: item
+            for item in run_inspect_algorithms(
+                machine,
+                max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+                max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
+            )
+        }
+
+        for algorithm in (
+            transition_shadowed_by_predecessor,
+            composite_init_guards_incomplete,
+        ):
+            direct = algorithm(machine, variables(machine))
+            inspected = through_inspect[algorithm.__name__]
+            assert direct.kind == inspected.result_kind
+            assert list(direct.diagnostics) == list(inspected.diagnostics)
+            assert direct.diagnostics, "the model is built to give both a finding"
 
 
 class TestCompositeInitGuardsIncomplete:

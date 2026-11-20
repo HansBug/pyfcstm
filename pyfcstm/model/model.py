@@ -47,7 +47,7 @@ import json
 import os
 import weakref
 from dataclasses import InitVar, dataclass, field, fields, is_dataclass
-from itertools import chain, count
+from itertools import chain
 from textwrap import indent
 from types import MappingProxyType
 from typing import (
@@ -5421,97 +5421,14 @@ def _build_assembled_state_machine(
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
-    forced_transition_declarations = []
 
-    forced_ids = count()
+    # Forced declarations are resolved and expanded in one place; the walk
+    # below only says where and passes on what each namespace inherits.
+    from .forced import ForcedExpansion, lower_forced
 
-    def _scope_has_regions(scope: Any) -> bool:
-        """
-        Tell whether a declaration scope contains a state that owns regions.
-
-        :param scope: A state or region declaration.
-        :type scope: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
-        :return: ``True`` if ``scope`` or anything below it owns regions.
-        :rtype: bool
-        """
-        return bool(getattr(scope, "regions", ())) or any(
-            _scope_has_regions(substate) for substate in scope.substates
-        )
-
-    def _force_reaches_regions(node: Any, from_state: Any) -> bool:
-        """
-        Tell whether a forced declaration acts on a state that owns regions.
-
-        A declaration is expanded into regions only when the states it applies
-        to contain an owner. Every other declaration keeps its plain expansion,
-        so a machine without regions never changes.
-
-        :param node: Declaration scope the transition is written in.
-        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
-        :param from_state: Source of the declaration, a state name or ``*``.
-        :type from_state: Union[str, pyfcstm.dsl.node._StateSingletonMark]
-        :return: ``True`` if one of the states the declaration applies to owns
-            regions or contains a state that does.
-        :rtype: bool
-        """
-        return any(
-            _scope_has_regions(substate)
-            for substate in node.substates
-            if from_state is dsl_nodes.ALL or substate.name == from_state
-        )
-
-    def _forced_node(
-        event_id: Any,
-        condition_expr: Any,
-        event_scope: Any,
-        origin: Any,
-        span: Any,
-        source_path: Optional[str],
-        forced_id: Optional[int],
-        exit_levels: int,
-    ) -> dsl_nodes.ForceTransitionDefinition:
-        """
-        Build the node that carries a forced declaration one level deeper.
-
-        :param event_id: Event of the declaration, if any.
-        :type event_id: Optional[pyfcstm.dsl.node.ChainID]
-        :param condition_expr: Guard of the declaration, if any.
-        :type condition_expr: Optional[pyfcstm.dsl.node.Expr]
-        :param event_scope: Scope of ``event_id``.
-        :type event_scope: Optional[str]
-        :param origin: Original text of the declaration.
-        :type origin: Optional[str]
-        :param span: Source span of the declaration.
-        :type span: Optional[Span]
-        :param source_path: File the declaration was written in.
-        :type source_path: Optional[str]
-        :param forced_id: Number of the declaration when it reaches regions.
-        :type forced_id: Optional[int]
-        :param exit_levels: Number of owners crossed so far.
-        :type exit_levels: int
-        :return: A node that applies to every state of the next level.
-        :rtype: pyfcstm.dsl.node.ForceTransitionDefinition
-        """
-        carried = dsl_nodes.ForceTransitionDefinition(
-            from_state=dsl_nodes.ALL,
-            to_state=dsl_nodes.EXIT_STATE,
-            event_id=event_id,
-            condition_expr=condition_expr,
-            event_scope=event_scope,
-            source_raw=origin,
-            _span=span,
-        )
-        if source_path is not None:
-            # This node is synthesised to carry the declaration one level
-            # deeper, and it keeps the declaration's span, so it has to keep
-            # its file too.  Without this the descent stops having an answer
-            # after the first level, and the span alone cannot supply one
-            # across documents.
-            setattr(carried, "_source_path", source_path)
-        if forced_id is not None:
-            setattr(carried, "_forced_id", forced_id)
-            setattr(carried, "_exit_levels", exit_levels)
-        return carried
+    forced_expansion = ForcedExpansion(
+        root_state, d_defines, sink, lower=lower, plain=plain_forced
+    )
 
     def _recursive_finish_states(
         node: dsl_nodes.StateDefinition,
@@ -5523,13 +5440,12 @@ def _build_assembled_state_machine(
         Resolve transitions, forced transitions and events of one namespace, then recurse.
 
         Runs after :func:`_recursive_build_states`, when every state and
-        region exists. Expands forced transitions (including those inherited
-        from enclosing states), resolves transition events against the event
-        scope rules, builds :class:`Transition` objects and attaches them, and
-        finally repeats the process for each child. A declaration whose reach
-        contains a state that owns regions is expanded into the regions as
-        well (see :mod:`pyfcstm.model.forced`); every other declaration stops
-        at an owner, as it always did.
+        region exists. Hands the forced declarations of the namespace
+        (including those inherited from enclosing states) to
+        :class:`pyfcstm.model.forced.ForcedExpansion`, repeats the process for
+        each child with what that child inherits, and then resolves transition
+        events against the event scope rules, builds :class:`Transition`
+        objects and attaches them.
 
         :param node: Declaration being finished.
         :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
@@ -5544,359 +5460,25 @@ def _build_assembled_state_machine(
         :rtype: None
         """
         current_path = tuple((*current_path, current_state.name))
-        force_transitions = list(force_transitions or [])
-        if getattr(current_state, "regions", {}):
-            # An owner has no substates to pass a declaration to. Only the
-            # declarations that reach regions continue below it.
-            force_transitions = [
-                item
-                for item in force_transitions
-                if getattr(item, "_forced_id", None) is not None
-            ]
-
-        force_transition_tuples_to_inherit = []
-        local_force_ids = {id(item) for item in node.force_transitions}
-        for f_transnode in [*force_transitions, *node.force_transitions]:
-            # I3 from PR-110: if either side of a forced transition is
-            # unresolved, skip the rest of the per-transition processing
-            # AND the inherit-tuple append. Otherwise collect mode keeps a
-            # bad ``(from_state, to_state, ...)`` tuple that quietly
-            # corrupts the inheritance phase (bad to_state being attached
-            # to a real substate's transitions).
-            unresolved = False
-            # A declaration that reaches regions is carried into every
-            # namespace below it; what is wrong with its trigger was already
-            # reported where it was written.
-            report = (
-                id(f_transnode) in local_force_ids
-                or getattr(f_transnode, "_forced_id", None) is None
-            )
-            if f_transnode.from_state == dsl_nodes.ALL:
-                from_state = dsl_nodes.ALL
-            else:
-                from_state = f_transnode.from_state
-                if from_state not in current_state.substates:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_FORCED_TRANSITION_EXPANSION",
-                            severity="error",
-                            message=(
-                                f"Unknown from state {from_state!r} of force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "original_raw": str(f_transnode.without_docs()),
-                                "reason": "src_not_found",
-                            },
-                        )
-                    )
-                    unresolved = True
-
-            if f_transnode.to_state is dsl_nodes.EXIT_STATE:
-                to_state = dsl_nodes.EXIT_STATE
-            else:
-                to_state = f_transnode.to_state
-                if to_state not in current_state.substates:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_FORCED_TRANSITION_EXPANSION",
-                            severity="error",
-                            message=(
-                                f"Unknown to state {to_state!r} of force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "original_raw": str(f_transnode.without_docs()),
-                                "reason": "tgt_not_found",
-                            },
-                        )
-                    )
-                    unresolved = True
-
-            if unresolved:
-                continue
-
-            my_event_id, trans_event = None, None
-            if f_transnode.event_id is not None:
-                my_event_id = f_transnode.event_id
-                source_state = from_state if isinstance(from_state, str) else None
-                origin = _event_origin_from_id(
-                    my_event_id,
-                    f_transnode.event_scope,
-                    source_state=source_state,
-                )
-                if not my_event_id.is_absolute:
-                    my_event_id = dsl_nodes.ChainID(
-                        path=[*current_state.path[1:], *my_event_id.path],
-                        is_absolute=True,
-                    )
-                start_state = root_state
-                base_path = (root_state.name,)
-                # Walk the event-id state segments. On a missing segment
-                # we emit the diagnostic and skip the suffix resolution —
-                # without this guard, collect mode would silently fabricate
-                # an Event in whatever partial state ``start_state`` landed
-                # on (C1 from PR-110 review).
-                path_resolved = True
-                for seg in my_event_id.path[:-1]:
-                    if namespace_child(start_state, seg) is not None:
-                        start_state = namespace_child(start_state, seg)
-                    else:
-                        if report:
-                            sink.emit(
-                                ModelDiagnostic(
-                                    code="E_MISSING_STATE",
-                                    severity="error",
-                                    message=(
-                                        f"Cannot find state "
-                                        f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
-                                        "for transition:\n"
-                                        f"{str(f_transnode.without_docs())}"
-                                    ),
-                                    span=getattr(f_transnode, "_span", None),
-                                    refs={
-                                        "state_path": ".".join(
-                                            (*base_path, *my_event_id.path[:-1])
-                                        ),
-                                        "referenced_from": ".".join(current_path),
-                                        "reason": "event_path_not_found",
-                                    },
-                                )
-                            )
-                        path_resolved = False
-                        break
-
-                if path_resolved:
-                    suffix_name = my_event_id.path[-1]
-                    if suffix_name not in start_state.events:
-                        start_state.events[suffix_name] = Event(
-                            name=suffix_name,
-                            state_path=start_state.path,
-                            # The event is synthesized from a transition
-                            # trigger, so the source documentation belongs to
-                            # the transition rather than this new owner.
-                            doc=None,
-                            origins=[origin],
-                            _span=_node_span(f_transnode),
-                        )
-                    else:
-                        if origin not in start_state.events[suffix_name].origins:
-                            start_state.events[suffix_name].origins.append(origin)
-                    trans_event = start_state.events[suffix_name]
-
-            condition_expr, guard = f_transnode.condition_expr, None
-            if f_transnode.condition_expr is not None:
-                guard = parse_expr_node_to_expr(f_transnode.condition_expr)
-                unknown_vars = []
-                for var in guard.list_variables():
-                    if var.name not in d_defines:
-                        unknown_vars.append(var.name)
-                for unknown_var in unknown_vars if report else ():
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_UNDEFINED_VAR",
-                            severity="error",
-                            message=(
-                                f"Unknown guard variable "
-                                f"{unknown_var} in force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "var_name": unknown_var,
-                                "referenced_in": "guard",
-                                "state_path": ".".join(current_path),
-                                "expr_text": str(f_transnode.condition_expr),
-                            },
-                        )
-                    )
-
-            if id(f_transnode) in local_force_ids:
-                if from_state is dsl_nodes.ALL:
-                    source_path = "*"
-                    expansion_count = len(node.substates)
-                else:
-                    source_path = ".".join((*current_path, from_state))
-                    expansion_count = 1
-                forced_transition_declarations.append(
-                    {
-                        "state_path": ".".join(current_path),
-                        "from_path": source_path,
-                        "to_path": (
-                            "[*]"
-                            if to_state is dsl_nodes.EXIT_STATE
-                            else ".".join((*current_path, to_state))
-                        ),
-                        "event": trans_event.path_name
-                        if trans_event is not None
-                        else None,
-                        "event_scope": (
-                            f_transnode.event_scope if trans_event is not None else None
-                        ),
-                        "guard": str(condition_expr)
-                        if condition_expr is not None
-                        else None,
-                        "original_raw": str(f_transnode.without_docs()),
-                        "expansion_count": expansion_count,
-                        "span": _node_span(f_transnode),
-                    }
-                )
-
-            if id(f_transnode) in local_force_ids:
-                # The declaration is shared with the other build of the same
-                # program, so what is decided here stays in the tuple.
-                forced_id = (
-                    next(forced_ids)
-                    if lower
-                    and not plain_forced
-                    and _force_reaches_regions(node, from_state)
-                    else None
-                )
-            else:
-                forced_id = getattr(f_transnode, "_forced_id", None)
-
-            force_transition_tuples_to_inherit.append(
-                (
-                    from_state,
-                    to_state,
-                    my_event_id,
-                    trans_event,
-                    condition_expr,
-                    guard,
-                    f_transnode.event_scope,
-                    getattr(f_transnode, "source_raw", None)
-                    or str(f_transnode.without_docs()),
-                    _node_span(f_transnode),
-                    # The file the declaration was written in, carried with its
-                    # span.  An expansion lands on states from other files, and a
-                    # span alone cannot say which document it belongs to -- two
-                    # modules that put a statement of the same length at the same
-                    # place share a key.  Asking the declaration directly is exact.
-                    getattr(f_transnode, "_source_path", None),
-                    getattr(f_transnode, "doc", None),
-                    getattr(f_transnode, "target_history", None),
-                    forced_id,
-                    getattr(f_transnode, "_exit_levels", 0),
-                    id(f_transnode) in local_force_ids,
-                )
-            )
+        inherited = forced_expansion.expand(
+            node, current_state, current_path, force_transitions
+        )
 
         transitions = current_state.transitions
-        for subnode in node.substates:
-            _inner_force_transitions = []
-            for (
-                from_state,
-                to_state,
-                my_event_id,
-                trans_event,
-                condition_expr,
-                guard,
-                event_scope,
-                forced_origin,
-                forced_span,
-                forced_source_path,
-                forced_doc,
-                forced_target_history,
-                forced_id,
-                exit_levels,
-                forced_local,
-            ) in force_transition_tuples_to_inherit:
-                if not (from_state is dsl_nodes.ALL or from_state == subnode.name):
-                    continue
-                substate = current_state.substates[subnode.name]
-                if forced_id is not None and not forced_local and substate.is_pseudo:
-                    # A pseudo state is never rested in, so there is nothing to
-                    # take away from it; control only passes through.
-                    continue
-
-                carried = _forced_node(
-                    my_event_id,
-                    condition_expr,
-                    event_scope,
-                    forced_origin,
-                    forced_span,
-                    forced_source_path,
-                    forced_id,
-                    exit_levels,
-                )
-                if exit_levels and (substate.substates or substate.regions):
-                    # Inside a region only a state that can be rested in holds
-                    # the transition; a composite or owner passes it down.
-                    _inner_force_transitions.append(carried)
-                    continue
-                transitions.append(
-                    Transition(
-                        from_state=subnode.name,
-                        to_state=to_state,
-                        event=trans_event,
-                        guard=guard,
-                        effects=[],
-                        doc=forced_doc,
-                        event_scope=event_scope,
-                        is_forced=True,
-                        forced_origin=forced_origin,
-                        exit_group_levels=exit_levels,
-                        _span=forced_span,
-                        target_history=forced_target_history,
-                    )
-                )
-                if forced_source_path is not None:
-                    setattr(transitions[-1], "_source_path", forced_source_path)
-                if forced_id is not None:
-                    setattr(transitions[-1], "_forced_id", forced_id)
-                    setattr(transitions[-1], "_forced_declared", forced_local)
-                _inner_force_transitions.append(carried)
-
+        for subnode, carried in zip(node.substates, inherited.per_substate):
             _recursive_finish_states(
                 node=subnode,
                 current_state=current_state.substates[subnode.name],
                 current_path=current_path,
-                force_transitions=_inner_force_transitions,
+                force_transitions=carried,
             )
 
         for region_node in getattr(node, "regions", ()):
-            # An owner only holds declarations that reach regions (see the top
-            # of this function), and what it inherited applies to every state.
-            _region_force_transitions = []
-            for (
-                _,
-                _,
-                item_event_id,
-                _,
-                item_condition,
-                _,
-                item_scope,
-                item_origin,
-                item_span,
-                item_source_path,
-                _,
-                _,
-                item_id,
-                item_levels,
-                _,
-            ) in force_transition_tuples_to_inherit:
-                _region_force_transitions.append(
-                    _forced_node(
-                        item_event_id,
-                        item_condition,
-                        item_scope,
-                        item_origin,
-                        item_span,
-                        item_source_path,
-                        item_id,
-                        item_levels + 1,
-                    )
-                )
             _recursive_finish_states(
                 region_node,
                 current_state.regions[region_node.name],
                 current_path,
-                force_transitions=_region_force_transitions,
+                force_transitions=inherited.for_region(),
             )
 
         def _emit_dangling_transition_diagnostics(transnode) -> bool:
@@ -6963,13 +6545,11 @@ def _build_assembled_state_machine(
 
     # Forced transitions that reach regions decide their event and guard once.
     # The marks the expansion left are only present when ``lower`` is true.
-    from .forced import lower_forced
-
     forced_flags = lower_forced(root_state, d_defines)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,
-        forced_transitions=tuple(forced_transition_declarations),
+        forced_transitions=tuple(forced_expansion.declarations),
         history_owners=history_owners,
         active_queries=active_queries,
         _forced_flags=forced_flags,

@@ -71,7 +71,10 @@ declaration is reported once instead of once per level it was expanded to.
 
 In the machine that runs, ``Transition.is_forced`` marks the transitions that
 carry the declared event and guard. The transitions generated to pass the exit
-on, which only read ``__forced_<n>``, are not marked.
+on, which only read ``__forced_<n>``, are not marked; they keep
+``forced_origin``, the text of the declaration they were generated for. The
+analyses of :mod:`pyfcstm.verify` that take a whole machine judge a forced
+transition the way a drawing shows it.
 
 Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new

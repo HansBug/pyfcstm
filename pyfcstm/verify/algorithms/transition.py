@@ -60,7 +60,10 @@ def transition_shadowed_by_predecessor(
     initial-transition domains, translating each event/guard trigger into a
     predicate and asking whether a later trigger can ever be enabled after all
     prior triggers are disabled. The transitions of a ``region`` form their own
-    ordered domains, so shadowing inside regions is found too.
+    ordered domains, so shadowing inside regions is found too. A forced
+    declaration is judged in its plain expansion, one transition on every
+    state it applies to (see :mod:`pyfcstm.model.forced`), so a result names
+    the transitions an author wrote and nothing generated to carry them out.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
@@ -142,6 +145,9 @@ def transition_shadowed_by_predecessor(
         >>> transition_shadowed_by_predecessor(machine, variables(machine)).kind
         'sat'
     """
+    # Like every other analysis, judge a forced declaration in its plain
+    # expansion and not in the hidden variable and relays that carry it out.
+    machine = machine._with_plain_forced()
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_type_constraints,

@@ -5108,6 +5108,80 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result == AlgorithmResult(kind="sat")
 
 
+class TestMachineLevelAlgorithmsOnForcedDeclarations:
+    """What the algorithms that take a whole machine report for a forced model."""
+
+    SOURCE = """
+    def int x = 0;
+    state Root {
+        event Stop;
+        [*] -> P;
+        state P {
+            [*] -> a1 : if [x >= 0];
+            state a1 { during { x = x + 1; } }
+            a1 -> [*] : if [x > 9];
+        }
+        state Q;
+        state R;
+        !P -> Q : /Stop;
+        P -> R : /Stop;
+        P -> R : if [x > 2];
+        P -> Q : if [x > 2];
+        Q -> P : if [x < 0];
+    }
+    """
+
+    def test_shadowing_is_judged_on_the_declaration_as_written(self):
+        machine = parse_machine(self.SOURCE)
+        assert machine.forced_variables == ("__forced_0",)
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "unsat"
+        # The transitions an author wrote are named, with the positions they
+        # have among the outgoing transitions of P in the plain expansion;
+        # nothing generated to carry the forced declaration out shows up.
+        assert "__forced" not in repr(result.diagnostics)
+        shadowed = [
+            (
+                item["data"]["transition"]["to_state"],
+                item["data"]["transition"]["event"],
+                item["data"]["transition"]["guard"],
+                item["data"]["transition"]["transition_index"],
+                [
+                    (by["to_state"], by["event"], by["is_forced"], by["transition_index"])
+                    for by in item["data"]["shadowed_by"]
+                ],
+            )
+            for item in result.diagnostics
+        ]
+        assert shadowed == [
+            ("R", "Root.Stop", None, 2, [("Q", "Root.Stop", True, 0)]),
+            (
+                "Q",
+                None,
+                "x > 2",
+                4,
+                [
+                    ("Q", "Root.Stop", True, 0),
+                    ("R", "Root.Stop", False, 2),
+                    ("R", None, False, 3),
+                ],
+            ),
+        ]
+
+    def test_initial_guard_coverage_reads_what_lowering_leaves_alone(self):
+        machine = parse_machine(self.SOURCE)
+
+        result = composite_init_guards_incomplete(machine, variables(machine))
+
+        # Forced lowering adds no initial transition and changes none, so the
+        # one guarded initial of P is all there is to judge.
+        assert result.kind == "sat"
+        assert "__forced" not in repr(result.diagnostics)
+        assert [item["data"]["state"] for item in result.diagnostics] == ["Root.P"]
+
+
 class TestCompositeInitGuardsIncomplete:
     """Test composite initial-transition coverage checks."""
 

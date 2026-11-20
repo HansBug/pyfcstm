@@ -286,8 +286,9 @@ Use the output to check what the earlier steps observed:
   to do with history. Each phase gets a ``-> [*]`` transition that keeps the
   event and sets ``__forced_0`` or ``__forced_1``; ``Charging`` and ``Session``
   pass the exit on while that variable is 1; the transition that finally leaves
-  ``Session`` sets it back to 0. The two ``__forced_gate_*`` pseudo states let
-  ``Session`` itself take the same event while no phase is active yet.
+  ``Session`` sets it back to 0. The two ``__forced_gate_*`` pseudo states
+  belong to the transitions written on ``Session`` itself: each of them is
+  split in two there, so that it waits while one of the variables is 1.
 
 .. figure:: charger.fcstm.puml.svg
    :alt: The charger after model conversion, with guarded initial transitions and history variables

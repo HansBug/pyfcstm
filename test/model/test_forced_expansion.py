@@ -66,7 +66,8 @@ def test_a_declaration_on_a_composite_is_decided_where_the_machine_rests():
     assert (side.event.path_name, side.guard, side.is_forced) == ('Root.Stop', None, True)
     assert _writes(side) == [('__forced_0', '1')]
     # The level of the declaration takes the raised case first and lowers the
-    # variable; the declared transition stays for an entry that has not settled.
+    # variable; the declared transition stays for the case that control comes
+    # back to Run without the variable raised.
     first, declared = [edge for edge in model.root_state.transitions if edge.from_state == 'Run']
     assert (first.to_state, first.event, str(first.guard)) == ('Idle', None, '__forced_0 == 1')
     assert _writes(first) == [('__forced_0', '0')]

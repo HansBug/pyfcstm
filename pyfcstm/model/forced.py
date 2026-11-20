@@ -68,13 +68,14 @@ event and the guard on every level and stops at owners. No machine runs it any
 more, but it is the form a declaration is shown in. The PlantUML export, the
 diagram snapshot and the static analyses
 (:func:`pyfcstm.diagnostics.inspect.inspect_model`,
-:func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms` and the topology
-analyses of :mod:`pyfcstm.verify.topology`) use a machine built with it, so a
-drawing shows one transition per state the declaration applies to and no hidden
-variable. The DSL
-export writes the machine that runs, hidden variables and gates included, as it
-does for a lowered history; only a machine with exit-group transitions, the one
-thing the language cannot write, is exported in its plain expansion (see
+:func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`,
+:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`
+and the topology analyses of :mod:`pyfcstm.verify.topology`) use a machine
+built with it, so a drawing shows one transition per state the declaration
+applies to and no hidden variable. The DSL export writes the machine that runs,
+hidden variables and gates included, as it does for a lowered history; only a
+machine with exit-group transitions, the one thing the language cannot write,
+is exported in its plain expansion (see
 :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
 
 The module contains:
@@ -819,8 +820,10 @@ class ForcedExpansion:
         The transitions that only pass the exit on, on the composite states
         and owners below the source and in front of the declared transition,
         are generated plumbing: they are no longer marked
-        :attr:`pyfcstm.model.model.Transition.is_forced`. The transitions that
-        repeat the declared event and guard, and the declared one, stay marked.
+        :attr:`pyfcstm.model.model.Transition.is_forced`, and keep
+        ``forced_origin`` to say which declaration they belong to. The
+        transitions that repeat the declared event and guard, and the declared
+        one, stay marked.
 
         :param defines: Variable definitions of the machine; the hidden
             variables are added.

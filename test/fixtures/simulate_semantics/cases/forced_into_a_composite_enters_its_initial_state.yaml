@@ -1,0 +1,32 @@
+title: A forced transition into a composite enters it through its initial transition
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The target is entered like by any other transition and ends at its initial leaf in the same cycle.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q.q1
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q.q1
+    vars:
+      n: 3

@@ -588,6 +588,9 @@ class TestPythonBuiltinTemplate:
             'sign_function_controls_guard_transition',
             'sign_function_preserves_complex_action_precedence',
             'sign_function_aligns_aspect_guard_effect_math',
+            # A forced declaration on a composite state: the generated class
+            # lists its hidden variable and fills it in on a hot start.
+            'forced_hot_start_does_not_ask_for_the_hidden_variable',
         ]
         fixture_dir = os.path.join(
             os.path.dirname(__file__),

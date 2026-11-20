@@ -16,11 +16,14 @@ state Root {
                         [*] -> S60;
                         pseudo state S60;
                         state S62;
-                        !* -> S62 : /E2;
+                        S60 -> [*] : /E2;
+                        S60 -> S62 : /E2;
+                        S62 -> [*] : /E2;
+                        S62 -> S62 : /E2;
                     }
+                    S59 -> S59 : /E2;
                     S59 -> [*] : if [x % 4 == 1];
                     S59 -> S59 : if [y % 3 == 1] effect { x = x + 1; }
-                    !* -> S59 : /E2;
                 }
                 region R65 { [*] -> S66; state S66; }
             }

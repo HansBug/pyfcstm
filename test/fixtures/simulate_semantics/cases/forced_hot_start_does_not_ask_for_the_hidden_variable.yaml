@@ -1,0 +1,28 @@
+title: A hot start of a machine with a forced declaration does not have to supply the hidden variable
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The declaration on the composite Run is carried out with the hidden variable __forced_0, which is 0 whenever the machine rests. Every runner fills it in, so the snapshot names the user variable only, and the forced transition works from the restored position.
+categories:
+- runtime
+- hot_start
+- template_alignment
+initial:
+  state: Root.Run.B
+  vars:
+    x: 5
+steps:
+- cycle: []
+  expect:
+    state: Root.Run.B
+    vars:
+      x: 5
+      __forced_0: 0
+- cycle:
+  - Root.Stop
+  expect:
+    state: Root.Idle
+    vars:
+      x: 5
+      __forced_0: 0

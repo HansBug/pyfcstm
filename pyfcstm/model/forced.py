@@ -1,32 +1,34 @@
 """
-Forced transitions that reach regions, lowered into plain transitions.
+Forced transitions, expanded so that each one is decided once.
 
 A forced transition ``!S -> T : /Stop;`` is syntactic sugar: model conversion
 expands it into ordinary transitions, so the simulator, templates and BMC never
-see a forced construct. For a state ``S`` that contains no state owning regions
-the expansion is the plain one, a ``-> [*]`` transition on every state below
-``S`` that repeats the event and the guard, and this module does not touch it.
+see a forced construct. Taking ``S`` away means leaving the state the machine
+rests in below ``S``, every composite state on the way up and, where ``S``
+contains a state that owns regions, the whole group of every such owner. The
+event and the guard of the declaration are decided **once**, at the place where
+the machine rests, and nothing on the way up asks again. An exit action that
+changes what the guard reads, or a guard that asks whether a state inside ``S``
+is active, therefore cannot turn the transition away half-way, and a forced
+transition that cannot be carried out to the end takes nothing at all. The
+expansion works in two steps.
 
-When ``S`` contains a state that owns regions, taking ``S`` away has to take the
-whole group of every such owner away, and the event and the guard must be
-decided **once**, at the place where the machine rests. The expansion therefore
-works in two steps.
+Expansion (:class:`ForcedExpansion`, done while forced transitions are
+resolved):
 
-Expansion (done while forced transitions are resolved):
-
-* Every stoppable state below ``S`` that is outside a region, and every
-  stoppable state inside a region of an owner below ``S``, gets a transition
-  that repeats the declared event and guard. Outside regions it is a plain
-  ``-> [*]`` transition. Inside a region it is an *exit-group* transition
+* On the level of the declaration the transition ``S -> T`` is the declared one.
+* Every state below ``S`` that is outside a region gets a ``-> [*]`` transition
+  that repeats the declared event and guard.
+* Every state inside a region of an owner below ``S`` that can be rested in
+  gets an *exit-group* transition
   (:attr:`pyfcstm.model.model.Transition.exit_group_levels`): when it is taken
   the whole group of the outermost owner below ``S`` leaves, regions in reverse
   declaration order and deepest state first, and control returns to that owner.
-* Pseudo states get none: they are never rested in.
-* On the level of the declaration the transition ``S -> T`` is the declared one.
+* Pseudo states get none: they are never rested in, so a forced transition is
+  not taken while an entry only passes through one.
 
-Lowering (this module, :func:`lower_forced`): one hidden ``int`` variable
-``__forced_<n>`` per declaration records that the event and the guard were
-already decided.
+Lowering (:func:`lower_forced`): one hidden ``int`` variable ``__forced_<n>``
+per declaration records that the event and the guard were already decided.
 
 1. The transitions that start the exit from a resting state raise the variable
    in their effect and keep the declared event and guard.
@@ -39,6 +41,9 @@ already decided.
    on the way gives way, the declared transition included: each of them has to
    wait until the variable is lowered. A forced transition whose target cannot
    be entered therefore takes nothing, whatever else leaves the same state.
+
+A declaration whose sources have nothing inside them needs none of this: its
+declared transitions are all there is, and it gets no variable.
 
 Rule 4 never puts an event and a guard on one transition, which neither the
 language nor the model allows. A transition without an event gets the condition
@@ -53,22 +58,28 @@ trace shows the gate as one more state passed through. All of this is done
 only after every declaration has its relays, so two declarations on one state
 restrict each other in the same way.
 
-The exit-group transitions are the one thing in a lowered machine the language
-cannot write, so a machine that has them is never exported or drawn as it is.
+The variable is raised and lowered inside one cycle, so it is ``0`` whenever
+the machine rests (see :attr:`pyfcstm.model.model.StateMachine.forced_variables`).
+
+The *plain expansion* is the older reading of the same declaration: a ``-> [*]``
+transition on every state below ``S``, pseudo states included, that repeats the
+event and the guard on every level and stops at owners. No machine runs it any
+more, but it is the form a declaration is shown in. The PlantUML export, the
+diagram snapshot and the static analyses
+(:func:`pyfcstm.diagnostics.inspect.inspect_model`,
+:func:`pyfcstm.verify.run_inspect_algorithms` and the topology analyses of
+:mod:`pyfcstm.verify`) use a machine built with it, so a drawing shows one
+transition per state the declaration applies to and no hidden variable. The DSL
+export writes the machine that runs, hidden variables and gates included, as it
+does for a lowered history; only a machine with exit-group transitions, the one
+thing the language cannot write, is exported in its plain expansion (see
+:meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
 
 The module contains:
 
-* :func:`lower_forced` - Install the hidden variables and the relay edges
-
-Everything that shows the model as its author wrote it, the DSL export, the
-PlantUML export and the diagram snapshot, uses the machine that keeps the plain
-expansion instead (see :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
-Static analyses judge that machine too: model conversion builds it before
-lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`), where forced
-transitions stop at owners. An analysis that is handed the lowered machine
-directly, such as :func:`pyfcstm.verify.run_inspect_algorithms`, sees the hidden
-variables and the carrying transitions like any other part of the model, as it
-does for a lowered history.
+* :class:`ForcedExpansion` - Resolve the declarations and expand them
+* :class:`ForcedInheritance` - What one namespace hands down to the next
+* :func:`lower_forced` - Install the hidden variables, relays and gates
 
 Example::
 
@@ -95,6 +106,37 @@ Example::
     >>> [(t.from_state, t.to_state, t.event is not None, str(t.guard))
     ...  for t in model.root_state.transitions if isinstance(t.from_state, str)]
     [('Run', 'Idle', False, '__forced_0 == 1'), ('Run', '__forced_gate_0', True, 'None'), ('__forced_gate_0', 'Idle', False, '__forced_0 == 0')]
+
+A composite state without regions is lowered the same way, with a plain
+``-> [*]`` transition where the machine rests. The exit action of ``A`` changes
+what the guard reads, and the transition is taken all the same; the declaration
+on ``Idle``, a state with nothing inside it, stays one transition and gets no
+variable::
+
+    >>> from pyfcstm.simulate import SimulationRuntime
+    >>> model = load_state_machine_from_text('''
+    ... def int armed = 1;
+    ... state Root {
+    ...     [*] -> Run;
+    ...     state Run { [*] -> A; state A { exit { armed = 0; } } }
+    ...     state Idle;
+    ...     !Run -> Idle : if [armed == 1];
+    ...     !Idle -> Run : if [armed == 2];
+    ... }
+    ... ''')
+    >>> model.forced_variables
+    ('__forced_0',)
+    >>> [(t.from_state, t.to_state, str(t.guard))
+    ...  for t in model.root_state.substates['Run'].transitions if t.is_forced]
+    [('A', EXIT_STATE, 'armed == 1')]
+    >>> [(t.from_state, t.to_state, str(t.guard))
+    ...  for t in model.root_state.transitions if t.is_forced]
+    [('Run', 'Idle', '__forced_0 == 1'), ('Run', 'Idle', 'armed == 1 && __forced_0 == 0'), ('Idle', 'Run', 'armed == 2')]
+    >>> runtime = SimulationRuntime(model)
+    >>> runtime.cycle().delta, runtime.current_state.path
+    (False, ('Root', 'Run', 'A'))
+    >>> runtime.cycle().delta, runtime.current_state.path, runtime.vars['armed']
+    (False, ('Root', 'Idle'), 0)
 """
 
 import re
@@ -131,40 +173,6 @@ _DECLARED_MARK = "_forced_declared"
 # Gates are named ``__forced_gate_<n>`` inside the namespace that needs them.
 _GATE_PREFIX = "__forced_gate_"
 
-def _scope_has_regions(scope: Any) -> bool:
-    """
-    Tell whether a declaration scope contains a state that owns regions.
-
-    :param scope: A state or region declaration.
-    :type scope: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
-    :return: ``True`` if ``scope`` or anything below it owns regions.
-    :rtype: bool
-    """
-    return bool(getattr(scope, "regions", ())) or any(
-        _scope_has_regions(substate) for substate in scope.substates
-    )
-
-def _force_reaches_regions(node: Any, from_state: Any) -> bool:
-    """
-    Tell whether a forced declaration acts on a state that owns regions.
-
-    A declaration is expanded into regions only when the states it applies
-    to contain an owner. Every other declaration keeps its plain expansion,
-    so a machine without regions never changes.
-
-    :param node: Declaration scope the transition is written in.
-    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
-    :param from_state: Source of the declaration, a state name or ``*``.
-    :type from_state: Union[str, pyfcstm.dsl.node._StateSingletonMark]
-    :return: ``True`` if one of the states the declaration applies to owns
-        regions or contains a state that does.
-    :rtype: bool
-    """
-    return any(
-        _scope_has_regions(substate)
-        for substate in node.substates
-        if from_state is dsl_nodes.ALL or substate.name == from_state
-    )
 
 def _forced_node(
     event_id: Any,
@@ -328,14 +336,15 @@ class ForcedExpansion:
     and says what continues further down. How a declaration is expanded is
     decided here and nowhere else:
 
-    * A declaration whose states contain no state that owns regions keeps the
-      plain expansion: every state below the source, pseudo states included,
-      gets a ``-> [*]`` transition that repeats the event and the guard.
-    * A declaration that reaches regions gets the expansion described in the
-      module documentation, and the marks :func:`lower_forced` works from.
+    * In a build that lowers, every declaration gets the expansion described
+      in the module documentation, and the marks :func:`lower_forced` works
+      from: pseudo states below the source get no transition, and the
+      declaration continues into the regions of an owner.
     * With ``plain`` set, or without ``lower``, every declaration keeps the
-      plain expansion, which stops at owners. That machine is what exports,
-      drawings and static analyses show.
+      plain expansion instead: every state below the source, pseudo states
+      included, gets a ``-> [*]`` transition that repeats the event and the
+      guard, and an owner stops the descent. That machine is what drawings
+      and static analyses show.
 
     :param root_state: Root of the machine being built; event paths are
         resolved from it.
@@ -376,7 +385,13 @@ class ForcedExpansion:
         [('Root.Run', 'Root.Idle', 'Root.Stop')]
         >>> run = model.root_state.substates['Run']
         >>> sorted(t.from_state for t in run.transitions if t.is_forced)
-        ['A', 'Gate']
+        ['A']
+
+    A drawing of the same model shows the plain expansion, pseudo state
+    included::
+
+        >>> [line.strip() for line in model.to_plantuml().splitlines() if 'Stop' in line]
+        ['root__run__a --> [*] : /Stop', 'root__run__gate --> [*] : /Stop', 'root__run --> root__idle : Stop']
 
     A declaration that names a state that does not exist is reported::
 
@@ -455,8 +470,9 @@ class ForcedExpansion:
         forced_ids = self._ids
         force_transitions = list(force_transitions or [])
         if getattr(current_state, "regions", {}):
-            # An owner has no substates to pass a declaration to. Only the
-            # declarations that reach regions continue below it.
+            # An owner has no substates to pass a declaration to. Numbered
+            # declarations continue into its regions; the plain expansion,
+            # whose declarations carry no number, stops here.
             force_transitions = [
                 item
                 for item in force_transitions
@@ -473,9 +489,9 @@ class ForcedExpansion:
             # corrupts the inheritance phase (bad to_state being attached
             # to a real substate's transitions).
             unresolved = False
-            # A declaration that reaches regions is carried into every
-            # namespace below it; what is wrong with its trigger was already
-            # reported where it was written.
+            # A numbered declaration is carried into every namespace below
+            # it; what is wrong with its trigger was already reported where it
+            # was written.
             report = (
                 id(f_transnode) in local_force_ids
                 or getattr(f_transnode, "_forced_id", None) is None
@@ -659,12 +675,7 @@ class ForcedExpansion:
             if id(f_transnode) in local_force_ids:
                 # The declaration is shared with the other build of the same
                 # program, so what is decided here stays in the tuple.
-                forced_id = (
-                    next(forced_ids)
-                    if self._lowering
-                    and _force_reaches_regions(node, from_state)
-                    else None
-                )
+                forced_id = next(forced_ids) if self._lowering else None
             else:
                 forced_id = getattr(f_transnode, "_forced_id", None)
 
@@ -829,21 +840,22 @@ def _assigned_names(root_state: State) -> Iterator[str]:
             yield from targets(transition.effects)
 
 
-def _free_name(taken: Set[str], forced_id: int) -> str:
+def _free_name(taken: Set[str], first: int) -> str:
     """
     Pick the hidden variable of a declaration.
 
     :param taken: Names the machine already uses: its variables and the targets
         of its assignments, which include the temporaries of action blocks.
     :type taken: Set[str]
-    :param forced_id: Number of the declaration.
-    :type forced_id: int
-    :return: ``__forced_<n>`` for the smallest ``n >= forced_id`` that no used
-        name can be mistaken for. Identifier conversion of the target languages
+    :param first: Smallest number to try, the count of variables handed out so
+        far.
+    :type first: int
+    :return: ``__forced_<n>`` for the smallest ``n >= first`` that no used name
+        can be mistaken for. Identifier conversion of the target languages
         collapses runs of underscores, so ``_forced_<n>`` counts as taken too.
     :rtype: str
     """
-    number = forced_id
+    number = first
     while any(re.fullmatch("_+forced_%d" % number, name) for name in taken):
         number += 1
     return "__forced_%d" % number
@@ -853,12 +865,14 @@ def lower_forced(
     root_state: State, defines: Dict[str, VarDefine]
 ) -> Tuple[str, ...]:
     """
-    Make every forced declaration that reaches regions decide once.
+    Make every forced declaration decide once.
 
-    Declarations that did not reach regions carry no mark and are left alone.
-    For each marked declaration this installs the hidden variable in
-    ``defines``, rewrites the expanded transitions as described in the module
-    documentation, and keeps the declared transition on its own level.
+    For each declaration whose source has states or regions inside it this
+    installs the hidden variable in ``defines``, rewrites the expanded
+    transitions as described in the module documentation, and keeps the
+    declared transition on its own level. A declaration whose sources have
+    nothing inside them is left as its declared transitions, and a machine
+    built with the plain expansion carries no marks and is left alone.
 
     :param root_state: Root of the machine; its transitions are rewritten in
         place.
@@ -867,7 +881,8 @@ def lower_forced(
         are added.
     :type defines: Dict[str, pyfcstm.model.base.VarDefine]
     :return: Names of the hidden variables that were installed, in the order of
-        the declarations; empty when no declaration reaches regions.
+        the declarations they belong to and numbered in that order; empty when
+        no declaration needs one.
     :rtype: Tuple[str, ...]
 
     Example::
@@ -899,7 +914,15 @@ def lower_forced(
     # declaration has already lost its event when another declaration restricts
     # it, and the conditions two declarations put on each other are the same.
     for forced_id, items in declarations.items():
-        name = _free_name(taken, forced_id)
+        if not any(
+            namespace.substates[transition.from_state].substates
+            or namespace.substates[transition.from_state].regions
+            for namespace, transition in items
+        ):
+            # Every source is a state without anything inside: the declared
+            # transitions are all there is, and they already decide once.
+            continue
+        name = _free_name(taken, len(names))
         taken.add(name)
         raised, lowered = _flag_is(name, 1), _flag_is(name, 0)
         relays: List[Tuple[_Namespace, State]] = []
@@ -933,9 +956,6 @@ def lower_forced(
                     Operation(var_name=name, expr=Integer(1)),
                     *transition.effects,
                 ]
-        # A declaration only carries a number when it acts on a state that
-        # owns regions, and the source on its own level is then a composite or
-        # an owner, so the variable is always needed.
         defines[name] = VarDefine(name=name, type="int", init=Integer(0))
         names.append(name)
         waiting.append((forced_id, lowered, relays))

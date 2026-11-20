@@ -1,0 +1,9 @@
+input int u;
+def int n = 0;
+def int armed = 1;
+state Root {
+    [*] -> P;
+    state P { [*] -> a1; state a1 { during { n = n + 1; } exit { armed = 0; } } state a2 { during { n = n + 1; } } }
+    state Q { during { n = n + 1; } }
+    !P -> Q : if [armed == 1 && u == 1];
+}

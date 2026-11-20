@@ -1,0 +1,39 @@
+title: A forced transition back into its own source leaves it and enters it again
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The source is left from a2 and entered through its initial transition, which ends at a1.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 5
+  expect:
+    state: Root.P.a2
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 3
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 4

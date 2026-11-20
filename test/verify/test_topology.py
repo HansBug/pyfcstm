@@ -131,6 +131,84 @@ def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
     assert graph.edges["Root.A.A2"] == ("Root.Error",)
 
 
+def test_topological_finite_accepts_a_reachable_cycle_that_can_leave():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> A;
+            B -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == (("Root.A", "Root.B"),)
+    report = topology.topological_finite(machine)
+
+    # The cycle between A and B is reachable, but B can leave it, so it is
+    # neither a trap nor a deadlock.
+    assert (report.finite, report.counterexamples) == (True, ())
+
+
+FORCED_THROUGH_A_PSEUDO_STATE = """
+state Root {
+    [*] -> A;
+    state A { [*] -> J; pseudo state J; }
+    state T;
+    state Lost;
+    !A -> T :: Go;
+    T -> [*];
+}
+"""
+
+
+@pytest.mark.parametrize(
+    "analysis,expected",
+    [
+        (
+            "topological_reachable_set",
+            {
+                "Root": ("Root.A.J", "Root.T"),
+                "Root.A": ("Root.A.J", "Root.T"),
+                "Root.A.J": ("Root.T",),
+                "Root.T": (),
+                "Root.Lost": (),
+            },
+        ),
+        ("unreachable_states", ("Root.Lost",)),
+        ("topological_finite", (True, ())),
+        ("topological_inevitable_terminator", (True, None)),
+        ("event_emission_to_consumer_reachable", ()),
+    ],
+)
+def test_every_analysis_judges_a_forced_declaration_on_every_state_below_its_source(
+    analysis, expected
+):
+    """The analyses read a forced declaration the way a drawing shows it.
+
+    The machine that runs carries the declaration out with a hidden variable
+    and a generated pseudo state, and leaves the pseudo state ``J`` without a
+    transition. The analyses keep judging one transition on every state below
+    the source, ``J`` included, so ``T`` counts as reachable through ``J`` and
+    nothing generated shows up in a result.
+    """
+    topology = _import_topology()
+    machine = _parse(FORCED_THROUGH_A_PSEUDO_STATE)
+    assert machine.forced_variables == ("__forced_0",)
+
+    result = getattr(topology, analysis)(machine)
+
+    if analysis == "topological_finite":
+        result = (result.finite, result.counterexamples)
+    elif analysis == "topological_inevitable_terminator":
+        result = (result.inevitable, result.counterexample_path)
+    assert result == expected
+
+
 def test_topological_reachable_set_handles_nested_hierarchy_and_bubble():
     topology = _import_topology()
     machine = _parse(

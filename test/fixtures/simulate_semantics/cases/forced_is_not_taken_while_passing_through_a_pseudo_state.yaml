@@ -1,0 +1,32 @@
+title: A forced transition is not taken from a pseudo state the entry only passes through
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - 'A pseudo state is never rested in, so it holds no forced transition: the entry reaches a1 and the forced transition is taken one cycle later. The plain expansion put a copy on the pseudo state and left the source in the entry cycle.'
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.Q
+    vars:
+      n: 3

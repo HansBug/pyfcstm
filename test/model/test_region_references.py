@@ -77,4 +77,9 @@ def test_forced_event_and_relative_action_paths_include_regions():
     region = model.root_state.regions['Worker']
     group = region.substates['Group']
     assert group.on_enters[0].ref is group.substates['On'].on_enters[0]
-    assert all(edge.event is region.events['Abort'] for edge in region.transitions if edge.is_forced)
+    # The declared transition and the one that starts the exit below Group
+    # name the event; the relay in front of the declared one has none.
+    declared = [edge for edge in region.transitions if edge.is_forced and edge.event is not None]
+    started = [edge for edge in group.transitions if edge.is_forced]
+    assert declared and started
+    assert all(edge.event is region.events['Abort'] for edge in declared + started)

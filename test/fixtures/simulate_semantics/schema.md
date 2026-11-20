@@ -112,8 +112,10 @@ those variables' default initializers; omitted values use DSL initialization.
 Normal entry actions still run when the machine starts cycling.
 
 With `initial.state`, `vars` and `outputs` together must supply every persistent
-variable. The simulator restores the state hierarchy without replaying entry
-actions. A leaf target resumes active execution; a composite target still needs
+variable. The hidden variables of forced declarations (`__forced_<n>`) are the
+one exception: they are `0` whenever the machine rests, so every runner fills
+them in and a fixture leaves them out. The simulator restores the state
+hierarchy without replaying entry actions. A leaf target resumes active execution; a composite target still needs
 its internal initial transition. Parameters are supplied only at top level;
 `initial.parameters`, step-level parameters and parameter expectations are
 rejected. Parameter immutability is verified by dedicated runtime unit tests.
@@ -220,7 +222,7 @@ cycles leave persistent state unchanged; the next step explicitly supplies its
 own external input frame. Provider caching, advancement and override ergonomics
 belong in dedicated simulator unit tests.
 
-Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All 17 role cases run in the simulator and all five generated runtimes. Sixteen run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
+Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All 27 role cases run in the simulator and all five generated runtimes. Twenty-six run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
 
 When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.

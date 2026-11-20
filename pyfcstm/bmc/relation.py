@@ -2552,6 +2552,39 @@ def _point_error_sites(
     return sites
 
 
+def _append_forced_domain_constraints(
+    context: BmcPreparedContext,
+    env: Mapping[str, _Z3Expr],
+    havoc_names: Set[str],
+    constraints: List[z3.ExprRef],
+    groups: List[BmcTrackedConstraint],
+) -> None:
+    """Keep the havocked variables of forced declarations at rest.
+
+    Forced lowering raises one hidden variable while a declaration is being
+    carried out inside a cycle and lowers it before the cycle ends, so it is
+    ``0`` at every stable point. A havocked start that raised it would begin
+    with a forced exit already in flight, which no execution of the machine
+    can reach and the simulator refuses to replay.
+    """
+    for name in context.model.forced_variables:
+        if name not in havoc_names:
+            continue
+        constraint = env[name] == z3.IntVal(0)
+        constraints.append(constraint)
+        _append_tracked_group(
+            groups,
+            stable_id="initial.forced.%s" % name,
+            stage="initialization",
+            category="domain.forced_variable",
+            expressions=(constraint,),
+            source_ref=context._source_registry.model_reference(
+                context.model.defines[name]
+            ),
+            refs={"variable": name, "frame": 0},
+        )
+
+
 def _append_history_domain_constraints(
     context: BmcPreparedContext,
     env: Mapping[str, _Z3Expr],
@@ -2758,6 +2791,7 @@ def _build_initial_formula(
             refs={"variable": var.name, "frame": 0},
         )
     _append_history_domain_constraints(context, env, havoc_names, constraints, groups)
+    _append_forced_domain_constraints(context, env, havoc_names, constraints, groups)
     predicate = context.bound_query.initial.predicate
     if predicate is not None:
         lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)

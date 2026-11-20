@@ -1742,6 +1742,7 @@ TRACKED_GROUP_PAIRINGS = frozenset(
         ("assumptions", "assumption.frame"),
         ("assumptions", "definedness"),
         ("initialization", "definedness"),
+        ("initialization", "domain.forced_variable"),
         ("initialization", "domain.history_variable"),
         ("initialization", "initial.target"),
         ("initialization", "initial.variable"),

@@ -1,0 +1,23 @@
+title: A hot start that supplies a raised hidden variable of a forced declaration is rejected at construction
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The hidden variable is raised only while its forced transition is being carried out inside one cycle. A machine at rest with the variable raised is a position no cycle can leave behind, so the snapshot is turned away instead of being run.
+categories:
+- runtime
+- hot_start
+- template_alignment
+exclude_runners:
+- bmc_core
+initial:
+  state: Root.Run.A
+  vars:
+    x: 1
+    __forced_0: 1
+  expect:
+    raises:
+      type: ValueError
+      match: belongs to a forced transition and is 0 whenever the machine rests
+      match_kind: substring
+steps: []

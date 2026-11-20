@@ -3834,14 +3834,16 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Return the machine that keeps forced declarations in their plain expansion.
 
-        A forced declaration that reaches regions is lowered into hidden
-        variables, relay transitions and exit-group transitions (see
-        :mod:`pyfcstm.model.forced`), none of which the language can write.
-        Everything that shows the model as written therefore uses this machine
-        instead: it is built from the same import-assembled program with
-        history and activity queries lowered as usual and forced declarations
-        left as they are. It is built on first use and kept, like
-        :meth:`_as_written`, so later edits of this model do not reach it.
+        A forced declaration whose source has states or regions inside it is
+        lowered into a hidden variable, relay transitions, gates and, inside
+        regions, exit-group transitions (see :mod:`pyfcstm.model.forced`). That
+        is what runs; a reader of the model expects one transition on every
+        state the declaration applies to. Drawings and static analyses
+        therefore use this machine instead: it is built from the same
+        import-assembled program with history and activity queries lowered as
+        usual and forced declarations in their plain expansion. It is built on
+        first use and kept, like :meth:`_as_written`, so later edits of this
+        model do not reach it.
 
         :return: This machine when no forced declaration was lowered, otherwise
             the machine with plain forced expansion.

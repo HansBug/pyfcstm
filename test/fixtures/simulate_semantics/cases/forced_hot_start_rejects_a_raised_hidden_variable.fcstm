@@ -1,0 +1,13 @@
+def int x = 0;
+state Root {
+    event Stop;
+    [*] -> Run;
+    state Run {
+        [*] -> A;
+        state A { during { x = x + 1; } }
+        state B;
+        A -> B :: Go;
+    }
+    state Idle;
+    !Run -> Idle : /Stop;
+}

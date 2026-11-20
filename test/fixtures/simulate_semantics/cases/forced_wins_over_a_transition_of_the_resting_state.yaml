@@ -1,0 +1,32 @@
+title: A forced transition wins over a transition of the state the machine rests in
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - Both conditions hold in the same cycle. The forced transition is placed before the transitions written on the state, so it is the one that is taken.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 3

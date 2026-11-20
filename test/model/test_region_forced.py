@@ -33,6 +33,12 @@ def _guards(namespace, source):
     return [str(edge.guard) for edge in namespace.transitions if edge.from_state == source]
 
 
+def _transitions(model):
+    for namespace in walk_namespaces(model.root_state):
+        for edge in namespace.transitions:
+            yield namespace, edge
+
+
 def test_a_declaration_that_reaches_regions_installs_one_hidden_variable():
     model = load_state_machine_from_text(OWNER)
     assert list(model.defines) == ['__forced_0']
@@ -117,7 +123,7 @@ state Root {
     assert hop_alpha is through_gate('Root.Alpha') and hop_beta is through_gate('Root.Beta')
 
 
-def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
+def test_a_declaration_beside_regions_is_lowered_like_one_that_reaches_them():
     model = load_state_machine_from_text('''state Root {
     event Stop;
     [*] -> Plain;
@@ -134,18 +140,21 @@ def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
     state Idle;
     !Plain -> Idle : /Stop;
 }''')
-    assert not model.defines
+    # Whether a declaration reaches regions no longer decides how it is
+    # expanded: every declaration is decided once, where the machine rests.
+    assert model.forced_variables == ('__forced_0',)
     plain = model.root_state.substates['Plain']
-    # The expansion lands on every state below, pseudo states included, and
-    # repeats the event.
-    assert sorted(edge.from_state for edge in plain.transitions if edge.is_forced) == ['A', 'B', 'Gate']
-    assert all(edge.event.path_name == 'Root.Stop' for edge in plain.transitions if edge.is_forced)
-    # A declaration that does not reach regions is not lowered, so the model
-    # carries no hidden variable.
-    assert not model.defines
+    started = [edge for edge in plain.transitions if edge.is_forced]
+    # A state that can be rested in starts the exit; the pseudo state holds
+    # nothing, and nothing takes a group of regions away.
+    assert [edge.from_state for edge in started] == ['A', 'B']
+    for edge in started:
+        assert edge.event.path_name == 'Root.Stop' and edge.guard is None
+        assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
+        assert not edge.exit_group_levels
 
 
-def test_a_declaration_below_regions_without_regions_in_its_scope_is_not_lowered():
+def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
     model = load_state_machine_from_text('''state Root {
     event Stop;
     [*] -> P;
@@ -159,11 +168,25 @@ def test_a_declaration_below_regions_without_regions_in_its_scope_is_not_lowered
         region B { [*] -> B1; state B1; }
     }
 }''')
-    assert not model.defines
+    assert model.forced_variables == ('__forced_0',)
     region = model.root_state.substates['P'].regions['A']
     q = region.substates['Q']
-    assert sorted(edge.from_state for edge in q.transitions if edge.is_forced) == ['Q1', 'Q2']
-    assert not any(edge.exit_group_levels for edge in q.transitions)
+    assert [edge.from_state for edge in q.transitions if edge.is_forced] == ['Q1', 'Q2']
+    # The declaration stays inside region A: only Q is left, never the group.
+    assert not any(edge.exit_group_levels for _, edge in _transitions(model))
+    relay, declared = [edge for edge in region.transitions if edge.from_state == 'Q']
+    assert (relay.to_state, relay.event, str(relay.guard)) == ('Done', None, '__forced_0 == 1')
+    assert region.substates[declared.to_state].is_forced_gate
+    # Nothing in this machine is beyond the language, so it is exported as it runs.
+    exported = str(model.to_ast_node())
+    assert 'def int __forced_0 = 0;' in exported
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    assert str(runtime.configuration) == 'Root.P{A: Q.Q1, B: B1}'
+    runtime.cycle('Root.Stop')
+    assert str(runtime.configuration) == 'Root.P{A: Done, B: B1}'
+    assert runtime.vars['__forced_0'] == 0
 
 
 @pytest.mark.parametrize('taken', ['__forced_0', '_forced_0', '___forced_0'])
@@ -328,12 +351,6 @@ def test_an_event_transition_gives_way_through_a_gate_and_the_machine_exports_th
 
 def _region_cases():
     return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
-
-
-def _transitions(model):
-    for namespace in walk_namespaces(model.root_state):
-        for edge in namespace.transitions:
-            yield namespace, edge
 
 
 @pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)

@@ -353,6 +353,12 @@ class ForcedExpansion:
     :ivar declarations: One summary per declaration, in the order they were
         resolved; it becomes :attr:`pyfcstm.model.model.StateMachine.forced_transitions`.
     :vartype declarations: List[Dict[str, object]]
+    :ivar takes_groups_away: Whether any expanded transition takes a whole
+        group of regions away
+        (:attr:`pyfcstm.model.model.Transition.exit_group_levels`). The
+        language cannot write such a transition, so a machine that has one is
+        exported in its plain expansion.
+    :vartype takes_groups_away: bool
 
     Example::
 
@@ -397,6 +403,7 @@ class ForcedExpansion:
         self._lowering = lower and not plain
         self._ids = count()
         self.declarations: List[Dict[str, object]] = []
+        self.takes_groups_away = False
 
     def expand(
         self,
@@ -747,6 +754,8 @@ class ForcedExpansion:
                         target_history=forced_target_history,
                     )
                 )
+                if exit_levels:
+                    self.takes_groups_away = True
                 if forced_source_path is not None:
                     setattr(transitions[-1], "_source_path", forced_source_path)
                 if forced_id is not None:

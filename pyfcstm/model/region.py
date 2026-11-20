@@ -224,25 +224,31 @@ def namespace_actions(namespace):
                    ('on_enters', 'on_durings', 'on_exits', 'on_during_aspects')))
 
 
-def shown_namespace(namespace):
+def shown_namespace(namespace, export=False):
     """
-    Return the state or region that exports in place of ``namespace``.
+    Return the state or region that is shown in place of ``namespace``.
 
-    A forced declaration that reaches regions is lowered into hidden variables
-    and transitions the language cannot write (see :mod:`pyfcstm.model.forced`),
-    so a machine that lowered one shows itself through the machine that keeps
-    the plain expansion
-    (:meth:`pyfcstm.model.model.StateMachine.to_ast_node`). A state or region
-    of the lowered machine does the same: the DSL export and the PlantUML text
-    of any level come from the counterpart with the same path in that machine.
-    Every other namespace, and every namespace of that machine itself, is its
-    own counterpart. So is a gate that forced lowering added
+    A machine that lowered a forced declaration (see
+    :mod:`pyfcstm.model.forced`) is drawn through the machine that keeps the
+    plain expansion, and so is any state or region of it: the PlantUML text of
+    every level comes from the counterpart with the same path in that machine.
+    The DSL export follows the same route only when the lowered machine cannot
+    be written in the language, which is the case when a declaration takes a
+    whole group of regions away
+    (:meth:`pyfcstm.model.model.StateMachine.to_ast_node`); otherwise a state
+    or region exports itself, as the machine does.
+
+    Every other namespace, and every namespace of the plain machine itself, is
+    its own counterpart. So is a gate that forced lowering added
     (:attr:`pyfcstm.model.model.State.is_forced_gate`): it exists only in the
     machine that runs and has nothing to stand in for it.
 
     :param namespace: A state or a region of a built machine.
     :type namespace: Union[pyfcstm.model.model.State, Region]
-    :return: The namespace to export.
+    :param export: Whether the answer is wanted for the DSL export rather than
+        for a drawing, defaults to ``False``.
+    :type export: bool, optional
+    :return: The namespace to show.
     :rtype: Union[pyfcstm.model.model.State, Region]
 
     Example::
@@ -270,7 +276,7 @@ def shown_namespace(namespace):
         root = root.parent
     reference = getattr(root, "_machine_ref", None)
     machine = None if reference is None else reference()
-    if machine is None:
+    if machine is None or (export and not machine._forced_takes_groups):
         return namespace
     shown = machine._with_plain_forced().root_state
     for name in namespace.path[1:]:
@@ -1057,7 +1063,7 @@ class Region(AstExportable):
         from .model import State
         from .imports import _mark_generated_combo_pseudo_node
 
-        shown = shown_namespace(self)
+        shown = shown_namespace(self, export=True)
         if shown is not self:
             return shown.to_ast_node()
         children = [state.to_ast_node() for state in self.substates.values()]

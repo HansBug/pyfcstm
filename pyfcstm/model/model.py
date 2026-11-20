@@ -2822,7 +2822,7 @@ class State(AstExportable, PlantUMLExportable):
                 event Halt;
             }
         """
-        shown = shown_namespace(self)
+        shown = shown_namespace(self, export=True)
         if shown is not self:
             return shown.to_ast_node()
         substate_nodes = [
@@ -3566,6 +3566,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
     _plain_forced_view: Optional["StateMachine"] = field(
         default=None, compare=False, repr=False
     )
+    # Whether a forced declaration was expanded into transitions that take a
+    # group of regions away. The language cannot write those, so only such a
+    # machine is exported in its plain expansion instead of as it runs.
+    _forced_takes_groups: bool = field(default=False, compare=False, repr=False)
     # The warnings and infos a strict build emitted while converting the
     # model; a collecting build returns them to its caller instead.
     _build_warnings: Tuple[ModelDiagnostic, ...] = field(
@@ -3877,11 +3881,15 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to an AST node.
 
-        A forced declaration that reaches regions is exported as it was
-        expanded before lowering, because the lowered form contains transitions
+        The export is the machine that runs: what history, activity queries
+        and forced declarations were lowered into is written out as the plain
+        FCSTM it is, hidden variables and gate states included, so loading the
+        text gives a machine that behaves the same. The one exception is a
+        forced declaration that reaches regions. It is lowered into transitions
         that take a whole group of regions away, which the language cannot
-        write; the same holds for :meth:`to_plantuml` and for the diagram
-        snapshot.
+        write, so a machine that has one is exported as the declarations were
+        expanded before lowering; that text does not carry the forced
+        behaviour over.
 
         :return: A state machine DSL program AST node
         :rtype: dsl_nodes.StateMachineDSLProgram
@@ -3902,9 +3910,8 @@ class StateMachine(AstExportable, PlantUMLExportable):
             >>> '__forced' in text, 'Run -> Idle : Stop;' in text
             (False, True)
         """
-        shown = self._with_plain_forced()
-        if shown is not self:
-            return shown.to_ast_node()
+        if self._forced_takes_groups:
+            return self._with_plain_forced().to_ast_node()
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
                 def_item.to_ast_node() for _, def_item in self.defines.items()
@@ -6555,6 +6562,7 @@ def _build_assembled_state_machine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_expansion.declarations),
+        _forced_takes_groups=forced_expansion.takes_groups_away,
         history_owners=history_owners,
         active_queries=active_queries,
         _forced_flags=forced_flags,

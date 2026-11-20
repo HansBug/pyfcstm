@@ -19,10 +19,16 @@ for event in [
     runtime.cycle(["Charger." + event] if event else [])
 
 # What a controller writes to non-volatile storage: the current state, its own
-# variables and the source-level record, but no generated __hist_* number.
+# variables and the source-level record. No generated __hist_* number is
+# stored, and none of the hidden variables of the forced transitions either:
+# those are 0 whenever the machine rests, and a hot start fills them in.
 saved_state = ".".join(runtime.current_state.path)
 saved_record = machine.history_record(runtime.vars, OWNER)
-saved_vars = {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")}
+saved_vars = {
+    k: v
+    for k, v in runtime.vars.items()
+    if not k.startswith("__hist_") and k not in machine.forced_variables
+}
 print("saved state: ", saved_state)
 print("saved record:", saved_record)
 print("saved vars:  ", saved_vars)

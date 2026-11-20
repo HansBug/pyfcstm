@@ -39,6 +39,8 @@
 .. literalinclude:: charger_restart.demo.sh.txt
    :language: text
 
+两个 ``__forced_*`` 变量不是你声明的。模型转换（model conversion）用一个隐藏变量来执行每条强制转换，它只在带走 ``Session`` 的那个周期内部被置为 1，所以每份报告里都是 0。第 8 步会展示它们用在哪里。
+
 第二份报告暴露了问题。普通进入会执行 ``Session`` 的初始转换，所以充电桩回到了 ``Authenticating``\ 。车主必须重新鉴权，下一次 ``Authorized`` 还会再执行一遍 ``Precharge`` 及其绝缘检测。在这个模型里，\ ``ManualReset``\ 的行为完全相同。\ ``energy``\ 保持原值，\ ``faults``\ 记下了这次故障，因为离开和进入状态从不重置变量。
 
 2. 在所有者内部声明历史
@@ -95,7 +97,7 @@
 
 **浅历史**\ 读取的是同一条记录，但只恢复 ``Session`` 中通往记录叶状态的直接子状态，也就是 ``Charging``\ ；输出里的 ``__hist_Session = 8``\ 仍是完整的叶状态。进入 ``Charging`` 后，它会执行自己的初始转换，所以充电桩处于 ``Precharge``\ ，\ ``precharge_runs``\ 变为 2。操作员的复位会重做绝缘检测，但不需要重新鉴权。
 
-输出里出现两个 ``__hist_*`` 变量，是因为仿真器运行的是模型转换（model conversion）之后的模型：历史已经被改写成普通的变量和转换。第 8 步会展示改写后的样子，现在只需把它们看作记录背后的存储。
+输出里出现两个 ``__hist_*`` 变量，是因为仿真器运行的是模型转换之后的模型：历史已经被改写成普通的变量和转换。第 8 步会展示改写后的样子，现在只需把它们看作记录背后的存储。
 
 5. 观察记录何时变化
 -------------------
@@ -143,7 +145,7 @@
 7. 跨越断电保存记录
 -------------------
 
-充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
+充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。只有 ``__forced_*`` 变量例外：状态机停驻时它们总是 0，热启动会自动补上，控制器不需要保存。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
 
 .. literalinclude:: charger_hot_start.demo.py
    :language: python
@@ -172,18 +174,19 @@
 
 用这份输出核对前面几步观察到的现象：
 
-* 你声明的变量后面多了两个 ``int`` 变量：\ ``__hist_Session``\ 保存记录，\ ``__hist_goto``\ 保存进行中的恢复，状态机稳定时它总是 0。
+* 你声明的变量后面多了四个 ``int`` 变量。其中两个属于历史：\ ``__hist_Session``\ 保存记录，\ ``__hist_goto``\ 保存进行中的恢复，状态机稳定时它总是 0。另外两个 ``__forced_0`` 和 ``__forced_1`` 属于强制转换，见最后一条。
 * ``Session``\ 下的每个叶状态都有一个 ``exit`` 动作，把自己的编号写入 ``__hist_Session``\ ：\ ``Authenticating``\ 是 4，三个充电阶段是 6 到 8。第 5 步表格第 5 行记下 ``Charging.ConstantVoltage``\ （编号 8）靠的就是它，这也是每次离开所有者都会更新记录的原因。
 * ``Fault -> Session.[H*] :: Cleared``\ 变成了一条普通进入，它的 ``effect`` 在有记录时把 ``__hist_goto`` 设为记录，没有记录时设为 4，也就是默认目标 ``Authenticating`` 的编号。
 * ``Fault -> Session.[H] :: ManualReset``\ 把 ``Charging`` 内部的记录（编号 6 到 8）映射为 5，也就是 ``Charging`` 自身的编号。
 * ``Session``\ 和 ``Charging`` 的初始转换都由 ``__hist_goto`` 守卫。0 选择普通的初始子状态，其他值把进入引向恢复目标，到达目标的那条转换再把 ``__hist_goto`` 重置为 0。以 5 为目标的恢复最终落在 ``Charging`` 的 ``[*] -> Precharge`` 上，这正是浅历史恢复会重新预充的原因。
+* 其余部分是两条强制转换的执行方式，与历史无关。每个阶段都有一条 ``-> [*]`` 转换，它保留事件并把 ``__forced_0`` 或 ``__forced_1`` 置为 1；\ ``Charging``\ 和 ``Session`` 在该变量为 1 时把退出继续向上传；最终离开 ``Session`` 的那条转换再把它清回 0。两个 ``__forced_gate_*`` 伪状态让 ``Session`` 自己在还没有任何阶段处于活动时也能响应同一个事件。
 
 .. figure:: charger.fcstm.puml.svg
    :alt: 模型转换之后的充电桩，带有受守卫的初始转换和历史变量
    :align: center
    :width: 100%
 
-   ``pyfcstm plantuml -i charger.fcstm``\ 画出的同一个转换后的模型。图中的标签只有代码标识符，所以两种语言共用这一张图。
+   ``pyfcstm plantuml -i charger.fcstm``\ 画出的转换后的模型。图里每条强制转换画成每个阶段一条箭头，而不是上面的变量和中继。图中的标签只有代码标识符，所以两种语言共用这一张图。
 
 下一步去哪里
 ------------

@@ -593,6 +593,8 @@ model.
    run. Shallow history only remembers the direct child ``Wash``, so it enters
    ``Wash`` and runs its ordinary initial again (``wash_initials`` becomes 2).
    The two ``__hist_*`` variables are the lowered history; see step 5.
+   ``__forced_0`` is the hidden variable that carries out the forced
+   ``!Program`` transition; it is 0 whenever the machine rests.
 4. **Check the model.** Inspect judges the model as written, so history adds
    no finding of its own:
 

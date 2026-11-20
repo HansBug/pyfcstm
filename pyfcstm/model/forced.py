@@ -412,6 +412,23 @@ class ForcedExpansion:
         lower: bool,
         plain: bool,
     ) -> None:
+        """
+        Start an expansion with no declaration resolved yet.
+
+        :param root_state: Root of the machine being built.
+        :type root_state: pyfcstm.model.model.State
+        :param defines: Variables of the machine.
+        :type defines: Dict[str, pyfcstm.model.model.VarDefine]
+        :param sink: Receiver of the diagnostics of faulty declarations.
+        :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+        :param lower: Whether the build lowers what it expands.
+        :type lower: bool
+        :param plain: Whether every declaration keeps the plain expansion
+            even in a lowering build.
+        :type plain: bool
+        :return: ``None``.
+        :rtype: None
+        """
         self._root_state = root_state
         self._defines = defines
         self._sink = sink

@@ -3,6 +3,20 @@ Command processor for the simulation REPL.
 
 This module provides command parsing and execution for the interactive
 state machine simulator.
+
+The module contains:
+
+* :class:`CommandProcessor` - Routes each command line to its handler
+* :class:`CommandResult` - Output and exit code of one command
+* :class:`Settings` - Runtime settings of the simulator
+* :class:`LogLevel` - Log levels that control output verbosity
+
+Example::
+
+    >>> from pyfcstm.entry.simulate.commands import CommandResult
+    >>> result = CommandResult(output='done')
+    >>> result.should_exit, result.exit_code
+    (False, 0)
 """
 
 import re
@@ -164,6 +178,31 @@ class CommandProcessor:
     :vartype display: StateDisplay
     :ivar log_level: Current log level
     :vartype log_level: LogLevel
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> machine = load_state_machine_from_text('''
+        ... def int x = 0;
+        ... state Root {
+        ...     event Stop;
+        ...     [*] -> Run;
+        ...     state Run { [*] -> A; state A; }
+        ...     state Idle;
+        ...     !Run -> Idle : /Stop;
+        ... }
+        ... ''')
+        >>> processor = CommandProcessor(
+        ...     SimulationRuntime(machine), state_machine=machine, use_color=False)
+        >>> processor.process('init Root.Run.A x=5').exit_code
+        0
+        >>> processor.process('cycle Root.Stop').exit_code
+        0
+        >>> processor.runtime.current_state.path
+        ('Root', 'Idle')
+        >>> processor.runtime.vars
+        {'x': 5, '__forced_0': 0}
     """
 
     def __init__(

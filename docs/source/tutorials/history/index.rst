@@ -60,6 +60,11 @@ report of each run:
 .. literalinclude:: charger_restart.demo.sh.txt
    :language: text
 
+The two ``__forced_*`` variables are not yours. Model conversion carries each
+forced transition out with one hidden variable, which is raised only inside the
+cycle that takes ``Session`` away, so every report shows 0. Step 8 shows where
+they are used.
+
 The second report shows the problem. An ordinary entry runs ``Session``'s
 initial transition, so the charger is back in ``Authenticating``. The driver
 must authenticate again, and the next ``Authorized`` runs ``Precharge`` and its
@@ -216,7 +221,9 @@ ways:
 
 A charger that loses power while in ``Fault`` must restore the session record
 when it restarts. A hot start supplies every variable, including the
-``__hist_*`` ones, so the controller has to store the record somewhere. Store
+``__hist_*`` ones, so the controller has to store the record somewhere. The
+``__forced_*`` variables are the one exception: they are 0 whenever the machine
+rests, so a hot start fills them in and the controller does not store them. Store
 the source-level record, not the numbers: the numbers are state ids that change
 when the model is edited.
 :meth:`~pyfcstm.model.model.StateMachine.history_variables` turns a saved
@@ -255,9 +262,11 @@ Output, generated from the script:
 
 Use the output to check what the earlier steps observed:
 
-* Two new ``int`` variables follow your own: ``__hist_Session`` holds the
-  record and ``__hist_goto`` holds the restore in progress, which is 0
-  whenever the machine is stable.
+* Four new ``int`` variables follow your own. Two belong to history:
+  ``__hist_Session`` holds the record and ``__hist_goto`` holds the restore in
+  progress, which is 0 whenever the machine is stable. The other two,
+  ``__forced_0`` and ``__forced_1``, belong to the forced transitions and are
+  explained in the last item.
 * Every leaf below ``Session`` has an ``exit`` action that writes its id into
   ``__hist_Session``: 4 for ``Authenticating``, 6 to 8 for the three charging
   phases. That is how row 5 of step 5 recorded ``Charging.ConstantVoltage``,
@@ -273,13 +282,21 @@ Use the output to check what the earlier steps observed:
   target resets ``__hist_goto`` to 0. A restore heading for 5 ends at
   ``[*] -> Precharge`` in ``Charging``, which is why the shallow restore
   repeats the precharge.
+* The rest is how the two forced transitions are carried out, and has nothing
+  to do with history. Each phase gets a ``-> [*]`` transition that keeps the
+  event and sets ``__forced_0`` or ``__forced_1``; ``Charging`` and ``Session``
+  pass the exit on while that variable is 1; the transition that finally leaves
+  ``Session`` sets it back to 0. The two ``__forced_gate_*`` pseudo states let
+  ``Session`` itself take the same event while no phase is active yet.
 
 .. figure:: charger.fcstm.puml.svg
    :alt: The charger after model conversion, with guarded initial transitions and history variables
    :align: center
    :width: 100%
 
-   The same converted model as ``pyfcstm plantuml -i charger.fcstm`` draws it.
+   The converted model as ``pyfcstm plantuml -i charger.fcstm`` draws it. A
+   drawing shows each forced transition as one arrow per phase instead of the
+   variables and relays above.
    The labels are code identifiers only, so one figure serves both languages.
 
 Where to go next

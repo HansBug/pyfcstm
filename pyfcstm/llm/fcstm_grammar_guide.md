@@ -390,6 +390,14 @@ Forced transitions expand to multiple normal transitions. They cannot have
 effect blocks. Put side effects in the target state's `enter` block when the
 natural-language requirement needs a shared action.
 
+The event and the guard of a forced transition are decided once, at the state
+the machine currently rests in. Exit actions on the way out cannot cancel it, a
+guard may ask `active("...")` about a state inside the source, and a pseudo
+state that an entry only passes through does not take it. If the target cannot
+be entered, nothing happens and the event stays unused. Model conversion may add
+variables named `__forced_<n>` and pseudo states named `__forced_gate_<n>`; do
+not write to them.
+
 ```fcstm
 def int error_count = 0;
 

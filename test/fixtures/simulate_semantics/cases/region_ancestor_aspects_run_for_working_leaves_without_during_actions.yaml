@@ -1,0 +1,34 @@
+title: "Aspects run for a leaf that does its during step even when it declares no during action; a region without working leaf runs none"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "R1 stops working in the cycle its only leaf leaves, so its own aspect stays at 1."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      tick: 1
+      r1: 1
+      r2: 1
+- cycle: Root.End
+  expect:
+    configuration: 'Root.P{R1: [done], R2: B}'
+    vars:
+      tick: 2
+      r1: 1
+      r2: 2
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: [done], R2: B}'
+    vars:
+      tick: 3
+      r1: 1
+      r2: 3

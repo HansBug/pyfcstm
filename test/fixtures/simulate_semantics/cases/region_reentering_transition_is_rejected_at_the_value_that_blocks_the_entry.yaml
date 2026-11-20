@@ -1,0 +1,20 @@
+title: A transition that re-enters a group is taken while the group can start again and is rejected at the value
+  where it no longer can, even though its own condition never changed
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - With n at 0 and 1 the group can be entered again, so the transition back to O is taken. With n at 2 it would
+    raise n to 3, where the region cannot start, so it is rejected and the owner continues to Done.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Done
+    vars:
+      n: 2

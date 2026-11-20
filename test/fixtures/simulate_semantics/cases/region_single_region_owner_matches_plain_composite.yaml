@@ -1,0 +1,36 @@
+title: An owner with a single region runs like an ordinary composite state
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{Only: A}'
+    vars:
+      c: 101
+- cycle: Root.P.Only.A.Next
+  expect:
+    configuration: 'Root.P{Only: B}'
+    vars:
+      c: 111
+- cycle: []
+  expect:
+    configuration: 'Root.P{Only: B}'
+    vars:
+      c: 121
+- cycle: []
+  expect:
+    configuration: 'Root.P{Only: B}'
+    vars:
+      c: 131
+- cycle: []
+  expect:
+    configuration: Root.Done
+    vars:
+      c: 131

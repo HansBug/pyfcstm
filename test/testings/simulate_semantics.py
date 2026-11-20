@@ -38,6 +38,7 @@ import yaml
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model.configuration import Configuration
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.simulate import (
     SimulationRuntime,
@@ -80,6 +81,7 @@ _ALLOWED_CATEGORIES = {
     "validation",
     "lifecycle",
     "history",
+    "regions",
 }
 _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 BMC_CORE_RUNNER = "bmc_core"
@@ -87,6 +89,7 @@ _ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS) | {BMC_CORE_RUNNER}
 _ALLOWED_EXPECT_FIELDS = {
     "outputs",
     "state",
+    "configuration",
     "vars",
     "ended",
     "delta",
@@ -111,10 +114,12 @@ _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "call_stage",
     "abstract_target",
     "named_ref",
+    "configuration",
 }
 _PUBLIC_EXPECT_FIELDS = {
     "outputs",
     "state",
+    "configuration",
     "vars",
     "ended",
     "delta",
@@ -332,6 +337,12 @@ def _vars_dict(runtime: Any) -> Dict[str, Any]:
     return dict(runtime.vars)
 
 
+def _runtime_configuration_text(runtime: Any) -> Optional[str]:
+    if getattr(runtime, "is_ended"):
+        return None
+    return str(getattr(runtime, "configuration"))
+
+
 def _runtime_state_path(runtime: Any) -> Optional[Tuple[str, ...]]:
     if getattr(runtime, "is_ended"):
         return None
@@ -480,6 +491,13 @@ def _assert_runtime_expectation(
 
     _assert_delta_expectation(runtime, cycle_result, expect, case, field_path)
 
+    if "configuration" in expect:
+        actual_text = _runtime_configuration_text(runtime)
+        assert actual_text == expect["configuration"], (
+            "%s %s configuration mismatch: %r != %r"
+            % (case.id, field_path, actual_text, expect["configuration"])
+        )
+
     if "state" in expect:
         expected_path = _as_tuple_path(expect["state"], case, field_path + ".state")
         actual_path = _runtime_state_path(runtime)
@@ -529,17 +547,39 @@ def _assert_text_matches(
     )
 
 
+def _public_exception_name(exc: BaseException) -> str:
+    """
+    Name an exception by its nearest public class.
+
+    A class whose name starts with an underscore is an implementation detail
+    of the runtime that raised it, so a fixture names the public class a
+    caller would catch instead.
+
+    :param exc: Exception raised by a fixture step.
+    :type exc: BaseException
+    :return: Name of the first class in the method resolution order whose
+        name does not start with an underscore.
+    :rtype: str
+    """
+    return next(
+        item.__name__
+        for item in type(exc).__mro__
+        if not item.__name__.startswith("_")
+    )
+
+
 def _assert_exception(
     exc: BaseException, expect: Mapping[str, Any], case: SemanticCase, field_path: str
 ) -> None:
     raises = expect["raises"]
     expected_type = raises["type"]
-    assert type(exc).__name__ == expected_type, (
+    actual_type = _public_exception_name(exc)
+    assert actual_type == expected_type, (
         "%s %s exception type mismatch: %s != %s: %s"
         % (
             case.id,
             field_path,
-            type(exc).__name__,
+            actual_type,
             expected_type,
             exc,
         )
@@ -993,7 +1033,7 @@ def _simulation_kwargs(case: SemanticCase) -> Dict[str, Any]:
     return _initial_kwargs(case)
 
 
-def _handler_call_record(ctx: Any) -> Dict[str, Any]:
+def _handler_call_record(ctx: Any, with_configuration: bool = False) -> Dict[str, Any]:
     record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
@@ -1004,15 +1044,20 @@ def _handler_call_record(ctx: Any) -> Dict[str, Any]:
         if hasattr(ctx, name):
             value = getattr(ctx, name)
             record[name] = ".".join(value) if isinstance(value, tuple) else value
+    if with_configuration:
+        record["configuration"] = str(ctx.configuration)
     return record
 
 
 def _run_fixture_handler(
-    handler_data: Mapping[str, Any], ctx: Any, calls: List[Mapping[str, Any]]
+    handler_data: Mapping[str, Any],
+    ctx: Any,
+    calls: List[Mapping[str, Any]],
+    with_configuration: bool = False,
 ) -> None:
     behavior = handler_data["behavior"]
     if behavior == "record_call":
-        calls.append(_handler_call_record(ctx))
+        calls.append(_handler_call_record(ctx, with_configuration))
     else:
         raise ValueError("handlers behavior is invalid: %r" % behavior)
 
@@ -1021,11 +1066,14 @@ def _register_fixture_handlers(
     runtime: SimulationRuntime, case: SemanticCase
 ) -> List[Mapping[str, Any]]:
     calls = []
+    # Only region cases observe the configuration: the other runners of the
+    # shared corpus do not expose it, so recording it would break alignment.
+    with_configuration = "regions" in case.data["categories"]
     for handler_data in case.data.get("handlers") or []:
         action_path = handler_data["action"]
 
         def fixture_handler(ctx, item=handler_data, handler_calls=calls):
-            _run_fixture_handler(item, ctx, handler_calls)
+            _run_fixture_handler(item, ctx, handler_calls, with_configuration)
 
         runtime.register_abstract_handler(action_path, fixture_handler)
     return calls
@@ -1376,6 +1424,8 @@ def run_simulation_case(case: SemanticCase) -> None:
         )
         return
     runtime = _build_simulation_runtime(case)
+    if "regions" in case.data["categories"]:
+        check_configuration_texts(case, runtime.state_machine)
     handler_calls = _register_fixture_handlers(runtime, case)
     for index, step in enumerate(case.data.get("steps") or []):
         _run_step(
@@ -1552,6 +1602,13 @@ def _validate_handler_calls(
                 yaml_path,
                 "%s.handler_calls[%d].active_leaf" % (field_path, index),
             )
+        if "configuration" in item:
+            _validate_configuration_text(
+                item["configuration"],
+                case_id,
+                yaml_path,
+                "%s.handler_calls[%d].configuration" % (field_path, index),
+            )
         for field_name in ("call_stage", "abstract_target", "named_ref"):
             if (
                 field_name in item
@@ -1570,6 +1627,17 @@ def _validate_dot_state_path(
     value: Any, case_id: str, yaml_path: str, field_path: str
 ) -> None:
     _path_segments_from_dot_string(value, case_id, yaml_path, field_path)
+
+
+def _validate_configuration_text(
+    value: Any, case_id: str, yaml_path: str, field_path: str
+) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "%s must be a non-empty configuration text" % field_path,
+        )
 
 
 def _validate_vars_mapping(
@@ -1609,6 +1677,10 @@ def _validate_expect(
     if "state" in expect:
         _validate_dot_state_path(
             expect["state"], case_id, yaml_path, field_path + ".state"
+        )
+    if "configuration" in expect:
+        _validate_configuration_text(
+            expect["configuration"], case_id, yaml_path, field_path + ".configuration"
         )
     for vars_field in ("vars", "outputs"):
         if vars_field in expect:
@@ -1929,6 +2001,17 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
+    if "regions" in categories and (
+        "generated_python_alignment" in runners
+        or "bmc_core" not in (data.get("exclude_runners") or [])
+    ):
+        # Region fixtures may only run on runners that already execute regions;
+        # every other shared consumer must opt out explicitly.
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "regions cases must exclude generated_python_alignment and bmc_core",
+        )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
     _validate_initial(data.get("initial"), case_id, yaml_path, runners)
@@ -1988,7 +2071,159 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                         "%s.expect.raises requires effective cycle_count == 1"
                         % field_path,
                     )
+    _validate_position_assertions(data, case_id, yaml_path)
     validate_shared_fixture_contract(data, yaml_path)
+
+
+def _validate_position_assertions(
+    data: Mapping[str, Any], case_id: str, yaml_path: str
+) -> None:
+    """
+    Check how a case asserts where the machine is after each step.
+
+    A model with regions can rest in several leaves at once, so a ``regions``
+    case states the whole position as configuration text after every step and
+    never uses the single-path ``state`` field. Every other case keeps using
+    ``state``; its runners are not required to produce configuration text.
+
+    :param data: Parsed fixture mapping whose steps are already validated.
+    :type data: Mapping[str, Any]
+    :param case_id: Fixture id used in error messages.
+    :type case_id: str
+    :param yaml_path: Fixture path used in error messages.
+    :type yaml_path: str
+    :return: ``None``.
+    :rtype: None
+    :raises SemanticCaseError: If a ``regions`` case uses ``state``, leaves the
+        position of a step unasserted, combines a configuration with
+        ``ended: true`` or declares ``initial``, or if another case uses
+        ``configuration``.
+    """
+    is_region_case = "regions" in data["categories"]
+    if is_region_case and data.get("initial") is not None:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "regions cases cannot declare initial: hot start of a model with "
+            "regions is not supported yet",
+        )
+    for index, step in enumerate(data["steps"]):
+        expect = step["expect"]
+        field_path = "steps[%d].expect" % index
+        calls = expect.get("handler_calls") or []
+        if not is_region_case:
+            if "configuration" in expect or any(
+                isinstance(call, dict) and "configuration" in call for call in calls
+            ):
+                raise _case_error(
+                    case_id,
+                    yaml_path,
+                    "%s: configuration is only available to regions cases" % field_path,
+                )
+            continue
+        if "state" in expect:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.state is not available: regions cases assert configuration "
+                "instead of state" % field_path,
+            )
+        ended = expect.get("ended") is True
+        if "configuration" in expect and ended:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s.configuration cannot be combined with ended: true: an ended "
+                "machine has no configuration" % field_path,
+            )
+        if "configuration" not in expect and not ended:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "%s must assert configuration or ended: true in a regions case"
+                % field_path,
+            )
+
+
+def check_configuration_texts(case: SemanticCase, model: Any) -> None:
+    """
+    Check that the configuration texts of a region case fit its model.
+
+    A text is compared with ``str(runtime.configuration)`` as written, so a
+    misspelled or reordered text would only show up as an opaque mismatch, and
+    a runner that parses the text would have to guess what was meant. Each text
+    must therefore be a position of the model and be written in canonical form.
+    The position after a step has to be one the machine can rest in; the
+    position seen by a handler may also be an intermediate one.
+
+    :param case: Region case whose texts are checked.
+    :type case: SemanticCase
+    :param model: State machine built from the case's FCSTM source.
+    :type model: pyfcstm.model.StateMachine
+    :return: ``None``.
+    :rtype: None
+    :raises SemanticCaseError: If a text is not a position of the model or is
+        not in canonical form.
+
+    Example::
+
+        >>> case = load_semantic_case("region_later_region_reads_same_cycle_write")
+        >>> check_configuration_texts(case, build_state_machine_from_case(case))
+    """
+    for index, step in enumerate(case.data.get("steps") or []):
+        expect = step["expect"]
+        field_path = "steps[%d].expect" % index
+        if "configuration" in expect:
+            _check_configuration_text(
+                case,
+                model,
+                expect["configuration"],
+                ("stable", "initialization"),
+                field_path + ".configuration",
+                "a position the model can rest in",
+            )
+        for call_index, call in enumerate(expect.get("handler_calls") or []):
+            if "configuration" in call:
+                _check_configuration_text(
+                    case,
+                    model,
+                    call["configuration"],
+                    ("transient",),
+                    "%s.handler_calls[%d].configuration" % (field_path, call_index),
+                    "a position of the model",
+                )
+
+
+def _check_configuration_text(
+    case: SemanticCase,
+    model: Any,
+    text: str,
+    modes: Sequence[str],
+    field_path: str,
+    wanted: str,
+) -> None:
+    reason = None
+    for mode in modes:
+        try:
+            canonical = str(Configuration.parse(model, text, mode=mode))
+        except ValueError as err:
+            # ValueError: Configuration.parse rejects text that does not name a
+            # position of this model in the given mode; try the next mode.
+            reason = err
+            continue
+        if canonical != text:
+            raise _case_error(
+                case.id,
+                case.yaml_path,
+                "%s %r is not in canonical form; write %r"
+                % (field_path, text, canonical),
+            )
+        return
+    raise _case_error(
+        case.id,
+        case.yaml_path,
+        "%s %r is not %s: %s" % (field_path, text, wanted, reason),
+    )
 
 
 def load_semantic_case(path_or_id: str) -> SemanticCase:

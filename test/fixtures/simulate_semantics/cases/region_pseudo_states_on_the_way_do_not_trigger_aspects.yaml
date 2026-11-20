@@ -1,0 +1,21 @@
+title: A pseudo state passed on the way to a leaf triggers no aspect; the aspects run for the leaf that works
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    vars:
+      n: 11
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    vars:
+      n: 22

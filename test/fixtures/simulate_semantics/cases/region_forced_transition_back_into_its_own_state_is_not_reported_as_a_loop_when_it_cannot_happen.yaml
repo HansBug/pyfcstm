@@ -1,0 +1,29 @@
+title: A forced transition back into its own source that cannot be entered again is simply not taken, it is not
+  reported as a loop
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The exit action of A1 makes the second entry of S go to D, which finishes at once and has no way on. Nothing is
+    taken and the write of the exit action does not stay. Before the declared transition gave way while the decision
+    was pending, it was taken with the decision pending, S was entered and left again without end, and the cycle
+    raised a loop error.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.S.W{A: A1}'
+    vars:
+      k: 0
+    delta: false
+- cycle: Root.Stop
+  expect:
+    configuration: 'Root.S.W{A: A1}'
+    vars:
+      k: 0
+    delta: false

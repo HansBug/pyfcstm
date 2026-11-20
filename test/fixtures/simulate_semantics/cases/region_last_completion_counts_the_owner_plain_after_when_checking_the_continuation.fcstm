@@ -1,0 +1,17 @@
+def int g = 0;
+state Root {
+    event Go;
+    [*] -> P;
+    state P {
+        during after { g = 1; }
+        region A {
+            [*] -> A1;
+            state A1;
+            state A2;
+            A1 -> [*] : /Go;
+            A1 -> A2 : /Go;
+        }
+    }
+    state Done;
+    P -> Done : if [g == 1];
+}

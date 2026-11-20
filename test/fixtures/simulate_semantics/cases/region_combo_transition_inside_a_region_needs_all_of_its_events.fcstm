@@ -1,0 +1,15 @@
+def int n = 0;
+state Root {
+    event Go;
+    event Arm;
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> A1;
+            state A1;
+            state A2;
+            A1 -> A2 : /Go + /Arm effect { n = n + 1; };
+        }
+        region B { [*] -> B1; state B1 { during { n = n + 10; } } }
+    }
+}

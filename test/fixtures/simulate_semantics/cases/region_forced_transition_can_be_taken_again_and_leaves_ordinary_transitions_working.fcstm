@@ -1,0 +1,18 @@
+state Root {
+    event Go;
+    event Stop;
+    event Again;
+    event Fin;
+    [*] -> Idle;
+    state Idle;
+    state P {
+        region A { [*] -> A1; state A1; A1 -> [*] : /Fin; }
+        region B { [*] -> B1; state B1; B1 -> [*] : /Fin; }
+    }
+    state Off;
+    state Done;
+    Idle -> P : /Go;
+    Off -> P : /Again;
+    P -> Done;
+    !P -> Off : /Stop;
+}

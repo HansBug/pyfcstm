@@ -1,0 +1,20 @@
+state Root {
+    event Go;
+    [*] -> P;
+    state P {
+        region R1 {
+            [*] -> S1;
+            state S1;
+            state T1;
+            state U1;
+            S1 -> T1 : /Go;
+            T1 -> U1 : /Go;
+        }
+        region R2 {
+            [*] -> S2;
+            state S2;
+            state T2;
+            S2 -> T2 : /Go;
+        }
+    }
+}

@@ -1,0 +1,28 @@
+title: One input frame is shared by every region within a cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  inputs:
+    k: 2
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      a: 2
+      b: 2
+- cycle: []
+  inputs:
+    k: 3
+  expect:
+    configuration: 'Root.P{R1: X, R2: Y}'
+    vars:
+      a: 5
+      b: 5

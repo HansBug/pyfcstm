@@ -576,6 +576,9 @@ def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
         ``summary``, ``variables``, ``eventLegend`` and ``rootState``.
     :rtype: Dict[str, Any]
     """
+    # The snapshot shows the model as written: a lowered forced declaration is
+    # presented through the machine that keeps its plain expansion.
+    machine = machine._with_plain_forced()
     state_count, event_count, transition_count, action_count = _collect_counts(machine)
     transitions = [
         transition

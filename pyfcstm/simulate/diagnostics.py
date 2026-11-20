@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
 
 from ..dsl import EXIT_STATE, INIT_STATE
+from ..model.region import walk_namespaces
 
 Number = Union[int, float]
 
@@ -123,16 +124,37 @@ class CycleDiagnostics:
     """Detached diagnostic report for one normally returned ``cycle`` call.
 
     :param cycle_count: Runtime cycle count after the call; no-op does not add one.
+    :type cycle_count: int
     :param outcome: ``cycle``, ``delta``, ``terminated``, or ``noop``.
-    :param state_before: Active source path, or ``None`` after termination.
-    :param state_after: Active final path, or ``None`` after termination.
+    :type outcome: str
+    :param state_before: Active source path, or ``None`` after termination. For
+        a model with regions this is the deepest state common to every active
+        branch, as for handler contexts.
+    :type state_before: Optional[Tuple[str, ...]]
+    :param state_after: Active final path, or ``None`` after termination, with
+        the same meaning as ``state_before``.
+    :type state_after: Optional[Tuple[str, ...]]
     :param decisions: Actual checks, in observation order, including skipped edges.
+    :type decisions: Tuple[TransitionDecision, ...], optional
     :param roles: Final model variable roles after import assembly.
+    :type roles: Mapping[str, str], optional
     :param input_events: Normalized events supplied to this cycle; empty for no-op.
+    :type input_events: Tuple[str, ...], optional
     :param inputs: Frozen cycle inputs; ``None`` for an ignored, unsampled call.
+    :type inputs: Optional[Mapping[str, Number]], optional
     :param parameters: Immutable instance parameter snapshot.
+    :type parameters: Mapping[str, Number], optional
     :param vars_before: Persistent control/output values before the call.
+    :type vars_before: Mapping[str, Number], optional
     :param vars_after: Persistent control/output values committed by the call.
+    :type vars_after: Mapping[str, Number], optional
+    :param configuration_before: Full position before the call as configuration
+        text, only for a model with regions; ``None`` otherwise and after
+        termination.
+    :type configuration_before: Optional[str], optional
+    :param configuration_after: Full position after the call as configuration
+        text, with the same availability as ``configuration_before``.
+    :type configuration_after: Optional[str], optional
 
     Example::
 
@@ -149,6 +171,19 @@ class CycleDiagnostics:
         No candidate checks recorded.
         >>> report.to_dict()['decisions']
         []
+        >>> report.configuration_before is None
+        True
+
+    A model with regions adds the full position as text::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> runtime = SimulationRuntime(load_state_machine_from_text(
+        ...     'state Root { region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } }'
+        ... ))
+        >>> report = runtime.cycle(diagnostics=True).diagnostics
+        >>> report.state_after, report.configuration_after
+        (('Root',), 'Root{A: X, B: Y}')
     """
 
     cycle_count: int
@@ -162,6 +197,8 @@ class CycleDiagnostics:
     parameters: Mapping[str, Number] = field(default_factory=dict)
     vars_before: Mapping[str, Number] = field(default_factory=dict)
     vars_after: Mapping[str, Number] = field(default_factory=dict)
+    configuration_before: Optional[str] = None
+    configuration_after: Optional[str] = None
 
     def __post_init__(self):
         object.__setattr__(self, "decisions", tuple(self.decisions))
@@ -176,8 +213,25 @@ class CycleDiagnostics:
                 object.__setattr__(self, name, tuple(value))
 
     def to_dict(self) -> dict:
-        """Return a complete detached payload without presentation folding."""
-        return {
+        """
+        Return a complete detached payload without presentation folding.
+
+        The keys ``configuration_before`` and ``configuration_after`` appear
+        only when the report carries them, so the payload of a model without
+        regions has the same keys as before.
+
+        :return: JSON-compatible mapping of every report field.
+        :rtype: dict
+
+        Example::
+
+            >>> report = CycleDiagnostics(1, 'cycle', ('Root', 'A'), ('Root', 'B'))
+            >>> sorted(report.to_dict())[:3]
+            ['cycle_count', 'decisions', 'input_events']
+            >>> 'configuration_after' in report.to_dict()
+            False
+        """
+        payload = {
             "cycle_count": self.cycle_count,
             "outcome": self.outcome,
             "state_before": list(self.state_before)
@@ -194,6 +248,11 @@ class CycleDiagnostics:
             "vars_after": dict(self.vars_after),
             "decisions": [decision.to_dict() for decision in self.decisions],
         }
+        if self.configuration_before is not None:
+            payload["configuration_before"] = self.configuration_before
+        if self.configuration_after is not None:
+            payload["configuration_after"] = self.configuration_after
+        return payload
 
     def __str__(self) -> str:
         return self.to_text()
@@ -209,13 +268,23 @@ class CycleDiagnostics:
 
         :param transition: Exact expanded transition label. Includes its checks,
             their descendants, ancestors and selections that blocked them.
+        :type transition: Optional[str], optional
         :param check_id: A report-local check number (integer or decimal string),
             mutually exclusive with ``transition``. Includes the same context.
+        :type check_id: Optional[Union[int, str]], optional
         :param verbose: Show every check, expanded labels, full snapshots and
             source spans. Compact text folds only adjacent identical uncommitted
             evidence, naming every folded ID. Committed occurrences never fold.
+        :type verbose: bool, optional
         :return: Plain text; unknown selectors say there is no recorded evidence.
         :rtype: str
+        :raises ValueError: If both ``transition`` and ``check_id`` are given.
+
+        Example::
+
+            >>> report = CycleDiagnostics(0, 'noop', None, None)
+            >>> report.to_text().splitlines()[0]
+            'Cycle 0: noop; (terminated) -> (terminated)'
         """
         if transition is not None and check_id is not None:
             raise ValueError("Select either transition or check_id, not both.")
@@ -238,6 +307,16 @@ class CycleDiagnostics:
         lines = [
             "Cycle %s: %s; %s -> %s" % (self.cycle_count, self.outcome, before, after),
             "Result: " + explanations[self.outcome],
+        ]
+        if self.configuration_before is not None or self.configuration_after is not None:
+            lines.append(
+                "Configuration: %s -> %s"
+                % (
+                    self.configuration_before or "(terminated)",
+                    self.configuration_after or "(terminated)",
+                )
+            )
+        lines += [
             "Events: " + (", ".join(self.input_events) or "(none processed)"),
             "Inputs: "
             + (
@@ -431,13 +510,19 @@ class _DecisionCollector:
             for name, define in runtime.state_machine.defines.items()
         }
         self.before = tuple(runtime.stack[-1].state.path) if runtime.stack else None
+        self.configuration_before = (
+            str(runtime.configuration)
+            if runtime.stack and runtime.state_machine.has_regions
+            else None
+        )
         self.vars_before = dict(runtime.vars)
         self.input_events = tuple(input_events)
         self.inputs = inputs
         self.parameters = dict(runtime.parameters)
         terms = {}
-        for state in runtime.state_machine.walk_states():
-            for transition in state.transitions:
+        # Regions own transitions too, so walk every namespace, not only states.
+        for namespace in walk_namespaces(runtime.state_machine.root_state):
+            for transition in namespace.transitions:
                 for ref in transition.combo_origin_refs:
                     terms.setdefault(ref.origin_id, {})[ref.term_index] = ref.term_text
         self.triggers = {
@@ -485,7 +570,9 @@ class _DecisionCollector:
         self.records.append(record)
         return record
 
-    def finish(self, cycle_count, outcome, state_after, vars_after=None):
+    def finish(
+        self, cycle_count, outcome, state_after, vars_after=None, configuration_after=None
+    ):
         decisions = []
         for record in self.records:
             committed = (
@@ -506,4 +593,8 @@ class _DecisionCollector:
             self.parameters,
             self.vars_before,
             self.vars_before if vars_after is None else vars_after,
+            self.configuration_before,
+            self.configuration_before
+            if outcome == "noop" and state_after is not None
+            else configuration_after,
         )

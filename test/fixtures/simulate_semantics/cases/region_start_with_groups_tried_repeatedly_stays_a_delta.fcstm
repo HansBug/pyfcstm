@@ -1,0 +1,59 @@
+def int x = 0;
+def int y = 1;
+input int k;
+state Root {
+    [*] -> S002 : if [x % 2 == 0];
+    state S002 {
+        >> during before { x = (x * 3 + 9) % 97; }
+        region R005 {
+            [*] -> S008;
+            state S006 {
+                [*] -> S010;
+                state S010;
+            }
+            state S007;
+            state S008 {
+                region R018 {
+                    [*] -> S020 effect { x = (x * 3 + 8) % 97; };
+                    state S019 {
+                        region R022 {
+                            >> during before { x = (x * 2 + 7) % 97; }
+                            [*] -> S023 effect { y = (y * 2 + 9) % 97; };
+                            state S023 {
+                                enter { x = (x * 5 + 7) % 97; if [active("Root.S002.R005.S006.S010")] { x = (x * 5 + 5) % 97; } }
+                            }
+                        }
+                        region R032 {
+                            [*] -> S033 : if [x % 2 == 0];
+                            state S033;
+                        }
+                    }
+                    pseudo state S020 {
+                        enter { x = (x * 3 + 2) % 97; }
+                    }
+                    S020 -> S019 : /E0 effect { x = (x * 2 + 0) % 97; };
+                    S020 -> [*];
+                }
+            }
+            S008 -> S008 : /E2 effect { y = (y * 1 + 7) % 97; };
+            S008 -> S007;
+        }
+        region R035 {
+            [*] -> S037;
+            state S037 {
+                region R044 {
+                    [*] -> S046 : if [y % 4 == 0];
+                    state S046;
+                }
+            }
+        }
+        region R052 {
+            [*] -> S055;
+            state S055 {
+                [*] -> S056;
+                state S056;
+                S056 -> [*] : /E1;
+            }
+        }
+    }
+}

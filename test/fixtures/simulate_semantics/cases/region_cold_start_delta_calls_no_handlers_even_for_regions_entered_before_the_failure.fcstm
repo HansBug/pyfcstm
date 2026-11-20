@@ -1,0 +1,6 @@
+input int g;
+def int n = 0;
+state Root {
+    region R1 { [*] -> X; state X { enter abstract XOn; during abstract XWork; } }
+    region R2 { [*] -> Y : if [g != 0]; state Y; }
+}

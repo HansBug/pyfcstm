@@ -1,0 +1,27 @@
+title: A pseudo state on a region initial chain appears as the position of its region while its enter action runs
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+handlers:
+- action: Root.P.R1.Q.QOn
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: X, R2: S}'
+    handler_calls:
+    - action: Root.P.R1.Q.QOn
+      state: Root.P.R1.Q
+      stage: enter
+      vars: {}
+      active_leaf: Root.P.R1.Q
+      call_stage: enter
+      abstract_target: Root.P.R1.Q.QOn
+      named_ref: null
+      configuration: 'Root.P{R1: Q, R2: [init]}'

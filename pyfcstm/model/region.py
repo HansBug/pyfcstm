@@ -16,6 +16,8 @@ The module contains:
 * :func:`ast_namespace_children` - The same listing for DSL AST nodes
 * :func:`namespace_actions` - Lifecycle and aspect actions owned by a namespace
 * :func:`walk_namespaces` - Depth-first walk over a namespace subtree
+* :func:`shown_namespace` - The state or region that exports in place of one
+  of a machine whose forced declarations were lowered
 * :func:`validate_region_structure` - Check region invariants on an AST
 * :class:`Region` - A named ordered namespace inside a parallel owner state
 
@@ -220,6 +222,59 @@ def namespace_actions(namespace):
     """
     return chain(*(getattr(namespace, name, ()) for name in
                    ('on_enters', 'on_durings', 'on_exits', 'on_during_aspects')))
+
+
+def shown_namespace(namespace):
+    """
+    Return the state or region that exports in place of ``namespace``.
+
+    A forced declaration that reaches regions is lowered into hidden variables
+    and transitions the language cannot write (see :mod:`pyfcstm.model.forced`),
+    so a machine that lowered one shows itself through the machine that keeps
+    the plain expansion
+    (:meth:`pyfcstm.model.model.StateMachine.to_ast_node`). A state or region
+    of the lowered machine does the same: the DSL export and the PlantUML text
+    of any level come from the counterpart with the same path in that machine.
+    Every other namespace, and every namespace of that machine itself, is its
+    own counterpart.
+
+    :param namespace: A state or a region of a built machine.
+    :type namespace: Union[pyfcstm.model.model.State, Region]
+    :return: The namespace to export.
+    :rtype: Union[pyfcstm.model.model.State, Region]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.model.region import shown_namespace
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     event Stop;
+        ...     [*] -> Run;
+        ...     state Run { region A { [*] -> A1; state A1; } }
+        ...     state Idle;
+        ...     !Run -> Idle : /Stop;
+        ... }
+        ... ''')
+        >>> root = model.root_state
+        >>> shown = shown_namespace(root)
+        >>> shown is root, shown.path == root.path
+        (False, True)
+        >>> '__forced' in str(root.to_ast_node()), 'Run -> Idle : Stop;' in str(root.to_ast_node())
+        (False, True)
+    """
+    root = namespace
+    while root.parent is not None:
+        root = root.parent
+    reference = getattr(root, "_machine_ref", None)
+    machine = None if reference is None else reference()
+    if machine is None:
+        return namespace
+    shown = machine._with_plain_forced().root_state
+    for name in namespace.path[1:]:
+        regions = getattr(shown, "regions", None)
+        shown = regions[name] if regions and name in regions else shown.substates[name]
+    return shown
 
 
 def walk_namespaces(namespace):
@@ -545,6 +600,27 @@ class Region(AstExportable):
             True
         """
         self.parent_ref = None if owner is None else weakref.ref(owner)
+
+    @property
+    def is_root_state(self) -> bool:
+        """Return ``False``: a region is always owned by a state.
+
+        This lets code that handles states and regions uniformly, such as the
+        simulator's transition labels, ask the question without a type check.
+
+        :return: Always ``False``.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { region R { [*] -> A; state A; } }'
+            ... )
+            >>> model.root_state.regions['R'].is_root_state
+            False
+        """
+        return False
 
     @property
     def init_transitions(self) -> List['Transition']:
@@ -935,7 +1011,9 @@ class Region(AstExportable):
         """
         from .model import _region_to_plantuml
 
-        return _region_to_plantuml(self, options, current_depth, event_colors)
+        return _region_to_plantuml(
+            shown_namespace(self), options, current_depth, event_colors
+        )
 
     def to_ast_node(self) -> dsl_nodes.RegionDefinition:
         """
@@ -971,6 +1049,9 @@ class Region(AstExportable):
         from .model import State
         from .imports import _mark_generated_combo_pseudo_node
 
+        shown = shown_namespace(self)
+        if shown is not self:
+            return shown.to_ast_node()
         children = [state.to_ast_node() for state in self.substates.values()]
         node = dsl_nodes.RegionDefinition(
             name=self.name,

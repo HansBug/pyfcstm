@@ -1,0 +1,11 @@
+def int seq = 0;
+state Root {
+    event Fault;
+    [*] -> P;
+    state P {
+        region A { [*] -> Run; state Run { during { seq = seq + 1; } } state Bad { during { seq = seq + 100; } } Run -> Bad : /Fault; }
+        region B { [*] -> B1; state B1; }
+    }
+    state Safe;
+    !P -> Safe : if [active("Root.P.A.Bad")];
+}

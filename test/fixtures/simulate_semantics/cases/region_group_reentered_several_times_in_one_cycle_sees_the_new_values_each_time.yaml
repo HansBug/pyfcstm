@@ -1,0 +1,16 @@
+title: A group that finishes and is entered again within one cycle is judged on the current values every time
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Done
+    vars:
+      n: 3

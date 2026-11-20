@@ -1,0 +1,23 @@
+title: An earlier region reads only the previous cycle value of a later region write
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{Rd: B, W: A}'
+    vars:
+      x: 1
+      y: 0
+- cycle: []
+  expect:
+    configuration: 'Root.P{Rd: B, W: A}'
+    vars:
+      x: 2
+      y: 1

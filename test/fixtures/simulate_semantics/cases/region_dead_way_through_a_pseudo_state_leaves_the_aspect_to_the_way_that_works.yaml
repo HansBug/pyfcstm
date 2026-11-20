@@ -1,0 +1,26 @@
+title: A way out of a pseudo state that is tried and rejected does not use up the aspect of the cycle for the way
+  that is taken next
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Trying j -> O2 lets X1 work, which runs the aspect on a copy, before region Y fails. The way through j -> [*]
+    and on to O3 must still run the aspect when M1 works, or region N could not start.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.O3{M: M1, N: N1}'
+    vars:
+      x: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.O3{M: M1, N: N1}'
+    vars:
+      x: 1

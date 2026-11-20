@@ -1,0 +1,30 @@
+title: Leaving a group exits regions in reverse order, the deepest state first, and each composite and the owner
+  run their plain during after before their exit
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - 'The digits of seq are the order of the actions: region B leaves before region A, the leaf L before its composite
+    K, the plain during after of K and of P right before their own exit.'
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: K.L, B: W}'
+    vars:
+      seq: 0
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: K.L, B: W}'
+    vars:
+      seq: 0
+- cycle: Root.Stop
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 431256

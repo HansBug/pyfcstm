@@ -23,4 +23,4 @@ CycleDiagnostics
 -----------------------------------------------------
 
 .. autoclass:: CycleDiagnostics
-    :members: __post_init__,to_dict,__str__,to_text,cycle_count,outcome,state_before,state_after,decisions,roles,input_events,inputs,parameters,vars_before,vars_after
+    :members: __post_init__,to_dict,__str__,to_text,cycle_count,outcome,state_before,state_after,decisions,roles,input_events,inputs,parameters,vars_before,vars_after,configuration_before,configuration_after

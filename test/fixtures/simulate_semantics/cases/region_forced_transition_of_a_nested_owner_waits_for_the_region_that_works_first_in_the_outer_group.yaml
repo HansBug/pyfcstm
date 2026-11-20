@@ -1,0 +1,34 @@
+title: A state of a nested owner may decide on a forced transition only if its region leads on every level, so a
+  region that follows a working region of the outer group waits for the next cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region R1 raises x to 2 in the second cycle. The leaves of the nested owner sit in the second region of the outer
+    group, so they must not decide in that cycle even though they lead the nested owner; the group is taken in the
+    third cycle.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Outer{R1: A1, R2: Inner{X: X1, Y: Y1}}'
+    vars:
+      x: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.Outer{R1: A1, R2: Inner{X: X1, Y: Y1}}'
+    vars:
+      x: 2
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      x: 2
+    delta: false

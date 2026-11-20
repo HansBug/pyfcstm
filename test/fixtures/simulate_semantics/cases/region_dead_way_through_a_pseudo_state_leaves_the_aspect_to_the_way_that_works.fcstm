@@ -1,0 +1,22 @@
+def int x = 0;
+state Root {
+    >> during before { x = 1; }
+    [*] -> Q;
+    state Q {
+        region R {
+            [*] -> j;
+            pseudo state j;
+            state O2 {
+                region X { [*] -> X1; state X1; }
+                region Y { [*] -> Y1 : if [x == 5]; state Y1; }
+            }
+            j -> O2;
+            j -> [*];
+        }
+    }
+    state O3 {
+        region M { [*] -> M1; state M1; }
+        region N { [*] -> N1 : if [x == 1]; state N1; }
+    }
+    Q -> O3;
+}

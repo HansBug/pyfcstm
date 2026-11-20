@@ -1,0 +1,8 @@
+def int n = 0;
+state Root {
+    [*] -> O;
+    state O { region A { [*] -> p; pseudo state p; p -> [*]; } }
+    state Done;
+    O -> O : if [n < 3] effect { n = n + 1; };
+    O -> Done;
+}

@@ -784,7 +784,13 @@ def run_native_alignment_report(
         'generated_c_alignment'
     """
     _validate_runner_name(runner)
-    selected_ids = list(case_ids or [case.id for case in iter_semantic_cases()])
+    selected_ids = list(
+        case_ids
+        or [
+            case.id
+            for case in iter_semantic_cases(runners=["generated_python_alignment"])
+        ]
+    )
     results = []
     for case_id in selected_ids:
         if subprocess_mode:

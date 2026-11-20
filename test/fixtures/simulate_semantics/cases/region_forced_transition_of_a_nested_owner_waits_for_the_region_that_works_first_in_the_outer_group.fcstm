@@ -1,0 +1,16 @@
+def int x = 0;
+state Root {
+    [*] -> Outer;
+    state Outer {
+        region R1 { [*] -> A1; state A1 { during { x = x + 1; } } }
+        region R2 {
+            [*] -> Inner;
+            state Inner {
+                region X { [*] -> X1; state X1; }
+                region Y { [*] -> Y1; state Y1; }
+            }
+        }
+    }
+    state Off;
+    !Outer -> Off : if [x >= 2];
+}

@@ -13,6 +13,7 @@ pyfcstm.model
     base
     configuration
     expr
+    forced
     history
     imports
     load

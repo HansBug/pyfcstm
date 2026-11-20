@@ -1,0 +1,14 @@
+state Root {
+    event E1;
+    event E2;
+    region R1 {
+        [*] -> A;
+        state A;
+        A -> [*] : /E1;
+    }
+    region R2 {
+        [*] -> B;
+        state B;
+        B -> [*] : /E2;
+    }
+}

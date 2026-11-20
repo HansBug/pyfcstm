@@ -1,0 +1,20 @@
+def int x = 1;
+def int seq = 0;
+state Root {
+    event Alpha;
+    event Beta;
+    event Other;
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { exit { seq = seq * 10 + 1; } } }
+        region B { [*] -> B1; state B1 { exit { seq = seq * 10 + 2; } } }
+    }
+    state ToAlpha;
+    state ToBeta;
+    state Plain;
+    state Evented;
+    !P -> ToAlpha : /Alpha;
+    !P -> ToBeta : /Beta;
+    P -> Plain : if [x > 0];
+    P -> Evented : /Other;
+}

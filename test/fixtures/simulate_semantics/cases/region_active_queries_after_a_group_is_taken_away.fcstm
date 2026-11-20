@@ -1,0 +1,22 @@
+def int left = 0;
+def int seen = 0;
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        exit {
+            if [active("Root.P.A.A1")] { left = left + 1; }
+            if [active("Root.P")] { left = left + 2; }
+        }
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; }
+    }
+    state Off {
+        enter {
+            if [active("Root.P.A.A1")] { seen = seen + 1; }
+            if [active("Root.P")] { seen = seen + 2; }
+            if [active("Root.Off")] { seen = seen + 4; }
+        }
+    }
+    !P -> Off : /Stop;
+}

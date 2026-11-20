@@ -1,0 +1,11 @@
+def int armed = 1;
+def int seq = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during { seq = seq + 1; } exit { armed = 0; } } }
+        region B { [*] -> B1; state B1; }
+    }
+    state Off;
+    !P -> Off : if [armed == 1];
+}

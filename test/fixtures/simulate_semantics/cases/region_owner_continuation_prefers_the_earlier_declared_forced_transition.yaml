@@ -1,0 +1,23 @@
+title: "After every region finished, the owner's forced transition is tried before its ordinary ones (forced declared first)"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "The region's exit action makes the forced guard true only after the completion started."
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: W}'
+    vars:
+      a: 1
+- cycle: Root.Finish
+  expect:
+    configuration: 'Root.ViaForced'
+    vars:
+      a: -2

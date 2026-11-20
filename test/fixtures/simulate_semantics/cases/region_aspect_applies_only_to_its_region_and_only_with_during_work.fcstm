@@ -1,0 +1,23 @@
+def int r1 = 0;
+def int r1after = 0;
+def int r2 = 0;
+def int a = 0;
+def int b = 0;
+state Root {
+    event End1;
+    [*] -> P;
+    state P {
+        region R1 {
+            >> during before { r1 = r1 + 1; }
+            >> during after { r1after = r1after + 1; }
+            [*] -> A;
+            state A { during { a = a + 1; } }
+            A -> [*] : /End1;
+        }
+        region R2 {
+            >> during before { r2 = r2 + 1; }
+            [*] -> B;
+            state B { during { b = b + 1; } }
+        }
+    }
+}

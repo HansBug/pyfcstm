@@ -1,0 +1,31 @@
+def int x = 0;
+def int y = 0;
+state Root {
+    event E2; event E3;
+    [*] -> S3;
+    state S3 {
+        region R27 { [*] -> S30; state S30 { during { y = y * 2 + 1; } } }
+        region R53 {
+            [*] -> S54;
+            state S54;
+            state S55 {
+                enter { x = x + 1; }
+                region R58 {
+                    [*] -> S59;
+                    state S59 {
+                        [*] -> S60;
+                        pseudo state S60;
+                        state S62;
+                        !* -> S62 : /E2;
+                    }
+                    S59 -> [*] : if [x % 4 == 1];
+                    S59 -> S59 : if [y % 3 == 1] effect { x = x + 1; }
+                    !* -> S59 : /E2;
+                }
+                region R65 { [*] -> S66; state S66; }
+            }
+            S54 -> S55 : if [x >= 0] effect { x = x + 1; }
+        }
+    }
+    S3 -> S3 : /E3;
+}

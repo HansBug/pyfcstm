@@ -86,6 +86,7 @@ LEGACY_PATH_SHAPES = (
 )
 PUBLIC_EXPECTATION_FIELDS = (
     "state",
+    "configuration",
     "vars",
     "ended",
     "delta",

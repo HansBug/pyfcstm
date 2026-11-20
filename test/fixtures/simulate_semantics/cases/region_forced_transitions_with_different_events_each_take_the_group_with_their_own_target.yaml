@@ -1,0 +1,35 @@
+title: Two forced declarations of the same owner each take the group with their own event, and the ordinary transitions of the owner give way
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The owner also has an ordinary transition with a true condition and one with an event; neither is taken while the forced transition is decided.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      x: 1
+      seq: 0
+    delta: false
+- cycle:
+  - Root.Alpha
+  expect:
+    configuration: Root.ToAlpha
+    vars:
+      x: 1
+      seq: 21
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.ToAlpha
+    vars:
+      x: 1
+      seq: 21
+    delta: false

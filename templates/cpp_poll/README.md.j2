@@ -259,7 +259,7 @@ To preset control/output, insert this fragment before the initialization call in
 <!-- example:initial-values -->
 
 ```cpp
-{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = 1;
+{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = {{ 0 if item.name in model.forced_variables else 1 }};
 options.vars_present.{{ item.name | to_c_identifier }} = 1;
 {% endfor %}{% else %}/* This model has no persistent variables to preset. */
 {% endif %}

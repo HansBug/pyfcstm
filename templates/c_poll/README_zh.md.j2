@@ -252,7 +252,7 @@ if (!{{ m }}_cycle_with_inputs(&machine, &inputs)) {
 <!-- example:initial-values -->
 
 ```c
-{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = 1;
+{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = {{ 0 if item.name in model.forced_variables else 1 }};
 options.vars_present.{{ item.name | to_c_identifier }} = 1;
 {% endfor %}{% else %}/* This model has no persistent variables to preset. */
 {% endif %}

@@ -1,4 +1,4 @@
-{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '0' if item.name in model.forced_variables else ('1' if item.type == 'int' else '1.0') }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 
 {% set doc_event_paths = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}

@@ -57,17 +57,20 @@ def test_a_declaration_on_a_composite_is_decided_where_the_machine_rests():
     # A pseudo state is never rested in and holds nothing.
     assert not [edge for edge in inner.transitions if edge.from_state == 'Junction']
     # The composite on the way up only waits for the variable; the leaf beside
-    # it starts the exit itself.
-    relay, side = _forced(run)
-    assert (relay.from_state, relay.event, str(relay.guard)) == ('Inner', None, '__forced_0 == 1')
+    # it starts the exit itself. The relay is generated plumbing, not a forced
+    # transition a reader of the model wrote.
+    relay, = [edge for edge in run.transitions if edge.from_state == 'Inner']
+    side, = [edge for edge in run.transitions if edge.from_state == 'Side']
+    assert (relay.event, str(relay.guard), relay.is_forced) == (None, '__forced_0 == 1', False)
     assert relay.to_state is EXIT_STATE and relay.effects == []
-    assert (side.from_state, side.event.path_name, side.guard) == ('Side', 'Root.Stop', None)
+    assert (side.event.path_name, side.guard, side.is_forced) == ('Root.Stop', None, True)
     assert _writes(side) == [('__forced_0', '1')]
     # The level of the declaration takes the raised case first and lowers the
     # variable; the declared transition stays for an entry that has not settled.
     first, declared = [edge for edge in model.root_state.transitions if edge.from_state == 'Run']
     assert (first.to_state, first.event, str(first.guard)) == ('Idle', None, '__forced_0 == 1')
     assert _writes(first) == [('__forced_0', '0')]
+    assert (first.is_forced, declared.is_forced) == (False, True)
     assert declared.event.path_name == 'Root.Stop' and declared.guard is None
     gate = model.root_state.substates[declared.to_state]
     assert gate.is_pseudo and gate.is_forced_gate
@@ -149,7 +152,9 @@ def test_a_wildcard_declaration_only_lowers_the_sources_that_have_states_inside(
     from_home, = [edge for edge in _forced(root) if edge.from_state == 'Home']
     assert (from_home.to_state, from_home.guard, from_home.effects) == ('Home', None, [])
     # The composite source gets the two steps.
-    first, declared = [edge for edge in _forced(root) if edge.from_state == 'Run']
+    first, declared = [edge for edge in root.transitions if edge.from_state == 'Run'
+                       and edge.forced_origin is not None]
+    assert (first.is_forced, declared.is_forced) == (False, True)
     assert str(first.guard) == '__forced_0 == 1' and root.substates[declared.to_state].is_forced_gate
 
 

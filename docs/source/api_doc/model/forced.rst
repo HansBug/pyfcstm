@@ -23,10 +23,4 @@ ForcedExpansion
 -----------------------------------------------------
 
 .. autoclass:: ForcedExpansion
-    :members: __init__,expand
-
-
-lower\_forced
------------------------------------------------------
-
-.. autofunction:: lower_forced
+    :members: __init__,expand,lower

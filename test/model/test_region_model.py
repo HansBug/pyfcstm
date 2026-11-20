@@ -87,9 +87,11 @@ def test_owner_forced_edge_reaches_every_region_as_a_group_exit():
     model = load_state_machine_from_text(ORDERED)
     owner = model.root_state.substates['Job']
     # On the level of the declaration: the copy that decides once comes first,
-    # the declared edge stays behind it.
-    assert [(edge.from_state, edge.to_state) for edge in model.root_state.transitions
-            if edge.is_forced] == [('Job', 'Idle'), ('Job', '__forced_gate_0')]
+    # the declared edge stays behind it. Only the declared one is a forced
+    # transition; the copy is generated to carry it out.
+    assert [(edge.from_state, edge.to_state, edge.is_forced)
+            for edge in model.root_state.transitions if edge.forced_origin is not None] == [
+        ('Job', 'Idle', False), ('Job', '__forced_gate_0', True)]
     assert owner.transitions == []
     for region in owner.regions.values():
         forced = [edge for edge in region.transitions if edge.is_forced]

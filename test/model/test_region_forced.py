@@ -228,7 +228,7 @@ def test_forced_declarations_reach_each_owner_below_the_declared_state():
 
 def test_inspect_judges_the_model_as_written():
     report = inspect_model(load_state_machine_from_text(OWNER))
-    assert '__forced' not in report.to_json()
+    assert '__forced' not in json.dumps(report.to_json())
     # The forced declaration is reported once, as written.
     assert len(report.forced_transitions) == 1
     # Only the transition written on the level of the declaration is expanded;
@@ -287,12 +287,14 @@ def test_a_wildcard_declaration_keeps_the_transition_of_a_pseudo_sibling_on_its_
 }''')
     by_source = {}
     for edge in model.root_state.transitions:
-        if edge.is_forced:
+        if edge.forced_origin is not None:
             by_source.setdefault(edge.from_state, []).append(edge)
     # On its own level every state, a pseudo one included, holds the declared
-    # transition; only the state that owns regions needs the copy that decides.
+    # transition; only the state that owns regions needs the copy that decides,
+    # which is generated plumbing and not marked as a forced transition.
     assert sorted(by_source) == ['Gate', 'Idle', 'Quiet', 'Run']
-    assert [len(by_source[name]) for name in ('Gate', 'Idle', 'Quiet', 'Run')] == [1, 1, 1, 2]
+    assert [[edge.is_forced for edge in by_source[name]]
+            for name in ('Gate', 'Idle', 'Quiet', 'Run')] == [[True], [True], [True], [False, True]]
     # Below the declaration a pseudo state is passed through, not left.
     region = model.root_state.substates['Run'].regions['A']
     assert [edge.from_state for edge in region.transitions if edge.is_forced] == ['A1']

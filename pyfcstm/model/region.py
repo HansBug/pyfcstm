@@ -16,7 +16,7 @@ The module contains:
 * :func:`ast_namespace_children` - The same listing for DSL AST nodes
 * :func:`namespace_actions` - Lifecycle and aspect actions owned by a namespace
 * :func:`walk_namespaces` - Depth-first walk over a namespace subtree
-* :func:`shown_namespace` - The state or region that exports in place of one
+* :func:`shown_namespace` - The state or region that is shown in place of one
   of a machine whose forced declarations were lowered
 * :func:`validate_region_structure` - Check region invariants on an AST
 * :class:`Region` - A named ordered namespace inside a parallel owner state
@@ -271,10 +271,7 @@ def shown_namespace(namespace, export=False):
         >>> '__forced' in str(root.to_ast_node()), 'Run -> Idle : Stop;' in str(root.to_ast_node())
         (False, True)
     """
-    root = namespace
-    while root.parent is not None:
-        root = root.parent
-    view = getattr(root, "_plain_forced_view", None)
+    view = getattr(namespace, "_plain_forced_view", None)
     if view is None or (export and not view.takes_groups):
         return namespace
     shown = view.machine().root_state

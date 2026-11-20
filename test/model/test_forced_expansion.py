@@ -300,6 +300,29 @@ def test_a_state_is_shown_the_same_after_its_machine_is_no_longer_kept():
     assert str(root.to_ast_node()) == str(kept.root_state.to_ast_node())
 
 
+def _only(path):
+    """Return one state of a freshly loaded model; the model and the states above are dropped."""
+    state = load_state_machine_from_text(NESTED).root_state
+    for name in path:
+        state = state.substates[name]
+    return state
+
+
+@pytest.mark.parametrize('path', [('Run',), ('Run', 'Inner'), ('Run', 'Inner', 'A')])
+def test_a_state_kept_on_its_own_is_shown_the_same_before_and_after_a_collection(path):
+    kept = load_state_machine_from_text(NESTED)
+    expected = kept.root_state
+    for name in path:
+        expected = expected.substates[name]
+    state = _only(path)
+    before = state.to_plantuml('full')
+    gc.collect()
+    after = state.to_plantuml('full')
+    assert before == after == expected.to_plantuml('full')
+    assert '__forced' not in after
+    assert str(state.to_ast_node()) == str(expected.to_ast_node())
+
+
 def test_a_state_of_the_machine_is_exported_the_way_the_machine_is():
     model = load_state_machine_from_text(NESTED)
     run = model.root_state.substates['Run']

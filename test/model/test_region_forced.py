@@ -251,6 +251,23 @@ def test_a_state_is_shown_as_written_after_its_machine_is_no_longer_kept():
     assert '__forced' not in str(root.to_ast_node())
 
 
+def test_a_region_kept_on_its_own_is_shown_the_same_before_and_after_a_collection():
+    kept = load_state_machine_from_text(OWNER).root_state.substates['Run']
+
+    def only_the_region():
+        return load_state_machine_from_text(OWNER).root_state.substates['Run'].regions['A']
+
+    region = only_the_region()
+    before = region.to_plantuml('full')
+    gc.collect()
+    after = region.to_plantuml('full')
+    assert before == after == kept.regions['A'].to_plantuml('full')
+    assert '__forced' not in after
+    # The group of this owner is taken away, so the region exports the plain expansion too.
+    assert str(region.to_ast_node()) == str(kept.regions['A'].to_ast_node())
+    assert '__forced' not in str(region.to_ast_node())
+
+
 def test_plantuml_draws_the_declaration_once_and_hides_how_it_is_carried_out():
     model = load_state_machine_from_text('''def int x = 1;
 state Root {

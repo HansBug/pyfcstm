@@ -3490,10 +3490,10 @@ class _PlainForcedView:
     A drawing shows a forced declaration as one transition on every state it
     applies to, which is not what runs (see :mod:`pyfcstm.model.forced`). This
     object holds what is needed to build that other machine and builds it on
-    first use. The machine and its root state share one holder, so a state
-    keeps showing the declarations as written when the machine object it came
-    from is no longer referenced, and no reference leads from a state back to
-    its machine.
+    first use. The machine and every state and region of it share one holder,
+    so any of them keeps showing the declarations as written when the machine
+    object, or the states above it, are no longer referenced, and no reference
+    leads from a state back to its machine.
 
     :param program: Import-assembled program the machine was built from.
     :type program: pyfcstm.dsl.node.StateMachineDSLProgram
@@ -3613,7 +3613,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
     # The hidden variables of the forced declarations that were lowered, and
     # the holder of the machine built from the same program with those
     # declarations kept in their plain expansion, which every view of the
-    # model as written uses. The root state shares the holder.
+    # model as written uses. Every state and region shares the holder.
     _forced_flags: Tuple[str, ...] = field(default=(), compare=False, repr=False)
     _plain_forced_view: Optional[_PlainForcedView] = field(
         default=None, compare=False, repr=False
@@ -4673,13 +4673,14 @@ def parse_dsl_node_to_state_machine(
     if machine._forced_flags:
         # A state or region is shown through the machine that keeps forced
         # declarations plain (see ``StateMachine._with_plain_forced``). The
-        # machine and its root state share the holder: a state that outlives
-        # the machine object still shows the declarations as written, and
+        # machine and every state and region of it share the holder: whichever
+        # of them a caller keeps still shows the declarations as written, and
         # nothing leads from a state back to its machine.
         machine._plain_forced_view = _PlainForcedView(
             dnode, machine._forced_takes_groups
         )
-        machine.root_state._plain_forced_view = machine._plain_forced_view
+        for namespace in walk_namespaces(machine.root_state):
+            namespace._plain_forced_view = machine._plain_forced_view
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the
@@ -5534,7 +5535,7 @@ def _build_assembled_state_machine(
         node: dsl_nodes.StateDefinition,
         current_state: State,
         current_path: Tuple[str, ...],
-        force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
+        force_transitions: Optional[List[Any]] = None,
     ) -> None:
         """
         Resolve transitions, forced transitions and events of one namespace, then recurse.
@@ -5553,9 +5554,12 @@ def _build_assembled_state_machine(
         :type current_state: Union[State, pyfcstm.model.region.Region]
         :param current_path: Path of the parent namespace.
         :type current_path: Tuple[str, ...]
-        :param force_transitions: Forced transitions inherited from enclosing
-            states. Defaults to ``None`` (none).
-        :type force_transitions: Optional[List[pyfcstm.dsl.node.ForceTransitionDefinition]], optional
+        :param force_transitions: Forced declarations inherited from the
+            enclosing namespace, as
+            :meth:`pyfcstm.model.forced.ForcedExpansion.expand` returned them
+            for this child; passed back to it unread. Defaults to ``None``
+            (none).
+        :type force_transitions: Optional[List[Any]], optional
         :return: ``None``; the model is updated in place.
         :rtype: None
         """

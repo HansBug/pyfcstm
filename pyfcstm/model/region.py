@@ -236,7 +236,9 @@ def shown_namespace(namespace):
     of the lowered machine does the same: the DSL export and the PlantUML text
     of any level come from the counterpart with the same path in that machine.
     Every other namespace, and every namespace of that machine itself, is its
-    own counterpart.
+    own counterpart. So is a gate that forced lowering added
+    (:attr:`pyfcstm.model.model.State.is_forced_gate`): it exists only in the
+    machine that runs and has nothing to stand in for it.
 
     :param namespace: A state or a region of a built machine.
     :type namespace: Union[pyfcstm.model.model.State, Region]
@@ -273,7 +275,13 @@ def shown_namespace(namespace):
     shown = machine._with_plain_forced().root_state
     for name in namespace.path[1:]:
         regions = getattr(shown, "regions", None)
-        shown = regions[name] if regions and name in regions else shown.substates[name]
+        if regions and name in regions:
+            shown = regions[name]
+        elif name in shown.substates:
+            shown = shown.substates[name]
+        else:
+            # A gate of forced lowering exists only in the machine that runs.
+            return namespace
     return shown
 
 

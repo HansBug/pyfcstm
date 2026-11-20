@@ -36,16 +36,25 @@ already decided.
    lowers it goes first; the declared transition stays behind it for the case
    that control comes back to its source without the variable raised.
 4. While the variable is raised, every other outgoing transition of the states
-   on the way gives way, the declared transition included: each of them gets
-   the extra condition that the variable is lowered. A forced transition whose
-   target cannot be entered therefore takes nothing, whatever else leaves the
-   same state.
+   on the way gives way, the declared transition included: each of them has to
+   wait until the variable is lowered. A forced transition whose target cannot
+   be entered therefore takes nothing, whatever else leaves the same state.
 
-This is the only place where a transition of the model carries an event and a
-guard at the same time: rule 4 adds a condition to a transition that may have an
-event. The simulator evaluates both. The language cannot write the pair, and
-neither can it write the relays and the exit-group transitions, so a lowered
-machine is never exported or drawn.
+Rule 4 never puts an event and a guard on one transition, which neither the
+language nor the model allows. A transition without an event gets the condition
+added to its guard. A transition with an event is split through a pseudo state
+named ``__forced_gate_<n>``
+(:attr:`pyfcstm.model.model.State.is_forced_gate`), the way history lowering
+gates an evented initial transition: the event leads to the gate, and a second
+transition leads on to the target under the condition, carrying the effects.
+While the variable is raised the gate is a dead end and the first step is
+rejected; otherwise the two steps behave like the transition as written, and a
+trace shows the gate as one more state passed through. All of this is done
+only after every declaration has its relays, so two declarations on one state
+restrict each other in the same way.
+
+The exit-group transitions are the one thing in a lowered machine the language
+cannot write, so a machine that has them is never exported or drawn as it is.
 
 The module contains:
 
@@ -83,8 +92,9 @@ Example::
     ...  for region in run.regions.values()
     ...  for t in region.transitions if t.exit_group_levels]
     [('A1', EXIT_STATE, 1), ('B1', EXIT_STATE, 1)]
-    >>> [str(t.guard) for t in model.root_state.transitions if t.from_state == 'Run']
-    ['__forced_0 == 1', '__forced_0 == 0']
+    >>> [(t.from_state, t.to_state, t.event is not None, str(t.guard))
+    ...  for t in model.root_state.transitions if isinstance(t.from_state, str)]
+    [('Run', 'Idle', False, '__forced_0 == 1'), ('Run', '__forced_gate_0', True, 'None'), ('__forced_gate_0', 'Idle', False, '__forced_0 == 0')]
 """
 
 import re
@@ -117,6 +127,9 @@ _Namespace = Union[State, Region]
 # declaration and whether the transition is the one declared on its own level.
 _ID_MARK = "_forced_id"
 _DECLARED_MARK = "_forced_declared"
+
+# Gates are named ``__forced_gate_<n>`` inside the namespace that needs them.
+_GATE_PREFIX = "__forced_gate_"
 
 def _scope_has_regions(scope: Any) -> bool:
     """
@@ -871,6 +884,11 @@ def lower_forced(
     # hidden variable once that variable is installed under the same name.
     taken = set(defines).union(_assigned_names(root_state)) if declarations else set()
     names: List[str] = []
+    waiting: List[Tuple[int, BinaryOp, List[Tuple[_Namespace, State]]]] = []
+    # Every declaration first gets its variable, its initiators and its relays.
+    # Only then do the other transitions give way, so that a relay of one
+    # declaration has already lost its event when another declaration restricts
+    # it, and the conditions two declarations put on each other are the same.
     for forced_id, items in declarations.items():
         name = _free_name(taken, forced_id)
         taken.add(name)
@@ -906,8 +924,16 @@ def lower_forced(
                     Operation(var_name=name, expr=Integer(1)),
                     *transition.effects,
                 ]
+        # A declaration only carries a number when it acts on a state that
+        # owns regions, and the source on its own level is then a composite or
+        # an owner, so the variable is always needed.
+        defines[name] = VarDefine(name=name, type="int", init=Integer(0))
+        names.append(name)
+        waiting.append((forced_id, lowered, relays))
+    gates: Dict[int, Transition] = {}
+    for forced_id, lowered, relays in waiting:
         for namespace, source in relays:
-            for other in namespace.transitions:
+            for other in list(namespace.transitions):
                 carries = getattr(other, _ID_MARK, None) == forced_id and not getattr(
                     other, _DECLARED_MARK, False
                 )
@@ -915,33 +941,77 @@ def lower_forced(
                 # declared transition included: taken with the variable raised
                 # it would enter its target with relays armed inside it.
                 if other.from_state == source.name and not carries:
-                    _and_condition(other, lowered)
-        # A declaration only carries a number when it acts on a state that
-        # owns regions, and the source on its own level is then a composite or
-        # an owner, so the variable is always needed.
-        defines[name] = VarDefine(name=name, type="int", init=Integer(0))
-        names.append(name)
+                    _give_way(namespace, other, lowered, gates)
     return tuple(names)
 
 
-def _and_condition(transition: Transition, condition: BinaryOp) -> None:
+def _give_way(
+    namespace: _Namespace,
+    transition: Transition,
+    condition: BinaryOp,
+    gates: Dict[int, Transition],
+) -> None:
     """
-    Add a condition to a transition, whatever trigger it has.
+    Make a transition wait until a hidden variable is lowered.
 
-    :class:`~pyfcstm.model.model.Transition` refuses an event and a guard
-    together because the language has no way to write them; lowering needs the
-    pair, so the guard is written to the field directly.
+    A transition without an event gets the condition added to its guard. A
+    transition with an event cannot: the model, like the language, lets a
+    transition have an event or a guard and never both. It is split through a
+    pseudo state instead, the way history lowering gates an evented initial
+    transition: the transition keeps its event and now ends in a *gate*, and a
+    second transition leads from the gate to the original target, guarded by
+    the condition and carrying the effects. While the variable is raised the
+    gate is a dead end, so validation rejects the first step; while it is
+    lowered the two steps behave like the transition as written.
 
+    :param namespace: State or region that holds ``transition``.
+    :type namespace: Union[pyfcstm.model.model.State, pyfcstm.model.region.Region]
     :param transition: Transition to restrict.
     :type transition: pyfcstm.model.model.Transition
     :param condition: Condition that must hold as well.
     :type condition: pyfcstm.model.expr.BinaryOp
+    :param gates: The second step of every transition split so far, keyed by
+        the identity of the first step; a transition that gives way to several
+        declarations keeps one gate and collects their conditions on it.
+    :type gates: Dict[int, pyfcstm.model.model.Transition]
     :return: ``None``.
     :rtype: None
     """
-    guard = (
-        condition
-        if transition.guard is None
-        else BinaryOp(transition.guard, "&&", condition)
+    if transition.event is None:
+        transition.guard = (
+            condition
+            if transition.guard is None
+            else BinaryOp(transition.guard, "&&", condition)
+        )
+        return
+    through = gates.get(id(transition))
+    if through is not None:
+        through.guard = BinaryOp(through.guard, "&&", condition)
+        return
+    number = 0
+    while "%s%d" % (_GATE_PREFIX, number) in namespace.substates:
+        number += 1
+    gate_name = "%s%d" % (_GATE_PREFIX, number)
+    gate = State(
+        name=gate_name,
+        path=(*namespace.path, gate_name),
+        substates={},
+        is_pseudo=True,
+        is_forced_gate=True,
     )
-    object.__setattr__(transition, "guard", guard)
+    gate.parent = namespace
+    namespace.substates[gate_name] = gate
+    namespace.substate_name_to_id[gate_name] = len(namespace.substate_name_to_id)
+    through = Transition(
+        from_state=gate_name,
+        to_state=transition.to_state,
+        event=None,
+        guard=condition,
+        effects=list(transition.effects),
+        _span=transition._span,
+    )
+    through.parent = namespace
+    transition.to_state = gate_name
+    transition.effects = []
+    namespace.transitions.append(through)
+    gates[id(transition)] = through

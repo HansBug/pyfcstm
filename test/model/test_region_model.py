@@ -43,6 +43,9 @@ def test_regions_preserve_namespace_order_and_export():
         ('Root',), ('Root', 'Job'), ('Root', 'Job', 'Right', 'On'),
         ('Root', 'Job', 'Right', 'Off'), ('Root', 'Job', 'Left', 'On'),
         ('Root', 'Idle'),
+        # The forced declaration of the model has an event, so the machine
+        # that runs gates it through a pseudo state added after the others.
+        ('Root', '__forced_gate_0'),
     ]
     owner = model.root_state.substates['Job']
     assert not owner.is_leaf_state and not owner.is_stoppable
@@ -86,7 +89,7 @@ def test_owner_forced_edge_reaches_every_region_as_a_group_exit():
     # On the level of the declaration: the copy that decides once comes first,
     # the declared edge stays behind it.
     assert [(edge.from_state, edge.to_state) for edge in model.root_state.transitions
-            if edge.is_forced] == [('Job', 'Idle'), ('Job', 'Idle')]
+            if edge.is_forced] == [('Job', 'Idle'), ('Job', '__forced_gate_0')]
     assert owner.transitions == []
     for region in owner.regions.values():
         forced = [edge for edge in region.transitions if edge.is_forced]

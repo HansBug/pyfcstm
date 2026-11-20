@@ -1,5 +1,7 @@
 """Forced transitions that reach regions, as the model exposes them."""
 
+import dataclasses
+
 import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
@@ -9,6 +11,7 @@ from pyfcstm.model import (
     load_state_machine_from_text,
     parse_dsl_node_to_state_machine,
 )
+from pyfcstm.model.region import walk_namespaces
 from pyfcstm.simulate import SimulationRuntime
 from test.testings.simulate_semantics import build_state_machine_from_case, iter_semantic_cases
 
@@ -54,10 +57,14 @@ def test_the_declaring_level_decides_in_two_steps_and_keeps_the_declared_transit
     assert (first.event, str(first.guard)) == (None, '__forced_0 == 1')
     assert [(op.var_name, str(op.expr)) for op in first.effects] == [('__forced_0', '0')]
     # The declared transition keeps its event for the case that control comes
-    # back without the variable raised, and gives way while it is raised.
-    assert declared.event.path_name == 'Root.Stop'
-    assert str(declared.guard) == '__forced_0 == 0'
+    # back without the variable raised. While the variable is raised it gives
+    # way: its event leads to a gate that only opens once the variable is lowered.
+    assert declared.event.path_name == 'Root.Stop' and declared.guard is None
     assert declared.effects == []
+    gate = root.substates[declared.to_state]
+    assert gate.is_pseudo and gate.is_forced_gate and gate.name == '__forced_gate_0'
+    hop, = [edge for edge in root.transitions if edge.from_state == gate.name]
+    assert (hop.to_state, hop.event, str(hop.guard)) == ('Idle', None, '__forced_0 == 0')
 
 
 def test_other_outgoing_transitions_give_way_while_the_variable_is_raised():
@@ -82,20 +89,32 @@ state Root {
 }''')
     assert sorted(model.defines) == ['__forced_0', '__forced_1', 'x']
     root = model.root_state
-    plain = next(edge for edge in root.transitions if edge.to_state == 'Plain')
-    evented = next(edge for edge in root.transitions if edge.to_state == 'Evented')
-    # Both declarations ask the variable to be lowered, the first one outermost.
+
+    def into(target):
+        return [edge for edge in root.transitions if edge.to_state == target]
+
+    def through_gate(event_path):
+        first = next(edge for edge in root.transitions
+                     if edge.event is not None and edge.event.path_name == event_path)
+        assert first.guard is None and root.substates[first.to_state].is_forced_gate
+        return next(edge for edge in root.transitions if edge.from_state == first.to_state)
+
+    # A transition without an event simply gets the extra conditions, the
+    # first declaration outermost.
+    plain, = into('Plain')
     assert str(plain.guard) == 'x > 0 && __forced_0 == 0 && __forced_1 == 0'
-    assert evented.event.path_name == 'Root.Other'
-    assert str(evented.guard) == '__forced_0 == 0 && __forced_1 == 0'
-    # The transitions of one declaration give way to the other one as well, so
-    # whichever declaration started the exit is the only one that goes on.
-    alpha = [edge for edge in root.transitions if edge.to_state == 'ToAlpha']
-    assert [str(edge.guard) for edge in alpha] == [
-        '__forced_0 == 1 && __forced_1 == 0', '__forced_0 == 0 && __forced_1 == 0']
-    beta = [edge for edge in root.transitions if edge.to_state == 'ToBeta']
-    assert str(beta[0].guard).startswith('__forced_1 == 1')
-    assert str(beta[1].guard) == '__forced_0 == 0 && __forced_1 == 0'
+    # A transition with an event keeps the event and reaches its target through
+    # a gate that asks every variable to be lowered.
+    assert str(through_gate('Root.Other').guard) == '__forced_0 == 0 && __forced_1 == 0'
+    assert through_gate('Root.Other').to_state == 'Evented'
+    # The two declarations give way to each other in the same way, so whichever
+    # one started the exit is the only one that goes on.
+    relay_alpha, hop_alpha = into('ToAlpha')
+    relay_beta, hop_beta = into('ToBeta')
+    assert str(relay_alpha.guard) == '__forced_0 == 1 && __forced_1 == 0'
+    assert str(relay_beta.guard) == '__forced_1 == 1 && __forced_0 == 0'
+    assert str(hop_alpha.guard) == str(hop_beta.guard) == '__forced_0 == 0 && __forced_1 == 0'
+    assert hop_alpha is through_gate('Root.Alpha') and hop_beta is through_gate('Root.Beta')
 
 
 def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
@@ -289,12 +308,15 @@ EVENTED_NEIGHBOURS = '''state Root {
 }'''
 
 
-def test_a_transition_that_gives_way_exports_its_event_and_the_machine_exports_the_plain_expansion():
-    """An event transition that gives way has an event and a guard; the language cannot write both."""
+def test_an_event_transition_gives_way_through_a_gate_and_the_machine_exports_the_plain_expansion():
     model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
-    go = next(edge for edge in model.root_state.transitions if edge.to_state == 'Next')
-    assert go.event is not None and go.guard is not None
-    assert str(go.to_ast_node()) == 'Run -> Next :: Go;'
+    root = model.root_state
+    go = next(edge for edge in root.transitions
+              if edge.event is not None and edge.event.name == 'Go')
+    gate = root.substates[go.to_state]
+    assert go.guard is None and gate.is_forced_gate
+    # Each of the three transitions of the model is something the language can write.
+    assert str(go.to_ast_node()) == 'Run -> %s :: Go;' % gate.name
     exported = str(model.to_ast_node())
     assert 'Run -> Idle :: Stop;' in exported and 'Run -> Off :: Kill;' in exported
     # Exporting what was exported gives the same text again.
@@ -302,6 +324,90 @@ def test_a_transition_that_gives_way_exports_its_event_and_the_machine_exports_t
     drawing = model.to_plantuml('full')
     assert '__forced' not in drawing
     assert drawing.count('root__run --> root__next') == 1
+
+
+def _region_cases():
+    return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
+
+
+def _transitions(model):
+    for namespace in walk_namespaces(model.root_state):
+        for edge in namespace.transitions:
+            yield namespace, edge
+
+
+@pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)
+def test_no_transition_carries_an_event_and_a_guard(case):
+    """The model keeps the rule of the language whatever a forced declaration lowers into."""
+    model = build_state_machine_from_case(case)
+    for _, edge in _transitions(model):
+        assert edge.event is None or edge.guard is None
+        # A transition that follows the rule can be copied like any dataclass.
+        assert dataclasses.replace(edge).to_state == edge.to_state
+
+
+def test_a_transition_through_a_gate_behaves_like_the_transition_as_written():
+    model = load_state_machine_from_text('''def int x = 0;
+def int seen = 0;
+state Root {
+    [*] -> Run;
+    state Run {
+        exit { seen = seen * 10 + 1; }
+        region A { [*] -> A1; state A1; A1 -> [*] :: Done; }
+    }
+    state Idle;
+    state Next { enter { seen = seen * 10 + 3; } }
+    !Run -> Idle :: Stop;
+    Run -> Next :: Go effect { x = x + 1; seen = seen * 10 + 2; }
+}''')
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    # Go alone does nothing while the region works.
+    runtime.cycle('Root.Run.Go')
+    assert str(runtime.configuration) == 'Root.Run{A: A1}'
+    # Once the region is done the transition is taken: exit, effect, enter,
+    # the effect exactly once.
+    result = runtime.cycle(['Root.Run.Go', 'Root.Run.A.A1.Done'], trace=True)
+    assert str(runtime.configuration) == 'Root.Next'
+    assert (runtime.vars['x'], runtime.vars['seen']) == (1, 123)
+    assert result.consumed_events == ('Root.Run.A.A1.Done', 'Root.Run.Go')
+    entered = [entry.state_path[-1] for entry in result.trace if entry.kind == 'state_enter']
+    # The trace shows the gate as one more state passed through.
+    go = next(edge for edge in model.root_state.transitions
+              if edge.event is not None and edge.event.name == 'Go')
+    assert model.root_state.substates[go.to_state].is_forced_gate
+    assert entered == [go.to_state, 'Next']
+
+
+def test_a_gate_shows_itself():
+    """A gate exists only in the machine that runs, so it has nothing to stand in for it."""
+    model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
+    gate = next(state for state in model.root_state.substates.values() if state.is_forced_gate)
+    assert str(gate.to_ast_node()) == 'pseudo state %s;' % gate.name
+    assert gate.name in gate.to_plantuml('full')
+    # The machine itself is shown without it.
+    assert '__forced' not in model.to_plantuml('full')
+    assert '__forced' not in str(model.to_ast_node())
+
+
+def test_a_state_the_user_named_like_a_gate_is_left_alone():
+    model = load_state_machine_from_text('''state Root {
+    [*] -> Run;
+    state Run { region A { [*] -> A1; state A1; A1 -> [*] :: Done; } }
+    state Idle;
+    pseudo state __forced_gate_0;
+    __forced_gate_0 -> Idle;
+    !Run -> Idle :: Stop;
+    Run -> __forced_gate_0 :: Go;
+}''')
+    root = model.root_state
+    gates = sorted(state.name for state in root.substates.values() if state.is_forced_gate)
+    assert gates == ['__forced_gate_1', '__forced_gate_2']
+    assert not root.substates['__forced_gate_0'].is_forced_gate
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    runtime.cycle(['Root.Run.Go', 'Root.Run.A.A1.Done'])
+    assert str(runtime.configuration) == 'Root.Idle'
 
 
 COMPOSITE_OVER_OWNER = '''state Root {
@@ -467,10 +573,6 @@ def test_a_faulty_declaration_is_reported_once_however_far_it_is_carried(declara
     assert [item.code for item in diagnostics] == [code]
     # The message quotes the declaration as written, not a carried copy of it.
     assert '! Run -> Idle' in diagnostics[0].message
-
-
-def _region_cases():
-    return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
 
 
 @pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)

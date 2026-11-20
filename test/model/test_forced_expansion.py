@@ -309,6 +309,12 @@ def test_the_transitions_listed_per_event_are_the_arrows_of_the_drawing():
         ('Root.Run.Inner', 'Junction', True),
     ]
     assert [edge.to_state for owner, edge in listed['Root.Stop'] if owner.path == ('Root',)] == ['Idle']
+    # ... and the drawing has exactly one arrow labelled with the event for each
+    # (the label is ``Stop`` where the event is declared and ``/Stop`` further in).
+    drawing = model.to_plantuml('full')
+    arrows = [line.strip() for line in drawing.splitlines() if line.strip().endswith('Stop')]
+    assert sorted(line.split(' --> ')[0].rsplit('__', 1)[-1] for line in arrows) == sorted(
+        edge.from_state.lower() for _, edge in listed['Root.Stop'])
 
 
 def test_a_state_is_shown_the_same_after_its_machine_is_no_longer_kept():

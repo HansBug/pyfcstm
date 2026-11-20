@@ -76,9 +76,13 @@ combo, numeric and guard-variable analyzers of
 :mod:`pyfcstm.diagnostics.analyzers` and
 :func:`pyfcstm.model.plantuml.collect_event_transitions`) use a machine
 built with it, so a drawing shows one transition per state the declaration
-applies to and no hidden variable. An algorithm that is handed a single
-transition or state judges that object, so code that walks a loaded model and
-passes its transitions on has the machine that runs judged. The DSL export
+applies to and no hidden variable. Two functions describe the machine they are
+handed instead:
+:func:`pyfcstm.diagnostics.analyzers.region_order.collect_region_order_diagnostics`
+and :func:`pyfcstm.diagnostics.analyzers.use_def.build_use_def_graph`. An
+algorithm that is handed a single transition or state judges that object, so
+code that walks a loaded model and passes its transitions on has the machine
+that runs judged. The DSL export
 writes the machine that runs, hidden variables and gates included, as it does
 for a lowered history; only a machine with exit-group transitions, the one
 thing the language cannot write, is exported in its plain expansion (see

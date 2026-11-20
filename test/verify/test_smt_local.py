@@ -5237,12 +5237,51 @@ class TestMachineLevelAlgorithmsOnForcedDeclarations:
             direct = algorithm(machine, variables(machine))
             inspected = through_inspect[algorithm.__name__]
             assert direct.kind == inspected.result_kind
-            assert direct.reason == inspected.reason
             # Kind, positions and every transition named are the same. The
             # witness values in a finding are whatever the solver picked; for
             # these two models it picks the same in either call.
             assert list(direct.diagnostics) == list(inspected.diagnostics)
             assert direct.diagnostics, "the model is built to give both a finding"
+
+    def test_a_direct_call_and_an_inspect_run_skip_for_the_same_reason(self):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            state Root {
+                event Stop;
+                [*] -> P;
+                state P {
+                    [*] -> a1 : if [sin(x) > 0];
+                    state a1 { during { x = x + 1; } }
+                }
+                state Q;
+                state R;
+                !P -> Q : /Stop;
+                P -> R : if [sin(x) > 0];
+                P -> Q : if [x > 2];
+            }
+            """
+        )
+        assert machine.forced_variables == ("__forced_0",)
+        through_inspect = {
+            item.algorithm_name: item
+            for item in run_inspect_algorithms(
+                machine,
+                max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+                max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
+            )
+        }
+
+        for algorithm in (
+            transition_shadowed_by_predecessor,
+            composite_init_guards_incomplete,
+        ):
+            direct = algorithm(machine, variables(machine))
+            inspected = through_inspect[algorithm.__name__]
+            # A guard the solver cannot express stops both the same way.
+            assert direct.kind == inspected.result_kind == "undecidable_skip"
+            assert direct.reason == inspected.reason
+            assert "sin" in direct.reason
 
 
 class TestCompositeInitGuardsIncomplete:

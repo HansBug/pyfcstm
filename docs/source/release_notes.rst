@@ -74,13 +74,15 @@ carry the declared event and guard. The transitions generated to pass the exit
 on, which only read ``__forced_<n>``, are not marked; they keep
 ``forced_origin``, the text of the declaration they were generated for. Code
 that walks ``walk_states()`` and ``State.transitions`` itself walks that
-machine. Besides the generated transitions it meets the gate states and the
-transitions through them, and a transition written beside a forced
-declaration carries the condition that makes it give way while the variable
-is raised. Nothing there marks what an author wrote apart from the rest.
+machine. Besides the generated transitions it meets the gate states
+``__forced_gate_<n>`` and the transitions through them, and a transition
+written beside a forced declaration carries the condition that makes it give
+way while the variable is raised. Nothing there marks what an author wrote
+apart from the rest.
 
-The analyses that take a whole machine judge a forced transition the way a
-drawing shows it, on the model as it was loaded:
+The following analyses of a whole machine judge a forced transition the way a
+drawing shows it, which for a model with a hidden variable means the model as
+it was loaded:
 :func:`pyfcstm.diagnostics.inspect.inspect_model`,
 :func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`, the functions
 of :mod:`pyfcstm.verify.topology`,
@@ -90,10 +92,16 @@ of :mod:`pyfcstm.verify.topology`,
 :func:`pyfcstm.diagnostics.analyzers.combo.collect_combo_warnings`,
 :func:`pyfcstm.diagnostics.analyzers.numeric.collect_numeric_warnings`,
 :func:`pyfcstm.diagnostics.analyzers.data_flow.collect_data_flow_warnings` and
-:func:`pyfcstm.model.plantuml.collect_event_transitions`. The algorithms of
-:mod:`pyfcstm.verify` that take a single transition or state judge the object
-they are handed. Called in a loop over a loaded model they therefore judge
-the machine that runs, and the positions they report count its transitions.
+:func:`pyfcstm.model.plantuml.collect_event_transitions`. For such a model
+the owners and transitions that the last one returns belong to that view;
+they are not the objects ``walk_states()`` yields. Two functions describe the
+machine they are handed and are unchanged:
+:func:`pyfcstm.diagnostics.analyzers.region_order.collect_region_order_diagnostics`
+and :func:`pyfcstm.diagnostics.analyzers.use_def.build_use_def_graph`. The
+algorithms of :mod:`pyfcstm.verify` that take a single transition or state
+judge the object they are handed. Called in a loop over a loaded model they
+therefore judge the machine that runs, and the positions they report count
+its transitions.
 ``run_inspect_algorithms``, and ``inspect_model`` with ``enable_verify=True``,
 run the same algorithms with every forced transition as written.
 

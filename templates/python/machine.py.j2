@@ -1723,22 +1723,29 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
 {% endif -%}
 {%- endmacro %}
 {%- macro render_guard_lambda(guard) -%}
-{#- The lambda argument of a guard method, laid out the way ``ruff format`` leaves it.
-    The line starts at column 16 of the generated file. A guard that fits stays on
-    one line; one that fits inside parentheses is wrapped once; a longer one is
-    split in front of every ``and`` / ``or`` that is not inside brackets. -#}
+{#- The lambda argument of a guard method. In a model with forced transitions,
+    which lengthen guards, it is laid out the way ``ruff format`` leaves it: the
+    line starts at column 16 of the generated file, a guard that fits stays on
+    one line, one that fits inside parentheses is wrapped once, and a longer one
+    is split in front of every ``and`` / ``or`` that is not inside brackets. Every
+    other model keeps the guard on the lambda line, so its output is unchanged. -#}
 {%- set expr = guard.to_ast_node() | expr_render(style='python_scope_expr') -%}
-{%- if (expr | length) <= 51 -%}
+{%- if not model.forced_variables or (expr | length) <= 51 -%}
 {{ '            ' }}lambda scope=scope: {{ expr }},
 {%- elif (expr | length) <= 68 -%}
 {{ '            ' }}lambda scope=scope: (
 {{ '                ' }}{{ expr }}
 {{ '            ' }}),
 {%- else -%}
-{%- set ns = namespace(depth=0, skip=0, text='') -%}
+{%- set ns = namespace(depth=0, skip=0, text='', conditional=false) -%}
 {%- for ch in expr -%}
 {%- if ns.skip > 0 -%}
 {%- set ns.skip = ns.skip - 1 -%}
+{%- elif ch == ' ' and ns.depth == 0 and expr[loop.index0:loop.index0 + 4] == ' if ' -%}
+{#- A conditional expression binds looser than ``and`` / ``or``; splitting in
+    front of those would misread it, so it stays on the lambda line. -#}
+{%- set ns.conditional = true -%}
+{%- set ns.text = ns.text ~ ch -%}
 {%- elif ch == ' ' and ns.depth == 0 and expr[loop.index0:loop.index0 + 5] == ' and ' -%}
 {%- set ns.text = ns.text ~ '\n                and ' -%}
 {%- set ns.skip = 4 -%}
@@ -1754,9 +1761,13 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
 {%- set ns.text = ns.text ~ ch -%}
 {%- endif -%}
 {%- endfor -%}
+{%- if ns.conditional -%}
+{{ '            ' }}lambda scope=scope: {{ expr }},
+{%- else -%}
 {{ '            ' }}lambda scope=scope: (
 {{ '                ' }}{{ ns.text }}
 {{ '            ' }}),
+{%- endif -%}
 {%- endif -%}
 {%- endmacro %}
 {%- macro render_init_guard_method(state, idx, transition) -%}

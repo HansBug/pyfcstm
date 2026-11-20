@@ -27,8 +27,10 @@ four behaviours change:
   that enters ``S`` through a pseudo state, the entry now completes and the
   forced transition is taken in the next cycle.
 - **A target that cannot be entered.** The forced transition then takes
-  nothing: the machine stays where it rests, the event is not consumed, and no
-  other transition that leaves ``S`` picks the machine up half-way.
+  nothing: it does not leave the state the machine rests in and does not
+  consume the event, and no other transition that leaves ``S`` picks the
+  machine up half-way. The transitions of the resting state itself are tried
+  as usual.
 
 ``CycleResult.consumed_events`` lists the event of a forced transition once.
 It used to list it once for every level that was left.
@@ -41,10 +43,11 @@ Three things become visible:
   snapshots of abstract handlers and the variable tables of generated code. It
   is 0 whenever the machine rests.
   :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names. A
-  hot start does not have to supply these variables and rejects a non-zero
-  value, in :class:`pyfcstm.simulate.runtime.SimulationRuntime`, in the ``init``
-  command of ``pyfcstm simulate`` and in the five built-in templates; BMC
-  constrains them to 0 in the first frame.
+  hot start in :class:`pyfcstm.simulate.runtime.SimulationRuntime`, in the
+  ``init`` command of ``pyfcstm simulate`` and in the generated Python runtime
+  does not have to supply these variables. The C-family runtimes take a whole
+  variable struct, in which a caller leaves them zeroed. Every one of these
+  rejects a non-zero value, and BMC constrains them to 0 in the first frame.
 - A transition with an event that leaves a state on the way of a forced exit is
   split through a generated pseudo state ``__forced_gate_<n>``. The pseudo
   state appears in ``walk_states()`` and as one more state passed through in an

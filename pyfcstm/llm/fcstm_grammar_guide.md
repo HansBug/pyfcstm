@@ -394,7 +394,8 @@ The event and the guard of a forced transition are decided once, at the state
 the machine currently rests in. Exit actions on the way out cannot cancel it, a
 guard may ask `active("...")` about a state inside the source, and a pseudo
 state that an entry only passes through does not take it. If the target cannot
-be entered, nothing happens and the event stays unused. Model conversion may add
+be entered, the forced transition does nothing and does not use the event; the
+transitions of the current state are still tried. Model conversion may add
 variables named `__forced_<n>` and pseudo states named `__forced_gate_<n>`; do
 not write to them.
 

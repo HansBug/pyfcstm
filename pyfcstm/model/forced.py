@@ -540,12 +540,11 @@ class ForcedExpansion:
         work = [(item.node, item.forced_id, item.exit_levels, False) for item in inherited]
         work.extend((item, None, 0, True) for item in node.force_transitions)
         for f_transnode, carried_id, carried_levels, local in work:
-            # I3 from PR-110: if either side of a forced transition is
-            # unresolved, skip the rest of the per-transition processing
-            # AND the inherit-tuple append. Otherwise collect mode keeps a
-            # bad ``(from_state, to_state, ...)`` tuple that quietly
-            # corrupts the inheritance phase (bad to_state being attached
-            # to a real substate's transitions).
+            # If either side of a forced transition is unresolved, skip the
+            # rest of its processing and do not record it. Otherwise collect
+            # mode keeps a record with a bad source or target that quietly
+            # corrupts what the child states inherit (a bad target being
+            # attached to the transitions of a real substate).
             unresolved = False
             # A numbered declaration is carried into every namespace below
             # it; what is wrong with its trigger was already reported where it
@@ -620,7 +619,7 @@ class ForcedExpansion:
                 # we emit the diagnostic and skip the suffix resolution —
                 # without this guard, collect mode would silently fabricate
                 # an Event in whatever partial state ``start_state`` landed
-                # on (C1 from PR-110 review).
+                # on.
                 path_resolved = True
                 for seg in my_event_id.path[:-1]:
                     if namespace_child(start_state, seg) is not None:
@@ -983,9 +982,10 @@ def _free_name(taken: Set[str], first: int) -> str:
     :param first: Smallest number to try, the count of variables handed out so
         far.
     :type first: int
-    :return: ``__forced_<n>`` for the smallest ``n >= first`` that no used name
-        can be mistaken for. Identifier conversion of the target languages
-        collapses runs of underscores, so ``_forced_<n>`` counts as taken too.
+    :return: ``__forced_<n>`` for the smallest ``n >= first`` whose name is
+        free. Identifier conversion of the target languages collapses runs of
+        leading underscores, so a used ``_forced_<n>`` with any number of
+        leading underscores counts as taken too.
     :rtype: str
     """
     number = first

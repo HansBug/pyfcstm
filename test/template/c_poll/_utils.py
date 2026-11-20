@@ -663,6 +663,8 @@ class _CPollRuntime(NativeRoleSupport):
         # The generated API takes a whole struct. A caller zeroes it before
         # filling in the user variables, which leaves the hidden variable of a
         # forced transition at the only value it has while the machine rests.
+        # This adapter does the same for a snapshot that leaves it out; the
+        # generated code itself only rejects a non-zero value.
         initial_vars = {
             **dict.fromkeys(self._model.forced_variables, 0),
             **initial_vars,

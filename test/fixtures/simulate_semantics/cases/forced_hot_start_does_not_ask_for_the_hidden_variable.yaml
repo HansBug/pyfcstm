@@ -3,7 +3,8 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/581
   notes:
-  - The declaration on the composite Run is carried out with the hidden variable __forced_0, which is 0 whenever the machine rests. Every runner fills it in, so the snapshot names the user variable only, and the forced transition works from the restored position.
+  - The declaration on the composite Run is carried out with the hidden variable __forced_0, which is 0 whenever the machine rests. The simulator and the generated Python runtime fill it in, so the snapshot names the user variable only, and the forced transition works from the restored position.
+  - The C-family runtimes take a whole variable struct. Their runner leaves the hidden member zeroed, as the generated guide tells a caller to; what this case shows for them is that a restore with the member at 0 works.
 categories:
 - runtime
 - hot_start

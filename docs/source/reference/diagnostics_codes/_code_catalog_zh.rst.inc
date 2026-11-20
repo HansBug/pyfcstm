@@ -482,7 +482,7 @@ E_UNSUPPORTED_FEATURE
 .. diagnostics-ref E_UNSUPPORTED_FEATURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
 
-所选消费者无法保留 region 模型或活动查询的语义，因此拒绝操作。Python 模型构建、图形以及 JavaScript 前端（模型、语义分析、图形预览）已经支持二者；尚未适配的执行、渲染和 inspect/verify 分析入口仍拒绝。
+所选消费者无法保留 region 模型或活动查询的语义，因此拒绝操作。Python 模型构建、\ ``SimulationRuntime``\ 的冷启动仿真、图形以及 JavaScript 前端（模型、语义分析、图形预览）已经支持二者；热启动、\ ``pyfcstm simulate``\ 命令、BMC、渲染和 inspect/verify 分析入口尚未适配，仍拒绝。
 
 .. list-table:: Refs 字段契约
    :header-rows: 1

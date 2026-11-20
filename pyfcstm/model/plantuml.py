@@ -1157,13 +1157,16 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         ('Region', 'A')
     """
     from collections import defaultdict
+    from .forced import is_forced_carrier
     from .region import walk_namespaces
 
     event_map = defaultdict(list)
 
     for state in walk_namespaces(state_machine.root_state):
         for transition in state.transitions:
-            if transition.event is not None:
+            # The transitions that carry out a forced declaration reaching
+            # regions are not drawn, so they are not counted either.
+            if transition.event is not None and not is_forced_carrier(transition):
                 event_path = '.'.join(transition.event.path)
                 event_map[event_path].append((state, transition))
 

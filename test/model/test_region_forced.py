@@ -3,7 +3,15 @@
 import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import (
+    PlantUMLOptions,
+    load_state_machine_from_text,
+    parse_dsl_node_to_state_machine,
+)
+from pyfcstm.model.forced import authored_guard, forced_flag_names, is_forced_carrier
+from pyfcstm.simulate import SimulationRuntime
+from test.testings.simulate_semantics import build_state_machine_from_case, iter_semantic_cases
 
 pytestmark = pytest.mark.unittest
 
@@ -46,8 +54,13 @@ def test_the_declaring_level_decides_in_two_steps_and_keeps_the_declared_transit
     first, declared = [edge for edge in root.transitions if edge.from_state == 'Run']
     assert (first.event, str(first.guard)) == (None, '__forced_0 == 1')
     assert [(op.var_name, str(op.expr)) for op in first.effects] == [('__forced_0', '0')]
-    assert declared.event.path_name == 'Root.Stop' and declared.guard is None
+    # The declared transition keeps its event for the case that control comes
+    # back without the variable raised, and gives way while it is raised.
+    assert declared.event.path_name == 'Root.Stop'
+    assert str(declared.guard) == '__forced_0 == 0'
+    assert authored_guard(declared) is None
     assert declared.effects == []
+    assert [is_forced_carrier(edge) for edge in (first, declared)] == [True, False]
 
 
 def test_other_outgoing_transitions_give_way_while_the_variable_is_raised():
@@ -81,10 +94,12 @@ state Root {
     # The transitions of one declaration give way to the other one as well, so
     # whichever declaration started the exit is the only one that goes on.
     alpha = [edge for edge in root.transitions if edge.to_state == 'ToAlpha']
-    assert [str(edge.guard) for edge in alpha] == ['__forced_0 == 1 && __forced_1 == 0', '__forced_1 == 0']
+    assert [str(edge.guard) for edge in alpha] == [
+        '__forced_0 == 1 && __forced_1 == 0', '__forced_0 == 0 && __forced_1 == 0']
     beta = [edge for edge in root.transitions if edge.to_state == 'ToBeta']
     assert str(beta[0].guard).startswith('__forced_1 == 1')
-    assert str(beta[1].guard) == '__forced_0 == 0'
+    assert str(beta[1].guard) == '__forced_0 == 0 && __forced_1 == 0'
+    assert sorted(forced_flag_names(root)) == ['__forced_0', '__forced_1']
 
 
 def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
@@ -225,3 +240,137 @@ def test_a_wildcard_declaration_keeps_the_transition_of_a_pseudo_sibling_on_its_
     # Below the declaration a pseudo state is passed through, not left.
     region = model.root_state.substates['Run'].regions['A']
     assert [edge.from_state for edge in region.transitions if edge.is_forced] == ['A1']
+
+
+def test_diagram_snapshot_shows_the_declaration_once_and_hides_how_it_is_carried_out():
+    model = load_state_machine_from_text('''def int x = 1;
+state Root {
+    event Stop;
+    [*] -> Run;
+    state Run {
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; }
+    }
+    state Idle;
+    state Next;
+    !Run -> Idle : /Stop;
+    Run -> Next : if [x > 0];
+}''')
+    snapshot = model.diagram().to_dict()
+
+    def labels(node):
+        found = [(item['label'], item['forced']) for item in node['transitions']]
+        for child in node['children']:
+            found.extend(labels(child))
+        return found
+
+    assert labels(snapshot['rootState']) == [
+        ('Run -> Idle /Stop', True),
+        ('[*] -> Run', False),
+        ('Run -> Next if [x > 0]', False),
+        ('[*] -> A1', False),
+        ('[*] -> B1', False),
+    ]
+    assert [item['name'] for item in snapshot['variables']] == ['x']
+    assert snapshot['summary']['transitions'] == 5
+    assert snapshot['summary']['variables'] == 1
+    # Stop is drawn on one transition, so it gets no legend entry and no colour.
+    assert snapshot['eventLegend'] == []
+    assert [item['eventColor'] for item in snapshot['rootState']['transitions']] == [None, None, None]
+    assert '__forced' not in model.diagram().to_json()
+
+
+EVENTED_NEIGHBOURS = '''state Root {
+    [*] -> Run;
+    state Run { region A { [*] -> A1; state A1; } }
+    state Idle;
+    state Off;
+    state Next;
+    !Run -> Idle :: Stop;
+    !Run -> Off :: Kill;
+    Run -> Next :: Go;
+}'''
+
+
+def test_transitions_that_give_way_export_with_the_guard_they_had():
+    """An event transition that gives way has an event and a guard; the language cannot write both."""
+    model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
+    go = next(edge for edge in model.root_state.transitions if edge.to_state == 'Next')
+    assert go.event is not None and go.guard is not None
+    assert str(go.to_ast_node()) == 'Run -> Next :: Go;'
+    exported = str(model.to_ast_node())
+    assert 'Run -> Idle :: Stop;' in exported and 'Run -> Off :: Kill;' in exported
+    # Exporting what was exported gives the same text again.
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
+    drawing = model.to_plantuml('full')
+    assert '__forced' not in drawing
+    assert drawing.count('root__run --> root__next') == 1
+
+
+def test_event_legend_counts_only_what_is_drawn():
+    text = load_state_machine_from_text(OWNER).to_plantuml(
+        PlantUMLOptions(event_visualization_mode='both'))
+    assert '**Stop** (1 transitions)' in text
+    # A single-use event stays uncoloured.
+    assert not [line for line in text.splitlines() if '-[#' in line]
+
+
+@pytest.mark.parametrize('block', [
+    'enter { __forced_0 = 1; seen = __forced_0; }',
+    'enter { if [seen == 0] { __forced_0 = 1; seen = __forced_0; } }',
+])
+def test_a_block_temporary_is_never_taken_for_the_hidden_variable(block):
+    model = load_state_machine_from_text('''def int seen = 0;
+state Root {
+    event Stop;
+    [*] -> Run;
+    state Run {
+        %s
+        region A { [*] -> A1; state A1; A1 -> [*] :: Done; }
+    }
+    state Idle;
+    state Next;
+    !Run -> Idle : /Stop;
+    Run -> Next;
+}''' % block)
+    assert sorted(forced_flag_names(model.root_state)) == ['__forced_1']
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    assert runtime.vars == {'seen': 1, '__forced_1': 0}
+    # Stop was never given, so the ordinary transition of the owner is taken.
+    runtime.cycle('Root.Run.A.A1.Done')
+    assert str(runtime.configuration) == 'Root.Next'
+
+
+@pytest.mark.parametrize('declaration,code', [
+    ('!Run -> Idle : if [missing > 1];', 'E_UNDEFINED_VAR'),
+    ('!Run -> Idle : /Nowhere.Stop;', 'E_MISSING_STATE'),
+])
+def test_a_faulty_declaration_is_reported_once_however_far_it_is_carried(declaration, code):
+    program = parse_with_grammar_entry('''state Root {
+    [*] -> Run;
+    state Run {
+        region A { [*] -> A1; state A1; state A2; }
+        region B { [*] -> B1; state B1; }
+    }
+    state Idle;
+    %s
+}''' % declaration, 'state_machine_dsl')
+    _, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+    assert [item.code for item in diagnostics] == [code]
+    # The message quotes the declaration as written, not a carried copy of it.
+    assert '! Run -> Idle' in diagnostics[0].message
+
+
+def _region_cases():
+    return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
+
+
+@pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)
+def test_every_region_model_of_the_shared_corpus_exports(case):
+    """Whatever the lowering puts into a model, the text exports must still work."""
+    model = build_state_machine_from_case(case)
+    drawing = model.to_plantuml('full')
+    assert '__forced' not in drawing
+    exported = str(model.to_ast_node())
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported

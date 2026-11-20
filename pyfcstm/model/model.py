@@ -1599,9 +1599,10 @@ def _write_plantuml_transitions(
     :rtype: None
     """
     from .active import restore_active_expression, restore_active_statements
+    from .forced import authored_guard, is_forced_carrier
 
     for trans in namespace.transitions:
-        if getattr(trans, "_forced_hidden", False):
+        if is_forced_carrier(trans):
             # Carries out a forced declaration reaching regions; the
             # declaration is drawn once, as the transition written on its level.
             continue
@@ -1649,7 +1650,7 @@ def _write_plantuml_transitions(
             elif config.show_transition_guards and trans.guard is not None:
                 # A transition that gives way to a forced declaration shows the
                 # guard it had before.
-                guard = getattr(trans, "_forced_authored_guard", (trans.guard,))[0]
+                guard = authored_guard(trans)
                 if guard is not None:
                     guard = restore_active_expression(guard, active_paths)
                     print(f" : {guard.to_ast_node()}", file=tf, end="")
@@ -2663,7 +2664,10 @@ class State(AstExportable, PlantUMLExportable):
         Event paths are written relative to ``self`` when the event lives
         below it and as absolute paths otherwise, which is why the owning
         namespace is needed: the same transition exports differently from a
-        different context.
+        different context. A transition that forced lowering made give way
+        (see :mod:`pyfcstm.model.forced`) is exported with the guard it had
+        before, because the language cannot write an event and a guard on one
+        transition.
 
         :param self: The parent state or region, or None
         :type self: Optional[Union['State', Region]]
@@ -2722,13 +2726,14 @@ class State(AstExportable, PlantUMLExportable):
         else:
             event_id = None
 
+        from .forced import authored_guard
+
+        guard = authored_guard(transition)
         node = dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
             event_id=event_id,
-            condition_expr=transition.guard.to_ast_node()
-            if transition.guard is not None
-            else None,
+            condition_expr=guard.to_ast_node() if guard is not None else None,
             post_operations=[item.to_ast_node() for item in transition.effects],
             event_scope=transition.event_scope,
             **_ast_doc_kwargs(dsl_nodes.TransitionDefinition, transition.doc),
@@ -3904,8 +3909,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
         config = options.to_config()
         # Hidden activity flags are an implementation detail of ``active()``,
         # and the flags of forced transitions of the declaration lowering.
+        from .forced import forced_flag_names
+
         hidden_flags = {query.variable_name for query in self.active_queries}
-        hidden_flags |= getattr(self.root_state, "_forced_flags", frozenset())
+        hidden_flags |= forced_flag_names(self.root_state)
         shown_defines = {
             name: item
             for name, item in self.defines.items()
@@ -4507,10 +4514,12 @@ def parse_dsl_node_to_state_machine(
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
         return None, sink.diagnostics
+    from .forced import forced_flag_names
+
     if (
         machine.history_owners
         or machine.active_queries
-        or getattr(machine.root_state, "_forced_flags", None)
+        or forced_flag_names(machine.root_state)
     ):
         # Inspect and verify judge the model as written; keep what is needed
         # to build it on first use (see ``StateMachine._as_written``).
@@ -5494,6 +5503,13 @@ def _build_assembled_state_machine(
             # corrupts the inheritance phase (bad to_state being attached
             # to a real substate's transitions).
             unresolved = False
+            # A declaration that reaches regions is carried into every
+            # namespace below it; what is wrong with its trigger was already
+            # reported where it was written.
+            report = (
+                id(f_transnode) in local_force_ids
+                or getattr(f_transnode, "_forced_id", None) is None
+            )
             if f_transnode.from_state == dsl_nodes.ALL:
                 from_state = dsl_nodes.ALL
             else:
@@ -5569,26 +5585,27 @@ def _build_assembled_state_machine(
                     if namespace_child(start_state, seg) is not None:
                         start_state = namespace_child(start_state, seg)
                     else:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_MISSING_STATE",
-                                severity="error",
-                                message=(
-                                    f"Cannot find state "
-                                    f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
-                                    "for transition:\n"
-                                    f"{str(f_transnode.without_docs())}"
-                                ),
-                                span=getattr(f_transnode, "_span", None),
-                                refs={
-                                    "state_path": ".".join(
-                                        (*base_path, *my_event_id.path[:-1])
+                        if report:
+                            sink.emit(
+                                ModelDiagnostic(
+                                    code="E_MISSING_STATE",
+                                    severity="error",
+                                    message=(
+                                        f"Cannot find state "
+                                        f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
+                                        "for transition:\n"
+                                        f"{str(f_transnode.without_docs())}"
                                     ),
-                                    "referenced_from": ".".join(current_path),
-                                    "reason": "event_path_not_found",
-                                },
+                                    span=getattr(f_transnode, "_span", None),
+                                    refs={
+                                        "state_path": ".".join(
+                                            (*base_path, *my_event_id.path[:-1])
+                                        ),
+                                        "referenced_from": ".".join(current_path),
+                                        "reason": "event_path_not_found",
+                                    },
+                                )
                             )
-                        )
                         path_resolved = False
                         break
 
@@ -5617,7 +5634,7 @@ def _build_assembled_state_machine(
                 for var in guard.list_variables():
                     if var.name not in d_defines:
                         unknown_vars.append(var.name)
-                for unknown_var in unknown_vars:
+                for unknown_var in unknown_vars if report else ():
                     sink.emit(
                         ModelDiagnostic(
                             code="E_UNDEFINED_VAR",

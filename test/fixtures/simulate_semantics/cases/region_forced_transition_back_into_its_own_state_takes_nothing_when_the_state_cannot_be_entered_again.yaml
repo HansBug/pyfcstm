@@ -1,0 +1,35 @@
+title: A forced transition that targets its own source takes nothing when the source cannot be entered again, even
+  though a composite inside it would finish at once
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Entered a second time, S goes to D, which finishes at once and has no way on, so S cannot be entered. The forced
+    transition therefore must not happen. While its decision is carried up, the declared transition gives way like
+    every other outgoing transition; taken then, it would enter S with the decision still pending and the composite
+    D inside it would be taken away a second time, ending in L with the event used twice.
+categories:
+- regions
+- runtime
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.S.W{A: A1}'
+    vars:
+      n: 1
+    delta: false
+- cycle: Root.Stop
+  expect:
+    configuration: 'Root.S.W{A: A1}'
+    vars:
+      n: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.S.W{A: A1}'
+    vars:
+      n: 1
+    delta: false

@@ -12,22 +12,22 @@ pyfcstm.model.forced
 .. autodata:: __all__
 
 
-HIDDEN\_MARK
+is\_forced\_carrier
 -----------------------------------------------------
 
-.. autodata:: HIDDEN_MARK
+.. autofunction:: is_forced_carrier
 
 
-AUTHORED\_GUARD\_MARK
+authored\_guard
 -----------------------------------------------------
 
-.. autodata:: AUTHORED_GUARD_MARK
+.. autofunction:: authored_guard
 
 
-FLAGS\_MARK
+forced\_flag\_names
 -----------------------------------------------------
 
-.. autodata:: FLAGS_MARK
+.. autofunction:: forced_flag_names
 
 
 lower\_forced

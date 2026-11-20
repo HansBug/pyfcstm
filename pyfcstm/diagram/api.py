@@ -67,6 +67,7 @@ from ..model.model import (
 from ..utils.validate import Span
 from ..model.region import Region, walk_namespaces
 from ..model.active import restore_active_expression
+from ..model.forced import authored_guard, forced_flag_names, is_forced_carrier
 from .engine import (
     MAX_EXPORT_PNG_BYTES,
     MAX_EXPORT_TEXT_BYTES,
@@ -406,7 +407,9 @@ def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
     states are ``children``, its own transitions are ``transitions`` and its
     ``>> during`` aspects are ``actions``. ``active("path")`` is shown as
     written in guards, and the flag writes model construction added are left
-    out of ``actions``.
+    out of ``actions``. A forced transition that reaches regions is shown once,
+    as the transition written on its own level: the transitions and the
+    condition that model construction added to carry it out are left out.
 
     :param state: State or region to describe.
     :param ordinal: Position of a region among its siblings, ``None`` for a state.
@@ -417,20 +420,22 @@ def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
     is_region = isinstance(state, Region)
     active_paths = _active_paths(state)
     transitions = []
-    for index, transition in enumerate(state.transitions):
+    declared = [item for item in state.transitions if not is_forced_carrier(item)]
+    for index, transition in enumerate(declared):
         source_init = _is_marker(transition.from_state, "INIT_STATE")
         target_exit = _is_marker(transition.to_state, "EXIT_STATE")
         source_label = "[*]" if source_init else _text(transition.from_state)
         target_label = "[*]" if target_exit else _text(transition.to_state)
         trigger = _event_reference(transition) if transition.event else ""
-        if transition.guard is None:
+        written_guard = authored_guard(transition)
+        if written_guard is None:
             guard = None
         elif active_paths:
             guard = _text(
-                restore_active_expression(transition.guard, active_paths).to_ast_node()
+                restore_active_expression(written_guard, active_paths).to_ast_node()
             )
         else:
-            guard = _text(transition.guard)
+            guard = _text(written_guard)
         effects = _effect_lines(transition, active_paths)
         transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
@@ -535,7 +540,9 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
 
     Regions are not states, but the events, transitions and aspects declared in
     them are counted. The flag writes that model construction adds for
-    ``active()`` queries are not counted: the diagram does not show them.
+    ``active()`` queries, and the transitions it adds to carry out a forced
+    transition that reaches regions, are not counted: the diagram does not
+    show them.
 
     :param machine: State machine being snapshotted.
     :return: ``(states, events, transitions, actions)``.
@@ -544,7 +551,12 @@ def _collect_counts(machine: StateMachine) -> Tuple[int, int, int, int]:
     states = list(machine.walk_states())
     namespaces = list(walk_namespaces(machine.root_state))
     events = [event for ns in namespaces for event in ns.events.values()]
-    transitions = [transition for ns in namespaces for transition in ns.transitions]
+    transitions = [
+        transition
+        for ns in namespaces
+        for transition in ns.transitions
+        if not is_forced_carrier(transition)
+    ]
     actions = []
     for ns in namespaces:
         paths = _active_paths(ns)
@@ -581,6 +593,7 @@ def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
         transition
         for state in walk_namespaces(machine.root_state)
         for transition in state.transitions
+        if not is_forced_carrier(transition)
     ]
     event_counts: Dict[str, int] = {}
     for transition in transitions:
@@ -624,6 +637,7 @@ def _build_diagram_dict(machine: StateMachine) -> Dict[str, Any]:
         for path in sorted(event_colors)
     ]
     hidden_flags = {query.variable_name for query in machine.active_queries}
+    hidden_flags |= forced_flag_names(machine.root_state)
     variables = [
         {"name": item.name, "valueType": item.type, "initializer": _text(item.init)}
         for item in machine.defines.values()

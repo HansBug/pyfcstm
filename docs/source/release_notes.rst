@@ -30,6 +30,9 @@ four behaviours change:
   nothing: the machine stays where it rests, the event is not consumed, and no
   other transition that leaves ``S`` picks the machine up half-way.
 
+``CycleResult.consumed_events`` lists the event of a forced transition once.
+It used to list it once for every level that was left.
+
 Three things become visible:
 
 - Each such declaration is carried out with a hidden ``int`` variable
@@ -47,17 +50,25 @@ Three things become visible:
   state appears in ``walk_states()`` and as one more state passed through in an
   execution trace.
 - ``to_ast_node()`` exports the machine that runs, with those variables and
-  pseudo states, as it already does for history. Loading the exported text
-  gives a machine with the same behaviour. A model whose forced transition
-  takes the regions of a state away is the exception: it still exports that
-  declaration in the older form.
+  pseudo states, as it already does for history. A machine loaded from the
+  exported text takes the same cycles. The text has no forced transition left
+  in it, so there ``__forced_<n>`` is an ordinary variable: a hot start has to
+  supply it, and BMC does not constrain it. A model in which a forced
+  transition takes the regions of a state away is the exception: it is still
+  exported with every forced transition in the older form, and a machine
+  loaded from that text can behave differently.
 
 PlantUML, the diagram viewer and ``pyfcstm inspect`` keep showing a forced
-transition as one transition per state it applies to. A declaration whose
-sources have nothing inside them stays one transition per source and gets no
-variable. In collect mode (``parse_dsl_node_to_state_machine(..., collect=True)``)
-a faulty forced declaration is reported once instead of once per level it was
-expanded to.
+transition as one transition per state it applies to. For a model with such a
+declaration they show the model as it was loaded: a model object edited
+afterwards is drawn without the edit. A declaration whose sources have nothing
+inside them stays one transition per source and gets no variable. In collect
+mode (``parse_dsl_node_to_state_machine(..., collect=True)``) a faulty forced
+declaration is reported once instead of once per level it was expanded to.
+
+In the machine that runs, ``Transition.is_forced`` marks the transitions that
+carry the declared event and guard. The transitions generated to pass the exit
+on, which only read ``__forced_<n>``, are not marked.
 
 Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new

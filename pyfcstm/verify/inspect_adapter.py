@@ -889,6 +889,11 @@ def run_inspect_algorithms(
     initial-lifecycle check of a state inside a region returns an
     ``undecidable_skip`` result.
 
+    Forced declarations are judged in their plain expansion. A machine that
+    lowered them (see :mod:`pyfcstm.model.forced`) carries hidden variables,
+    relay transitions and gates that the author never wrote; the algorithms
+    run on the machine without them, so no result names what lowering added.
+
     :param machine: State machine to verify.
     :type machine: StateMachine
     :param max_complexity_tier: Maximum complexity tier allowed by the
@@ -924,6 +929,7 @@ def run_inspect_algorithms(
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
 
+    machine = machine._with_plain_forced()
     has_regions = machine.has_regions
     has_active_queries = bool(machine.active_queries)
 

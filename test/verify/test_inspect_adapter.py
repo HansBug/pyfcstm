@@ -898,3 +898,29 @@ def test_run_inspect_algorithms_rejects_unknown_complexity_limit():
             max_complexity_tier=cast(ComplexityTier, "unknown_tier"),
             registry={},
         )
+
+
+def test_run_inspect_algorithms_judges_forced_declarations_as_written():
+    """The variables and relays of forced lowering are no findings of the model."""
+    machine = _machine('''def int x = 0;
+state Root {
+    event Stop;
+    [*] -> Run;
+    state Run {
+        region A { [*] -> A1; state A1 { during { x = x + 1; } } }
+        region B { [*] -> B1; state B1; }
+    }
+    state Idle;
+    !Run -> Idle : /Stop;
+}''')
+    # The machine that runs carries a hidden variable for the declaration.
+    assert list(machine.defines) == ['x', '__forced_0']
+    results = run_inspect_algorithms(machine, max_complexity_tier='smt_linear')
+    by_name = {result.algorithm_name: result for result in results}
+    assert 'forced_guard_unsat_under_init' in by_name
+    # The declaration has no guard at all, so there is nothing to call
+    # unsatisfiable, and no result names what lowering added.
+    assert not by_name['forced_guard_unsat_under_init'].diagnostics
+    for result in results:
+        assert '__forced' not in repr(result)
+

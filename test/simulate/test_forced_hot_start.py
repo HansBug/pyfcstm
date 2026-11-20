@@ -1,5 +1,7 @@
 """Hot start of machines whose forced declarations were lowered into a hidden variable."""
 
+import logging
+
 import pytest
 
 from pyfcstm.entry.simulate.commands import CommandProcessor
@@ -79,6 +81,16 @@ def test_the_caller_dictionary_is_left_alone():
 
 
 class TestInitCommand:
+    @pytest.fixture(autouse=True)
+    def _keep_the_simulator_log_level(self):
+        # The command processor sets the level of the simulator's shared
+        # logger; put it back so tests that run later in the same process see
+        # the logger as they would without these tests.
+        logger = logging.getLogger("pyfcstm.simulate")
+        level = logger.level
+        yield
+        logger.setLevel(level)
+
     def _processor(self):
         machine = load_state_machine_from_text(MODEL)
         return CommandProcessor(SimulationRuntime(machine), state_machine=machine, use_color=False)

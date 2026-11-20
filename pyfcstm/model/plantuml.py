@@ -1116,6 +1116,12 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
     for a transition written directly in a region the first tuple item is the
     :class:`~pyfcstm.model.region.Region` that owns it, not a state.
 
+    The result lists what a drawing shows. For a model whose forced
+    declarations are carried out by hidden variables (see
+    :mod:`pyfcstm.model.forced`) that is their plain expansion, so the owners
+    and transitions returned belong to that view of the model and not to the
+    machine that runs.
+
     :param state_machine: The state machine to analyze
     :type state_machine: StateMachine
     :return: Dictionary mapping event paths to list of (owner, transition) tuples,
@@ -1161,6 +1167,7 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
 
     event_map = defaultdict(list)
 
+    state_machine = state_machine._with_plain_forced()
     for state in walk_namespaces(state_machine.root_state):
         for transition in state.transitions:
             if transition.event is not None:

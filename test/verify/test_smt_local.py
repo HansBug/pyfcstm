@@ -5142,8 +5142,8 @@ class TestMachineLevelAlgorithmsOnForcedDeclarations:
 
         assert result.kind == "unsat"
         # The transitions an author wrote are named, with the positions they
-        # have among the outgoing transitions of P in the plain expansion;
-        # nothing generated to carry the forced declaration out shows up.
+        # have among all transitions of the plain expansion, counted from the
+        # root; nothing generated to carry the forced declaration out shows up.
         assert "__forced" not in repr(result.diagnostics)
         shadowed = [
             (
@@ -5237,6 +5237,10 @@ class TestMachineLevelAlgorithmsOnForcedDeclarations:
             direct = algorithm(machine, variables(machine))
             inspected = through_inspect[algorithm.__name__]
             assert direct.kind == inspected.result_kind
+            assert direct.reason == inspected.reason
+            # Kind, positions and every transition named are the same. The
+            # witness values in a finding are whatever the solver picked; for
+            # these two models it picks the same in either call.
             assert list(direct.diagnostics) == list(inspected.diagnostics)
             assert direct.diagnostics, "the model is built to give both a finding"
 

@@ -93,7 +93,10 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     integrations can navigate to the first duplicate event or prior guard.
 
     Combo transitions declared inside a ``region`` block are examined like any
-    other.
+    other. Terms are judged as written: where a combo transition leaves a
+    state that a forced declaration also leaves, the condition that makes it
+    give way in the machine that runs (see :mod:`pyfcstm.model.forced`) is not
+    part of the term.
 
     :param machine: State machine to inspect, or ``None`` to emit no
         diagnostics.
@@ -108,6 +111,7 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     """
     if machine is None:
         return []
+    machine = machine._with_plain_forced()
     terms_by_origin = _combo_terms_by_origin(machine)
     diagnostics: List[ModelDiagnostic] = []
     for terms in terms_by_origin.values():

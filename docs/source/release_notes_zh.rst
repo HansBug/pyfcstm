@@ -24,7 +24,9 @@
 
 PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展示为它作用到的每个状态上各一条转换。对含这类声明的模型，它们展示的是加载时的模型：加载之后再修改模型对象，改动不会出现在这些展示里。来源状态内部没有任何状态的声明保持为每个来源状态一条转换，也不产生隐藏变量。在收集模式（\ ``parse_dsl_node_to_state_machine(..., collect=True)``\ ）下，一条写错的强制转换声明只报告一次，不再按展开的层数重复报告。
 
-在实际运行的状态机里，\ ``Transition.is_forced``\ 标记的是带着声明的事件和条件的那些转换。为了把退出继续向上传而生成的、只读取 ``__forced_<n>`` 的转换不带这个标记，但保留 ``forced_origin``\ （生成它们的那条声明的原文）；遍历状态机时只想要作者写下的转换，可以跳过带 ``forced_origin`` 而 ``is_forced`` 为假的那些。\ :mod:`pyfcstm.verify`\ 里以整个状态机为输入的分析，按图上展示的形式、针对加载时的模型判断强制转换；以单条转换或单个状态为输入的分析则判断调用方传入的对象，生成的转换也不例外。
+在实际运行的状态机里，\ ``Transition.is_forced``\ 标记的是带着声明的事件和条件的那些转换。为了把退出继续向上传而生成的、只读取 ``__forced_<n>`` 的转换不带这个标记，但保留 ``forced_origin``\ （生成它们的那条声明的原文）。自己用 ``walk_states()`` 和 ``State.transitions`` 遍历的代码，遍历的就是这份状态机：除了这些生成的转换，还会遇到门状态和经过门状态的转换；写在强制转换声明旁边的转换，也带上了在变量被置起期间让路的条件。这份状态机里没有任何标记能把作者写下的内容与其余部分分开。
+
+以整个状态机为输入的分析，按图上展示的形式、针对加载时的模型判断强制转换，包括：\ :func:`pyfcstm.diagnostics.inspect.inspect_model`\ 、\ :func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`\ 、\ :mod:`pyfcstm.verify.topology`\ 里的函数、\ :func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`\ 、\ :func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`\ 、\ :func:`pyfcstm.diagnostics.analyzers.const_fold.collect_const_fold_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.combo.collect_combo_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.numeric.collect_numeric_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.data_flow.collect_data_flow_warnings`\ 和 :func:`pyfcstm.model.plantuml.collect_event_transitions`\ 。\ :mod:`pyfcstm.verify`\ 里以单条转换或单个状态为输入的算法，判断的是传给它的那个对象；因此在遍历已加载模型的循环里调用时，它们判断的是实际运行的状态机，报告的位置也按这份状态机的转换计数。\ ``run_inspect_algorithms``\ ，以及带 ``enable_verify=True`` 的 ``inspect_model``\ ，按强制转换书写的样子运行同样的算法。
 
 如果代码把含强制转换的模型的 ``StateMachine.defines``\ 、\ ``walk_states()``\ 或导出的 DSL 文本与保存的期望值比较，需要更新期望值。从 ``runtime.vars`` 取得的热启动快照可以保留也可以去掉其中的 ``__forced_*`` 项。
 

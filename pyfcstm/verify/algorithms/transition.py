@@ -64,8 +64,10 @@ def transition_shadowed_by_predecessor(
     declaration is judged in its plain expansion, one transition on every
     state it applies to (see :mod:`pyfcstm.model.forced`), so a result names
     the transitions an author wrote and nothing generated to carry them out;
-    the transition positions in a result count in that expansion, which is
-    also the model as it was loaded and not a later edit of the model object.
+    the transition positions in a result count in that expansion. Where a
+    forced declaration is carried out by a hidden variable, the expansion is
+    built from the model as it was loaded, so a later edit of the model object
+    does not reach it.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for

@@ -66,16 +66,22 @@ The *plain expansion* is the older reading of the same declaration: a ``-> [*]``
 transition on every state below ``S``, pseudo states included, that repeats the
 event and the guard on every level and stops at owners. No machine runs it any
 more, but it is the form a declaration is shown in. The PlantUML export, the
-diagram snapshot and the static analyses
+diagram snapshot and the analyses that take a whole machine
 (:func:`pyfcstm.diagnostics.inspect.inspect_model`,
 :func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`,
-:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`
-and the topology analyses of :mod:`pyfcstm.verify.topology`) use a machine
+:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`,
+:func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`,
+the topology analyses of :mod:`pyfcstm.verify.topology`, the constant-folding,
+combo, numeric and guard-variable analyzers of
+:mod:`pyfcstm.diagnostics.analyzers` and
+:func:`pyfcstm.model.plantuml.collect_event_transitions`) use a machine
 built with it, so a drawing shows one transition per state the declaration
-applies to and no hidden variable. The DSL export writes the machine that runs,
-hidden variables and gates included, as it does for a lowered history; only a
-machine with exit-group transitions, the one thing the language cannot write,
-is exported in its plain expansion (see
+applies to and no hidden variable. An algorithm that is handed a single
+transition or state judges that object, so code that walks a loaded model and
+passes its transitions on has the machine that runs judged. The DSL export
+writes the machine that runs, hidden variables and gates included, as it does
+for a lowered history; only a machine with exit-group transitions, the one
+thing the language cannot write, is exported in its plain expansion (see
 :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
 
 The module contains:

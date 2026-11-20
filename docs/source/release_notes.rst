@@ -72,13 +72,30 @@ declaration is reported once instead of once per level it was expanded to.
 In the machine that runs, ``Transition.is_forced`` marks the transitions that
 carry the declared event and guard. The transitions generated to pass the exit
 on, which only read ``__forced_<n>``, are not marked; they keep
-``forced_origin``, the text of the declaration they were generated for, so a
-caller that walks the machine and wants only the transitions an author wrote
-can skip those that have a ``forced_origin`` and are not ``is_forced``. The
-analyses of :mod:`pyfcstm.verify` that take a whole machine judge a forced
-transition the way a drawing shows it, on the model as it was loaded; the
-ones that take a single transition or state judge whatever the caller hands
-them, generated transitions included.
+``forced_origin``, the text of the declaration they were generated for. Code
+that walks ``walk_states()`` and ``State.transitions`` itself walks that
+machine. Besides the generated transitions it meets the gate states and the
+transitions through them, and a transition written beside a forced
+declaration carries the condition that makes it give way while the variable
+is raised. Nothing there marks what an author wrote apart from the rest.
+
+The analyses that take a whole machine judge a forced transition the way a
+drawing shows it, on the model as it was loaded:
+:func:`pyfcstm.diagnostics.inspect.inspect_model`,
+:func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`, the functions
+of :mod:`pyfcstm.verify.topology`,
+:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`,
+:func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`,
+:func:`pyfcstm.diagnostics.analyzers.const_fold.collect_const_fold_warnings`,
+:func:`pyfcstm.diagnostics.analyzers.combo.collect_combo_warnings`,
+:func:`pyfcstm.diagnostics.analyzers.numeric.collect_numeric_warnings`,
+:func:`pyfcstm.diagnostics.analyzers.data_flow.collect_data_flow_warnings` and
+:func:`pyfcstm.model.plantuml.collect_event_transitions`. The algorithms of
+:mod:`pyfcstm.verify` that take a single transition or state judge the object
+they are handed. Called in a loop over a loaded model they therefore judge
+the machine that runs, and the positions they report count its transitions.
+``run_inspect_algorithms``, and ``inspect_model`` with ``enable_verify=True``,
+run the same algorithms with every forced transition as written.
 
 Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new

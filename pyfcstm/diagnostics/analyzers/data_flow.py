@@ -73,7 +73,10 @@ def collect_data_flow_warnings(
     from outside and never trigger it. Without ``machine`` this last check is
     skipped because there is no transition list to scan. The check walks the
     transitions of regions as well as of states, so a guard inside a ``region``
-    block is judged like any other.
+    block is judged like any other. A forced declaration counts once for every
+    state it applies to, as in its plain expansion (see
+    :mod:`pyfcstm.model.forced`), which is what the variable summaries of
+    :func:`pyfcstm.diagnostics.inspect.inspect_model` describe as well.
 
     :param variables: Variable summaries, normally
         :attr:`pyfcstm.diagnostics.inspect.ModelInspect.variables`.
@@ -196,6 +199,7 @@ def _guard_vars_never_change_diagnostics(
 ) -> List[ModelDiagnostic]:
     if machine is None:
         return []
+    machine = machine._with_plain_forced()
     written_vars = {
         variable.name
         for variable in variables

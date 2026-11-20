@@ -482,7 +482,12 @@ class CommandProcessor:
             initial_vars[var_name] = var_value
 
         # Validate that all variables are provided
-        missing_vars = set(self.runtime.vars.keys()) - set(initial_vars.keys())
+        # The variables of forced transitions are filled in by the runtime.
+        missing_vars = (
+            set(self.runtime.vars.keys())
+            - set(initial_vars.keys())
+            - set(self.runtime.state_machine.forced_variables)
+        )
         if missing_vars:
             return CommandResult(
                 f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"

@@ -1281,7 +1281,22 @@ class SimulationRuntime:
                     f"Available variables: {available_vars}"
                 )
 
+            # The variable of a forced declaration is 0 whenever the machine
+            # rests, at a cold start as much as at a hot one, so the caller
+            # never has to supply it and may not raise it.
+            for forced_name in self.state_machine.forced_variables:
+                if initial_vars.get(forced_name, 0) != 0:
+                    raise ValueError(
+                        f"Variable {forced_name!r} belongs to a forced transition "
+                        "and is 0 whenever the machine rests; it cannot start as "
+                        f"{initial_vars[forced_name]!r}. Leave it out of initial_vars."
+                    )
+
             if initial_state is not None:
+                initial_vars = {
+                    **dict.fromkeys(self.state_machine.forced_variables, 0),
+                    **initial_vars,
+                }
                 missing_vars = set(
                     self.state_machine.persistent_variables.keys()
                 ) - set(initial_vars.keys())

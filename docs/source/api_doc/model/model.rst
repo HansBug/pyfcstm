@@ -92,7 +92,7 @@ StateMachine
 -----------------------------------------------------
 
 .. autoclass:: StateMachine
-    :members: __post_init__,history_variables,history_record,active_variables,control_variables,inputs,parameters,output_variables,persistent_variables,to_ast_node,to_plantuml,walk_states,has_regions,walk_regions,diagram,show,resolve_event,defines,root_state,forced_transitions,source_text,source_path,history_owners,active_queries
+    :members: __post_init__,history_variables,history_record,active_variables,forced_variables,control_variables,inputs,parameters,output_variables,persistent_variables,to_ast_node,to_plantuml,walk_states,has_regions,walk_regions,diagram,show,resolve_event,defines,root_state,forced_transitions,source_text,source_path,history_owners,active_queries
 
 
 parse\_dsl\_node\_to\_state\_machine

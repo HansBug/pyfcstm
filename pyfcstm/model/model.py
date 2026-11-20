@@ -3794,6 +3794,42 @@ class StateMachine(AstExportable, PlantUMLExportable):
             )
         return self._authored_view
 
+    @property
+    def forced_variables(self) -> Tuple[str, ...]:
+        """
+        Names of the hidden variables that forced declarations were lowered into.
+
+        A forced declaration whose source is a composite state or owns regions
+        is carried out with one hidden ``int`` variable (see
+        :mod:`pyfcstm.model.forced`). The variable is raised only while the
+        declaration is being carried out inside one cycle, so it is ``0``
+        whenever the machine rests. A hot start therefore never has to be
+        given it: :class:`pyfcstm.simulate.SimulationRuntime` and the generated
+        runtimes fill it in, and refuse any other value.
+
+        :return: The variable names in the order the declarations were
+            resolved; empty for a machine without such a declaration.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     event Stop;
+            ...     [*] -> Run;
+            ...     state Run { region A { [*] -> A1; state A1; } }
+            ...     state Idle;
+            ...     !Run -> Idle : /Stop;
+            ... }
+            ... ''')
+            >>> model.forced_variables
+            ('__forced_0',)
+            >>> load_state_machine_from_text('state Root { [*] -> A; state A; }').forced_variables
+            ()
+        """
+        return self._forced_flags
+
     def _with_plain_forced(self) -> "StateMachine":
         """
         Return the machine that keeps forced declarations in their plain expansion.

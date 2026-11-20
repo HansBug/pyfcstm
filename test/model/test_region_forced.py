@@ -9,7 +9,6 @@ from pyfcstm.model import (
     load_state_machine_from_text,
     parse_dsl_node_to_state_machine,
 )
-from pyfcstm.model.forced import authored_guard, forced_flag_names, is_forced_carrier
 from pyfcstm.simulate import SimulationRuntime
 from test.testings.simulate_semantics import build_state_machine_from_case, iter_semantic_cases
 
@@ -58,9 +57,7 @@ def test_the_declaring_level_decides_in_two_steps_and_keeps_the_declared_transit
     # back without the variable raised, and gives way while it is raised.
     assert declared.event.path_name == 'Root.Stop'
     assert str(declared.guard) == '__forced_0 == 0'
-    assert authored_guard(declared) is None
     assert declared.effects == []
-    assert [is_forced_carrier(edge) for edge in (first, declared)] == [True, False]
 
 
 def test_other_outgoing_transitions_give_way_while_the_variable_is_raised():
@@ -99,7 +96,6 @@ state Root {
     beta = [edge for edge in root.transitions if edge.to_state == 'ToBeta']
     assert str(beta[0].guard).startswith('__forced_1 == 1')
     assert str(beta[1].guard) == '__forced_0 == 0 && __forced_1 == 0'
-    assert sorted(forced_flag_names(root)) == ['__forced_0', '__forced_1']
 
 
 def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
@@ -122,11 +118,12 @@ def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
     assert not model.defines
     plain = model.root_state.substates['Plain']
     # The expansion lands on every state below, pseudo states included, and
-    # repeats the event; nothing was added to the regions of Work.
+    # repeats the event.
     assert sorted(edge.from_state for edge in plain.transitions if edge.is_forced) == ['A', 'B', 'Gate']
     assert all(edge.event.path_name == 'Root.Stop' for edge in plain.transitions if edge.is_forced)
-    work = model.root_state.substates['Work']
-    assert not any(edge.is_forced for edge in work.regions['R'].transitions)
+    # A declaration that does not reach regions is not lowered, so the model
+    # carries no hidden variable.
+    assert not model.defines
 
 
 def test_a_declaration_below_regions_without_regions_in_its_scope_is_not_lowered():
@@ -292,7 +289,7 @@ EVENTED_NEIGHBOURS = '''state Root {
 }'''
 
 
-def test_transitions_that_give_way_export_with_the_guard_they_had():
+def test_a_transition_that_gives_way_exports_its_event_and_the_machine_exports_the_plain_expansion():
     """An event transition that gives way has an event and a guard; the language cannot write both."""
     model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
     go = next(edge for edge in model.root_state.transitions if edge.to_state == 'Next')
@@ -307,6 +304,90 @@ def test_transitions_that_give_way_export_with_the_guard_they_had():
     assert drawing.count('root__run --> root__next') == 1
 
 
+COMPOSITE_OVER_OWNER = '''state Root {
+    event Stop;
+    [*] -> S;
+    state S {
+        [*] -> L;
+        state L;
+        state O { region A { [*] -> A1; state A1; } }
+        L -> O :: Go;
+    }
+    state Idle;
+    !S -> Idle : /Stop;
+}'''
+
+TWO_DECLARATIONS = '''state Root {
+    event Stop;
+    event Halt;
+    [*] -> S;
+    state S {
+        [*] -> O;
+        state O { region A { [*] -> A1; state A1; A1 -> [*] :: Done; } }
+    }
+    state Idle;
+    state Other;
+    !S -> Idle : /Stop;
+    !S -> Idle : /Halt;
+    S -> Other;
+}'''
+
+
+def test_a_declaration_on_a_composite_above_an_owner_is_drawn_like_any_other_expansion():
+    """The states outside regions keep the copies the plain expansion puts on them."""
+    model = load_state_machine_from_text(COMPOSITE_OVER_OWNER)
+    drawing = model.to_plantuml('full')
+    assert '__forced' not in drawing
+    for source in ('root__s__l', 'root__s__o'):
+        assert '%s --> [*] : /Stop' % source in drawing
+    assert 'root__s --> root__idle : Stop' in drawing
+    snapshot = model.diagram().to_dict()
+    # The same count as the structural analysis, which judges the model as written.
+    assert snapshot['summary']['transitions'] == len(inspect_model(model).transitions) == 7
+    assert [(item['label'], item['transitionCount']) for item in snapshot['eventLegend']] == [('Stop', 3)]
+    assert '__forced' not in model.diagram().to_json()
+
+
+def test_two_declarations_on_one_state_export_without_hidden_names_and_without_unguarded_relays():
+    model = load_state_machine_from_text(TWO_DECLARATIONS)
+    exported = str(model.to_ast_node())
+    assert '__forced' not in exported
+    assert 'O -> [*] : /Stop;' in exported and 'O -> [*] : /Halt;' in exported
+    # The relays of the lowered machine are never exported, and the text
+    # exports the same way again.
+    assert 'O -> [*];' not in exported
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
+    assert '__forced' not in model.to_plantuml('full')
+
+
+def test_states_and_regions_export_like_the_machine_they_belong_to():
+    model = load_state_machine_from_text(TWO_DECLARATIONS)
+    root = model.root_state
+    owner = root.substates['S'].substates['O']
+    region = owner.regions['A']
+    leaf = region.substates['A1']
+    for namespace in (root, root.substates['S'], owner, region, leaf):
+        assert '__forced' not in str(namespace.to_ast_node())
+        assert '__forced' not in namespace.to_plantuml('full')
+    assert str(model.to_ast_node()).count('region A {') == str(owner.to_ast_node()).count('region A {') == 1
+    # Each level is the matching part of the machine export, line for line.
+    machine_lines = [line.strip() for line in str(model.to_ast_node()).splitlines()]
+    for namespace in (owner, region, leaf):
+        assert {line.strip() for line in str(namespace.to_ast_node()).splitlines()} <= set(machine_lines)
+    # The machine itself keeps what the simulator runs on.
+    assert sorted(model.defines) == ['__forced_0', '__forced_1']
+    assert any(edge.guard is not None for edge in root.substates['S'].transitions)
+
+
+def test_what_is_shown_is_built_once_and_a_machine_without_lowered_declarations_shows_itself():
+    model = load_state_machine_from_text(OWNER)
+    assert model.to_plantuml('full') == model.to_plantuml('full')
+    assert str(model.to_ast_node()) == str(model.to_ast_node())
+    plain = load_state_machine_from_text('state Root { [*] -> A; state A; state B; A -> B; }')
+    assert 'A -> B;' in str(plain.to_ast_node())
+    assert 'root__a --> root__b' in plain.to_plantuml('full')
+
+
 def test_event_legend_counts_only_what_is_drawn():
     text = load_state_machine_from_text(OWNER).to_plantuml(
         PlantUMLOptions(event_visualization_mode='both'))
@@ -315,15 +396,16 @@ def test_event_legend_counts_only_what_is_drawn():
     assert not [line for line in text.splitlines() if '-[#' in line]
 
 
-@pytest.mark.parametrize('block', [
-    'enter { __forced_0 = 1; seen = __forced_0; }',
-    'enter { if [seen == 0] { __forced_0 = 1; seen = __forced_0; } }',
+@pytest.mark.parametrize('entry,block', [
+    ('[*] -> Run;', 'enter { __forced_0 = 1; seen = __forced_0; }'),
+    ('[*] -> Run;', 'enter { if [seen == 0] { __forced_0 = 1; seen = __forced_0; } }'),
+    ('[*] -> Run effect { __forced_0 = 1; seen = __forced_0; }', ''),
 ])
-def test_a_block_temporary_is_never_taken_for_the_hidden_variable(block):
+def test_a_block_temporary_is_never_taken_for_the_hidden_variable(entry, block):
     model = load_state_machine_from_text('''def int seen = 0;
 state Root {
     event Stop;
-    [*] -> Run;
+    %s
     state Run {
         %s
         region A { [*] -> A1; state A1; A1 -> [*] :: Done; }
@@ -332,14 +414,39 @@ state Root {
     state Next;
     !Run -> Idle : /Stop;
     Run -> Next;
-}''' % block)
-    assert sorted(forced_flag_names(model.root_state)) == ['__forced_1']
+}''' % (entry, block))
+    assert sorted(model.defines) == ['__forced_1', 'seen']
     runtime = SimulationRuntime(model)
     runtime.cycle()
     assert runtime.vars == {'seen': 1, '__forced_1': 0}
     # Stop was never given, so the ordinary transition of the owner is taken.
     runtime.cycle('Root.Run.A.A1.Done')
     assert str(runtime.configuration) == 'Root.Next'
+
+
+def test_two_declarations_never_share_a_hidden_variable():
+    model = load_state_machine_from_text('''def int __forced_0 = 5;
+state Root {
+    event Alpha;
+    event Beta;
+    [*] -> Run;
+    state Run {
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; }
+    }
+    state ToAlpha;
+    state ToBeta;
+    !Run -> ToAlpha : /Alpha;
+    !Run -> ToBeta : /Beta;
+}''')
+    # The name of the first declaration is taken by a variable of the user, so
+    # it moves on to the next one; the second declaration must not land there.
+    assert sorted(model.defines) == ['__forced_0', '__forced_1', '__forced_2']
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    runtime.cycle('Root.Beta')
+    assert str(runtime.configuration) == 'Root.ToBeta'
+    assert runtime.vars == {'__forced_0': 5, '__forced_1': 0, '__forced_2': 0}
 
 
 @pytest.mark.parametrize('declaration,code', [

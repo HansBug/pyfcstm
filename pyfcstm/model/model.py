@@ -65,7 +65,7 @@ from typing import (
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .region import Region, namespace_actions, namespace_child, namespace_children, walk_namespaces
+from .region import Region, namespace_actions, namespace_child, namespace_children, shown_namespace, walk_namespaces
 from .imports import (
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
@@ -1599,13 +1599,8 @@ def _write_plantuml_transitions(
     :rtype: None
     """
     from .active import restore_active_expression, restore_active_statements
-    from .forced import authored_guard, is_forced_carrier
 
     for trans in namespace.transitions:
-        if is_forced_carrier(trans):
-            # Carries out a forced declaration reaching regions; the
-            # declaration is drawn once, as the transition written on its level.
-            continue
         with io.StringIO() as tf:
             print(
                 "[*]"
@@ -1648,12 +1643,8 @@ def _write_plantuml_transitions(
                 )
                 print(f" : {formatted_event}", file=tf, end="")
             elif config.show_transition_guards and trans.guard is not None:
-                # A transition that gives way to a forced declaration shows the
-                # guard it had before.
-                guard = authored_guard(trans)
-                if guard is not None:
-                    guard = restore_active_expression(guard, active_paths)
-                    print(f" : {guard.to_ast_node()}", file=tf, end="")
+                guard = restore_active_expression(trans.guard, active_paths)
+                print(f" : {guard.to_ast_node()}", file=tf, end="")
 
             # Show transition effects if enabled
             if config.show_transition_effects and len(trans.effects) > 0:
@@ -2665,9 +2656,11 @@ class State(AstExportable, PlantUMLExportable):
         below it and as absolute paths otherwise, which is why the owning
         namespace is needed: the same transition exports differently from a
         different context. A transition that forced lowering made give way
-        (see :mod:`pyfcstm.model.forced`) is exported with the guard it had
-        before, because the language cannot write an event and a guard on one
-        transition.
+        (see :mod:`pyfcstm.model.forced`) carries an event and a guard; the
+        language cannot write both on one transition, so it is exported with
+        its event only. A lowered machine is not meant to be exported:
+        :meth:`StateMachine.to_ast_node` exports the machine that keeps the
+        plain expansion instead.
 
         :param self: The parent state or region, or None
         :type self: Optional[Union['State', Region]]
@@ -2726,9 +2719,9 @@ class State(AstExportable, PlantUMLExportable):
         else:
             event_id = None
 
-        from .forced import authored_guard
-
-        guard = authored_guard(transition)
+        # Forced lowering is the only thing that gives an event transition a
+        # guard, and the language cannot write both: the event is kept.
+        guard = transition.guard if event_id is None else None
         node = dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
@@ -2824,6 +2817,9 @@ class State(AstExportable, PlantUMLExportable):
                 event Halt;
             }
         """
+        shown = shown_namespace(self)
+        if shown is not self:
+            return shown.to_ast_node()
         substate_nodes = [
             substate.to_ast_node() for _, substate in self.substates.items()
         ]
@@ -2921,6 +2917,9 @@ class State(AstExportable, PlantUMLExportable):
                     [*] --> root__b__y
                 }
         """
+        shown = shown_namespace(self)
+        if shown is not self:
+            return shown.to_plantuml(options, current_depth, event_colors)
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
         if event_colors is None:
@@ -3555,6 +3554,13 @@ class StateMachine(AstExportable, PlantUMLExportable):
     _authored_view: Optional["StateMachine"] = field(
         default=None, compare=False, repr=False
     )
+    # The hidden variables of the forced declarations that were lowered, and
+    # the machine built from the same program with those declarations kept in
+    # their plain expansion, which every view of the model as written uses.
+    _forced_flags: Tuple[str, ...] = field(default=(), compare=False, repr=False)
+    _plain_forced_view: Optional["StateMachine"] = field(
+        default=None, compare=False, repr=False
+    )
     # The warnings and infos a strict build emitted while converting the
     # model; a collecting build returns them to its caller instead.
     _build_warnings: Tuple[ModelDiagnostic, ...] = field(
@@ -3779,6 +3785,38 @@ class StateMachine(AstExportable, PlantUMLExportable):
             )
         return self._authored_view
 
+    def _with_plain_forced(self) -> "StateMachine":
+        """
+        Return the machine that keeps forced declarations in their plain expansion.
+
+        A forced declaration that reaches regions is lowered into hidden
+        variables, relay transitions and exit-group transitions (see
+        :mod:`pyfcstm.model.forced`), none of which the language can write.
+        Everything that shows the model as written therefore uses this machine
+        instead: it is built from the same import-assembled program with
+        history and activity queries lowered as usual and forced declarations
+        left as they are. It is built on first use and kept, like
+        :meth:`_as_written`, so later edits of this model do not reach it.
+
+        :return: This machine when no forced declaration was lowered, otherwise
+            the machine with plain forced expansion.
+        :rtype: StateMachine
+        """
+        if not self._forced_flags:
+            return self
+        if self._plain_forced_view is None:
+            view = _build_assembled_state_machine(
+                self._assembled_program,
+                DiagnosticSink(collect=True),
+                lower=True,
+                plain_forced=True,
+            )
+            view.source_text = self.source_text
+            view.source_path = self.source_path
+            view._source_documents = self._source_documents
+            self._plain_forced_view = view
+        return self._plain_forced_view
+
     @property
     def control_variables(self) -> Mapping[str, VarDefine]:
         """Read-only control declarations in global declaration order."""
@@ -3838,9 +3876,18 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to an AST node.
 
+        A forced declaration that reaches regions is exported as it was
+        expanded before lowering, because the lowered form (hidden variables,
+        relay transitions, transitions with an event and a guard) cannot be
+        written in the language; the same holds for :meth:`to_plantuml` and
+        for the diagram snapshot.
+
         :return: A state machine DSL program AST node
         :rtype: dsl_nodes.StateMachineDSLProgram
         """
+        shown = self._with_plain_forced()
+        if shown is not self:
+            return shown.to_ast_node()
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
                 def_item.to_ast_node() for _, def_item in self.defines.items()
@@ -3904,19 +3951,17 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 >>> '__active_' in guarded.to_plantuml('full')
                 False
         """
+        shown = self._with_plain_forced()
+        if shown is not self:
+            return shown.to_plantuml(options)
         # Resolve configuration
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
-        # Hidden activity flags are an implementation detail of ``active()``,
-        # and the flags of forced transitions of the declaration lowering.
-        from .forced import forced_flag_names
-
-        hidden_flags = {query.variable_name for query in self.active_queries}
-        hidden_flags |= forced_flag_names(self.root_state)
+        # Hidden activity flags are an implementation detail of ``active()``.
         shown_defines = {
             name: item
             for name, item in self.defines.items()
-            if name not in hidden_flags
+            if name not in {query.variable_name for query in self.active_queries}
         }
 
         with io.StringIO() as sf:
@@ -4514,16 +4559,15 @@ def parse_dsl_node_to_state_machine(
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
         return None, sink.diagnostics
-    from .forced import forced_flag_names
-
-    if (
-        machine.history_owners
-        or machine.active_queries
-        or forced_flag_names(machine.root_state)
-    ):
+    if machine.history_owners or machine.active_queries or machine._forced_flags:
         # Inspect and verify judge the model as written; keep what is needed
         # to build it on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
+    if machine._forced_flags:
+        # A state or region exports through the machine that keeps forced
+        # declarations plain (see ``StateMachine._with_plain_forced``); the
+        # link is weak, like the links to parents.
+        machine.root_state._machine_ref = weakref.ref(machine)
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the
@@ -4547,6 +4591,7 @@ def _build_assembled_state_machine(
     sink: DiagnosticSink,
     *,
     lower: bool,
+    plain_forced: bool = False,
 ) -> StateMachine:
     """
     Build the model of an import-assembled program.
@@ -4566,6 +4611,10 @@ def _build_assembled_state_machine(
         queries; when ``False`` both are still validated and described, but no
         hidden variable, action or rewrite is installed
     :type lower: bool
+    :param plain_forced: Whether to keep forced declarations that reach regions in
+        their plain expansion instead of lowering them (see
+        :mod:`pyfcstm.model.forced`), defaults to ``False``
+    :type plain_forced: bool, optional
     :return: The built machine
     :rtype: StateMachine
     :raises pyfcstm.utils.validate.ModelValidationError: If ``sink`` is strict
@@ -5691,7 +5740,9 @@ def _build_assembled_state_machine(
                 # program, so what is decided here stays in the tuple.
                 forced_id = (
                     next(forced_ids)
-                    if lower and _force_reaches_regions(node, from_state)
+                    if lower
+                    and not plain_forced
+                    and _force_reaches_regions(node, from_state)
                     else None
                 )
             else:
@@ -6902,13 +6953,14 @@ def _build_assembled_state_machine(
     # The marks the expansion left are only present when ``lower`` is true.
     from .forced import lower_forced
 
-    lower_forced(root_state, d_defines)
+    forced_flags = lower_forced(root_state, d_defines)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
         history_owners=history_owners,
         active_queries=active_queries,
+        _forced_flags=forced_flags,
         _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)

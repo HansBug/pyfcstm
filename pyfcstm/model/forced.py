@@ -43,30 +43,23 @@ already decided.
 
 This is the only place where a transition of the model carries an event and a
 guard at the same time: rule 4 adds a condition to a transition that may have an
-event. The simulator evaluates both. The language cannot write the pair, so
-:meth:`pyfcstm.model.model.Transition.to_ast_node` exports such a transition
-with the guard it had before (:func:`authored_guard`).
+event. The simulator evaluates both. The language cannot write the pair, and
+neither can it write the relays and the exit-group transitions, so a lowered
+machine is never exported or drawn.
 
 The module contains:
 
 * :func:`lower_forced` - Install the hidden variables and the relay edges
-* :func:`is_forced_carrier` - Tell whether a transition only carries out a
-  declaration
-* :func:`authored_guard` - The guard a transition had before it was made to
-  give way
-* :func:`forced_flag_names` - The hidden variables of a lowered machine
 
-The last three are for views that show the model as its author wrote it, such
-as the PlantUML export and the diagram snapshot: they leave the carrying
-transitions and the hidden variables out and show the declaration once.
-
-Static analyses judge the model as written: model conversion can also build the
-machine before lowering (see
-:func:`pyfcstm.diagnostics.inspect.inspect_model`), where forced transitions keep
-their plain expansion and stop at owners. An analysis that is handed the lowered
-machine directly, such as :func:`pyfcstm.verify.run_inspect_algorithms`, sees the
-hidden variables and the carrying transitions like any other part of the model,
-as it does for a lowered history.
+Everything that shows the model as its author wrote it, the DSL export, the
+PlantUML export and the diagram snapshot, uses the machine that keeps the plain
+expansion instead (see :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
+Static analyses judge that machine too: model conversion builds it before
+lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`), where forced
+transitions stop at owners. An analysis that is handed the lowered machine
+directly, such as :func:`pyfcstm.verify.run_inspect_algorithms`, sees the hidden
+variables and the carrying transitions like any other part of the model, as it
+does for a lowered history.
 
 Example::
 
@@ -96,23 +89,13 @@ Example::
 
 import re
 from dataclasses import replace
-from typing import (
-    Dict,
-    FrozenSet,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Dict, Iterable, Iterator, List, Set, Tuple, Union
 
-from .expr import BinaryOp, Expr, Integer, Variable
+from .expr import BinaryOp, Integer, Variable
 from .model import Operation, OperationStatement, State, Transition, VarDefine
 from .region import Region, namespace_actions, walk_namespaces
 
-__all__ = ["lower_forced", "is_forced_carrier", "authored_guard", "forced_flag_names"]
+__all__ = ["lower_forced"]
 
 _Namespace = Union[State, Region]
 
@@ -121,113 +104,6 @@ _Namespace = Union[State, Region]
 # declaration and whether the transition is the one declared on its own level.
 _ID_MARK = "_forced_id"
 _DECLARED_MARK = "_forced_declared"
-
-# Marks written by the lowering and read back by the three query functions
-# below: a transition that exists only to carry out a declaration, the guard a
-# transition had before the declaration made it give way, and the hidden
-# variables of the machine (kept on its root state).
-_HIDDEN_MARK = "_forced_hidden"
-_AUTHORED_GUARD_MARK = "_forced_authored_guard"
-_FLAGS_MARK = "_forced_flags"
-
-
-def is_forced_carrier(transition: Transition) -> bool:
-    """
-    Tell whether a transition only carries out a forced declaration.
-
-    Lowering adds transitions that the author never wrote: the ones that start
-    the exit from a resting state, the relays on the way up, and the copy that
-    waits for the hidden variable on the level of the declaration. The declared
-    transition itself is not one of them.
-
-    :param transition: Transition of a built machine.
-    :type transition: pyfcstm.model.model.Transition
-    :return: ``True`` if lowering added the transition.
-    :rtype: bool
-
-    Example::
-
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> from pyfcstm.model.forced import is_forced_carrier
-        >>> model = load_state_machine_from_text('''
-        ... state Root {
-        ...     event Stop;
-        ...     [*] -> Run;
-        ...     state Run { region A { [*] -> A1; state A1; } }
-        ...     state Idle;
-        ...     !Run -> Idle : /Stop;
-        ... }
-        ... ''')
-        >>> [is_forced_carrier(t) for t in model.root_state.transitions]
-        [True, False, False]
-    """
-    return bool(getattr(transition, _HIDDEN_MARK, False))
-
-
-def authored_guard(transition: Transition) -> Optional[Expr]:
-    """
-    Return the guard a transition had before forced lowering restricted it.
-
-    Lowering makes the other outgoing transitions of a state give way while a
-    forced declaration is being carried out, by adding a condition on the
-    hidden variable. This returns the guard without that addition; for every
-    other transition it is simply the guard.
-
-    :param transition: Transition of a built machine.
-    :type transition: pyfcstm.model.model.Transition
-    :return: The guard as written, or ``None`` if there was none.
-    :rtype: Optional[pyfcstm.model.expr.Expr]
-
-    Example::
-
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> from pyfcstm.model.forced import authored_guard
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 1;
-        ... state Root {
-        ...     event Stop;
-        ...     [*] -> Run;
-        ...     state Run { region A { [*] -> A1; state A1; } }
-        ...     state Idle;
-        ...     !Run -> Idle : /Stop;
-        ...     Run -> Idle : if [x > 0];
-        ... }
-        ... ''')
-        >>> plain = model.root_state.transitions[-1]
-        >>> str(plain.guard), str(authored_guard(plain))
-        ('x > 0 && __forced_0 == 0', 'x > 0')
-    """
-    return getattr(transition, _AUTHORED_GUARD_MARK, (transition.guard,))[0]
-
-
-def forced_flag_names(root_state: State) -> FrozenSet[str]:
-    """
-    Return the hidden variables that forced lowering installed in a machine.
-
-    :param root_state: Root state of a built machine.
-    :type root_state: pyfcstm.model.model.State
-    :return: Names of the hidden variables; empty for a machine whose forced
-        declarations do not reach regions.
-    :rtype: FrozenSet[str]
-
-    Example::
-
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> from pyfcstm.model.forced import forced_flag_names
-        >>> model = load_state_machine_from_text('''
-        ... state Root {
-        ...     event Stop;
-        ...     [*] -> Run;
-        ...     state Run { region A { [*] -> A1; state A1; } }
-        ...     state Idle;
-        ...     !Run -> Idle : /Stop;
-        ... }
-        ... ''')
-        >>> sorted(forced_flag_names(model.root_state))
-        ['__forced_0']
-    """
-    return getattr(root_state, _FLAGS_MARK, frozenset())
-
 
 def _flag_is(name: str, value: int) -> BinaryOp:
     """
@@ -311,7 +187,9 @@ def _free_name(taken: Set[str], forced_id: int) -> str:
     return "__forced_%d" % number
 
 
-def lower_forced(root_state: State, defines: Dict[str, VarDefine]) -> None:
+def lower_forced(
+    root_state: State, defines: Dict[str, VarDefine]
+) -> Tuple[str, ...]:
     """
     Make every forced declaration that reaches regions decide once.
 
@@ -326,8 +204,9 @@ def lower_forced(root_state: State, defines: Dict[str, VarDefine]) -> None:
     :param defines: Variable definitions of the machine; the hidden variables
         are added.
     :type defines: Dict[str, pyfcstm.model.base.VarDefine]
-    :return: ``None``.
-    :rtype: None
+    :return: Names of the hidden variables that were installed, in the order of
+        the declarations; empty when no declaration reaches regions.
+    :rtype: Tuple[str, ...]
 
     Example::
 
@@ -351,6 +230,7 @@ def lower_forced(root_state: State, defines: Dict[str, VarDefine]) -> None:
     # A temporary of an action block would otherwise become a write to the
     # hidden variable once that variable is installed under the same name.
     taken = set(defines).union(_assigned_names(root_state)) if declarations else set()
+    names: List[str] = []
     for forced_id, items in declarations.items():
         name = _free_name(taken, forced_id)
         taken.add(name)
@@ -374,26 +254,22 @@ def lower_forced(root_state: State, defines: Dict[str, VarDefine]) -> None:
                         ],
                     )
                     setattr(relay, _ID_MARK, forced_id)
-                    setattr(relay, _HIDDEN_MARK, True)
                     namespace.transitions.insert(
                         namespace.transitions.index(transition), relay
                     )
                 else:
                     transition.event = None
                     transition.guard = raised
-                    setattr(transition, _HIDDEN_MARK, True)
                 relays.append((namespace, source))
             elif not declared:
                 transition.effects = [
                     Operation(var_name=name, expr=Integer(1)),
                     *transition.effects,
                 ]
-                setattr(transition, _HIDDEN_MARK, True)
         for namespace, source in relays:
             for other in namespace.transitions:
-                carries = (
-                    is_forced_carrier(other)
-                    and getattr(other, _ID_MARK, None) == forced_id
+                carries = getattr(other, _ID_MARK, None) == forced_id and not getattr(
+                    other, _DECLARED_MARK, False
                 )
                 # Everything but the relay of this declaration gives way, the
                 # declared transition included: taken with the variable raised
@@ -404,7 +280,8 @@ def lower_forced(root_state: State, defines: Dict[str, VarDefine]) -> None:
         # owns regions, and the source on its own level is then a composite or
         # an owner, so the variable is always needed.
         defines[name] = VarDefine(name=name, type="int", init=Integer(0))
-        setattr(root_state, _FLAGS_MARK, forced_flag_names(root_state) | {name})
+        names.append(name)
+    return tuple(names)
 
 
 def _and_condition(transition: Transition, condition: BinaryOp) -> None:
@@ -422,8 +299,6 @@ def _and_condition(transition: Transition, condition: BinaryOp) -> None:
     :return: ``None``.
     :rtype: None
     """
-    if not hasattr(transition, _AUTHORED_GUARD_MARK):
-        setattr(transition, _AUTHORED_GUARD_MARK, (transition.guard,))
     guard = (
         condition
         if transition.guard is None

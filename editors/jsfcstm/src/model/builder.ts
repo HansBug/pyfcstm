@@ -1,5 +1,4 @@
 import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
-import {collectUnsupportedSyntaxDiagnostics} from '../ast/unsupported-syntax';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -16,9 +15,11 @@ import type {
     FcstmAstVariableDefinition,
     FcstmHistoryKind,
 } from '../ast';
+import {astRegionViews, regionAsStateDefinition} from '../ast/region';
 import type {FcstmSemanticDocument} from '../semantics';
 import type {
     FcstmModelActionPath,
+    RawFcstmModelActiveStateQuery,
     RawFcstmModelBinaryOp as FcstmModelBinaryOp,
     RawFcstmModelBoolean as FcstmModelBoolean,
     RawFcstmModelConditionalOp as FcstmModelConditionalOp,
@@ -326,6 +327,8 @@ class StateMachineModelBuilder {
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
     private readonly eventsByPath = new Map<string, FcstmModelEvent>();
     private readonly namedFunctionsByPath = new Map<string, FcstmModelNamedFunction>();
+    /** Active queries built so far; their target states are bound once every state exists. */
+    private readonly activeQueries: RawFcstmModelActiveStateQuery[] = [];
     constructor(private readonly ast: FcstmAstDocument, private readonly lower = true) {
         this.filePath = ast.filePath;
         this.rootStateName = ast.rootState?.name || '';
@@ -343,6 +346,7 @@ class StateMachineModelBuilder {
         const rootState = this.buildState(this.ast.rootState, undefined);
         this.finalizeActionReferences();
         this.finalizeTransitions(this.ast.rootState, rootState, []);
+        this.bindActiveQueries();
         // History is lowered last, once forced and combo transitions are
         // concrete edges, exactly as pyfcstm does.
         const history = lowerHistory({
@@ -361,9 +365,10 @@ class StateMachineModelBuilder {
             const orderedStates: FcstmModelState[] = [];
             const ordered: FcstmModelTransition[] = [];
             const collect = (state: FcstmModelState): void => {
-                orderedStates.push(state);
+                if (!state.isRegion) orderedStates.push(state);
                 ordered.push(...state.transitions);
                 Object.values(state.substates).forEach(collect);
+                Object.values(state.regions).forEach(collect);
             };
             collect(rootState);
             this.allStates.splice(0, this.allStates.length, ...orderedStates);
@@ -381,7 +386,9 @@ class StateMachineModelBuilder {
 
         const lookups = {
             definesByName: this.defines,
-            statesByPath: Object.fromEntries(this.statesByPath.entries()),
+            // A region is a scope for states, not a state: it is looked up
+            // through the model, never by state path.
+            statesByPath: Object.fromEntries([...this.statesByPath.entries()].filter(([, state]) => !state.isRegion)),
             eventsByPathName: Object.fromEntries(this.eventsByPath.entries()),
             namedFunctionsByPath: Object.fromEntries(this.namedFunctionsByPath.entries()),
             transitionsByParentPath,
@@ -409,6 +416,7 @@ class StateMachineModelBuilder {
             lookups,
             historyOwners: history.owners,
             history_owners: history.owners,
+            activeQueryCount: this.activeQueries.length,
             historyDiagnostics: history.diagnostics,
         };
         return hydrateStateMachine(rawStateMachine);
@@ -432,10 +440,15 @@ class StateMachineModelBuilder {
 
     private buildState(
         definition: FcstmAstStateDefinition,
-        parent: FcstmModelState | undefined
+        parent: FcstmModelState | undefined,
+        regionOrdinal?: number
     ): FcstmModelState {
+        const isRegion = Boolean(definition.isRegionView);
+        const regionDefinitions = astRegionViews(definition);
+        const isLeaf = !isRegion && definition.substates.length === 0 && regionDefinitions.length === 0;
         const path = parent ? [...parent.path, definition.name] : [definition.name];
         const substates: Record<string, FcstmModelState> = {};
+        const regions: Record<string, FcstmModelState> = {};
         const events: Record<string, FcstmModelEvent> = {};
         const transitions: FcstmModelTransition[] = [];
         const namedFunctions: Record<string, FcstmModelNamedFunction> = {};
@@ -454,6 +467,10 @@ class StateMachineModelBuilder {
             pathName: statePathName(path),
             path_name: statePathName(path),
             substates,
+            regions,
+            isRegion,
+            is_region: isRegion,
+            ordinal: regionOrdinal,
             events,
             transitions,
             namedFunctions,
@@ -475,17 +492,17 @@ class StateMachineModelBuilder {
             doc: definition.doc,
             isPseudo: definition.pseudo,
             is_pseudo: definition.pseudo,
-            isLeafState: definition.substates.length === 0,
-            is_leaf_state: definition.substates.length === 0,
+            isLeafState: isLeaf,
+            is_leaf_state: isLeaf,
             isRootState: !parent,
             is_root_state: !parent,
-            isStoppable: definition.substates.length === 0 && !definition.pseudo,
-            is_stoppable: definition.substates.length === 0 && !definition.pseudo,
+            isStoppable: isLeaf && !definition.pseudo,
+            is_stoppable: isLeaf && !definition.pseudo,
             importedFromFile: definition.importedFromFile,
             imported_from_file: definition.importedFromFile,
         };
 
-        this.allStates.push(state);
+        if (!isRegion) this.allStates.push(state);
         this.statesByPath.set(state.pathName, state);
         this.stateAstByPath.set(state.pathName, definition);
 
@@ -494,6 +511,11 @@ class StateMachineModelBuilder {
                 substates[substate.name] = this.buildState(substate, state);
             }
         }
+        regionDefinitions.forEach((region, index) => {
+            if (!regions[region.name]) {
+                regions[region.name] = this.buildState(region, state, index + 1);
+            }
+        });
 
         const substateNameToId = Object.fromEntries(Object.keys(substates).map((name, index) => [name, index]));
         state.substateNameToId = substateNameToId;
@@ -695,12 +717,14 @@ class StateMachineModelBuilder {
             if (!transition.comboTrigger?.isCombo) {
                 const triggerScope = this.getTriggerScope(transition);
                 const event = transition.eventId
-                    ? this.resolveEventReference(currentState, transition.eventId, transition.trigger?.range || transition.range, triggerScope)
+                    ? this.resolveEventReference(currentState, transition.eventId, transition.trigger!.range, triggerScope)
                     : undefined;
                 const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
                 this.pushTransition({
                     range: transition.range,
                     text: transition.text,
+                    // Defensive: a partially parsed document may lack the source name.
+                    /* c8 ignore next */
                     fromState: transition.sourceKind === 'init' ? 'INIT_STATE' : (transition.sourceStateName || 'INIT_STATE'),
                     toState: targetKind === 'exit' ? 'EXIT_STATE' : (transition.targetStateName || 'EXIT_STATE'),
                     event,
@@ -754,6 +778,8 @@ class StateMachineModelBuilder {
                 });
             }
 
+            // Defensive: a partially parsed document may lack the source name.
+            /* c8 ignore next */
             const fromState = transition.sourceKind === 'init' ? 'INIT_STATE' : transition.sourceStateName ?? 'INIT_STATE';
             this.pushComboTransitionRun(
                 currentState,
@@ -772,8 +798,13 @@ class StateMachineModelBuilder {
             this.finalizeTransitions(
                 substateDefinition,
                 nextState,
-                inheritedForSubstates.get(substateDefinition.name) ?? [],
+                inheritedForSubstates.get(substateDefinition.name)!,
             );
+        }
+        // A forced transition declared on an ancestor takes the whole group
+        // away; it is not copied onto the states inside a region.
+        for (const regionDefinition of astRegionViews(definition)) {
+            this.finalizeTransitions(regionDefinition, currentState.regions[regionDefinition.name], []);
         }
     }
 
@@ -927,6 +958,8 @@ class StateMachineModelBuilder {
                 return expression.value ? 'true' : 'false';
             case 'variable':
                 return expression.name;
+            case 'activeStateQuery':
+                return `active(${JSON.stringify(expression.path)})`;
         }
     }
 
@@ -948,19 +981,27 @@ class StateMachineModelBuilder {
         range: FcstmModelEvent['range'],
         origin: 'local' | 'chain' | 'absolute' | undefined
     ): FcstmModelEvent | undefined {
+        // Defensive: an event path always has a segment and the root state always
+        // exists; a partially parsed document is the only source of anything else.
+        /* c8 ignore start */
         if (eventPath.segments.length === 0) {
             return undefined;
         }
+        /* c8 ignore stop */
 
         let ownerState = eventPath.isAbsolute
             ? this.statesByPath.get(this.rootStateName)
             : currentState;
+        /* c8 ignore start */
         if (!ownerState) {
             return undefined;
         }
+        /* c8 ignore stop */
 
         for (const segment of eventPath.segments.slice(0, -1)) {
-            ownerState = ownerState.substates[segment] || this.resolveStateReference(ownerState.path, segment);
+            ownerState = ownerState.substates[segment]
+                || ownerState.regions[segment]
+                || this.resolveStateReference(ownerState.path, segment);
             if (!ownerState) {
                 return undefined;
             }
@@ -968,6 +1009,8 @@ class StateMachineModelBuilder {
 
         return this.ensureEvent(ownerState.path, eventPath.segments[eventPath.segments.length - 1], range, eventPath.text, {
             declared: false,
+            // Defensive: every caller passes the scope of the trigger.
+            /* c8 ignore next */
             origin: origin || (eventPath.isAbsolute ? 'absolute' : 'chain'),
         });
     }
@@ -1039,6 +1082,7 @@ class StateMachineModelBuilder {
         const projectionKind = projectionKey[1];
         const source = projectionKind === 'entry'
             ? 'entry'
+            /* c8 ignore next */
             : Array.isArray(projectionKey[2]) ? projectionKey[2].join('.') : 'state';
         const readable = [source, ...consumedTerms.map(term => comboSlugPart(term.canonicalText))]
             .map(part => comboSlugPart(part))
@@ -1053,6 +1097,8 @@ class StateMachineModelBuilder {
         });
         const name = `__combo_${readable}_h${stableDigest12(payload)}`;
         const existing = currentState.substates[name];
+        // Defensive: the name carries a hash of the run, so it is new on every call.
+        /* c8 ignore next */
         if (existing) return existing;
 
         const path = [...currentState.path, name];
@@ -1067,6 +1113,7 @@ class StateMachineModelBuilder {
             pathName: statePathName(path),
             path_name: statePathName(path),
             substates: {},
+            regions: {},
             events: {},
             transitions: [],
             namedFunctions: {},
@@ -1452,13 +1499,36 @@ class StateMachineModelBuilder {
         for (let length = ownerStatePath.length; length >= 1; length -= 1) {
             const candidatePath = [...ownerStatePath.slice(0, length), stateName];
             const candidate = this.statesByPath.get(statePathName(candidatePath));
-            if (candidate) {
+            if (candidate && !candidate.isRegion) {
                 return candidate;
             }
         }
 
         const globalMatches = this.allStates.filter(state => state.name === stateName);
         return globalMatches.length === 1 ? globalMatches[0] : undefined;
+    }
+
+    /**
+     * Bind every ``active("path")`` to the state it names.
+     *
+     * Runs once all states exist, because an initializer, an action or a guard
+     * can name a state declared after it. A path that names nothing, a region
+     * or a pseudo state stays unbound; the analyzers report it.
+     */
+    private bindActiveQueries(): void {
+        for (const query of this.activeQueries) {
+            query.statePath = this.resolveActiveStatePath(query.path);
+        }
+    }
+
+    private resolveActiveStatePath(written: string): string[] | null {
+        const absolute = written.startsWith('/');
+        const parts = (absolute ? written.slice(1) : written).split('.');
+        if (!parts.every(part => /^[A-Za-z_][A-Za-z_0-9]*$/.test(part))) return null;
+        const full = absolute ? [this.rootStateName, ...parts] : parts;
+        if (full[0] !== this.rootStateName) return null;
+        const target = this.statesByPath.get(statePathName(full));
+        return target && !target.isRegion && !target.isPseudo ? [...target.path] : null;
     }
 
     private buildOperationStatements(
@@ -1523,7 +1593,6 @@ class StateMachineModelBuilder {
     }
 
     private buildExpression(expression: FcstmAstExpression): FcstmModelExpression {
-        const originalExpression = expression;
         switch (expression.expressionKind) {
             case 'literal':
                 if (expression.pyNodeType === 'Boolean') {
@@ -1624,18 +1693,21 @@ class StateMachineModelBuilder {
                 };
                 return funcExpr;
             }
-            case 'parenthesized':
-                return this.buildExpression(expression.expression);
+            case 'activeStateQuery': {
+                const query: RawFcstmModelActiveStateQuery = {
+                    kind: 'activeStateQuery',
+                    pyModelType: 'ActiveStateQuery',
+                    range: expression.range,
+                    text: expression.text,
+                    path: expression.path,
+                    statePath: null,
+                };
+                this.activeQueries.push(query);
+                return query;
+            }
         }
-
-        const fallbackExpr: FcstmModelVariable = {
-            kind: 'variable',
-            pyModelType: 'Variable',
-            range: originalExpression.range,
-            text: originalExpression.text,
-            name: originalExpression.text,
-        };
-        return fallbackExpr;
+        // Only a parenthesized expression is left once every other kind has returned.
+        return this.buildExpression(expression.expression);
     }
 }
 
@@ -1649,7 +1721,6 @@ export function buildStateMachineModelFromAst(
         return null;
     }
 
-    if (collectUnsupportedSyntaxDiagnostics(ast).length > 0) return null;
     if (collectVariableRoleDiagnostics(ast).length > 0) return null;
     const machine = new StateMachineModelBuilder(ast).build();
     if (machine && machine.historyOwners.length > 0) {

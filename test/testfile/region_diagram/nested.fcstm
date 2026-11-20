@@ -1,0 +1,47 @@
+input int proceed;
+
+state Workflow {
+    event A1Done;
+    event A2Done;
+    event ADone;
+    event BDone;
+    event CDone;
+    event Cancel;
+    [*] -> Job;
+    state Job {
+        region A {
+            [*] -> Q;
+            state Q {
+                region A1 {
+                    [*] -> Working;
+                    state Working;
+                    Working -> [*] : /A1Done;
+                }
+                region A2 {
+                    [*] -> Working;
+                    state Working;
+                    Working -> [*] : /A2Done;
+                }
+            }
+            state Packing;
+            Q -> Packing;
+            Packing -> [*] : /ADone;
+        }
+        region B {
+            [*] -> Working;
+            state Working;
+            Working -> [*] : /BDone;
+        }
+        region C {
+            [*] -> Working;
+            state Working;
+            Working -> [*] : /CDone;
+        }
+    }
+    state AwaitPermission;
+    state Ready;
+    state Idle;
+    Job -> AwaitPermission;
+    AwaitPermission -> Ready : if [proceed != 0];
+    !Job -> Idle : /Cancel;
+}

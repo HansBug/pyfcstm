@@ -22,22 +22,21 @@ describe('active-state condition syntax', () => {
         });
     }
     for (const body of [
-        '[*] -> A : if [active("B")];', 'A -> B : if [active("A")];',
-        'A -> B :: go + [active("A")];', '! A -> B : if [active("A")];',
-        'during { if [!active("A") && active("B") || False] {} }',
-        'enter { x = (active("A")) ? 1 : 0; }',
-        'A -> B effect { if [active("A") iff True] {} }',
-        '>> during after { if [(active("A")) ? active("B") : True] {} }',
+        '[*] -> A : if [active("Root.B")];', 'A -> B : if [active("Root.A")];',
+        'A -> B :: go + [active("Root.A")];', '! A -> B : if [active("Root.A")];',
+        'during before { if [!active("Root.A") && active("Root.B") || False] {} }',
+        'enter { x = (active("Root.A")) ? 1 : 0; }',
+        'A -> B effect { if [active("Root.A") iff True] {} }',
+        '>> during after { if [(active("Root.A")) ? active("Root.B") : True] {} }',
     ]) {
-        it(`parses and explicitly refuses model construction for ${body}`, async () => {
-            const document = createDocument(`def int x = 0; state Root { state A; state B; ${body} }`, '/tmp/active-model.fcstm');
+        it(`builds a model and raises no errors for ${body}`, async () => {
+            const document = createDocument(`def int x = 0; state Root { state A; state B; [*] -> A; ${body} }`, '/tmp/active-model.fcstm');
             const ast = await packageModule.parseAstDocument(document);
             assert.ok(ast);
-            assert.equal(packageModule.buildStateMachineModel(ast), null);
+            assert.ok(packageModule.buildStateMachineModel(ast));
             const diagnostics = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
                 packageModule.buildSemanticDocument(ast)!, document);
-            assert.ok(diagnostics.length > 0);
-            assert.ok(diagnostics.every(item => item.code === 'E_UNSUPPORTED_FEATURE' && item.data?.feature === 'active'));
+            assert.deepEqual(diagnostics.filter(item => item.severity === 'error'), []);
         });
     }
     for (const expression of ['active()', 'active(A)', 'active(1)', 'active("A", "B")',

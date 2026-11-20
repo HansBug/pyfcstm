@@ -483,7 +483,7 @@ E_UNSUPPORTED_FEATURE
 
 .. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
 
-The chosen consumer cannot preserve a region model or activity query. Python model construction supports both; execution, rendering and analysis consumers reject them until supported. JavaScript may reject at construction.
+The chosen consumer cannot preserve a region model or activity query. Python model construction, diagrams and the JavaScript frontend (model, semantic analysis, diagram preview) support both; execution, rendering and inspect/verify analysis consumers reject them until supported.
 
 .. list-table:: Refs schema
    :header-rows: 1

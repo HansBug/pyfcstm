@@ -12,6 +12,7 @@
  * to pyfcstm's for the same source.
  */
 import type {FcstmAstHistoryDefinition, FcstmAstStateDefinition, FcstmHistoryKind} from '../ast';
+import {astNamespaceChildren} from '../ast/region';
 import {createRange, type TextRange} from '../utils/text';
 import type {
     FcstmModelHistoryDiagnostic,
@@ -57,16 +58,23 @@ export interface HistoryLoweringResult {
     diagnostics: FcstmModelHistoryDiagnostic[];
 }
 
-function walk(state: State, out: State[] = []): State[] {
-    out.push(state);
-    for (const child of Object.values(state.substates)) walk(child, out);
+/**
+ * Collect a state and everything below it in preorder, looking through regions.
+ *
+ * A region is a scope, not a state, so it is listed only when ``withRegions``
+ * is set (to scan its aspects); the states inside it are always listed.
+ */
+function walk(state: State, out: State[] = [], withRegions = false): State[] {
+    if (!state.isRegion || withRegions) out.push(state);
+    for (const child of Object.values(state.substates)) walk(child, out, withRegions);
+    for (const region of Object.values(state.regions)) walk(region, out, withRegions);
     return out;
 }
 
 function walkAst(node: FcstmAstStateDefinition, path: Path = [], out: Array<[Path, FcstmAstStateDefinition]> = []) {
     const current = [...path, node.name];
     out.push([current, node]);
-    for (const child of node.substates) walkAst(child, current, out);
+    for (const child of astNamespaceChildren(node)) walkAst(child, current, out);
     return out;
 }
 
@@ -121,6 +129,8 @@ class HistoryLowering {
     private readonly diagnostics: FcstmModelHistoryDiagnostic[] = [];
     // [owner path, kind] of every invalid declaration, as JSON keys.
     private readonly invalid = new Set<string>();
+    // States and regions: the temporaries of a region's aspects count too.
+    private readonly namespaces: State[];
 
     constructor(private readonly input: HistoryLoweringInput) {
         walk(input.rootState).forEach((state, index) => {
@@ -128,6 +138,7 @@ class HistoryLowering {
             this.paths.push(state.path);
             this.ids.set(key(state.path), index + 1);
         });
+        this.namespaces = walk(input.rootState, [], true);
     }
 
     private emit(
@@ -167,7 +178,7 @@ class HistoryLowering {
         };
         for (const [name, define] of Object.entries(this.input.defines)) check(name, 'variable', define.range);
         for (const state of this.states.values()) check(state.name, 'state', state.range);
-        for (const state of this.states.values()) {
+        for (const state of this.namespaces) {
             for (const operation of stateOperations(state)) {
                 if (!(operation.var_name in this.input.defines)) check(operation.var_name, 'temporary', operation.range);
             }
@@ -254,7 +265,8 @@ class HistoryLowering {
     ): Array<[Transition, Path, FcstmHistoryKind]> {
         const found: Array<[Transition, Path, FcstmHistoryKind]> = [];
         const reported = new Set<string>();
-        for (const scope of this.states.values()) {
+        // Transitions of a region enter history like those of a state.
+        for (const scope of this.namespaces) {
             for (const transition of scope.transitions) {
                 const kind = transition.targetHistory;
                 if (!kind) continue;
@@ -395,7 +407,7 @@ class HistoryLowering {
         return {
             kind: 'state', pyModelType: 'State', range, text: `pseudo state ${name};`, name, path,
             pathName: key(path), path_name: key(path),
-            substates: {}, events: {}, transitions: [], namedFunctions: {}, named_functions: {},
+            substates: {}, regions: {}, events: {}, transitions: [], namedFunctions: {}, named_functions: {},
             onEnters: [], on_enters: [], onDurings: [], on_durings: [], onExits: [], on_exits: [],
             onDuringAspects: [], on_during_aspects: [],
             parentPath: parent.path, parent_path: parent.path,
@@ -421,7 +433,7 @@ class HistoryLowering {
     run(): HistoryLoweringResult {
         const astStates = walkAst(this.input.astRoot);
         const usesHistory = astStates.some(([, node]) => node.histories.length > 0)
-            || [...this.states.values()].some(state => state.transitions.some(item => item.targetHistory));
+            || this.namespaces.some(scope => scope.transitions.some(item => item.targetHistory));
         this.checkReservedNames(usesHistory);
         if (!usesHistory) return {owners: [], diagnostics: this.diagnostics};
 

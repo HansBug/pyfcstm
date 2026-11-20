@@ -1,0 +1,15 @@
+input int a;
+state Plant {
+    [*] -> Run;
+    state Run {
+        region R1 { [*] -> S1; state S1; state S2; S1 -> S2 : if [a > 1]; S2 -> S1 : if [a < 1]; }
+        region R2 { [*] -> T1; state T1; }
+        region R3 { [*] -> U1; state U1; state U2; state U3; U1 -> U2 : if [a > 2]; U2 -> U3 : if [a > 3]; U3 -> U1 : if [a > 4]; }
+        region R4 { [*] -> V1; state V1; state V2; V1 -> V2 : if [a > 5]; }
+        region R5 { [*] -> W1; state W1; }
+        region R6 { [*] -> X1; state X1; state X2; state X3; state X4; X1 -> X2 : if [a>1]; X2 -> X3 : if [a>2]; X3 -> X4 : if [a>3]; }
+    }
+    state Off;
+    Off -> Run : if [a > 0];
+    Run -> Off : if [a < 0];
+}

@@ -1,5 +1,4 @@
 import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
-import {collectUnsupportedSyntaxDiagnostics} from '../ast/unsupported-syntax';
 import {pathToFileURL} from 'node:url';
 
 import type {
@@ -22,6 +21,7 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
+import {collectRegionDiagnostics} from './region-diagnostics';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -214,17 +214,26 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         if (!reachable.has(stateId)) {
             reachable.add(stateId);
             worklist.push(stateId);
+            // Entering a state starts every one of its regions.
+            for (const childId of statesById.get(stateId)!.childStateIds) {
+                if (statesById.get(childId)!.isRegion) enter(childId);
+            }
         }
     };
+    if (semantic.machine.rootStateId) {
+        for (const childId of statesById.get(semantic.machine.rootStateId)!.childStateIds) {
+            if (statesById.get(childId)!.isRegion) enter(childId);
+        }
+    }
     // The states a default enters, or undefined when it names no state. A
     // default through an import alias leaves the local model, so the states
     // before the alias are what it enters here.
     const resolveDefault = (ownerId: string, defaultPath: string[]): string[] | undefined => {
-        let current = statesById.get(ownerId);
+        let current = statesById.get(ownerId)!;
         const path: string[] = [];
         for (const name of defaultPath) {
-            const next = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
-            if (!next) return current?.ast.imports.some(item => item.alias === name) ? path : undefined;
+            const next = current.childStateIds.map(id => statesById.get(id)!).find(child => child.name === name);
+            if (!next) return current.ast.imports.some(item => item.alias === name) ? path : undefined;
             current = next;
             path.push(next.identity.id);
         }
@@ -233,7 +242,7 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // The first valid declaration of the kind, as pyfcstm keeps: a shallow
     // default names one child, and no default names a pseudo state.
     const historyDefault = (ownerId: string, kind: string): string[] => {
-        for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
+        for (const declaration of statesById.get(ownerId)!.ast.histories) {
             if (declaration.historyKind !== kind) continue;
             if (kind === 'shallow' && declaration.defaultPath.length !== 1) continue;
             const path = resolveDefault(ownerId, declaration.defaultPath);
@@ -327,7 +336,8 @@ function addUnreachableStateDiagnostics(
 ): void {
     const reachable = collectReachableStateIds(semantic);
     for (const state of semantic.states) {
-        if (state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
+        // A region starts with its owner and is not a state to report on its own.
+        if (state.isRegion || state.identity.id === semantic.machine.rootStateId || reachable.has(state.identity.id)) {
             continue;
         }
 
@@ -834,6 +844,11 @@ function addDuplicateStateDiagnostics(
 ): void {
     const byParent = new Map<string | undefined, Map<string, typeof semantic.states[number]>>();
     for (const state of semantic.states) {
+        // Two regions of one owner sharing a name is E_DUPLICATE_REGION's to report;
+        // a region and a state cannot share an owner.
+        if (state.isRegion) {
+            continue;
+        }
         const parentKey = state.parentStateId;
         let group = byParent.get(parentKey);
         if (!group) {
@@ -842,10 +857,10 @@ function addDuplicateStateDiagnostics(
         }
         const first = group.get(state.name);
         if (first) {
-            const parentPath = (first.identity.qualifiedName || '').split('.').slice(0, -1).join('.');
+            const parentPath = first.identity.qualifiedName.split('.').slice(0, -1).join('.');
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
-                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath || '<root>')}.`,
+                message: `State ${JSON.stringify(state.name)} is already defined in scope ${JSON.stringify(parentPath)}.`,
                 severity: 'error',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.duplicateState,
@@ -1067,6 +1082,15 @@ function addInitialTransitionInvalidDiagnostics(
         if (!state.composite || state.pseudo) {
             continue;
         }
+        // A state that owns regions starts them all instead of choosing a child.
+        if (semantic.states.some(item => item.parentStateId === state.identity.id && item.isRegion)) {
+            continue;
+        }
+        // A region without any state is E_REGION_STRUCTURE's to report (empty_region);
+        // there is no child for an initial transition to name.
+        if (state.isRegion && !semantic.states.some(item => item.parentStateId === state.identity.id)) {
+            continue;
+        }
         if ((initialByOwner.get(state.identity.id) ?? 0) === 0) {
             diagnostics.push({
                 range: findIdentifierRange(document, state.name, state.range),
@@ -1087,12 +1111,9 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
     semantic: FcstmSemanticDocument,
     document: TextDocumentLike,
 ): FcstmDiagnostic[] {
-    if (semantic.ast) {
-        const unsupported = collectUnsupportedSyntaxDiagnostics(semantic.ast);
-        if (unsupported.length > 0) return unsupported;
-    }
     const diagnostics: FcstmDiagnostic[] = [];
     if (semantic.ast) diagnostics.push(...collectVariableRoleDiagnostics(semantic.ast));
+    if (semantic.ast) diagnostics.push(...collectRegionDiagnostics(semantic.ast, document));
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);

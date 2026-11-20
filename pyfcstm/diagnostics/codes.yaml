@@ -41,10 +41,10 @@ E_UNSUPPORTED_FEATURE:
   span_object: syntax_construct
   description: >-
     The selected consumer cannot preserve this language feature and refuses
-    the operation rather than producing partial results. Python model building
-    supports regions and activity queries; unsupported execution, analysis and
-    rendering consumers still reject them. Other frontends may reject them
-    during model construction until their semantic support is available.
+    the operation rather than producing partial results. Python model building,
+    the diagram snapshot and exports, and the JavaScript frontend's model,
+    semantic analysis and diagram preview support regions and activity queries;
+    execution, rendering and inspect/verify analysis consumers still reject them.
   refs:
     feature:
       type: str

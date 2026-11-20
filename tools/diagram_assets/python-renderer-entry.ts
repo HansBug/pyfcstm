@@ -1,4 +1,5 @@
 import { buildFcstmElkGraph } from "../../editors/jsfcstm/src/diagram/elk-graph";
+import { layoutFcstmGraph } from "../../editors/jsfcstm/src/diagram/region-order";
 import type {
   FcstmDiagram,
   FcstmDiagramPreviewOptionsInput,
@@ -92,7 +93,7 @@ function render(requestJson: string): Promise<string> {
   const request = JSON.parse(requestJson) as RenderRequest;
   const options = resolveFcstmDiagramPreviewOptions(request.options);
   const graph = buildFcstmElkGraph(request.diagram, options);
-  return elk.layout(JSON.parse(JSON.stringify(graph))).then((laidOut) => {
+  return layoutFcstmGraph(elk, graph).then((laidOut) => {
     smoothGraphEdges(laidOut);
     return renderSvg(laidOut, options, {
       palette: request.palette || "default",

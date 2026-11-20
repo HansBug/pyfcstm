@@ -37,6 +37,12 @@ namespace\_actions
 .. autofunction:: namespace_actions
 
 
+shown\_namespace
+-----------------------------------------------------
+
+.. autofunction:: shown_namespace
+
+
 walk\_namespaces
 -----------------------------------------------------
 

@@ -12,24 +12,6 @@ pyfcstm.model.forced
 .. autodata:: __all__
 
 
-is\_forced\_carrier
------------------------------------------------------
-
-.. autofunction:: is_forced_carrier
-
-
-authored\_guard
------------------------------------------------------
-
-.. autofunction:: authored_guard
-
-
-forced\_flag\_names
------------------------------------------------------
-
-.. autofunction:: forced_flag_names
-
-
 lower\_forced
 -----------------------------------------------------
 

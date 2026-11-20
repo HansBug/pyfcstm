@@ -3884,6 +3884,22 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         :return: A state machine DSL program AST node
         :rtype: dsl_nodes.StateMachineDSLProgram
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     event Stop;
+            ...     [*] -> Run;
+            ...     state Run { region A { [*] -> A1; state A1; } }
+            ...     state Idle;
+            ...     !Run -> Idle : /Stop;
+            ... }
+            ... ''')
+            >>> text = str(model.to_ast_node())
+            >>> '__forced' in text, 'Run -> Idle : Stop;' in text
+            (False, True)
         """
         shown = self._with_plain_forced()
         if shown is not self:

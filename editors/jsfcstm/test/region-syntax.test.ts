@@ -59,20 +59,18 @@ describe('ordered region syntax', () => {
             assert.equal(result.success, false);
         });
     }
-    for (const body of ['region R {}', 'state A { region R {} } [*] -> A;']) {
-        it(`refuses an executable region model: ${body}`, async () => {
-            const document = createDocument(`state Root { ${body} }`, '/tmp/unsupported-region.fcstm');
+    for (const body of ['region R { state A; [*] -> A; }', 'state A { region R { state B; [*] -> B; } } [*] -> A;']) {
+        it(`builds an executable region model without refusing: ${body}`, async () => {
+            const document = createDocument(`state Root { ${body} }`, '/tmp/region-model.fcstm');
             const ast = await packageModule.parseAstDocument(document);
             assert.ok(ast);
-            assert.equal(packageModule.buildStateMachineModel(ast), null);
+            assert.ok(packageModule.buildStateMachineModel(ast));
             const diagnostics = editorModule.collectSemanticAnalysisDiagnosticsFromSemantic(
                 packageModule.buildSemanticDocument(ast)!, document);
-            assert.equal(diagnostics.length, 1);
-            assert.equal(diagnostics[0].code, 'E_UNSUPPORTED_FEATURE');
-            assert.equal(diagnostics[0].data?.feature, 'region');
+            assert.deepEqual(diagnostics.filter(item => item.severity === 'error'), []);
         });
     }
-    it('refuses unsupported syntax reached through recursive imports', async () => {
+    it('builds a model through recursive imports of a region machine', async () => {
         const directory = trackTempDir('jsfcstm-regions-');
         const leaf = path.join(directory, 'leaf.fcstm');
         const middle = path.join(directory, 'middle.fcstm');
@@ -81,9 +79,8 @@ describe('ordered region syntax', () => {
         writeFile(middle, 'state Middle { import "leaf.fcstm" as Leaf; [*] -> Leaf; }');
         writeFile(host, 'state Host { import "middle.fcstm" as Middle; [*] -> Middle; }');
         const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
-        assert.equal(snapshot.nodes[leaf].model, null);
-        assert.equal(snapshot.nodes[host].modelAuthority, 'local');
-        assert.equal(snapshot.nodes[host].bindingDiagnostic?.diagnostic.code, 'E_UNSUPPORTED_FEATURE');
-        assert.equal(snapshot.nodes[host].bindingDiagnostic?.filePath, leaf);
+        assert.ok(snapshot.nodes[leaf].model);
+        assert.ok(snapshot.nodes[host].model);
+        assert.equal(snapshot.nodes[host].bindingDiagnostic, undefined);
     });
 });

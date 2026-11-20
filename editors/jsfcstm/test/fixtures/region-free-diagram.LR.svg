@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 584 241" width="584" height="241" font-family="&quot;JetBrains Mono&quot;,&quot;Noto Sans SC&quot;,monospace" font-size="14" data-fcstm-canvas="true" data-fcstm-direction="LR" data-fcstm-palette="default" data-fcstm-mode="light">
+<defs><marker id="fcstm-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#3470a8"/></marker><filter id="fcstm-leaf-shadow" x="-10%" y="-10%" width="120%" height="130%"><feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/><feOffset dx="0" dy="1"/><feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<rect x="0" y="0" width="584" height="241" fill="transparent"/>
+<g data-fcstm-kind="composite-state" data-fcstm-id="Root" data-fcstm-variant="composite" data-fcstm-pseudo="false" data-fcstm-composite="true" data-fcstm-collapsed="false" data-fcstm-range-start-line="1" data-fcstm-range-start-character="0" data-fcstm-range-end-line="6" data-fcstm-range-end-character="1">
+<rect x="36" y="36" width="484" height="141" rx="16" ry="16" fill="#edf4fb" stroke="#2d6aa8" stroke-width="1.8"  />
+<path d="M52,36 L504,36 Q520,36 520,52 L520,68 L36,68 L36,52 Q36,36 52,36 Z" fill="#dce9f5" stroke="none"/>
+<text x="52" y="57" fill="#183b61" font-weight="700" font-size="14">Root</text>
+<line x1="36" y1="68" x2="520" y2="68" stroke="#2d6aa8" stroke-opacity="0.35" stroke-width="1"/>
+<g data-fcstm-kind="chevron" data-fcstm-id="Root" data-fcstm-range-start-line="1" data-fcstm-range-start-character="0" data-fcstm-range-end-line="6" data-fcstm-range-end-character="1"><rect x="484" y="41" width="30" height="22" rx="6" ry="6" fill="rgba(255,255,255,0.5)" stroke="rgba(45,106,168,0.25)" stroke-width="1"/><path d="M495,54 l4,-4 l4,4" fill="none" stroke="#183b61" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></g>
+<rect class="fcstm-halo" x="34" y="34" width="488" height="145" rx="18" ry="18" fill="none" stroke="none" pointer-events="none" />
+</g>
+<g data-fcstm-kind="state" data-fcstm-id="Root.A" data-fcstm-variant="leaf" data-fcstm-pseudo="false" data-fcstm-composite="false" data-fcstm-collapsed="false" data-fcstm-range-start-line="3" data-fcstm-range-start-character="4" data-fcstm-range-end-line="3" data-fcstm-range-end-character="12">
+<rect x="102" y="90" width="140" height="58" rx="10" ry="10" fill="#ffffff" stroke="#5a92c4" stroke-width="1.4"  filter="url(#fcstm-leaf-shadow)" />
+<text x="172" y="124" fill="#183b61" font-weight="600" text-anchor="middle">A</text>
+</g>
+<g data-fcstm-kind="state" data-fcstm-id="Root.B" data-fcstm-variant="leaf" data-fcstm-pseudo="false" data-fcstm-composite="false" data-fcstm-collapsed="false" data-fcstm-range-start-line="4" data-fcstm-range-start-character="4" data-fcstm-range-end-line="4" data-fcstm-range-end-character="12">
+<rect x="352" y="90" width="140" height="58" rx="10" ry="10" fill="#ffffff" stroke="#5a92c4" stroke-width="1.4"  filter="url(#fcstm-leaf-shadow)" />
+<text x="422" y="124" fill="#183b61" font-weight="600" text-anchor="middle">B</text>
+</g>
+<circle cx="73" cy="119" r="9" fill="#2d6aa8" data-fcstm-kind="pseudo-init" data-fcstm-id="__init__::Root"/>
+<path d="M82.00,119.00 L102.00,119.00" fill="none" stroke="#3470a8" stroke-width="1.7" marker-end="url(#fcstm-arrow)" data-fcstm-kind="transition" data-fcstm-id="Root::[*]-&gt;A::2:4" data-fcstm-range-start-line="2" data-fcstm-range-start-character="4" data-fcstm-range-end-line="2" data-fcstm-range-end-character="13" />
+<path d="M242.00,119.00 L352.00,119.00" fill="none" stroke="#3470a8" stroke-width="1.4" marker-end="url(#fcstm-arrow)" data-fcstm-kind="transition" data-fcstm-id="Root::A-&gt;B::5:4" data-fcstm-range-start-line="5" data-fcstm-range-start-character="4" data-fcstm-range-end-line="5" data-fcstm-range-end-character="24" />
+<g data-fcstm-kind="transition-label" data-fcstm-id="Root::A-&gt;B::5:4" data-fcstm-range-start-line="5" data-fcstm-range-start-character="4" data-fcstm-range-end-line="5" data-fcstm-range-end-character="24">
+<text x="264" y="142.2" fill="#9c5d00" font-size="12" font-weight="500" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" >◇ [x&gt;0]</text>
+</g>
+</svg>

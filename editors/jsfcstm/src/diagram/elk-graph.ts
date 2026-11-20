@@ -348,6 +348,18 @@ function leafDetailLines(
     return { eventLabels, actionLabels };
 }
 
+/**
+ * Width a region has to have for its title and collapse button to fit.
+ *
+ * The title is drawn 16px in from the region's left edge (``render/svg.ts``),
+ * its text is the measured label width less the 36px of padding
+ * ``measureLabel`` adds, and the 30px collapse button sits 6px from the right
+ * edge with a little air before it: ``16 + (labelWidth - 36) + 44``.
+ */
+export function regionTitleMinWidth(titleLabelWidth: number): number {
+    return titleLabelWidth + 24;
+}
+
 const initId = (ownerQN: string) => `__init__::${ownerQN}`;
 const exitId = (ownerQN: string) => `__exit__::${ownerQN}`;
 
@@ -368,7 +380,9 @@ export function buildFcstmElkGraph(
 
     const buildStateNode = (state: FcstmDiagramState): FcstmElkNode => {
         const isCollapsed = collapsed.has(state.qualifiedName);
-        const title = state.displayName ? `${state.displayName} (${state.name})` : state.name;
+        const title = state.region
+            ? `region ${state.ordinal}: ${state.name}`
+            : (state.displayName ? `${state.displayName} (${state.name})` : state.name);
         const { width: titleW, height: titleH } = measureLabel(title, 18, 6);
         const leafDetails = leafDetailLines(state, options);
 
@@ -406,6 +420,8 @@ export function buildFcstmElkGraph(
                     pseudo: state.pseudo,
                     composite: state.children.length > 0,
                     collapsed: isCollapsed,
+                    region: state.region,
+                    ordinal: state.ordinal,
                     sourceRange: state.range,
                     eventLabels: leafDetails.eventLabels,
                     actionLabels: leafDetails.actionLabels,
@@ -489,7 +505,18 @@ export function buildFcstmElkGraph(
             children,
             edges,
             layoutOptions: {
-                'elk.padding': '[top=54,left=28,bottom=28,right=28]',
+                // ELK sizes a region by what it holds and knows nothing of its
+                // title, so a long name would be drawn past the region's right
+                // edge, across the next region's title once regions are tiled.
+                // ``elk.nodeSize.minimum`` does not help: under
+                // ``INCLUDE_CHILDREN`` it is applied after siblings are placed
+                // (the regions overlap) and it stretches the height as well.
+                // Padding is part of the size ELK measures, so the right
+                // padding makes room instead; a region holds at least one
+                // state, which is LEAF_MIN_WIDTH wide.
+                'elk.padding': `[top=54,left=28,bottom=28,right=${
+                    state.region ? Math.max(28, regionTitleMinWidth(titleW) - 28 - LEAF_MIN_WIDTH) : 28
+                }]`,
                 // ELK does not propagate parent spacing into nested layouts
                 // under ``INCLUDE_CHILDREN``. Keep enough room between an
                 // edge layer and its target node so the arrow approaches the
@@ -518,6 +545,8 @@ export function buildFcstmElkGraph(
                 pseudo: state.pseudo,
                 composite: true,
                 collapsed: false,
+                region: state.region,
+                ordinal: state.ordinal,
                 sourceRange: state.range,
                 eventLabels: leafDetails.eventLabels,
                 actionLabels: leafDetails.actionLabels,

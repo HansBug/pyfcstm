@@ -45,7 +45,8 @@ export interface RawFcstmModelNodeBase {
         | 'UnaryOp'
         | 'BinaryOp'
         | 'ConditionalOp'
-        | 'UFunc';
+        | 'UFunc'
+        | 'ActiveStateQuery';
     range: TextRange;
     text: string;
 }
@@ -62,7 +63,8 @@ export interface RawFcstmModelExpressionBase extends RawFcstmModelNodeBase {
         | 'unaryOp'
         | 'binaryOp'
         | 'conditionalOp'
-        | 'ufunc';
+        | 'ufunc'
+        | 'activeStateQuery';
 }
 
 export interface RawFcstmModelInteger extends RawFcstmModelExpressionBase {
@@ -121,7 +123,18 @@ export interface RawFcstmModelUFunc extends RawFcstmModelExpressionBase {
     x: RawFcstmModelExpression;
 }
 
+/** ``active("path")``: true while the queried state is active. */
+export interface RawFcstmModelActiveStateQuery extends RawFcstmModelExpressionBase {
+    kind: 'activeStateQuery';
+    pyModelType: 'ActiveStateQuery';
+    /** The path as written, possibly root-relative (``/A.B``). */
+    path: string;
+    /** The queried state's full path when it resolves to a state, otherwise ``null``. */
+    statePath: string[] | null;
+}
+
 export type RawFcstmModelExpression =
+    | RawFcstmModelActiveStateQuery
     | RawFcstmModelInteger
     | RawFcstmModelFloat
     | RawFcstmModelBoolean
@@ -324,6 +337,13 @@ export interface RawFcstmModelState extends RawFcstmModelNodeBase {
     pathName: string;
     path_name: string;
     substates: Record<string, RawFcstmModelState>;
+    /** Ordered regions of a parallel owner; empty for every other state. */
+    regions: Record<string, RawFcstmModelState>;
+    /** The node is a region of its owner, not a state. */
+    isRegion?: boolean;
+    is_region?: boolean;
+    /** One-based position of a region among its siblings. */
+    ordinal?: number;
     events: Record<string, RawFcstmModelEvent>;
     transitions: RawFcstmModelTransition[];
     namedFunctions: Record<string, RawFcstmModelNamedFunction>;
@@ -386,6 +406,8 @@ export interface RawFcstmModelStateMachine extends RawFcstmModelNodeBase {
     all_actions: RawFcstmModelNamedFunction[];
     lookups: RawFcstmModelLookups;
     historyOwners?: RawFcstmModelHistoryOwner[];
+    /** Number of ``active()`` queries used anywhere in the model; ``0`` or unset when there are none. */
+    activeQueryCount?: number;
     history_owners?: RawFcstmModelHistoryOwner[];
     historyDiagnostics?: FcstmModelHistoryDiagnostic[];
 }

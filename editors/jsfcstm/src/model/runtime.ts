@@ -22,6 +22,7 @@ import type {
     FcstmAstIfStatement,
     FcstmAstOperationBlock,
     FcstmAstOperationStatement,
+    FcstmAstRegionDefinition,
     FcstmAstStateDefinition,
     FcstmAstTransition,
     FcstmAstVariableDefinition,
@@ -55,6 +56,7 @@ import type {
     RawFcstmModelUFunc,
     RawFcstmModelUnaryOp,
     RawFcstmModelVarDefine,
+    RawFcstmModelActiveStateQuery,
     RawFcstmModelVariable,
 } from './raw';
 
@@ -359,6 +361,49 @@ export class Variable extends Expr {
             expressionKind: 'identifier',
             expressionType: 'num',
             name: this.name,
+        };
+    }
+}
+
+/**
+ * ``active("path")`` condition aligned with ``pyfcstm.model.expr.ActiveStateQuery``.
+ *
+ * jsfcstm does not lower queries into hidden variables, as the Python model
+ * does for execution; the query stays an expression and shows the state it
+ * names.
+ */
+export class ActiveStateQuery extends Expr {
+    /** The path as written, possibly root-relative (``/A.B``). */
+    path: string;
+    /** Full path of the queried state, or ``null`` when the path names no state. */
+    statePath: string[] | null;
+
+    constructor(raw: RawFcstmModelActiveStateQuery) {
+        super(raw.kind, raw.pyModelType, raw.range, raw.text);
+        this.path = raw.path;
+        this.statePath = raw.statePath ? [...raw.statePath] : null;
+    }
+
+    /**
+     * The query with the full dotted path of the state it names, as the diagram
+     * shows it; the path as written when it names no state.
+     */
+    get resolvedText(): string {
+        return `active(${JSON.stringify(this.statePath ? this.statePath.join('.') : this.path)})`;
+    }
+
+    /**
+     * Convert the query back into an AST node that keeps the written path.
+     */
+    to_ast_node(): FcstmAstExpression {
+        return {
+            kind: 'expression',
+            pyNodeType: 'ActiveStateQuery',
+            range: cloneRange(this.range),
+            text: this.text,
+            expressionKind: 'activeStateQuery',
+            expressionType: 'cond',
+            path: this.path,
         };
     }
 }
@@ -1020,6 +1065,12 @@ export class State extends ModelNode {
     pathName: string;
     path_name: string;
     substates: Record<string, State>;
+    /** Ordered regions of a parallel owner; empty for every other state. */
+    regions: Record<string, State>;
+    /** The node is a region of its owner, not a state. */
+    isRegion: boolean;
+    /** One-based position of a region among its siblings. */
+    ordinal?: number;
     events: Record<string, Event>;
     transitions: Transition[];
     namedFunctions: Record<string, OnStage | OnAspect>;
@@ -1057,6 +1108,9 @@ export class State extends ModelNode {
         this.pathName = raw.pathName;
         this.path_name = raw.path_name;
         this.substates = {};
+        this.regions = {};
+        this.isRegion = Boolean(raw.isRegion);
+        this.ordinal = raw.ordinal;
         this.events = {};
         this.transitions = [];
         this.namedFunctions = {};
@@ -1097,7 +1151,7 @@ export class State extends ModelNode {
     set parent(newParent: State | undefined) {
         this.parentState = newParent;
         this.isRootState = newParent === undefined;
-        this.isStoppable = this.isLeafState && !this.isPseudo;
+        this.isStoppable = this.isLeafState && !this.isPseudo && !this.isRegion;
     }
 
     /**
@@ -1448,6 +1502,7 @@ export class State extends ModelNode {
     to_ast_node(): FcstmAstStateDefinition {
         const events = Object.values(this.events).map(event => event.to_ast_node());
         const substates = Object.values(this.substates).map(state => state.to_ast_node());
+        const regions = Object.values(this.regions).map(region => region.to_region_ast_node());
         const transitions = this.transitions.map(transition => this.to_transition_ast_node(transition));
         const enters = this.onEnters.map(action => action.to_ast_node());
         const durings = this.onDurings.map(action => action.to_ast_node());
@@ -1456,6 +1511,7 @@ export class State extends ModelNode {
         const statements = [
             ...events,
             ...substates,
+            ...regions,
             ...transitions,
             ...enters,
             ...durings,
@@ -1475,11 +1531,12 @@ export class State extends ModelNode {
             pseudo: this.isPseudo,
             isPseudo: this.isPseudo,
             is_pseudo: this.is_pseudo,
-            composite: Object.keys(this.substates).length > 0,
+            composite: Object.keys(this.substates).length > 0 || regions.length > 0,
             statements,
             events,
             imports: [],
             substates,
+            regions,
             transitions,
             enters,
             durings,
@@ -1495,13 +1552,67 @@ export class State extends ModelNode {
     }
 
     /**
+     * Convert a region back into an AST region declaration.
+     *
+     * Forced transitions of the region are exported as the plain transitions
+     * they were expanded into, as for a state.
+     */
+    to_region_ast_node(): FcstmAstRegionDefinition {
+        const events = Object.values(this.events).map(event => event.to_ast_node());
+        const substates = Object.values(this.substates).map(state => state.to_ast_node());
+        const transitions = this.transitions.map(transition => this.to_transition_ast_node(transition));
+        const duringAspects = this.onDuringAspects.map(action => action.to_ast_node());
+        return {
+            kind: 'regionDefinition',
+            pyNodeType: 'RegionDefinition',
+            range: cloneRange(this.range),
+            text: this.text,
+            name: this.name,
+            nameRange: cloneRange(this.range),
+            statements: [...events, ...substates, ...transitions, ...duringAspects],
+            substates,
+            transitions,
+            forceTransitions: [],
+            force_transitions: [],
+            events,
+            duringAspects,
+            during_aspects: duringAspects,
+            doc: this.doc,
+        };
+    }
+
+    /**
      * Walk the state and all of its descendants in preorder.
      */
     *walk_states(): Generator<State, void, void> {
-        yield this;
+        if (!this.isRegion) yield this;
         for (const state of Object.values(this.substates)) {
             yield* state.walk_states();
         }
+        for (const region of Object.values(this.regions)) {
+            yield* region.walk_states();
+        }
+    }
+
+    /**
+     * Walk the regions below this state in declaration order, outer regions
+     * before the regions nested inside them. A region walks itself first.
+     */
+    *walk_regions(): Generator<State, void, void> {
+        if (this.isRegion) yield this;
+        for (const state of Object.values(this.substates)) {
+            yield* state.walk_regions();
+        }
+        for (const region of Object.values(this.regions)) {
+            yield* region.walk_regions();
+        }
+    }
+
+    /**
+     * Look up an immediate child scope by name: a state, or else a region.
+     */
+    namespace_child(name: string): State | undefined {
+        return this.substates[name] || this.regions[name];
     }
 
     /**
@@ -1536,9 +1647,9 @@ export class State extends ModelNode {
             if (!remainingPath) {
                 throw new Error(`Parent-relative event reference cannot end with dots: ${JSON.stringify(eventRef)}`);
             }
-            let currentState: State | undefined = this;
+            let currentState: State = this;
             for (let index = 0; index < dotCount; index += 1) {
-                if (!currentState?.parent) {
+                if (!currentState.parent) {
                     throw new Error(
                         `Parent-relative event reference ${JSON.stringify(eventRef)} goes beyond root state`
                     );
@@ -1550,7 +1661,7 @@ export class State extends ModelNode {
                 throw new Error(`Invalid parent-relative event reference: ${JSON.stringify(eventRef)}`);
             }
             eventName = pathParts[pathParts.length - 1];
-            targetStatePath = [...(currentState?.path || []), ...pathParts.slice(0, -1)];
+            targetStatePath = [...currentState.path, ...pathParts.slice(0, -1)];
         } else {
             const pathParts = eventRef.split('.');
             if (!pathParts.every(Boolean)) {
@@ -1563,7 +1674,7 @@ export class State extends ModelNode {
         const rootState = this.getRootState();
         let currentState: State = rootState;
         for (const stateName of targetStatePath.slice(1)) {
-            const nextState = currentState.substates[stateName];
+            const nextState = currentState.namespace_child(stateName);
             if (!nextState) {
                 throw new Error(`State ${JSON.stringify(statePathName(targetStatePath))} not found while resolving ${JSON.stringify(eventRef)}`);
             }
@@ -1610,6 +1721,8 @@ export class StateMachine extends ModelNode {
     history_owners: RawFcstmModelHistoryOwner[];
     /** Diagnostics raised while lowering history. */
     historyDiagnostics: FcstmModelHistoryDiagnostic[];
+    /** Whether the model uses at least one ``active("path")`` query. */
+    has_active_queries: boolean;
     /**
      * The same model built without lowering its history, which static
      * analyses judge instead (see ``inspectModel``); unset without history.
@@ -1636,6 +1749,7 @@ export class StateMachine extends ModelNode {
         this.historyOwners = raw.historyOwners ?? [];
         this.history_owners = this.historyOwners;
         this.historyDiagnostics = raw.historyDiagnostics ?? [];
+        this.has_active_queries = (raw.activeQueryCount ?? 0) > 0;
     }
 
     get control_variables(): Readonly<Record<string, VarDefine>> {
@@ -1677,7 +1791,21 @@ export class StateMachine extends ModelNode {
     }
 
     /**
-     * Walk all states in the machine in preorder.
+     * Walk every region of the machine in declaration order.
+     */
+    *walk_regions(): Generator<State, void, void> {
+        yield* this.rootState.walk_regions();
+    }
+
+    /**
+     * Whether the machine declares at least one region.
+     */
+    get has_regions(): boolean {
+        return this.walk_regions().next().done === false;
+    }
+
+    /**
+     * Walk all states in the machine in preorder; regions are not states and are skipped.
      */
     *walk_states(): Generator<State, void, void> {
         yield* this.rootState.walk_states();
@@ -1703,7 +1831,7 @@ export class StateMachine extends ModelNode {
         }
 
         for (const stateName of pathParts.slice(1, -1)) {
-            const nextState = currentState.substates[stateName];
+            const nextState = currentState.namespace_child(stateName);
             if (!nextState) {
                 throw new Error(`State ${JSON.stringify(stateName)} not found while resolving ${JSON.stringify(eventPath)}`);
             }
@@ -1779,6 +1907,9 @@ function hydrateExpression(raw: RawFcstmModelExpression, context: HydrationConte
             break;
         case 'variable':
             expression = new Variable(raw as RawFcstmModelVariable);
+            break;
+        case 'activeStateQuery':
+            expression = new ActiveStateQuery(raw as RawFcstmModelActiveStateQuery);
             break;
         case 'unaryOp': {
             const unary = raw as RawFcstmModelUnaryOp;
@@ -1928,6 +2059,9 @@ function hydrateState(
     for (const [name, substate] of Object.entries(raw.substates)) {
         state.substates[name] = hydrateState(substate, context, state);
     }
+    for (const [name, region] of Object.entries(raw.regions ?? {})) {
+        state.regions[name] = hydrateState(region, context, state);
+    }
     for (const [name, event] of Object.entries(raw.events)) {
         state.events[name] = hydrateEvent(event, context);
     }
@@ -1966,7 +2100,9 @@ function hydrateState(
         state.namedFunctions[name] = hydrated;
     }
     state.named_functions = state.namedFunctions;
-    state.isLeafState = Object.keys(state.substates).length === 0;
+    state.isLeafState = !state.isRegion
+        && Object.keys(state.substates).length === 0
+        && Object.keys(state.regions).length === 0;
     state.isRootState = state.parent === undefined;
     state.isStoppable = state.isLeafState && !state.isPseudo;
     state.is_pseudo = state.isPseudo;
@@ -2037,4 +2173,58 @@ export function hydrateStateMachine(raw: RawFcstmModelStateMachine): StateMachin
     }
 
     return stateMachine;
+}
+
+function collectActiveQueries(expr: Expr, out: ActiveStateQuery[]): void {
+    if (expr instanceof ActiveStateQuery) {
+        out.push(expr);
+    } else if (expr instanceof UnaryOp || expr instanceof UFunc) {
+        collectActiveQueries(expr.x, out);
+    } else if (expr instanceof BinaryOp) {
+        collectActiveQueries(expr.x, out);
+        collectActiveQueries(expr.y, out);
+    } else if (expr instanceof ConditionalOp) {
+        collectActiveQueries(expr.cond, out);
+        collectActiveQueries(expr.ifTrue, out);
+        collectActiveQueries(expr.ifFalse, out);
+    }
+}
+
+// One query as written: its path is a double- or single-quoted string.
+const ACTIVE_QUERY_TEXT = /active\s*\(\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\s*\)/g;
+
+/**
+ * Render an expression as written, with every ``active("...")`` query showing
+ * the full dotted path of the state it names.
+ *
+ * Expressions without a query come back unchanged, so the text of every model
+ * that does not use ``active`` is exactly the text it had before.
+ *
+ * @param expr An expression of the model.
+ * @returns The source text of ``expr``, with the paths of its queries resolved.
+ */
+export function resolvedExprText(expr: Expr): string {
+    return resolveQueriesInText(expr.text, expr);
+}
+
+/**
+ * Render an assignment as written, with every ``active("...")`` query in its
+ * value showing the full dotted path of the state it names.
+ *
+ * @param operation An assignment of the model.
+ * @returns The source text of ``operation``, with the paths of its queries resolved.
+ */
+export function resolvedOperationText(operation: Operation): string {
+    return resolveQueriesInText(operation.text, operation.expr);
+}
+
+function resolveQueriesInText(text: string, expr: Expr): string {
+    const queries: ActiveStateQuery[] = [];
+    collectActiveQueries(expr, queries);
+    if (queries.length === 0) return text;
+    let index = 0;
+    return text.replace(ACTIVE_QUERY_TEXT, () => {
+        index += 1;
+        return queries[index - 1].resolvedText;
+    });
 }

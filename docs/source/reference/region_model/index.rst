@@ -2,10 +2,13 @@ Region models and configurations
 ================================
 
 This page describes Python model construction and position values. Execution,
-code generation, diagrams and inspect/verify analysis currently reject models
-containing regions or activity queries with ``E_UNSUPPORTED_FEATURE``. Parsing
-and constructing a model does not imply that those consumers can execute it.
-The JavaScript model frontend still rejects these features during construction.
+code generation and inspect/verify analysis currently reject models containing
+regions or activity queries with ``E_UNSUPPORTED_FEATURE``. Parsing and
+constructing a model does not imply that those consumers can execute it.
+Diagrams (``StateMachine.diagram()`` and ``pyfcstm diagram``) and the
+JavaScript frontend (model, semantic analysis and diagram preview) support
+regions and activity queries; the JavaScript structural inspector, like
+``pyfcstm inspect``, does not judge them.
 
 Namespaces and structure
 ------------------------

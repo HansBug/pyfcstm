@@ -13,7 +13,7 @@ pytestmark = pytest.mark.unittest
     'state Root { during { if [active("Root")] {} } }',
 ])
 @pytest.mark.parametrize('arguments', [
-    ['simulate'], ['diagram'], ['generate'], ['bmc'],
+    ['simulate'], ['generate'], ['bmc'],
 ])
 def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
     path = tmp_path / 'unsupported.fcstm'
@@ -44,3 +44,18 @@ def test_plantuml_command_exports_region_and_active_models(tmp_path, source, exp
     assert result.exitcode == 0
     assert expected in result.stdout
     assert '__active_' not in result.stdout
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('state Root { region Motor { state A; [*] -> A; } }', 'Motor'),
+    ('state Root { state A; [*] -> A; A -> [*] : if [active("Root.A")]; }', 'active(\\"Root.A\\")'),
+])
+def test_diagram_command_exports_region_and_active_models(tmp_path, source, expected):
+    path = tmp_path / 'supported.fcstm'
+    path.write_text(source, encoding='utf-8')
+    target = tmp_path / 'machine.json'
+    result = simulate_entry(pyfcstmcli, ['pyfcstm', 'diagram', '-i', str(path), '-o', str(target)])
+    assert result.exitcode == 0, result.stdout + result.stderr
+    text = target.read_text(encoding='utf-8')
+    assert expected in text
+    assert '__active_' not in text

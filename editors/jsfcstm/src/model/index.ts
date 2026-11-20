@@ -3,7 +3,7 @@ export {
     buildStateMachineModelFromAst,
     buildStateMachineModelFromSemantic,
 } from './builder';
-export {hydrateStateMachine} from './runtime';
+export {hydrateStateMachine, resolvedExprText, resolvedOperationText} from './runtime';
 export type {
     FcstmModelActionPath as ModelActionPath,
     FcstmModelBinaryOp as ModelBinaryOp,

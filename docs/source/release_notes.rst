@@ -42,7 +42,7 @@ Three things become visible:
   is 0 whenever the machine rests.
   :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names. A
   hot start does not have to supply these variables and rejects a non-zero
-  value, in :class:`pyfcstm.simulate.SimulationRuntime`, in the ``init``
+  value, in :class:`pyfcstm.simulate.runtime.SimulationRuntime`, in the ``init``
   command of ``pyfcstm simulate`` and in the five built-in templates; BMC
   constrains them to 0 in the first frame.
 - A transition with an event that leaves a state on the way of a forced exit is

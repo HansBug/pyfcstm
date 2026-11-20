@@ -18,7 +18,7 @@
 
 有三样东西变得可见：
 
-- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里。状态机停驻时它总是 0。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。热启动（hot start）不需要提供这些变量，传入非 0 值会被拒绝；\ :class:`pyfcstm.simulate.SimulationRuntime`\ 、\ ``pyfcstm simulate``\ 的 ``init`` 命令和五套内置模板都是如此。BMC 把它们在初始帧约束为 0。
+- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里。状态机停驻时它总是 0。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。热启动（hot start）不需要提供这些变量，传入非 0 值会被拒绝；\ :class:`pyfcstm.simulate.runtime.SimulationRuntime`\ 、\ ``pyfcstm simulate``\ 的 ``init`` 命令和五套内置模板都是如此。BMC 把它们在初始帧约束为 0。
 - 处在强制退出途中的状态上，带事件的转换会经由一个生成的伪状态 ``__forced_gate_<n>`` 拆成两步。这个伪状态出现在 ``walk_states()`` 里，在执行轨迹中表现为多经过一个状态。
 - ``to_ast_node()``\ 导出实际运行的状态机，包含上述变量和伪状态，与历史的现有做法一致。从导出文本加载的状态机逐周期行为相同。导出文本里已经没有强制转换，所以在那里 ``__forced_<n>`` 只是一个普通变量：热启动必须提供它，BMC 也不约束它。例外是强制转换要把某个状态的全部 region 一起带走的模型：它仍把所有强制转换按旧的展开形式导出，从这份文本加载的状态机行为可能不同。
 

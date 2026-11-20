@@ -591,6 +591,13 @@ class TestPythonBuiltinTemplate:
             # A forced declaration on a composite state: the generated class
             # lists its hidden variable and fills it in on a hot start.
             'forced_hot_start_does_not_ask_for_the_hidden_variable',
+            # Guards that model conversion lengthened: wrapped once, split
+            # in front of every ``and``, two hidden variables, and a history
+            # restore split in front of every ``or``.
+            'forced_composite_is_taken_away_when_its_condition_holds',
+            'forced_condition_is_judged_before_exit_actions_change_what_it_reads',
+            'forced_declared_first_wins_when_two_hold',
+            'history_blocked_default_restore_is_rejected',
         ]
         fixture_dir = os.path.join(
             os.path.dirname(__file__),

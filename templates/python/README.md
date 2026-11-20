@@ -38,6 +38,8 @@ Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, 
 
 Keep generated code Python 3.7+ and standard-library-only. Preserve exact input/parameter suffixes, `read_*` overrides, keyword-only `parameters` / `inputs`, read-only parameter/input snapshots and complete constructor forwarding in documented subclasses. Representative artifacts must pass Ruff check and format with an explicit Python 3.7 target.
 
+Guard lambdas are laid out by the `render_guard_lambda` macro the way Ruff leaves them: a guard of up to 51 characters stays on the lambda line, one of up to 68 is wrapped once in parentheses, and a longer one is split in front of every `and` / `or` that is not inside brackets. Model conversion lengthens guards (a history restore, a forced transition that has to give way), so keep these widths in step with the indentation of the guard methods when that changes. Formatter-only rewrites that remain are non-blocking; the outputs are lint-clean and aligned with the simulator: a single operand that does not fit on a line, a guard whose outermost operator is a conditional expression, the redundant outer parentheses of `=>`, and long arithmetic in operation blocks and initializers, which is still emitted on one line.
+
 ## Documentation maintenance
 
 Maintain the user journey as a whole. There must be one complete Quick Start, followed by extensions of the same instance, recovery, API reference and advanced integration. A new API belongs in its existing tutorial section and reference table; replace obsolete examples and remove duplicate explanations in the same edit. Do not append a second quick start, final “complete example” or corrective note to compensate for a broken earlier section.

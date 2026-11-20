@@ -1,6 +1,8 @@
 """Forced transitions that reach regions, as the model exposes them."""
 
 import dataclasses
+import gc
+import json
 
 import pytest
 
@@ -232,6 +234,21 @@ def test_inspect_judges_the_model_as_written():
     # Only the transition written on the level of the declaration is expanded;
     # nothing is put into the regions.
     assert sum(item.is_forced for item in report.transitions) == 1
+
+
+def test_a_state_is_shown_as_written_after_its_machine_is_no_longer_kept():
+    kept = load_state_machine_from_text(OWNER)
+    # Only the root state is kept; the machine object it came from is dropped.
+    root = load_state_machine_from_text(OWNER).root_state
+    gc.collect()
+    assert root.to_plantuml('full') == kept.root_state.to_plantuml('full')
+    assert '__forced' not in root.to_plantuml('full')
+    run = root.substates['Run']
+    assert run.regions['A'].to_plantuml('full') == \
+        kept.root_state.substates['Run'].regions['A'].to_plantuml('full')
+    # This machine takes a group away, so its states export the plain expansion too.
+    assert str(root.to_ast_node()) == str(kept.root_state.to_ast_node())
+    assert '__forced' not in str(root.to_ast_node())
 
 
 def test_plantuml_draws_the_declaration_once_and_hides_how_it_is_carried_out():

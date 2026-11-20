@@ -3482,6 +3482,56 @@ class VarDefine(AstExportable):
         return dsl_nodes.Name(self.name)
 
 
+class _PlainForcedView:
+    """
+    The machine a model with lowered forced declarations is shown as.
+
+    A drawing shows a forced declaration as one transition on every state it
+    applies to, which is not what runs (see :mod:`pyfcstm.model.forced`). This
+    object holds what is needed to build that other machine and builds it on
+    first use. The machine and its root state share one holder, so a state
+    keeps showing the declarations as written when the machine object it came
+    from is no longer referenced, and no reference leads from a state back to
+    its machine.
+
+    :param program: Import-assembled program the machine was built from.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param takes_groups: Whether the machine that runs has transitions that
+        take a group of regions away, which the language cannot write.
+    :type takes_groups: bool
+
+    :ivar takes_groups: The value of the parameter of the same name.
+    :vartype takes_groups: bool
+    """
+
+    def __init__(
+        self, program: dsl_nodes.StateMachineDSLProgram, takes_groups: bool
+    ) -> None:
+        self._program = program
+        self._machine: Optional["StateMachine"] = None
+        self.takes_groups = takes_groups
+
+    def machine(self) -> "StateMachine":
+        """
+        Return the machine with forced declarations in their plain expansion.
+
+        History and activity queries are lowered as usual. The machine is built
+        once and kept, so later edits of the model it was made for do not
+        reach it.
+
+        :return: The machine to show.
+        :rtype: StateMachine
+        """
+        if self._machine is None:
+            self._machine = _build_assembled_state_machine(
+                self._program,
+                DiagnosticSink(collect=True),
+                lower=True,
+                plain_forced=True,
+            )
+        return self._machine
+
+
 @dataclass
 class StateMachine(AstExportable, PlantUMLExportable):
     """
@@ -3560,10 +3610,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
         default=None, compare=False, repr=False
     )
     # The hidden variables of the forced declarations that were lowered, and
-    # the machine built from the same program with those declarations kept in
-    # their plain expansion, which every view of the model as written uses.
+    # the holder of the machine built from the same program with those
+    # declarations kept in their plain expansion, which every view of the
+    # model as written uses. The root state shares the holder.
     _forced_flags: Tuple[str, ...] = field(default=(), compare=False, repr=False)
-    _plain_forced_view: Optional["StateMachine"] = field(
+    _plain_forced_view: Optional[_PlainForcedView] = field(
         default=None, compare=False, repr=False
     )
     # Whether a forced declaration was expanded into transitions that take a
@@ -3851,14 +3902,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         if not self._forced_flags:
             return self
-        if self._plain_forced_view is None:
-            self._plain_forced_view = _build_assembled_state_machine(
-                self._assembled_program,
-                DiagnosticSink(collect=True),
-                lower=True,
-                plain_forced=True,
-            )
-        return self._plain_forced_view
+        return self._plain_forced_view.machine()
 
     @property
     def control_variables(self) -> Mapping[str, VarDefine]:
@@ -4626,10 +4670,15 @@ def parse_dsl_node_to_state_machine(
         # to build it on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
     if machine._forced_flags:
-        # A state or region exports through the machine that keeps forced
-        # declarations plain (see ``StateMachine._with_plain_forced``); the
-        # link is weak, like the links to parents.
-        machine.root_state._machine_ref = weakref.ref(machine)
+        # A state or region is shown through the machine that keeps forced
+        # declarations plain (see ``StateMachine._with_plain_forced``). The
+        # machine and its root state share the holder: a state that outlives
+        # the machine object still shows the declarations as written, and
+        # nothing leads from a state back to its machine.
+        machine._plain_forced_view = _PlainForcedView(
+            dnode, machine._forced_takes_groups
+        )
+        machine.root_state._plain_forced_view = machine._plain_forced_view
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the

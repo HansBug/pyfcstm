@@ -1,5 +1,8 @@
 """Forced transitions of models without regions, as the model exposes them."""
 
+import gc
+import json
+
 import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
@@ -268,9 +271,28 @@ def test_drawings_and_inspect_show_the_declaration_on_every_state_below_its_sour
     snapshot = model.diagram().to_json()
     assert '__forced' not in snapshot
     report = inspect_model(model)
-    assert '__forced' not in report.to_json()
+    assert '__forced' not in json.dumps(report.to_json())
     assert len(report.forced_transitions) == 1
-    assert sum(item.is_forced for item in report.transitions) == 6
+    # One forced transition per state below Run, the pseudo state included,
+    # and the declared one; the machine that runs has none on the pseudo state.
+    assert sorted(item.from_path for item in report.transitions if item.is_forced) == [
+        'Root.Run', 'Root.Run.Inner', 'Root.Run.Inner.A', 'Root.Run.Inner.B',
+        'Root.Run.Inner.Junction', 'Root.Run.Side']
+
+
+def test_a_state_is_shown_the_same_after_its_machine_is_no_longer_kept():
+    kept = load_state_machine_from_text(NESTED)
+    # Only the root state is kept here; the machine it came from is dropped.
+    root = load_state_machine_from_text(NESTED).root_state
+    gc.collect()
+    for detail in ('minimal', 'normal', 'full'):
+        drawing = root.to_plantuml(detail)
+        assert drawing == kept.root_state.to_plantuml(detail)
+        assert '__forced' not in drawing
+    run = root.substates['Run']
+    assert run.to_plantuml('full') == kept.root_state.substates['Run'].to_plantuml('full')
+    assert '__forced' not in run.to_plantuml('full')
+    assert str(root.to_ast_node()) == str(kept.root_state.to_ast_node())
 
 
 def test_a_state_of_the_machine_is_exported_the_way_the_machine_is():

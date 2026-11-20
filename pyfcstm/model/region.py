@@ -274,11 +274,10 @@ def shown_namespace(namespace, export=False):
     root = namespace
     while root.parent is not None:
         root = root.parent
-    reference = getattr(root, "_machine_ref", None)
-    machine = None if reference is None else reference()
-    if machine is None or (export and not machine._forced_takes_groups):
+    view = getattr(root, "_plain_forced_view", None)
+    if view is None or (export and not view.takes_groups):
         return namespace
-    shown = machine._with_plain_forced().root_state
+    shown = view.machine().root_state
     for name in namespace.path[1:]:
         regions = getattr(shown, "regions", None)
         if regions and name in regions:

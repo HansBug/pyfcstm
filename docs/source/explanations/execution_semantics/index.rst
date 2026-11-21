@@ -169,9 +169,9 @@ Hot start builds the active stack directly from an ``initial_state`` and
 
 * all declared persistent variables must be provided, including the
   ``__hist_*`` variables of lowered history; compute them from source-level
-  records with ``StateMachine.history_variables()``, and note that a restore
-  target other than ``0`` or a record naming no stoppable leaf of its owner is
-  rejected (see :ref:`dsl-history-reference`);
+  records with ``StateMachine.history_variables()``. Like every other variable
+  they run on whatever value is given, and a hot start does not refuse a value
+  (see :ref:`dsl-history-reference`);
 * enter actions on the constructed path are skipped;
 * plain composite ``during before`` for the constructed boundary is not replayed;
 * later cycles run normal transition and during semantics;

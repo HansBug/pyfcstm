@@ -643,11 +643,13 @@ model.
       print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
 
    ``history_record()`` decodes a record back to a leaf path; it is meaningful
-   while the owner is inactive. The simulator rejects a hot start whose
-   ``__hist_goto`` is not ``0`` or whose record names no stoppable leaf of its
-   owner, and its message lists the valid ids with their leaf paths. The
-   ``init`` command of ``pyfcstm simulate`` accepts the same variables, for
-   example ``__hist_goto=0 __hist_Program=7``.
+   while the owner is inactive. The ``__hist_*`` variables are ordinary
+   variables of the model, so a hot start treats them like any other variable:
+   whatever value is given is what the machine runs on, and nothing is checked
+   beyond that all of them are supplied. A checkpoint saved from a running
+   machine holds valid values by construction. The ``init`` command of
+   ``pyfcstm simulate`` accepts the same variables, for example
+   ``__hist_goto=0 __hist_Program=7``.
 
 Common mistakes and repairs:
 

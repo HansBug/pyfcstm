@@ -575,7 +575,7 @@ JSON 中重点看：
       print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
       print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
 
-   ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。如果热启动给出的 ``__hist_goto`` 不是 ``0``\ ，或者记录不是所有者下某个可停留叶的编号，仿真器会拒绝，并在报错里按叶路径列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
+   ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。\ ``__hist_*`` 是模型的普通变量，热启动对它们和其他变量一视同仁：给什么值就按什么值运行，不做额外检查；从运行中的机器保存下来的检查点，其中的值天然合法。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
 
 常见错误与修复：
 

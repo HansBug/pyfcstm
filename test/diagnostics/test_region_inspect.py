@@ -581,14 +581,17 @@ def test_verify_excludes_single_path_algorithms_with_an_explicit_reason():
     assert 'region' in by_name['enter_postcondition_implies_during_precondition'].reason
 
 
-def test_active_guards_are_skipped_by_solver_checks_instead_of_misjudged():
+def test_active_guards_are_judged_like_any_other_condition_over_the_hidden_flag():
     report = inspect_text(
         PLANT, enable_verify=True, max_complexity_tier='smt_undecidable_heuristic',
         max_call_count_scaling='quadratic_in_states', smt_timeout_ms=5000,
     )
     by_name = {item.algorithm_name: item for item in report.verification.algorithms}
-    assert by_name['dead_guard'].result_kind == 'undecidable_skip'
-    assert 'ActiveStateQuery' in by_name['dead_guard'].reason
+    # The solver checks judge the machine that runs, where ``active()`` is a
+    # condition on an ordinary variable that nothing constrains, so the guard
+    # is neither dead nor a tautology, and nothing is skipped on its account.
+    assert by_name['dead_guard'].result_kind == 'sat'
+    assert 'W_DEAD_GUARD' not in codes(report)
 
 
 def test_solver_checks_run_inside_regions():

@@ -645,6 +645,7 @@ class _Lowering:
                     operations=operations,
                     is_abstract=False,
                     state_path=(*path, None),
+                    _span=leaf._span,
                 )
                 action.parent = leaf
                 leaf.on_exits.append(action)
@@ -658,11 +659,16 @@ class _Lowering:
 
         # 3 + 4. routes and gates on every composite a restore passes through
         hops: Dict[_Path, List[str]] = {}
+        # What a route or a gate added on a composite points back to: the
+        # history declaration of the first owner whose restore passes through.
+        pointed_at: Dict[_Path, object] = {}
         restore_targets: Set[_Path] = set()
         for owner_path, owner in owners.items():
+            declaration = getattr(next(iter(declared[owner_path].values()))[1], "_span", None)
             for target in self._possible_targets(owner, used[owner_path]):
                 restore_targets.add(target)
                 for depth in range(len(owner_path), len(target)):
+                    pointed_at.setdefault(target[:depth], declaration)
                     bucket = hops.setdefault(target[:depth], [])
                     if target[depth] not in bucket:
                         bucket.append(target[depth])
@@ -720,6 +726,7 @@ class _Lowering:
                     substates={},
                     is_pseudo=True,
                     is_history_gate=True,
+                    _span=transition._span,
                 )
                 gate_state.parent = comp
                 comp.substates[gate_name] = gate_state
@@ -750,6 +757,7 @@ class _Lowering:
                     guard=self._in_subtree(child.path),
                     effects=[self._assign(self.goto, Integer(0))] if child.is_leaf_state else [],
                     history_role="route",
+                    _span=pointed_at.get(comp_path),
                 )
                 route.parent = comp
                 routes.append(route)

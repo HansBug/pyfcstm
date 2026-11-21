@@ -331,6 +331,7 @@ def lower_active(root, defines, sink, *, apply=True):
                     stage=stage, aspect=None, name=None, doc=None,
                     operations=[Operation(name, Integer(value))],
                     is_abstract=False, state_path=(*state.path, None),
+                    _span=state._span,
                 )
                 action.parent = state
                 if stage == 'enter':

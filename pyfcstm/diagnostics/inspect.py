@@ -48,7 +48,7 @@ Examples::
 
 import math
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Collection, Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Collection, Dict, Iterator, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple
 
 from .analyzers import (
     build_use_def_graph,
@@ -4643,12 +4643,18 @@ def inspect_model(
 
     A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
     model conversion can also build the model before history lowering, and
-    the report,
-    its findings and the optional verify run describe that model, with each
-    history entry an ordinary transition marked by ``target_history``. The
-    lowered variables, gate states and route initials therefore appear nowhere
-    in the report. For reachability, a history entry also reaches every state on
-    the default path of the kind it names.
+    the report and the findings about what was written describe that model,
+    with each history entry an ordinary transition marked by
+    ``target_history``. The lowered variables, gate states and route initials
+    therefore appear nowhere in the report. For reachability, a history entry
+    also reaches every state on the default path of the kind it names.
+
+    The findings of the verify pipeline (:data:`BEHAVIOR_DIAGNOSTIC_CODES`)
+    are the exception. They say how a machine behaves, so with ``enable_verify``
+    they are judged on the machine that runs, where history, ``active()`` and
+    forced declarations are lowered into plain FCSTM. A model and the text it
+    exports then give the same ones, and they can name what was lowered. Each
+    still points at the construct it was lowered from.
 
     A machine with ``region`` blocks or ``active()`` queries is also reported
     as written. Regions are listed in :attr:`ModelInspect.regions`; the
@@ -4658,7 +4664,7 @@ def inspect_model(
     ``W_REGION_BLIND_OVERWRITE`` judge sibling regions. With ``enable_verify``
     the single-active-path topology algorithms are reported as ``not_run`` with
     the reason ``requires_single_active_path`` for such a model, and no hidden
-    ``active()`` flag variable ever appears in the report.
+    ``active()`` flag variable appears in the report itself.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4767,10 +4773,131 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
-    # A machine that uses history is judged as written: model conversion keeps
-    # the model before lowering, where a history entry is an ordinary
-    # transition that still carries its ``target_history``.
-    machine = machine._as_written()
+    settings = dict(
+        deep_hierarchy_threshold=deep_hierarchy_threshold,
+        large_composite_threshold=large_composite_threshold,
+        var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+        structure_statistics_policy=structure_statistics_policy,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    # The report and the findings about what was written are judged on the
+    # model as written: model conversion keeps the model before lowering, where
+    # a history entry is an ordinary transition that still carries its
+    # ``target_history``.
+    written = _inspect_pass(machine._as_written(), model_diagnostics, **settings)
+    running = machine._as_run() if enable_verify else None
+    if running is None:
+        return written.report
+    # The findings about how the machine behaves are judged on the machine
+    # that runs, so that a model and the plain text it exports give the same
+    # ones (see :data:`BEHAVIOR_DIAGNOSTIC_CODES`).
+    return _combine_inspect_passes(
+        written, _inspect_pass(running, (), **settings), settings
+    )
+
+
+class _InspectPass(NamedTuple):
+    """One analysis pass: the report and the verify run it was built from."""
+
+    report: 'ModelInspect'
+    verify_plan: Optional[Sequence['InspectEligibility']]
+    verify_results: Optional[Sequence['InspectRunResult']]
+
+
+#: Findings about how a machine behaves rather than about how it was written:
+#: the codes of the verify pipeline, which the solver and the topology analyses
+#: decide. A model that uses history, activity queries or a forced declaration
+#: is written in terms of constructs that are lowered into plain FCSTM, and the
+#: text it exports is that plain FCSTM, so these findings are judged on the
+#: machine that runs: the model and its exported text then give the same ones.
+#: Every other code describes what was written, and is judged on the model as
+#: written, together with the report itself. ``W_FORCED_GUARD_UNSAT`` judges a
+#: forced declaration and so also belongs to the model as written.
+BEHAVIOR_DIAGNOSTIC_CODES = frozenset(
+    code for code, spec in CODE_REGISTRY.items()
+    if spec.emit_tier == 'verify_pipeline'
+) - {'W_FORCED_GUARD_UNSAT'}
+
+#: Verify algorithms that judge a declaration and so run on the model as written.
+_DECLARATION_VERIFY_ALGORITHMS = frozenset({'forced_guard_unsat_under_init'})
+
+
+def _combine_inspect_passes(
+        written: '_InspectPass',
+        running: '_InspectPass',
+        settings: Mapping[str, Any],
+) -> ModelInspect:
+    """Join the findings of the pass on the model as written and the one on the machine that runs.
+
+    The report, and every finding that is not about behavior, come from the
+    pass on the model as written. The findings in
+    :data:`BEHAVIOR_DIAGNOSTIC_CODES` come from the pass on the machine that
+    runs, and so does the verify run apart from the algorithms that judge a
+    declaration.
+
+    :param written: Pass on the model as written.
+    :type written: _InspectPass
+    :param running: Pass on the machine that runs.
+    :type running: _InspectPass
+    :param settings: Verification settings both passes were run with.
+    :type settings: Mapping[str, Any]
+    :return: The combined report.
+    :rtype: ModelInspect
+    """
+    diagnostics = tuple(
+        item for item in written.report.diagnostics
+        if item.code not in BEHAVIOR_DIAGNOSTIC_CODES
+    ) + tuple(
+        item for item in running.report.diagnostics
+        if item.code in BEHAVIOR_DIAGNOSTIC_CODES
+    )
+    verification = written.report.verification
+    if written.verify_results is not None:
+        declaration = [
+            item for item in written.verify_results
+            if item.algorithm_name in _DECLARATION_VERIFY_ALGORITHMS
+        ]
+        replaced = {item.algorithm_name for item in declaration}
+        merged = [
+            item for item in running.verify_results
+            if item.algorithm_name not in replaced
+        ] + declaration
+        verification = _verification_report_from_results(
+            running.verify_plan,
+            merged,
+            max_complexity_tier=settings['max_complexity_tier'],
+            max_call_count_scaling=settings['max_call_count_scaling'],
+            smt_timeout_ms=settings['smt_timeout_ms'],
+        )
+    return replace(written.report, diagnostics=diagnostics, verification=verification)
+
+
+def _inspect_pass(
+        machine: 'StateMachine',
+        model_diagnostics: Sequence[ModelDiagnostic],
+        *,
+        deep_hierarchy_threshold: int,
+        large_composite_threshold: int,
+        var_to_leaf_ratio_threshold: float,
+        structure_statistics_policy: object,
+        enable_verify: bool,
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
+) -> _InspectPass:
+    """Run every analysis on one machine and return its report and verify run.
+
+    :param machine: The machine to analyze, as written or as it runs.
+    :type machine: pyfcstm.model.StateMachine
+    :param model_diagnostics: Diagnostics of the model build to lead the findings with.
+    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic]
+    :return: The report and, with ``enable_verify``, the verify plan and results.
+    :rtype: _InspectPass
+    """
+    verify_plan = verify_results = None
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4873,7 +5000,7 @@ def inspect_model(
         structure_statistics_policy,
         reason_by_key,
     )
-    return ModelInspect(
+    report = ModelInspect(
         root_state_path=root_state_path,
         states=states,
         transitions=transitions,
@@ -4894,6 +5021,7 @@ def inspect_model(
         structure_statistics=structure_statistics,
         regions=regions,
     )
+    return _InspectPass(report, verify_plan, verify_results)
 
 
 def _normalize_int_threshold(name: str, value: int) -> int:

@@ -1075,6 +1075,7 @@ def _give_way(
         substates={},
         is_pseudo=True,
         is_forced_gate=True,
+        _span=transition._span,
     )
     gate.parent = namespace
     namespace.substates[gate_name] = gate

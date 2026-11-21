@@ -46,7 +46,7 @@ import io
 import json
 import os
 import weakref
-from dataclasses import InitVar, dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from itertools import chain
 from textwrap import indent
 from types import MappingProxyType
@@ -3798,6 +3798,37 @@ class StateMachine(AstExportable, PlantUMLExportable):
             raise ValueError('Configuration belongs to a different state machine.')
         return {item.variable_name: int(configuration.is_active(item.state_path))
                 for item in self.active_queries}
+
+    def _as_run(self) -> Optional["StateMachine"]:
+        """
+        Return this machine without what it remembers of its lowered constructs.
+
+        History, activity queries and forced declarations are lowered into
+        plain FCSTM, and this machine still carries records of them: the
+        history owners, the activity queries, the forced declarations and the
+        program they were built from. A machine that took the plain text it
+        exports for its source carries none of them. The analysis of how a
+        machine behaves must not read them, or the model and its exported text
+        would be judged differently, so it is made on this view: the same
+        states and transitions, spans included, without the records.
+
+        :return: The view, or ``None`` when nothing was lowered and the machine
+            is its own view.
+        :rtype: Optional[StateMachine]
+        """
+        if not (self.history_owners or self.active_queries or self.forced_transitions):
+            return None
+        return replace(
+            self,
+            forced_transitions=(),
+            history_owners=(),
+            active_queries=(),
+            _assembled_program=None,
+            _authored_view=None,
+            _plain_forced_view=None,
+            _forced_flags=(),
+            _build_warnings=(),
+        )
 
     def _as_written(self) -> "StateMachine":
         """

@@ -129,11 +129,11 @@ variable::
     >>> model.forced_variables
     ('__forced_0',)
     >>> [(t.from_state, t.to_state, str(t.guard))
-    ...  for t in model.root_state.substates['Run'].transitions if t.is_forced]
+    ...  for t in model.root_state.substates['Run'].transitions if t.guard is not None]
     [('A', EXIT_STATE, 'armed == 1')]
-    >>> [(t.from_state, t.to_state, str(t.guard), t.is_forced)
+    >>> [(t.from_state, t.to_state, str(t.guard))
     ...  for t in model.root_state.transitions if isinstance(t.from_state, str)]
-    [('Run', 'Idle', '__forced_0 == 1', False), ('Run', 'Idle', 'armed == 1 && __forced_0 == 0', True), ('Idle', 'Run', 'armed == 2', True)]
+    [('Run', 'Idle', '__forced_0 == 1'), ('Run', 'Idle', 'armed == 1 && __forced_0 == 0'), ('Idle', 'Run', 'armed == 2')]
     >>> runtime = SimulationRuntime(model)
     >>> runtime.cycle().delta, runtime.current_state.path
     (False, ('Root', 'Run', 'A'))
@@ -329,7 +329,7 @@ class ForcedInheritance:
         ... }
         ... ''')
         >>> run = model.root_state.substates['Run']
-        >>> sorted(t.from_state for t in run.transitions if t.is_forced)
+        >>> sorted(t.from_state for t in run.transitions if t.event is not None)
         ['A', 'B']
     """
 
@@ -360,7 +360,7 @@ class ForcedInheritance:
             ... }
             ... ''')
             >>> region = model.root_state.substates['Run'].regions['A']
-            >>> [(t.from_state, t.exit_group_levels) for t in region.transitions if t.is_forced]
+            >>> [(t.from_state, t.exit_group_levels) for t in region.transitions if t.exit_group_levels]
             [('A1', 1)]
         """
         return [item.carried(item.exit_levels + 1) for item in self.resolved]
@@ -426,7 +426,7 @@ class ForcedExpansion:
         >>> [(item['from_path'], item['to_path'], item['event']) for item in model.forced_transitions]
         [('Root.Run', 'Root.Idle', 'Root.Stop')]
         >>> run = model.root_state.substates['Run']
-        >>> sorted(t.from_state for t in run.transitions if t.is_forced)
+        >>> sorted(t.from_state for t in run.transitions if t.event is not None)
         ['A']
 
     A drawing of the same model shows the plain expansion, pseudo state
@@ -521,7 +521,7 @@ class ForcedExpansion:
             ...     !* -> B :: Reset;
             ... }
             ... ''')
-            >>> [(t.from_state, t.to_state, t.event.name) for t in model.root_state.transitions if t.is_forced]
+            >>> [(t.from_state, t.to_state, t.event.name) for t in model.root_state.transitions if t.event is not None]
             [('A', 'B', 'Reset'), ('B', 'B', 'Reset')]
         """
         sink = self._sink
@@ -816,15 +816,13 @@ class ForcedExpansion:
         its declared transitions. A build that keeps the plain expansion
         recorded nothing and is left alone.
 
-        The transitions that only pass the exit on, on the composite states
-        and owners below the source and in front of the declared transition,
-        are generated plumbing: they are no longer marked
-        :attr:`pyfcstm.model.model.Transition.is_forced`, and keep
-        ``forced_origin`` to say which declaration they belong to. The
-        transitions that repeat the declared event and guard, and the declared
-        one, stay marked. Both fields only say where a transition came from,
-        like ``combo_origin_refs`` on the transitions of a combo trigger: no
-        execution, no reachability or BMC answer reads them.
+        The lowered machine is plain FCSTM and carries no trace of the
+        declarations: none of its transitions is marked
+        :attr:`pyfcstm.model.model.Transition.is_forced` or keeps a
+        ``forced_origin``, so every consumer sees what the model loaded from
+        its exported text shows. Only the machine that keeps the plain
+        expansion, which drawings and inspect reports are built from, marks
+        the transitions of a declaration.
 
         :param defines: Variable definitions of the machine; the hidden
             variables are added.
@@ -851,9 +849,9 @@ class ForcedExpansion:
             >>> a1 = model.root_state.substates['Run'].regions['A'].transitions
             >>> [str(op.expr) for t in a1 if t.exit_group_levels for op in t.effects]
             ['1']
-            >>> [(t.to_state, str(t.guard), t.is_forced)
+            >>> [(t.to_state, str(t.guard), t.is_forced, t.forced_origin)
             ...  for t in model.root_state.transitions if t.from_state == 'Run'][0]
-            ('Idle', '__forced_0 == 1', False)
+            ('Idle', '__forced_0 == 1', False, None)
         """
         root_state = self._root_state
         # A temporary of an action block would otherwise become a write to the
@@ -930,6 +928,17 @@ class ForcedExpansion:
                     # it.
                     if other.from_state == source.name and id(other) not in carrying:
                         _give_way(namespace, other, lowered, gates)
+        if self._expanded:
+            # The machine that runs is plain FCSTM and remembers nothing of the
+            # declarations, so that every consumer of it, the simulator, the
+            # generated runtimes, BMC and the analyses, sees exactly what the
+            # model loaded from its exported text shows. Which transitions came
+            # from a declaration is told by the machine that keeps the plain
+            # expansion, which drawings and inspect reports are built from.
+            for namespace in walk_namespaces(root_state):
+                for transition in namespace.transitions:
+                    transition.is_forced = False
+                    transition.forced_origin = None
         return tuple(names)
 
 

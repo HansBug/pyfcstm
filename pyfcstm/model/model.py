@@ -810,10 +810,15 @@ class Transition(AstExportable):
         known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
     :type event_scope: Optional[str]
     :param is_forced: Whether this transition was expanded from a forced
-        transition declaration.
+        transition declaration. A built machine never sets it: the machine
+        that runs is plain FCSTM and keeps no trace of the declaration, so
+        that it behaves, and is analysed, exactly like the model loaded from
+        its exported text. Only the machine that keeps the plain expansion,
+        which drawings and inspect reports are built from, marks the
+        transitions of a declaration.
     :type is_forced: bool
-    :param forced_origin: Original forced transition text when
-        ``is_forced`` is true.
+    :param forced_origin: Original forced transition text, set where
+        ``is_forced`` is set.
     :type forced_origin: Optional[str]
     :param exit_group_levels: ``0`` for an ordinary transition. A positive
         value marks the transition that forced expansion places on a state
@@ -3898,11 +3903,15 @@ class StateMachine(AstExportable, PlantUMLExportable):
         first use and kept, like :meth:`_as_written`, so later edits of this
         model do not reach it.
 
-        :return: This machine when no forced declaration was lowered, otherwise
-            the machine with plain forced expansion.
+        The machine that runs carries no mark of a declaration, so which of its
+        transitions came from one is told by this machine only (see
+        :attr:`Transition.is_forced`).
+
+        :return: This machine when it has no forced declaration, otherwise the
+            machine with plain forced expansion.
         :rtype: StateMachine
         """
-        if not self._forced_flags:
+        if self._plain_forced_view is None:
             return self
         return self._plain_forced_view.machine()
 
@@ -4667,11 +4676,11 @@ def parse_dsl_node_to_state_machine(
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
         return None, sink.diagnostics
-    if machine.history_owners or machine.active_queries or machine._forced_flags:
-        # Inspect and verify judge the model as written; keep what is needed
-        # to build it on first use (see ``StateMachine._as_written``).
+    if machine.history_owners or machine.active_queries or machine.forced_transitions:
+        # Inspect judges the model as written; keep what is needed to build it
+        # on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
-    if machine._forced_flags:
+    if machine.forced_transitions:
         # A state or region is shown through the machine that keeps forced
         # declarations plain (see ``StateMachine._with_plain_forced``). The
         # machine and every state and region of it share the holder: whichever

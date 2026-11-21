@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from textwrap import dedent
 
 import pytest
@@ -77,11 +78,16 @@ def _guarded_transition(machine):
 
 
 def _forced_transition(machine):
-    return next(
-        transition
-        for state in machine.walk_states()
-        for transition in state.transitions
-        if transition.is_forced
+    # A loaded machine carries no mark of its forced declarations, so the
+    # per-transition algorithm is handed a marked copy of the guarded one.
+    return replace(
+        next(
+            transition
+            for state in machine.walk_states()
+            for transition in state.transitions
+            if transition.guard is not None
+        ),
+        is_forced=True,
     )
 
 

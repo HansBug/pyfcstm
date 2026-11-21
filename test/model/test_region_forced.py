@@ -54,7 +54,7 @@ def test_a_state_resting_in_a_region_raises_the_variable_and_pseudo_states_get_n
     exits = [edge for edge in region.transitions if edge.exit_group_levels]
     assert [(edge.from_state, edge.exit_group_levels) for edge in exits] == [('A1', 1), ('A2', 1)]
     for edge in exits:
-        assert edge.is_forced and edge.event.path_name == 'Root.Stop'
+        assert edge.event.path_name == 'Root.Stop'
         assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
     assert not [edge for edge in region.transitions if edge.from_state == 'Gate']
 
@@ -146,7 +146,8 @@ def test_a_declaration_beside_regions_is_lowered_like_one_that_reaches_them():
     # expanded: every declaration is decided once, where the machine rests.
     assert model.forced_variables == ('__forced_0',)
     plain = model.root_state.substates['Plain']
-    started = [edge for edge in plain.transitions if edge.is_forced]
+    started = [edge for edge in plain.transitions
+               if edge.event is not None and edge.event.path_name == 'Root.Stop']
     # A state that can be rested in starts the exit; the pseudo state holds
     # nothing, and nothing takes a group of regions away.
     assert [edge.from_state for edge in started] == ['A', 'B']
@@ -173,7 +174,8 @@ def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
     assert model.forced_variables == ('__forced_0',)
     region = model.root_state.substates['P'].regions['A']
     q = region.substates['Q']
-    assert [edge.from_state for edge in q.transitions if edge.is_forced] == ['Q1', 'Q2']
+    assert [edge.from_state for edge in q.transitions
+            if edge.event is not None and edge.event.path_name == 'Root.Stop'] == ['Q1', 'Q2']
     # The declaration stays inside region A: only Q is left, never the group.
     assert not any(edge.exit_group_levels for _, edge in _transitions(model))
     relay, declared = [edge for edge in region.transitions if edge.from_state == 'Q']
@@ -223,7 +225,8 @@ def test_forced_declarations_reach_each_owner_below_the_declared_state():
     assert [(edge.from_state, edge.exit_group_levels) for region in inner.regions.values()
             for edge in region.transitions if edge.exit_group_levels] == [('X1', 2), ('Y1', 2)]
     # The composite-like owner Inner holds no transition of its own for the declaration.
-    assert not [edge for edge in outer.regions['R1'].transitions if edge.is_forced]
+    assert not [edge for edge in outer.regions['R1'].transitions
+                if edge.event is not None and edge.event.path_name == 'Root.Halt']
 
 
 def test_inspect_judges_the_model_as_written():
@@ -304,17 +307,21 @@ def test_a_wildcard_declaration_keeps_the_transition_of_a_pseudo_sibling_on_its_
 }''')
     by_source = {}
     for edge in model.root_state.transitions:
-        if edge.forced_origin is not None:
+        if not isinstance(edge.from_state, str) or edge.from_state.startswith('__forced_gate'):
+            continue
+        if edge.event is None and edge.guard is not None or (
+                edge.event is not None and edge.event.path_name == 'Root.Stop'):
             by_source.setdefault(edge.from_state, []).append(edge)
     # On its own level every state, a pseudo one included, holds the declared
-    # transition; only the state that owns regions needs the copy that decides,
-    # which is generated plumbing and not marked as a forced transition.
+    # transition; only the state that owns regions needs the copy that decides
+    # in front of it, which carries the raised variable and no event.
     assert sorted(by_source) == ['Gate', 'Idle', 'Quiet', 'Run']
-    assert [[edge.is_forced for edge in by_source[name]]
+    assert [[edge.event is not None for edge in by_source[name]]
             for name in ('Gate', 'Idle', 'Quiet', 'Run')] == [[True], [True], [True], [False, True]]
     # Below the declaration a pseudo state is passed through, not left.
     region = model.root_state.substates['Run'].regions['A']
-    assert [edge.from_state for edge in region.transitions if edge.is_forced] == ['A1']
+    assert [edge.from_state for edge in region.transitions
+            if edge.event is not None and edge.event.path_name == 'Root.Stop'] == ['A1']
 
 
 def test_diagram_snapshot_shows_the_declaration_once_and_hides_how_it_is_carried_out():

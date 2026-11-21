@@ -1,12 +1,16 @@
 """Tests for SMT-local verification algorithms."""
 
+from dataclasses import replace
 from textwrap import dedent
 
 import pytest
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
+from pyfcstm.diagnostics import inspect_model
 from pyfcstm.verify import (
+    CALL_COUNT_SCALING_ORDER,
+    COMPLEXITY_TIER_ORDER,
     AlgorithmResult,
     composite_init_guards_incomplete,
     dead_guard,
@@ -15,6 +19,7 @@ from pyfcstm.verify import (
     enter_postcondition_implies_during_precondition,
     forced_guard_unsat_under_init,
     guard_tautology,
+    run_inspect_algorithms,
     transition_shadowed_by_predecessor,
 )
 from pyfcstm.verify.encoding import _core as encoding_core
@@ -72,6 +77,16 @@ def transition_by_guard(machine, text):
             if transition.guard is not None and text in str(transition.guard):
                 return transition
     raise AssertionError("transition not found")
+
+
+def declared_forced_transition(machine, text):
+    """A transition of a forced declaration, marked the way inspect marks it.
+
+    A loaded machine carries no mark of its forced declarations, so the
+    per-transition algorithm that asks for one is handed a marked copy of the
+    transition that has the guard.
+    """
+    return replace(transition_by_guard(machine, text), is_forced=True)
 
 
 def timeout_result(*args, **kwargs):
@@ -1739,7 +1754,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "counter > threshold")
+        transition = declared_forced_transition(machine, "counter > threshold")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1759,7 +1774,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "1 / x")
+        transition = declared_forced_transition(machine, "1 / x")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1783,7 +1798,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "x == 0")
+        transition = declared_forced_transition(machine, "x == 0")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1808,7 +1823,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "counter > threshold")
+        transition = declared_forced_transition(machine, "counter > threshold")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1835,7 +1850,7 @@ class TestForcedGuardUnsatUnderInit:
         monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "counter > threshold"),
+            declared_forced_transition(machine, "counter > threshold"),
             variables(machine),
             smt_timeout_ms=1,
         )
@@ -1861,7 +1876,7 @@ class TestForcedGuardUnsatUnderInit:
         )
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "flags ^ 1"),
+            declared_forced_transition(machine, "flags ^ 1"),
             variables(machine),
         )
 
@@ -1889,7 +1904,7 @@ class TestForcedGuardUnsatUnderInit:
         var_def.init = Variable("missing")
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "counter > threshold"),
+            declared_forced_transition(machine, "counter > threshold"),
             variables(machine),
         )
 
@@ -5136,10 +5151,8 @@ class TestForcedDeclarationsGiveTheResultOfTheirExpansion:
     def _verdict_of(result):
         # What is compared is the answer: the kind, the reason and every
         # finding with the transitions it names. A witness is whatever the
-        # solver picked, and ``is_forced`` only says which declaration a
-        # transition was generated from, as ``combo_origin_refs`` does for a
-        # combo trigger; neither is part of the answer.
-        ignored = {"witness", "is_forced", "forced_origin"}
+        # solver picked.
+        ignored = {"witness"}
 
         def strip(value):
             if isinstance(value, dict):
@@ -5166,6 +5179,60 @@ class TestForcedDeclarationsGiveTheResultOfTheirExpansion:
 
         assert declared.kind != "undecidable_skip"
         assert self._verdict_of(declared) == self._verdict_of(expanded)
+
+
+class TestForcedDeclarationsInTheVerifyRun:
+    """``run_inspect_algorithms`` answers the same for a forced declaration and its expansion."""
+
+    SOURCE = """
+    def int x = 0;
+    state Root {
+        event Stop;
+        [*] -> Run;
+        state Run { [*] -> A; state A { during { x = x + 1; } } }
+        state Idle;
+        !Run -> Idle : if [x > 5 && x < 2];
+        Idle -> Run : if [x < 0];
+    }
+    """
+
+    @staticmethod
+    def _answers(machine):
+        def strip(value):
+            if isinstance(value, dict):
+                return {k: strip(v) for k, v in value.items() if k != "witness"}
+            if isinstance(value, (list, tuple)):
+                return [strip(v) for v in value]
+            return value
+
+        results = run_inspect_algorithms(
+            machine,
+            max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+            max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
+        )
+        return sorted(
+            (item.algorithm_name, item.result_kind, item.reason, strip(list(item.diagnostics)))
+            for item in results
+        )
+
+    def test_every_algorithm_gives_the_declaration_the_answer_of_its_expansion(self):
+        machine = parse_machine(self.SOURCE)
+        assert machine.forced_variables == ("__forced_0",)
+        expansion = parse_machine(str(machine.to_ast_node()))
+
+        assert self._answers(machine) == self._answers(expansion)
+
+    def test_the_inspect_report_still_warns_about_the_declaration_as_written(self):
+        # The warning is about the declaration, so it comes from the model as
+        # written, which only the inspect report is built from.
+        report = inspect_model(
+            parse_machine(self.SOURCE),
+            enable_verify=True,
+            max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+            smt_timeout_ms=20000,
+        )
+        codes = [item.code for item in report.diagnostics]
+        assert "W_FORCED_GUARD_UNSAT" in codes
 
 
 class TestCompositeInitGuardsIncomplete:

@@ -9,72 +9,62 @@ import pytest
 
 from pyfcstm.model import load_state_machine_from_text
 
+from test.simulate.test_forced_equals_its_expansion import MODELS, _events, _leaves, _plans
+
 from .test_runtime import _render_python_module
 
 pytestmark = pytest.mark.unittest
 
-MODEL = '''def int x = 0;
-state Root {
-    event Stop;
-    event Go;
-    [*] -> Run;
-    state Run {
-        [*] -> A;
-        state A { during { x = x + 1; } }
-        state B;
-        A -> B :: Go;
-    }
-    state Idle;
-    !Run -> Idle : /Stop;
-    Idle -> Run :: Go;
-}'''
 
-EVENT_PLANS = [
-    [],
-    ['Root.Stop'],
-    ['Root.Run.A.Go'],
-    ['Root.Run.A.Go', 'Root.Stop', 'Root.Idle.Go'],
-    ['Root.Stop', 'Root.Stop'],
-]
+@pytest.fixture(params=sorted(MODELS))
+def models(request):
+    """The declaring model's own text and the text of its expansion."""
+    declared = load_state_machine_from_text(MODELS[request.param])
+    assert declared.forced_variables
+    return declared, MODELS[request.param], str(declared.to_ast_node())
 
 
-def _expansion_text():
-    declared = load_state_machine_from_text(MODEL)
-    assert declared.forced_variables == ('__forced_0',)
-    return str(declared.to_ast_node())
-
-
-def _run(source, **start):
+def _run(source, plans, **start):
     with _render_python_module(source) as module:
         try:
             machine = module.RootMachine(**start)
         except ValueError as err:
             return 'ValueError', str(err)
         rows = []
-        for events in EVENT_PLANS:
+        for events in plans:
             machine.cycle(events)
-            rows.append((machine.current_state_path, sorted(machine.vars.items())))
+            rows.append((machine.current_state_path if not machine.is_ended else None,
+                         sorted(machine.vars.items())))
         return rows
 
 
-def test_a_cold_start_runs_the_same_cycles():
-    declared, expansion = _run(MODEL), _run(_expansion_text())
-    assert declared == expansion
-    assert isinstance(declared, list)
+def test_a_cold_start_runs_the_same_cycles(models):
+    declared, own_text, expansion_text = models
+    plans = _plans(_events(declared)) + _plans(_events(declared), seed=11)
+    outcomes = [_run(source, plans) for source in (own_text, expansion_text)]
+    assert outcomes[0] == outcomes[1]
+    assert isinstance(outcomes[0], list)
 
 
-@pytest.mark.parametrize('state', ['Root.Run.A', 'Root.Run.B', 'Root.Idle'])
 @pytest.mark.parametrize('hidden', [None, 0, 1])
-def test_a_hot_start_gives_the_same_outcome(state, hidden):
+def test_a_hot_start_gives_the_same_outcome(models, hidden):
     """The hidden variable is an ordinary variable: given or missing, any value."""
-    given = {'x': 5} if hidden is None else {'x': 5, '__forced_0': hidden}
-    declared = _run(MODEL, initial_state=state, initial_vars=dict(given))
-    expansion = _run(_expansion_text(), initial_state=state, initial_vars=dict(given))
-    assert declared == expansion
+    declared, own_text, expansion_text = models
+    plans = _plans(_events(declared), seed=3, count=4)
+    hidden_names = set(declared.forced_variables)
+    given = {name: 0 for name in declared.defines if name not in hidden_names}
+    if hidden is not None:
+        given.update({name: hidden for name in hidden_names})
+    leaf = _leaves(declared)[0]
+    outcomes = [_run(source, plans, initial_state=leaf, initial_vars=dict(given))
+                for source in (own_text, expansion_text)]
+    assert outcomes[0] == outcomes[1]
 
 
-def test_a_hot_start_without_the_hidden_variable_is_refused_like_any_missing_variable():
-    for source in (MODEL, _expansion_text()):
-        outcome = _run(source, initial_state='Root.Run.A', initial_vars={'x': 1})
+def test_a_hot_start_without_the_hidden_variable_is_refused_like_any_missing_variable(models):
+    declared, own_text, expansion_text = models
+    given = {name: 0 for name in declared.defines if name not in declared.forced_variables}
+    for source in (own_text, expansion_text):
+        outcome = _run(source, [], initial_state=_leaves(declared)[0], initial_vars=dict(given))
         assert outcome[0] == 'ValueError'
-        assert "Missing: ['__forced_0']" in outcome[1]
+        assert 'Missing' in outcome[1] and '__forced_0' in outcome[1]

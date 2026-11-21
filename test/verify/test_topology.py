@@ -108,7 +108,7 @@ def test_build_leaf_level_macro_graph_init_cascade_and_leaf_bubble():
     assert graph.edges["System.Orphan"] == tuple()
 
 
-def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
+def test_build_leaf_level_macro_graph_includes_the_gate_of_a_forced_declaration():
     topology = _import_topology()
     machine = _parse(
         """

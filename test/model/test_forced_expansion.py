@@ -33,8 +33,11 @@ state Root {
 }'''
 
 
-def _forced(namespace):
-    return [edge for edge in namespace.transitions if edge.is_forced]
+def _with_event(namespace, event_path):
+    """The transitions of a namespace that carry an event: the machine that runs
+    marks nothing as forced, so a declaration is found by its event."""
+    return [edge for edge in namespace.transitions
+            if edge.event is not None and edge.event.path_name == event_path]
 
 
 def _writes(edge):
@@ -49,8 +52,8 @@ def test_a_declaration_on_a_composite_is_decided_where_the_machine_rests():
     run = model.root_state.substates['Run']
     inner = run.substates['Inner']
     # The states that can be rested in keep the event and raise the variable.
-    assert [edge.from_state for edge in _forced(inner)] == ['A', 'B']
-    for edge in _forced(inner):
+    assert [edge.from_state for edge in _with_event(inner, 'Root.Stop')] == ['A', 'B']
+    for edge in _with_event(inner, 'Root.Stop'):
         assert edge.to_state is EXIT_STATE
         assert edge.event.path_name == 'Root.Stop' and edge.guard is None
         assert _writes(edge) == [('__forced_0', '1')]
@@ -61,9 +64,9 @@ def test_a_declaration_on_a_composite_is_decided_where_the_machine_rests():
     # transition a reader of the model wrote.
     relay, = [edge for edge in run.transitions if edge.from_state == 'Inner']
     side, = [edge for edge in run.transitions if edge.from_state == 'Side']
-    assert (relay.event, str(relay.guard), relay.is_forced) == (None, '__forced_0 == 1', False)
+    assert (relay.event, str(relay.guard)) == (None, '__forced_0 == 1')
     assert relay.to_state is EXIT_STATE and relay.effects == []
-    assert (side.event.path_name, side.guard, side.is_forced) == ('Root.Stop', None, True)
+    assert (side.event.path_name, side.guard) == ('Root.Stop', None)
     assert _writes(side) == [('__forced_0', '1')]
     # The level of the declaration takes the raised case first and lowers the
     # variable; the declared transition stays for the case that control comes
@@ -71,7 +74,9 @@ def test_a_declaration_on_a_composite_is_decided_where_the_machine_rests():
     first, declared = [edge for edge in model.root_state.transitions if edge.from_state == 'Run']
     assert (first.to_state, first.event, str(first.guard)) == ('Idle', None, '__forced_0 == 1')
     assert _writes(first) == [('__forced_0', '0')]
-    assert (first.is_forced, declared.is_forced) == (False, True)
+    # Nothing on the machine that runs says which transition came from a
+    # declaration; that is what the machine kept for drawings is for.
+    assert not (first.is_forced or declared.is_forced)
     assert declared.event.path_name == 'Root.Stop' and declared.guard is None
     gate = model.root_state.substates[declared.to_state]
     assert gate.is_pseudo and gate.is_forced_gate
@@ -128,7 +133,7 @@ state Root {
     assert model.forced_variables == ()
     assert list(model.defines) == ['x']
     assert not [state for state in model.root_state.substates.values() if state.is_forced_gate]
-    assert all(edge.effects == [] for edge in _forced(model.root_state))
+    assert all(edge.effects == [] for edge in model.root_state.transitions)
     exported = str(model.to_ast_node())
     assert '__forced' not in exported
     assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
@@ -146,16 +151,16 @@ def test_a_wildcard_declaration_only_lowers_the_sources_that_have_states_inside(
 }''')
     assert model.forced_variables == ('__forced_0',)
     root = model.root_state
-    from_leaf, = [edge for edge in _forced(root) if edge.from_state == 'Leaf']
+    from_leaf, = [edge for edge in _with_event(root, 'Root.Reset') if edge.from_state == 'Leaf']
     # The leaf source keeps the declared transition untouched.
     assert (from_leaf.to_state, from_leaf.event.path_name, from_leaf.guard, from_leaf.effects) == (
         'Home', 'Root.Reset', None, [])
-    from_home, = [edge for edge in _forced(root) if edge.from_state == 'Home']
+    from_home, = [edge for edge in _with_event(root, 'Root.Reset') if edge.from_state == 'Home']
     assert (from_home.to_state, from_home.guard, from_home.effects) == ('Home', None, [])
     # The composite source gets the two steps.
     first, declared = [edge for edge in root.transitions if edge.from_state == 'Run'
-                       and edge.forced_origin is not None]
-    assert (first.is_forced, declared.is_forced) == (False, True)
+                       and (edge.event is None or edge.event.path_name == 'Root.Reset')]
+    assert not (first.is_forced or declared.is_forced)
     assert str(first.guard) == '__forced_0 == 1' and root.substates[declared.to_state].is_forced_gate
 
 
@@ -174,8 +179,8 @@ def test_hidden_variables_are_numbered_in_the_order_they_are_handed_out():
     assert model.forced_variables == ('__forced_0', '__forced_1')
     first = model.root_state.substates['First']
     second = model.root_state.substates['Second']
-    assert [_writes(edge) for edge in _forced(first)] == [[('__forced_0', '1')]]
-    assert [_writes(edge) for edge in _forced(second)] == [[('__forced_1', '1')]]
+    assert [_writes(edge) for edge in first.transitions if edge.effects] == [[('__forced_0', '1')]]
+    assert [_writes(edge) for edge in second.transitions if edge.effects] == [[('__forced_1', '1')]]
     assert [item['from_path'] for item in model.forced_transitions] == [
         'Root.Leaf', 'Root.First', 'Root.Second']
 

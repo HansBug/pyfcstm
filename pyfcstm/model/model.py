@@ -1577,6 +1577,11 @@ def _plantuml_visible_actions(actions, active_paths: Dict[str, str]) -> list:
     ]
 
 
+#: How a drawing refers to the history of a composite state, which a
+#: transition enters and which the composite itself leads to a default state.
+_PLANTUML_HISTORY_MARKS = {"shallow": "[H]", "deep": "[H*]"}
+
+
 def _write_plantuml_transitions(
     sf, namespace, name_safe, config, event_colors, active_paths, prefix="    "
 ) -> None:
@@ -1622,7 +1627,8 @@ def _write_plantuml_transitions(
             print(
                 "[*]"
                 if trans.to_state is dsl_nodes.EXIT_STATE
-                else name_safe(trans.to_state),
+                else name_safe(trans.to_state)
+                + _PLANTUML_HISTORY_MARKS.get(getattr(trans, "target_history", None), ""),
                 file=tf,
                 end="",
             )
@@ -3019,8 +3025,26 @@ class State(AstExportable, PlantUMLExportable):
                 _write_plantuml_transitions(
                     sf, self, _name_safe, config, event_colors, active_paths
                 )
+                shallow_default = getattr(self, "history_defaults", {}).get("shallow")
+                if should_expand_substates and shallow_default is not None:
+                    # Where the shallow history of this state leads by default.
+                    print(
+                        "    [H] --> %s" % sequence_safe([*self.path, *shallow_default]),
+                        file=sf,
+                    )
 
                 print("}", file=sf, end="")
+            deep_default = getattr(self, "history_defaults", {}).get("deep")
+            if deep_default is not None:
+                # PlantUML cannot draw an arrow out of the deep history of a
+                # state that another transition enters, so where it leads by
+                # default is a line of the state's description.
+                print("", file=sf)
+                print(
+                    "%s : [H*] -> %s" % (_name_safe(), ".".join(deep_default)),
+                    file=sf,
+                    end="",
+                )
 
             _write_plantuml_actions(
                 sf,
@@ -3491,18 +3515,29 @@ class _PlainForcedView:
 
     :param program: Import-assembled program the machine was built from.
     :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param history_as_written: Whether the machine is built as written, with
+        history left as the ``target_history`` of the transitions that enter it,
+        because the model uses history. Otherwise history and activity queries
+        are lowered as usual and only the forced declarations stay plain.
+    :type history_as_written: bool
     """
 
-    def __init__(self, program: dsl_nodes.StateMachineDSLProgram) -> None:
+    def __init__(
+        self, program: dsl_nodes.StateMachineDSLProgram, history_as_written: bool
+    ) -> None:
         self._program = program
+        self._history_as_written = history_as_written
         self._machine: Optional["StateMachine"] = None
 
     def machine(self) -> "StateMachine":
         """
         Return the machine with forced declarations in their plain expansion.
 
-        History and activity queries are lowered as usual. The machine is built
-        once and kept, so later edits of the model it was made for do not
+        For a model that uses history the machine is built as written: a
+        history entry is an ordinary transition marked by ``target_history``,
+        and the lowered variables, gate states and routes do not exist in it.
+        Otherwise history and activity queries are lowered as usual. It is
+        built once and kept, so later edits of the model it was made for do not
         reach it.
 
         :return: The machine to show.
@@ -3512,7 +3547,7 @@ class _PlainForcedView:
             self._machine = _build_assembled_state_machine(
                 self._program,
                 DiagnosticSink(collect=True),
-                lower=True,
+                lower=not self._history_as_written,
                 plain_forced=True,
             )
         return self._machine
@@ -4684,13 +4719,15 @@ def parse_dsl_node_to_state_machine(
         # Inspect judges the model as written; keep what is needed to build it
         # on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
-    if machine.forced_transitions:
-        # A state or region is shown through the machine that keeps forced
-        # declarations plain (see ``StateMachine._with_plain_forced``). The
-        # machine and every state and region of it share the holder: whichever
-        # of them a caller keeps still shows the declarations as written, and
-        # nothing leads from a state back to its machine.
-        machine._plain_forced_view = _PlainForcedView(dnode)
+    if machine.forced_transitions or machine.history_owners:
+        # A state or region is shown through the machine as written (see
+        # ``StateMachine._with_plain_forced``). The machine and every state and
+        # region of it share the holder: whichever of them a caller keeps still
+        # shows the declarations as written, and nothing leads from a state back
+        # to its machine.
+        machine._plain_forced_view = _PlainForcedView(
+            dnode, history_as_written=bool(machine.history_owners)
+        )
         for namespace in walk_namespaces(machine.root_state):
             namespace._plain_forced_view = machine._plain_forced_view
 
@@ -6663,6 +6700,11 @@ def _build_assembled_state_machine(
     # recorded something to lower when ``lower`` is true and the build does
     # not keep the plain expansion.
     forced_flags = forced_expansion.lower(d_defines)
+    # A drawing writes the history of an owner as ``[H] --> default``, so the
+    # owner remembers where each kind of its history leads by default.
+    states_by_path = {state.path: state for state in root_state.walk_states()}
+    for owner in history_owners:
+        states_by_path[owner.owner_path].history_defaults = dict(owner.defaults)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,

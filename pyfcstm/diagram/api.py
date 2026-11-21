@@ -422,6 +422,9 @@ def _state_dict(state: Any, ordinal: Optional[int] = None) -> Dict[str, Any]:
         target_exit = _is_marker(transition.to_state, "EXIT_STATE")
         source_label = "[*]" if source_init else _text(transition.from_state)
         target_label = "[*]" if target_exit else _text(transition.to_state)
+        if getattr(transition, "target_history", None):
+            # A history entry names the history of its target, as written.
+            target_label += ".[H*]" if transition.target_history == "deep" else ".[H]"
         trigger = _event_reference(transition) if transition.event else ""
         if transition.guard is None:
             guard = None

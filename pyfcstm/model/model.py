@@ -4840,7 +4840,8 @@ def _build_assembled_state_machine(
             if isinstance(op_item, dsl_nodes.OperationAssignment):
                 if op_item.name not in d_defines:
                     accum.add(op_item.name)
-            elif isinstance(op_item, dsl_nodes.OperationIf):
+            else:
+                # An operation block holds assignments and ``if`` blocks only.
                 for branch in op_item.branches:
                     _collect_block_local_names(branch.statements, accum)
 
@@ -6054,6 +6055,11 @@ def _build_assembled_state_machine(
                 collision_name = (
                     f"{_COMBO_STATE_PREFIX}{slug}_h{digest[:_COMBO_DIGEST_MAX_SIZE]}"
                 )
+                # Defensive, and not reachable from a DSL text: a request carries
+                # its own run anchor and duplicate discriminator, so a payload is
+                # never requested twice and the two lookups below never find an
+                # earlier answer. They keep one pseudo state per payload should
+                # a caller ever repeat one.
                 name = combo_exhausted_payload_names.get(payload)
                 if name is None:
                     if collision_name not in combo_exhausted_names:
@@ -6103,6 +6109,8 @@ def _build_assembled_state_machine(
                     )
                 combo_name_payloads[name] = payload
 
+            # Defensive, for the same reason: a pseudo state is made once per
+            # payload, so the name is never taken when it gets here.
             if name in current_state.substates:
                 return current_state.substates[name]
 
@@ -6238,11 +6246,9 @@ def _build_assembled_state_machine(
             i = 0
             while i < len(alternatives):
                 alternative = alternatives[i]
+                # Every alternative handed to a deeper level had more than one
+                # term left on the level above, so at least one is left here.
                 remaining = len(alternative.terms) - term_index
-                if remaining <= 0:
-                    i += 1
-                    continue
-
                 term = alternative.terms[term_index]
                 term_key = _combo_term_semantic_key(alternative.transnode, term)
                 if remaining == 1:
@@ -6377,6 +6383,10 @@ def _build_assembled_state_machine(
                 and trusted_combo_metadata.projection_key is not None
             ):
                 projection_key = trusted_combo_metadata.projection_key
+                # Only a projection key that names a source state says which
+                # state a local event belongs to; the others keep the source.
+                # A generated transition only arrives with trusted metadata
+                # through a model loaded from an export, so this stays untested.
                 if (
                     len(projection_key) >= 3
                     and projection_key[1] == "state"

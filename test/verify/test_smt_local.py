@@ -1829,6 +1829,24 @@ class TestForcedGuardUnsatUnderInit:
 
         assert result == AlgorithmResult(kind="sat")
 
+    def test_a_guard_that_is_defined_and_true_at_init_does_not_trigger(self):
+        machine = parse_machine(
+            """
+            def int x = 2;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                !A -> B : if [4 / x == 2];
+            }
+            """
+        )
+        transition = declared_forced_transition(machine, "4 / x")
+
+        result = forced_guard_unsat_under_init(transition, variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
     def test_timeout_propagates(self, monkeypatch):
         machine = parse_machine(
             """

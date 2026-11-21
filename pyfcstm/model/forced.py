@@ -899,7 +899,6 @@ class ForcedExpansion:
                                 Operation(var_name=name, expr=Integer(0)),
                                 *transition.effects,
                             ],
-                            is_forced=False,
                         )
                         carrying.add(id(relay))
                         namespace.transitions.insert(
@@ -908,7 +907,6 @@ class ForcedExpansion:
                     else:
                         transition.event = None
                         transition.guard = raised
-                        transition.is_forced = False
                     relays.append((namespace, source))
                 elif not item.declared:
                     transition.effects = [

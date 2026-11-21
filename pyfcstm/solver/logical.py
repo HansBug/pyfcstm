@@ -96,6 +96,12 @@ def is_sat(
 ) -> SatResult:
     """Check whether an iterable of Z3 constraints is satisfiable.
 
+    The constraints are solved in a Z3 context created for this call, so the
+    answer depends on the constraints alone and not on what the process solved
+    before. For a non-linear query that matters: an earlier model extracted from
+    the shared main context could turn ``sat`` into ``unknown``. A returned model
+    is translated back into the context of the constraints.
+
     :param constraints: Constraints to add to a fresh Z3 solver.
     :type constraints: Iterable[z3.ExprRef]
     :param timeout_ms: Optional value forwarded unchanged to Z3's ``timeout``
@@ -117,11 +123,22 @@ def is_sat(
         >>> is_sat([x == 1], timeout_ms=1000).kind
         'sat'
     """
-    solver = z3.Solver()
+    constraints = tuple(constraints)
+    # Z3 keeps state in the context it works in, and for a non-linear query
+    # that state decides whether the answer is ``sat`` or ``unknown``: one
+    # model extracted earlier in the process, from any solver of the shared
+    # main context, was enough to change it. Every call therefore works in a
+    # context of its own, so the answer depends on the constraints alone.
+    source = constraints[0].ctx if constraints else z3.main_ctx()
+    context = z3.Context()
+    solver = z3.Solver(ctx=context)
     if timeout_ms is not None:
         solver.set("timeout", timeout_ms)
-    solver.add(*constraints)
-    return _check_solver(solver, get_model=get_model)
+    solver.add(*(item.translate(context) for item in constraints))
+    result = _check_solver(solver, get_model=get_model)
+    if result.model is not None:
+        return SatResult(kind=result.kind, model=result.model.translate(source))
+    return result
 
 
 def is_valid(formula: z3.ExprRef, *, timeout_ms: Optional[int] = None) -> SatResult:

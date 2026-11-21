@@ -60,6 +60,9 @@ class TestIsSat:
         class UnknownSolver:
             configured_timeout = None
 
+            def __init__(self, ctx=None):
+                self.ctx = ctx
+
             def set(self, *args, **kwargs):
                 self.configured_timeout = (args, kwargs)
 
@@ -84,6 +87,9 @@ class TestIsSat:
         calls = []
 
         class NoTimeoutSolver:
+            def __init__(self, ctx=None):
+                self.ctx = ctx
+
             def set(self, *args, **kwargs):
                 calls.append((args, kwargs))
 
@@ -108,6 +114,9 @@ class TestIsSat:
         calls = []
 
         class NoTimeoutSolver:
+            def __init__(self, ctx=None):
+                self.ctx = ctx
+
             def set(self, *args, **kwargs):
                 calls.append((args, kwargs))
 
@@ -129,6 +138,9 @@ class TestIsSat:
         calls = []
 
         class TimeoutCaptureSolver:
+            def __init__(self, ctx=None):
+                self.ctx = ctx
+
             def set(self, *args, **kwargs):
                 calls.append((args, kwargs))
 
@@ -152,6 +164,9 @@ class TestIsSat:
         """Timeout-limited checks return ``timeout`` instead of raising."""
 
         class TimeoutSolver:
+            def __init__(self, ctx=None):
+                self.ctx = ctx
+
             def set(self, *args, **kwargs):
                 pass
 

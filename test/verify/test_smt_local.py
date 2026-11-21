@@ -4,6 +4,7 @@ from dataclasses import replace
 from textwrap import dedent
 
 import pytest
+import z3
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
@@ -2848,14 +2849,13 @@ class TestTransitionShadowedByPredecessor:
         machine = parse_machine(
             """
             def int x = 0;
-            def int y = 0;
             state System {
                 state A;
                 state B;
                 state C;
                 [*] -> A;
                 A -> B;
-                A -> C : if [x ** y > 0];
+                A -> C : if [x ** 2 > 0];
             }
             """
         )
@@ -2864,6 +2864,40 @@ class TestTransitionShadowedByPredecessor:
 
         assert result.kind == "unsat"
         assert [item["code"] for item in result.diagnostics] == ["W_TRANSITION_SHADOWED"]
+
+    @pytest.mark.parametrize("guard", ["x ** 2 > 0", "x ** y > 0"])
+    def test_the_answer_does_not_depend_on_what_the_process_solved_before(self, guard):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C : if [%s];
+            }
+            """
+            % guard
+        )
+
+        fresh = transition_shadowed_by_predecessor(machine, variables(machine)).kind
+        # Extracting one model from the default Z3 context used to change what
+        # the non-linear query above answered afterwards.
+        solver = z3.Solver()
+        solver.add(z3.BoolVal(True))
+        assert solver.check() == z3.sat
+        solver.model()
+        after_a_model = transition_shadowed_by_predecessor(
+            machine, variables(machine)
+        ).kind
+
+        assert fresh == after_a_model
+        # ``x ** y`` with two variables is outside what Z3 decides for
+        # non-linear arithmetic, so ``unknown`` is an allowed answer there.
+        assert fresh in ("unsat", "unknown")
 
     def test_unconditional_predecessor_does_not_shadow_dead_candidate_guard(self):
         machine = parse_machine(

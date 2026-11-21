@@ -3855,9 +3855,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
         is carried out with one hidden ``int`` variable (see
         :mod:`pyfcstm.model.forced`). The variable is raised only while the
         declaration is being carried out inside one cycle, so it is ``0``
-        whenever the machine rests. A hot start therefore never has to be
-        given it: :class:`pyfcstm.simulate.runtime.SimulationRuntime` and the generated
-        runtimes fill it in, and refuse any other value.
+        whenever the machine rests. It is an ordinary variable of the machine,
+        like the variables history is lowered into: a hot start supplies it
+        with the others, and a model loaded from the exported text of this
+        one lists it among its ordinary variables.
 
         :return: The variable names in the order the declarations were
             resolved; empty for a machine without such a declaration.
@@ -3890,7 +3891,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         lowered into a hidden variable, relay transitions, gates and, inside
         regions, exit-group transitions (see :mod:`pyfcstm.model.forced`). That
         is what runs; a reader of the model expects one transition on every
-        state the declaration applies to. Drawings and static analyses
+        state the declaration applies to. Drawings and inspect reports
         therefore use this machine instead: it is built from the same
         import-assembled program with history and activity queries lowered as
         usual and forced declarations in their plain expansion. It is built on

@@ -18,17 +18,15 @@
 
 有三样东西变得可见：
 
-- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里。状态机停驻时它总是 0。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。在 :class:`pyfcstm.simulate.runtime.SimulationRuntime`\ 、\ ``pyfcstm simulate``\ 的 ``init`` 命令和生成的 Python 运行时里，热启动（hot start）不需要提供这些变量。C 系运行时接收整个变量结构体，调用方把这些成员保持为 0 即可。以上各处都拒绝非 0 值，BMC 把它们在初始帧约束为 0。
+- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里，并且在所有地方都是普通变量：热启动（hot start）像对待其他变量一样要求提供它，BMC 也像对待其他变量一样对待它。状态机只在一个周期内部把它置起，所以每一个停驻点上它都是 0。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。
 - 处在强制退出途中的状态上，带事件的转换会经由一个生成的伪状态 ``__forced_gate_<n>`` 拆成两步。这个伪状态出现在 ``walk_states()`` 里，在执行轨迹中表现为多经过一个状态。
-- ``to_ast_node()``\ 导出实际运行的状态机，包含上述变量和伪状态，与历史的现有做法一致。从导出文本加载的状态机逐周期行为相同。导出文本里已经没有强制转换，所以在那里 ``__forced_<n>`` 只是一个普通变量：热启动必须提供它，BMC 也不约束它。例外是强制转换要把某个状态的全部 region 一起带走的模型：它仍把所有强制转换按旧的展开形式导出，从这份文本加载的状态机行为可能不同。
+- ``to_ast_node()``\ 导出实际运行的状态机，包含上述变量和伪状态，与历史的现有做法一致。从导出文本加载的模型就是同一台状态机：逐周期行为相同，热启动相同，每个可达性和 BMC 问题的答案也相同。例外是强制转换要把某个状态的全部 region 一起带走的模型：它仍把所有强制转换按旧的展开形式导出，从这份文本加载的状态机行为可能不同。
 
 PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展示为它作用到的每个状态上各一条转换。对含这类声明的模型，它们展示的是加载时的模型：加载之后再修改模型对象，改动不会出现在这些展示里。来源状态内部没有任何状态的声明保持为每个来源状态一条转换，也不产生隐藏变量。在收集模式（\ ``parse_dsl_node_to_state_machine(..., collect=True)``\ ）下，一条写错的强制转换声明只报告一次，不再按展开的层数重复报告。
 
-在实际运行的状态机里，\ ``Transition.is_forced``\ 标记的是带着声明的事件和条件的那些转换。为了把退出继续向上传而生成的、只读取 ``__forced_<n>`` 的转换不带这个标记，但保留 ``forced_origin``\ （生成它们的那条声明的原文）。自己用 ``walk_states()`` 和 ``State.transitions`` 遍历的代码，遍历的就是这份状态机：除了这些生成的转换，还会遇到门状态 ``__forced_gate_<n>`` 和经过门状态的转换；写在强制转换声明旁边的转换，也带上了在变量被置起期间让路的条件。这份状态机里没有任何标记能把作者写下的内容与其余部分分开。
+在实际运行的状态机里，\ ``Transition.is_forced``\ 标记的是带着声明的事件和条件的那些转换。为了把退出继续向上传而生成的、只读取 ``__forced_<n>`` 的转换不带这个标记，但保留 ``forced_origin``\ （生成它们的那条声明的原文）。这两个字段只说明转换从哪里来，与组合转换的转换上的 ``combo_origin_refs`` 一样：执行状态机、回答可达性或 BMC 问题都不读取它们。自己用 ``walk_states()`` 和 ``State.transitions`` 遍历的代码，遍历的是实际运行的状态机，会遇到生成的转换和门状态 ``__forced_gate_<n>``；\ :mod:`pyfcstm.verify`\ 里的分析和 :mod:`pyfcstm.diagnostics.analyzers`\ 里的分析器也一样，判断的是传给它们的那份状态机。\ :func:`pyfcstm.diagnostics.inspect.inspect_model`\ 和图形判断的是按书写的模型。
 
-下列以整个状态机为输入的分析按图上展示的形式判断强制转换；对带隐藏变量的模型来说，这也就是加载时的模型：\ :func:`pyfcstm.diagnostics.inspect.inspect_model`\ 、\ :func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`\ 、\ :mod:`pyfcstm.verify.topology`\ 里的函数、\ :func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`\ 、\ :func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`\ 、\ :func:`pyfcstm.diagnostics.analyzers.const_fold.collect_const_fold_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.combo.collect_combo_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.numeric.collect_numeric_warnings`\ 、\ :func:`pyfcstm.diagnostics.analyzers.data_flow.collect_data_flow_warnings`\ 和 :func:`pyfcstm.model.plantuml.collect_event_transitions`\ 。对这样的模型，最后这个函数返回的所属状态和转换属于这份展示形式，不是 ``walk_states()`` 给出的那些对象。有两个函数描述的是传给它的那份状态机，行为没有变化：\ :func:`pyfcstm.diagnostics.analyzers.region_order.collect_region_order_diagnostics` 和 :func:`pyfcstm.diagnostics.analyzers.use_def.build_use_def_graph`\ 。\ :mod:`pyfcstm.verify`\ 里以单条转换或单个状态为输入的算法，判断的是传给它的那个对象；因此在遍历已加载模型的循环里调用时，它们判断的是实际运行的状态机，报告的位置也按这份状态机的转换计数。\ ``run_inspect_algorithms``\ ，以及带 ``enable_verify=True`` 的 ``inspect_model``\ ，按强制转换书写的样子运行同样的算法。
-
-如果代码把含强制转换的模型的 ``StateMachine.defines``\ 、\ ``walk_states()``\ 或导出的 DSL 文本与保存的期望值比较，需要更新期望值。从 ``runtime.vars`` 取得的热启动快照可以保留也可以去掉其中的 ``__forced_*`` 项。
+如果代码把含强制转换的模型的 ``StateMachine.defines``\ 、\ ``walk_states()``\ 或导出的 DSL 文本与保存的期望值比较，需要更新期望值。从 ``runtime.vars`` 取得的热启动快照要连同其中的 ``__forced_*`` 项一起保存和提供，与其他变量一样。
 
 v0.6.0
 ------

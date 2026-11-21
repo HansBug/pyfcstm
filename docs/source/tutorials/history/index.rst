@@ -222,8 +222,8 @@ ways:
 A charger that loses power while in ``Fault`` must restore the session record
 when it restarts. A hot start supplies every variable, including the
 ``__hist_*`` ones, so the controller has to store the record somewhere. The
-``__forced_*`` variables are the one exception: they are 0 whenever the machine
-rests, so a hot start fills them in and the controller does not store them. Store
+``__forced_*`` variables are ordinary variables too: they read 0 at every
+checkpoint and are saved and supplied with the others. Store
 the source-level record, not the numbers: the numbers are state ids that change
 when the model is edited.
 :meth:`~pyfcstm.model.model.StateMachine.history_variables` turns a saved

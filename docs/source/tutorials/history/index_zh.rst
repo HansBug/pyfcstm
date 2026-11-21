@@ -145,7 +145,7 @@
 7. 跨越断电保存记录
 -------------------
 
-充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。只有 ``__forced_*`` 变量例外：状态机停驻时它们总是 0，热启动会自动补上，控制器不需要保存。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
+充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。``__forced_*`` 变量同样是普通变量：它们在每个检查点都是 0，与其他变量一起保存、一起提供。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
 
 .. literalinclude:: charger_hot_start.demo.py
    :language: python

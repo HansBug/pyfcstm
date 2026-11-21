@@ -65,27 +65,16 @@ the machine rests (see :attr:`pyfcstm.model.model.StateMachine.forced_variables`
 The *plain expansion* is the older reading of the same declaration: a ``-> [*]``
 transition on every state below ``S``, pseudo states included, that repeats the
 event and the guard on every level and stops at owners. No machine runs it any
-more, but it is the form a declaration is shown in. The PlantUML export, the
-diagram snapshot and the analyses that take a whole machine
-(:func:`pyfcstm.diagnostics.inspect.inspect_model`,
-:func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`,
-:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`,
-:func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`,
-the topology analyses of :mod:`pyfcstm.verify.topology`, the constant-folding,
-combo, numeric and guard-variable analyzers of
-:mod:`pyfcstm.diagnostics.analyzers` and
-:func:`pyfcstm.model.plantuml.collect_event_transitions`) use a machine
-built with it, so a drawing shows one transition per state the declaration
-applies to and no hidden variable. Two functions describe the machine they are
-handed instead:
-:func:`pyfcstm.diagnostics.analyzers.region_order.collect_region_order_diagnostics`
-and :func:`pyfcstm.diagnostics.analyzers.use_def.build_use_def_graph`. An
-algorithm that is handed a single transition or state judges that object, so
-code that walks a loaded model and passes its transitions on has the machine
-that runs judged. The DSL export
-writes the machine that runs, hidden variables and gates included, as it does
-for a lowered history; only a machine with exit-group transitions, the one
-thing the language cannot write, is exported in its plain expansion (see
+more, but it is the form a declaration is shown in: the PlantUML export, the
+diagram snapshot and the inspect report are built from a machine that keeps
+it, so a drawing shows one transition per state the declaration applies to and
+no hidden variable. Everything that executes the machine or answers a question
+about it, the simulator, the generated runtimes, BMC and the analyses of
+:mod:`pyfcstm.verify`, takes the machine as it runs, so none of them knows that
+a declaration was ever written. The DSL export writes that machine, hidden
+variables and gates included, as it does for a lowered history; only a machine
+with exit-group transitions, the one thing the language cannot write, is
+exported in its plain expansion (see
 :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
 
 The module contains:
@@ -397,7 +386,7 @@ class ForcedExpansion:
       plain expansion instead: every state below the source, pseudo states
       included, gets a ``-> [*]`` transition that repeats the event and the
       guard, and an owner stops the descent. That machine is what drawings
-      and static analyses show.
+      and inspect reports show.
 
     :param root_state: Root of the machine being built; event paths are
         resolved from it.
@@ -833,7 +822,9 @@ class ForcedExpansion:
         :attr:`pyfcstm.model.model.Transition.is_forced`, and keep
         ``forced_origin`` to say which declaration they belong to. The
         transitions that repeat the declared event and guard, and the declared
-        one, stay marked.
+        one, stay marked. Both fields only say where a transition came from,
+        like ``combo_origin_refs`` on the transitions of a combo trigger: no
+        execution, no reachability or BMC answer reads them.
 
         :param defines: Variable definitions of the machine; the hidden
             variables are added.

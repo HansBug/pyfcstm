@@ -40,26 +40,22 @@ Three things become visible:
 - Each such declaration is carried out with a hidden ``int`` variable
   ``__forced_<n>``; a name the model already uses is skipped. Like ``__hist_*``
   it appears in ``StateMachine.defines``, ``runtime.vars``, the variable
-  snapshots of abstract handlers and the variable tables of generated code. It
-  is 0 whenever the machine rests.
-  :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names. A
-  hot start in :class:`pyfcstm.simulate.runtime.SimulationRuntime`, in the
-  ``init`` command of ``pyfcstm simulate`` and in the generated Python runtime
-  does not have to supply these variables. The C-family runtimes take a whole
-  variable struct, in which a caller leaves them zeroed. Every one of these
-  rejects a non-zero value, and BMC constrains them to 0 in the first frame.
+  snapshots of abstract handlers and the variable tables of generated code, and
+  it is an ordinary variable everywhere: a hot start supplies it like every
+  other variable, and BMC treats it like every other variable. The machine only
+  raises it inside a cycle, so it is 0 at every point where a run rests.
+  :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names.
 - A transition with an event that leaves a state on the way of a forced exit is
   split through a generated pseudo state ``__forced_gate_<n>``. The pseudo
   state appears in ``walk_states()`` and as one more state passed through in an
   execution trace.
 - ``to_ast_node()`` exports the machine that runs, with those variables and
-  pseudo states, as it already does for history. A machine loaded from the
-  exported text takes the same cycles. The text has no forced transition left
-  in it, so there ``__forced_<n>`` is an ordinary variable: a hot start has to
-  supply it, and BMC does not constrain it. A model in which a forced
-  transition takes the regions of a state away is the exception: it is still
-  exported with every forced transition in the older form, and a machine
-  loaded from that text can behave differently.
+  pseudo states, as it already does for history. The model loaded from the
+  exported text is the same machine: it takes the same cycles and the same hot
+  starts, and every reachability and BMC question gets the same answer. A model
+  in which a forced transition takes the regions of a state away is the
+  exception: it is still exported with every forced transition in the older
+  form, and a machine loaded from that text can behave differently.
 
 PlantUML, the diagram viewer and ``pyfcstm inspect`` keep showing a forced
 transition as one transition per state it applies to. For a model with such a
@@ -72,43 +68,21 @@ declaration is reported once instead of once per level it was expanded to.
 In the machine that runs, ``Transition.is_forced`` marks the transitions that
 carry the declared event and guard. The transitions generated to pass the exit
 on, which only read ``__forced_<n>``, are not marked; they keep
-``forced_origin``, the text of the declaration they were generated for. Code
-that walks ``walk_states()`` and ``State.transitions`` itself walks that
-machine. Besides the generated transitions it meets the gate states
-``__forced_gate_<n>`` and the transitions through them, and a transition
-written beside a forced declaration carries the condition that makes it give
-way while the variable is raised. Nothing there marks what an author wrote
-apart from the rest.
-
-The following analyses of a whole machine judge a forced transition the way a
-drawing shows it, which for a model with a hidden variable means the model as
-it was loaded:
-:func:`pyfcstm.diagnostics.inspect.inspect_model`,
-:func:`pyfcstm.verify.inspect_adapter.run_inspect_algorithms`, the functions
-of :mod:`pyfcstm.verify.topology`,
-:func:`pyfcstm.verify.algorithms.transition.transition_shadowed_by_predecessor`,
-:func:`pyfcstm.verify.algorithms.transition.composite_init_guards_incomplete`,
-:func:`pyfcstm.diagnostics.analyzers.const_fold.collect_const_fold_warnings`,
-:func:`pyfcstm.diagnostics.analyzers.combo.collect_combo_warnings`,
-:func:`pyfcstm.diagnostics.analyzers.numeric.collect_numeric_warnings`,
-:func:`pyfcstm.diagnostics.analyzers.data_flow.collect_data_flow_warnings` and
-:func:`pyfcstm.model.plantuml.collect_event_transitions`. For such a model
-the owners and transitions that the last one returns belong to that view;
-they are not the objects ``walk_states()`` yields. Two functions describe the
-machine they are handed and are unchanged:
-:func:`pyfcstm.diagnostics.analyzers.region_order.collect_region_order_diagnostics`
-and :func:`pyfcstm.diagnostics.analyzers.use_def.build_use_def_graph`. The
-algorithms of :mod:`pyfcstm.verify` that take a single transition or state
-judge the object they are handed. Called in a loop over a loaded model they
-therefore judge the machine that runs, and the positions they report count
-its transitions.
-``run_inspect_algorithms``, and ``inspect_model`` with ``enable_verify=True``,
-run the same algorithms with every forced transition as written.
+``forced_origin``, the text of the declaration they were generated for. Both
+fields only say where a transition came from, like ``combo_origin_refs`` on the
+transitions of a combo trigger: nothing that executes the machine or answers a
+reachability or BMC question reads them. Code that walks ``walk_states()`` and
+``State.transitions`` walks the machine that runs, with the generated
+transitions and the gate states ``__forced_gate_<n>``. So do the analyses of
+:mod:`pyfcstm.verify` and the analyzers of :mod:`pyfcstm.diagnostics.analyzers`:
+they judge the machine they are handed.
+:func:`pyfcstm.diagnostics.inspect.inspect_model` and the drawings judge the
+model as written.
 
 Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new
-expected values. A hot-start snapshot taken from ``runtime.vars`` may keep or
-drop its ``__forced_*`` entries.
+expected values. A hot-start snapshot taken from ``runtime.vars`` keeps its
+``__forced_*`` entries and supplies them with the other variables.
 
 v0.6.0
 ------

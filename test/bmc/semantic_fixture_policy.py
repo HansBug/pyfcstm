@@ -155,7 +155,6 @@ SEARCH_LIMIT_EXCLUDE_CASES = {
 }
 
 CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
-    "forced_hot_start_rejects_a_raised_hidden_variable",
     "hot_start_initial_vars_reject_bool_values",
     "hot_start_initial_vars_reject_string_values",
     "hot_start_rejects_overdeep_leaf_stack",

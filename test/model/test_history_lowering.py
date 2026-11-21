@@ -521,7 +521,8 @@ class TestHistoryHotStartHelpers:
 
     def test_hot_start_with_a_record_resumes_from_it(self):
         machine = load_state_machine_from_text(WASHER)
-        user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0}
+        user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0,
+                "__forced_0": 0}
         runtime = SimulationRuntime(
             machine,
             initial_state="Washer.Paused",

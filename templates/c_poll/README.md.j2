@@ -262,7 +262,7 @@ options.vars_present.{{ item.name | to_c_identifier }} = 1;
 
 This fragment continues after a successful cycle in Quick Start. It captures state, all persistent values and parameters from the same checkpoint and restores them without replaying entry actions. For saved checkpoints, supply those saved values instead. Do not replace checkpoint parameters with current defaults or new configuration. A composite target starts in initial-transition wait mode. Hot start preserves installed providers, hooks and event checks; a failed hot start preserves the previous run. Serialize snapshot capture and restoration with all other access to the instance.{% if model.forced_variables %}
 
-The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint, and a start that sets one of them to another value is rejected. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}
+The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint. They are ordinary variables of the model: a hot start takes them from the saved checkpoint like every other variable. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}
 
 <!-- example:hot-start -->
 

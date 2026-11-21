@@ -376,11 +376,7 @@ class {{ machine_class_name(model) }}:
 {% for def_item in define_items %}        {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
 {% endfor %}    }
 {% endif %}
-{% if model.forced_variables | length == 1 %}    _FORCED_VARIABLES = ({{ model.forced_variables[0] | tojson }},)
-{% elif model.forced_variables %}    _FORCED_VARIABLES = (
-{% for forced_name in model.forced_variables %}        {{ forced_name | tojson }},
-{% endfor %}    )
-{% endif %}{% if input_items or parameter_items %}    _VALUE_TYPES = {
+{% if input_items or parameter_items %}    _VALUE_TYPES = {
 {% for item in model.defines.values() %}        {{ item.name | tojson }}: {{ item.type | tojson }},
 {% endfor %}    }
 {% else %}    _VALUE_TYPES = _VAR_TYPES
@@ -595,19 +591,8 @@ class {{ machine_class_name(model) }}:
                     "Variable %r not defined in state machine. Available variables: %s"
                     % (unknown_name, list(self._VAR_TYPES.keys()))
                 )
-{% if model.forced_variables %}            for forced_name in self._FORCED_VARIABLES:
-                if initial_vars.get(forced_name, 0) != 0:
-                    raise ValueError(
-                        "Variable %r belongs to a forced transition and is 0 "
-                        "whenever the machine rests; it cannot start as %r. "
-                        "Leave it out of initial_vars."
-                        % (forced_name, initial_vars[forced_name])
-                    )
-{% endif %}            if initial_state is not None:
-{% if model.forced_variables %}                initial_vars = dict(initial_vars)
-                for forced_name in self._FORCED_VARIABLES:
-                    initial_vars.setdefault(forced_name, 0)
-{% endif %}                missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
+            if initial_state is not None:
+                missing_vars = set(self._VAR_TYPES.keys()) - set(initial_vars.keys())
                 if missing_vars:
                     raise ValueError(
                         "initial_vars must provide all variables. Missing: %s"

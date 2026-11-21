@@ -2324,11 +2324,7 @@ int {{ machine_class_name(model) }}_init_with_options(
         _{{ machine_class_name(model) }}_set_error(machine, "Initial value for {{ item.name }} must be finite");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
-{% endfor %}{% endfor %}{% for forced_name in model.forced_variables %}    if (machine->vars.{{ forced_name | to_c_identifier }} != 0) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Variable {{ forced_name }} belongs to a forced transition and is 0 whenever the machine rests; it cannot start raised");
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-{% endfor %}    machine->stack_size = 1u;
+{% endfor %}{% endfor %}    machine->stack_size = 1u;
     machine->stack[0].state_id = {{ state_enum(model.root_state) }};
     machine->stack[0].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
     machine->ended = 0;
@@ -2382,11 +2378,7 @@ int {{ machine_class_name(model) }}_hot_start_with_parameters(
         _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "Initial value for {{ item.name }} must be finite");
         goto hot_start_failure;
     }
-{% endfor %}{% endfor %}{% for forced_name in model.forced_variables %}    if (machine->vars.{{ forced_name | to_c_identifier }} != 0) {
-        _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "Variable {{ forced_name }} belongs to a forced transition and is 0 whenever the machine rests; it cannot start raised");
-        goto hot_start_failure;
-    }
-{% endfor %}
+{% endfor %}{% endfor %}
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
         _{{ machine_class_name(model) }}_format_error_text(

@@ -58,7 +58,7 @@ def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
     region_cases = [case for case in cases if "regions" in case.data["categories"]]
 
-    assert len(cases) - len(region_cases) == 265
+    assert len(cases) - len(region_cases) == 263
     assert region_cases
     assert {case.id for case in cases}
 

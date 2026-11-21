@@ -85,10 +85,7 @@ def _runtime_exception_from_message(message):
     if (
         'outside signed 64-bit range' in message
         or 'cannot reach a stoppable state' in message
-        or 'belongs to a forced transition' in message
     ):
-        # The last one is a start that raises the hidden variable of a forced
-        # transition, which the simulator turns away with ValueError as well.
         return ValueError(message), None
     return RuntimeError(message), None
 
@@ -596,15 +593,6 @@ class _CRuntime(NativeRoleSupport):
         return self._event_ids[resolved]
 
     def hot_start(self, initial_state, initial_vars, parameters=None):
-        # The generated API takes a whole struct. A caller zeroes it before
-        # filling in the user variables, which leaves the hidden variable of a
-        # forced transition at the only value it has while the machine rests.
-        # This adapter does the same for a snapshot that leaves it out; the
-        # generated code itself only rejects a non-zero value.
-        initial_vars = {
-            **dict.fromkeys(self._model.forced_variables, 0),
-            **initial_vars,
-        }
         if set(initial_vars.keys()) != set(self._var_names):
             raise ValueError('initial_vars must provide all variables exactly once.')
         values = self._create_initial_vars(initial_vars)

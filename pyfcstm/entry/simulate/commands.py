@@ -188,21 +188,21 @@ class CommandProcessor:
         ... state Root {
         ...     event Stop;
         ...     [*] -> Run;
-        ...     state Run { [*] -> A; state A; }
+        ...     state Run;
         ...     state Idle;
-        ...     !Run -> Idle : /Stop;
+        ...     Run -> Idle : /Stop;
         ... }
         ... ''')
         >>> processor = CommandProcessor(
         ...     SimulationRuntime(machine), state_machine=machine, use_color=False)
-        >>> processor.process('init Root.Run.A x=5').exit_code
+        >>> processor.process('init Root.Run x=5').exit_code
         0
         >>> processor.process('cycle Root.Stop').exit_code
         0
         >>> processor.runtime.current_state.path
         ('Root', 'Idle')
         >>> processor.runtime.vars
-        {'x': 5, '__forced_0': 0}
+        {'x': 5}
     """
 
     def __init__(
@@ -521,12 +521,7 @@ class CommandProcessor:
             initial_vars[var_name] = var_value
 
         # Validate that all variables are provided
-        # The variables of forced transitions are filled in by the runtime.
-        missing_vars = (
-            set(self.runtime.vars.keys())
-            - set(initial_vars.keys())
-            - set(self.runtime.state_machine.forced_variables)
-        )
+        missing_vars = set(self.runtime.vars.keys()) - set(initial_vars.keys())
         if missing_vars:
             return CommandResult(
                 f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"

@@ -112,10 +112,8 @@ those variables' default initializers; omitted values use DSL initialization.
 Normal entry actions still run when the machine starts cycling.
 
 With `initial.state`, `vars` and `outputs` together must supply every persistent
-variable. The hidden variables of forced declarations (`__forced_<n>`) are the
-one exception: they are `0` whenever the machine rests, so every runner fills
-them in and a fixture leaves them out. The simulator restores the state
-hierarchy without replaying entry actions. A leaf target resumes active execution; a composite target still needs
+variable. The simulator restores the state hierarchy without replaying entry
+actions. A leaf target resumes active execution; a composite target still needs
 its internal initial transition. Parameters are supplied only at top level;
 `initial.parameters`, step-level parameters and parameter expectations are
 rejected. Parameter immutability is verified by dedicated runtime unit tests.

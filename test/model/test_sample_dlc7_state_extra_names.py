@@ -78,6 +78,7 @@ class TestModelStateRoot:
             "state3",
             "state4",
         ]
+        assert state_root.regions == {}
         assert state_root.events == {}
         assert len(state_root.transitions) == 4
         assert state_root.transitions[0].from_state == INIT_STATE
@@ -88,6 +89,9 @@ class TestModelStateRoot:
         assert state_root.transitions[0].doc is None
         assert state_root.transitions[0].parent_ref().name == "Root"
         assert state_root.transitions[0].parent_ref().path == ("Root",)
+        assert state_root.transitions[0].target_history is None
+        assert state_root.transitions[0].history_role is None
+        assert state_root.transitions[0].history_user_guard is None
         assert state_root.transitions[1].from_state == "state1"
         assert state_root.transitions[1].to_state == "state2"
         assert state_root.transitions[1].event is None
@@ -96,6 +100,9 @@ class TestModelStateRoot:
         assert state_root.transitions[1].doc is None
         assert state_root.transitions[1].parent_ref().name == "Root"
         assert state_root.transitions[1].parent_ref().path == ("Root",)
+        assert state_root.transitions[1].target_history is None
+        assert state_root.transitions[1].history_role is None
+        assert state_root.transitions[1].history_user_guard is None
         assert state_root.transitions[2].from_state == "state2"
         assert state_root.transitions[2].to_state == "state3"
         assert state_root.transitions[2].event is None
@@ -104,6 +111,9 @@ class TestModelStateRoot:
         assert state_root.transitions[2].doc is None
         assert state_root.transitions[2].parent_ref().name == "Root"
         assert state_root.transitions[2].parent_ref().path == ("Root",)
+        assert state_root.transitions[2].target_history is None
+        assert state_root.transitions[2].history_role is None
+        assert state_root.transitions[2].history_user_guard is None
         assert state_root.transitions[3].from_state == "state3"
         assert state_root.transitions[3].to_state == "state4"
         assert state_root.transitions[3].event is None
@@ -112,6 +122,9 @@ class TestModelStateRoot:
         assert state_root.transitions[3].doc is None
         assert state_root.transitions[3].parent_ref().name == "Root"
         assert state_root.transitions[3].parent_ref().path == ("Root",)
+        assert state_root.transitions[3].target_history is None
+        assert state_root.transitions[3].history_role is None
+        assert state_root.transitions[3].history_user_guard is None
         assert state_root.named_functions == {}
         assert state_root.on_enters == []
         assert state_root.on_durings == []
@@ -127,6 +140,8 @@ class TestModelStateRoot:
         assert state_root.extra_name == "根状态"
         assert not state_root.is_pseudo
         assert state_root.doc is None
+        assert not state_root.is_history_gate
+        assert not state_root.is_forced_gate
         assert state_root.abstract_on_during_aspects == []
         assert state_root.abstract_on_durings == []
         assert state_root.abstract_on_enters == []
@@ -140,6 +155,9 @@ class TestModelStateRoot:
         assert state_root.init_transitions[0].doc is None
         assert state_root.init_transitions[0].parent_ref().name == "Root"
         assert state_root.init_transitions[0].parent_ref().path == ("Root",)
+        assert state_root.init_transitions[0].target_history is None
+        assert state_root.init_transitions[0].history_role is None
+        assert state_root.init_transitions[0].history_user_guard is None
         assert not state_root.is_leaf_state
         assert state_root.is_root_state
         assert not state_root.is_stoppable
@@ -159,6 +177,9 @@ class TestModelStateRoot:
         assert state_root.transitions_entering_children[0].parent_ref().path == (
             "Root",
         )
+        assert state_root.transitions_entering_children[0].target_history is None
+        assert state_root.transitions_entering_children[0].history_role is None
+        assert state_root.transitions_entering_children[0].history_user_guard is None
         assert len(state_root.transitions_entering_children_simplified) == 1
         assert (
             state_root.transitions_entering_children_simplified[0].from_state
@@ -178,6 +199,17 @@ class TestModelStateRoot:
         assert state_root.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Root",)
+        assert (
+            state_root.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_root.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_root.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_root.transitions_from) == 1
         assert state_root.transitions_from[0].from_state == "Root"
         assert state_root.transitions_from[0].to_state == EXIT_STATE
@@ -186,6 +218,9 @@ class TestModelStateRoot:
         assert state_root.transitions_from[0].effects == []
         assert state_root.transitions_from[0].doc is None
         assert state_root.transitions_from[0].parent_ref is None
+        assert state_root.transitions_from[0].target_history is None
+        assert state_root.transitions_from[0].history_role is None
+        assert state_root.transitions_from[0].history_user_guard is None
         assert len(state_root.transitions_to) == 1
         assert state_root.transitions_to[0].from_state == INIT_STATE
         assert state_root.transitions_to[0].to_state == "Root"
@@ -194,6 +229,9 @@ class TestModelStateRoot:
         assert state_root.transitions_to[0].effects == []
         assert state_root.transitions_to[0].doc is None
         assert state_root.transitions_to[0].parent_ref is None
+        assert state_root.transitions_to[0].target_history is None
+        assert state_root.transitions_to[0].history_role is None
+        assert state_root.transitions_to[0].history_user_guard is None
 
     def test_state_root_to_ast_node(self, state_root):
         ast_node = state_root.to_ast_node()
@@ -217,6 +255,8 @@ class TestModelStateRoot:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="state2",
@@ -232,6 +272,8 @@ class TestModelStateRoot:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="state3",
@@ -247,6 +289,8 @@ class TestModelStateRoot:
                     force_transitions=[],
                     is_pseudo=True,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="state4",
@@ -262,6 +306,8 @@ class TestModelStateRoot:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -272,6 +318,7 @@ class TestModelStateRoot:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state1",
@@ -280,6 +327,7 @@ class TestModelStateRoot:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state2",
@@ -288,6 +336,7 @@ class TestModelStateRoot:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state3",
@@ -296,6 +345,7 @@ class TestModelStateRoot:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -305,6 +355,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_list_on_enters(self, state_root):
@@ -367,6 +419,7 @@ class TestModelStateRoot:
         assert state_root_state1.name == "state1"
         assert state_root_state1.path == ("Root", "state1")
         assert sorted(state_root_state1.substates.keys()) == []
+        assert state_root_state1.regions == {}
         assert state_root_state1.events == {}
         assert state_root_state1.transitions == []
         assert state_root_state1.named_functions == {}
@@ -380,6 +433,8 @@ class TestModelStateRoot:
         assert state_root_state1.extra_name == "Zhuang Tai I"
         assert not state_root_state1.is_pseudo
         assert state_root_state1.doc is None
+        assert not state_root_state1.is_history_gate
+        assert not state_root_state1.is_forced_gate
         assert state_root_state1.abstract_on_during_aspects == []
         assert state_root_state1.abstract_on_durings == []
         assert state_root_state1.abstract_on_enters == []
@@ -406,6 +461,9 @@ class TestModelStateRoot:
         assert state_root_state1.transitions_from[0].doc is None
         assert state_root_state1.transitions_from[0].parent_ref().name == "Root"
         assert state_root_state1.transitions_from[0].parent_ref().path == ("Root",)
+        assert state_root_state1.transitions_from[0].target_history is None
+        assert state_root_state1.transitions_from[0].history_role is None
+        assert state_root_state1.transitions_from[0].history_user_guard is None
         assert len(state_root_state1.transitions_to) == 1
         assert state_root_state1.transitions_to[0].from_state == INIT_STATE
         assert state_root_state1.transitions_to[0].to_state == "state1"
@@ -415,6 +473,9 @@ class TestModelStateRoot:
         assert state_root_state1.transitions_to[0].doc is None
         assert state_root_state1.transitions_to[0].parent_ref().name == "Root"
         assert state_root_state1.transitions_to[0].parent_ref().path == ("Root",)
+        assert state_root_state1.transitions_to[0].target_history is None
+        assert state_root_state1.transitions_to[0].history_role is None
+        assert state_root_state1.transitions_to[0].history_user_guard is None
 
     def test_state_root_state1_to_ast_node(self, state_root_state1):
         ast_node = state_root_state1.to_ast_node()
@@ -432,6 +493,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_state1_list_on_enters(self, state_root_state1):
@@ -507,6 +570,7 @@ class TestModelStateRoot:
         assert state_root_state2.name == "state2"
         assert state_root_state2.path == ("Root", "state2")
         assert sorted(state_root_state2.substates.keys()) == []
+        assert state_root_state2.regions == {}
         assert state_root_state2.events == {}
         assert state_root_state2.transitions == []
         assert state_root_state2.named_functions == {}
@@ -520,6 +584,8 @@ class TestModelStateRoot:
         assert state_root_state2.extra_name == "状態2"
         assert not state_root_state2.is_pseudo
         assert state_root_state2.doc is None
+        assert not state_root_state2.is_history_gate
+        assert not state_root_state2.is_forced_gate
         assert state_root_state2.abstract_on_during_aspects == []
         assert state_root_state2.abstract_on_durings == []
         assert state_root_state2.abstract_on_enters == []
@@ -546,6 +612,9 @@ class TestModelStateRoot:
         assert state_root_state2.transitions_from[0].doc is None
         assert state_root_state2.transitions_from[0].parent_ref().name == "Root"
         assert state_root_state2.transitions_from[0].parent_ref().path == ("Root",)
+        assert state_root_state2.transitions_from[0].target_history is None
+        assert state_root_state2.transitions_from[0].history_role is None
+        assert state_root_state2.transitions_from[0].history_user_guard is None
         assert len(state_root_state2.transitions_to) == 1
         assert state_root_state2.transitions_to[0].from_state == "state1"
         assert state_root_state2.transitions_to[0].to_state == "state2"
@@ -555,6 +624,9 @@ class TestModelStateRoot:
         assert state_root_state2.transitions_to[0].doc is None
         assert state_root_state2.transitions_to[0].parent_ref().name == "Root"
         assert state_root_state2.transitions_to[0].parent_ref().path == ("Root",)
+        assert state_root_state2.transitions_to[0].target_history is None
+        assert state_root_state2.transitions_to[0].history_role is None
+        assert state_root_state2.transitions_to[0].history_user_guard is None
 
     def test_state_root_state2_to_ast_node(self, state_root_state2):
         ast_node = state_root_state2.to_ast_node()
@@ -572,6 +644,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_state2_list_on_enters(self, state_root_state2):
@@ -647,6 +721,7 @@ class TestModelStateRoot:
         assert state_root_state3.name == "state3"
         assert state_root_state3.path == ("Root", "state3")
         assert sorted(state_root_state3.substates.keys()) == []
+        assert state_root_state3.regions == {}
         assert state_root_state3.events == {}
         assert state_root_state3.transitions == []
         assert state_root_state3.named_functions == {}
@@ -660,6 +735,8 @@ class TestModelStateRoot:
         assert state_root_state3.extra_name == "상태3"
         assert state_root_state3.is_pseudo
         assert state_root_state3.doc is None
+        assert not state_root_state3.is_history_gate
+        assert not state_root_state3.is_forced_gate
         assert state_root_state3.abstract_on_during_aspects == []
         assert state_root_state3.abstract_on_durings == []
         assert state_root_state3.abstract_on_enters == []
@@ -686,6 +763,9 @@ class TestModelStateRoot:
         assert state_root_state3.transitions_from[0].doc is None
         assert state_root_state3.transitions_from[0].parent_ref().name == "Root"
         assert state_root_state3.transitions_from[0].parent_ref().path == ("Root",)
+        assert state_root_state3.transitions_from[0].target_history is None
+        assert state_root_state3.transitions_from[0].history_role is None
+        assert state_root_state3.transitions_from[0].history_user_guard is None
         assert len(state_root_state3.transitions_to) == 1
         assert state_root_state3.transitions_to[0].from_state == "state2"
         assert state_root_state3.transitions_to[0].to_state == "state3"
@@ -695,6 +775,9 @@ class TestModelStateRoot:
         assert state_root_state3.transitions_to[0].doc is None
         assert state_root_state3.transitions_to[0].parent_ref().name == "Root"
         assert state_root_state3.transitions_to[0].parent_ref().path == ("Root",)
+        assert state_root_state3.transitions_to[0].target_history is None
+        assert state_root_state3.transitions_to[0].history_role is None
+        assert state_root_state3.transitions_to[0].history_user_guard is None
 
     def test_state_root_state3_to_ast_node(self, state_root_state3):
         ast_node = state_root_state3.to_ast_node()
@@ -712,6 +795,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=True,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_state3_list_on_enters(self, state_root_state3):
@@ -787,6 +872,7 @@ class TestModelStateRoot:
         assert state_root_state4.name == "state4"
         assert state_root_state4.path == ("Root", "state4")
         assert sorted(state_root_state4.substates.keys()) == []
+        assert state_root_state4.regions == {}
         assert state_root_state4.events == {}
         assert state_root_state4.transitions == []
         assert state_root_state4.named_functions == {}
@@ -800,6 +886,8 @@ class TestModelStateRoot:
         assert state_root_state4.extra_name is None
         assert not state_root_state4.is_pseudo
         assert state_root_state4.doc is None
+        assert not state_root_state4.is_history_gate
+        assert not state_root_state4.is_forced_gate
         assert state_root_state4.abstract_on_during_aspects == []
         assert state_root_state4.abstract_on_durings == []
         assert state_root_state4.abstract_on_enters == []
@@ -827,6 +915,9 @@ class TestModelStateRoot:
         assert state_root_state4.transitions_to[0].doc is None
         assert state_root_state4.transitions_to[0].parent_ref().name == "Root"
         assert state_root_state4.transitions_to[0].parent_ref().path == ("Root",)
+        assert state_root_state4.transitions_to[0].target_history is None
+        assert state_root_state4.transitions_to[0].history_role is None
+        assert state_root_state4.transitions_to[0].history_user_guard is None
 
     def test_state_root_state4_to_ast_node(self, state_root_state4):
         ast_node = state_root_state4.to_ast_node()
@@ -844,6 +935,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_state4_list_on_enters(self, state_root_state4):

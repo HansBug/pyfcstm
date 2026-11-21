@@ -87,10 +87,18 @@ class TestModelStateLx:
     def test_model(self, model):
         assert model.defines == {
             "Event": VarDefine(
-                name="Event", type="int", init=Integer(value=0), doc=None
+                name="Event",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "__forced_0": VarDefine(
-                name="__forced_0", type="int", init=Integer(value=0), doc=None
+                name="__forced_0",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "LX"
@@ -104,6 +112,7 @@ class TestModelStateLx:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling="def",
             ),
             dsl_nodes.DefAssignment(
@@ -111,6 +120,7 @@ class TestModelStateLx:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling=None,
             ),
         ]

@@ -132,10 +132,18 @@ class TestModelStateFactory:
     def test_model(self, model):
         assert model.defines == {
             "host_ticks": VarDefine(
-                name="host_ticks", type="int", init=Integer(value=0), doc=None
+                name="host_ticks",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "host_load": VarDefine(
-                name="host_load", type="int", init=Integer(value=0), doc=None
+                name="host_load",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "Factory"
@@ -145,10 +153,20 @@ class TestModelStateFactory:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="host_ticks", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="host_ticks",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="host_load", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="host_load",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
         ]
         assert ast_node.root_state.name == "Factory"
@@ -157,6 +175,7 @@ class TestModelStateFactory:
         assert state_factory.name == "Factory"
         assert state_factory.path == ("Factory",)
         assert sorted(state_factory.substates.keys()) == ["Line"]
+        assert state_factory.regions == {}
         assert state_factory.events == {}
         assert len(state_factory.transitions) == 1
         assert state_factory.transitions[0].from_state == INIT_STATE
@@ -167,6 +186,9 @@ class TestModelStateFactory:
         assert state_factory.transitions[0].doc is None
         assert state_factory.transitions[0].parent_ref().name == "Factory"
         assert state_factory.transitions[0].parent_ref().path == ("Factory",)
+        assert state_factory.transitions[0].target_history is None
+        assert state_factory.transitions[0].history_role is None
+        assert state_factory.transitions[0].history_user_guard is None
         assert state_factory.named_functions == {}
         assert state_factory.on_enters == []
         assert state_factory.on_durings == []
@@ -177,6 +199,8 @@ class TestModelStateFactory:
         assert state_factory.extra_name is None
         assert not state_factory.is_pseudo
         assert state_factory.doc is None
+        assert not state_factory.is_history_gate
+        assert not state_factory.is_forced_gate
         assert state_factory.abstract_on_during_aspects == []
         assert state_factory.abstract_on_durings == []
         assert state_factory.abstract_on_enters == []
@@ -190,6 +214,9 @@ class TestModelStateFactory:
         assert state_factory.init_transitions[0].doc is None
         assert state_factory.init_transitions[0].parent_ref().name == "Factory"
         assert state_factory.init_transitions[0].parent_ref().path == ("Factory",)
+        assert state_factory.init_transitions[0].target_history is None
+        assert state_factory.init_transitions[0].history_role is None
+        assert state_factory.init_transitions[0].history_user_guard is None
         assert not state_factory.is_leaf_state
         assert state_factory.is_root_state
         assert not state_factory.is_stoppable
@@ -212,6 +239,9 @@ class TestModelStateFactory:
         assert state_factory.transitions_entering_children[0].parent_ref().path == (
             "Factory",
         )
+        assert state_factory.transitions_entering_children[0].target_history is None
+        assert state_factory.transitions_entering_children[0].history_role is None
+        assert state_factory.transitions_entering_children[0].history_user_guard is None
         assert len(state_factory.transitions_entering_children_simplified) == 1
         assert (
             state_factory.transitions_entering_children_simplified[0].from_state
@@ -231,6 +261,18 @@ class TestModelStateFactory:
         assert state_factory.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Factory",)
+        assert (
+            state_factory.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_factory.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_factory.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_factory.transitions_from) == 1
         assert state_factory.transitions_from[0].from_state == "Factory"
         assert state_factory.transitions_from[0].to_state == EXIT_STATE
@@ -239,6 +281,9 @@ class TestModelStateFactory:
         assert state_factory.transitions_from[0].effects == []
         assert state_factory.transitions_from[0].doc is None
         assert state_factory.transitions_from[0].parent_ref is None
+        assert state_factory.transitions_from[0].target_history is None
+        assert state_factory.transitions_from[0].history_role is None
+        assert state_factory.transitions_from[0].history_user_guard is None
         assert len(state_factory.transitions_to) == 1
         assert state_factory.transitions_to[0].from_state == INIT_STATE
         assert state_factory.transitions_to[0].to_state == "Factory"
@@ -247,6 +292,9 @@ class TestModelStateFactory:
         assert state_factory.transitions_to[0].effects == []
         assert state_factory.transitions_to[0].doc is None
         assert state_factory.transitions_to[0].parent_ref is None
+        assert state_factory.transitions_to[0].target_history is None
+        assert state_factory.transitions_to[0].history_role is None
+        assert state_factory.transitions_to[0].history_user_guard is None
 
     def test_state_factory_to_ast_node(self, state_factory):
         ast_node = state_factory.to_ast_node()
@@ -282,6 +330,8 @@ class TestModelStateFactory:
                                     force_transitions=[],
                                     is_pseudo=False,
                                     doc=None,
+                                    histories=[],
+                                    regions=[],
                                 )
                             ],
                             transitions=[
@@ -292,6 +342,7 @@ class TestModelStateFactory:
                                     condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Feeding",
@@ -321,6 +372,7 @@ class TestModelStateFactory:
                                         ),
                                     ],
                                     doc=None,
+                                    target_history=None,
                                 ),
                             ],
                             enters=[],
@@ -330,6 +382,8 @@ class TestModelStateFactory:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Robot",
@@ -351,6 +405,8 @@ class TestModelStateFactory:
                                     force_transitions=[],
                                     is_pseudo=False,
                                     doc=None,
+                                    histories=[],
+                                    regions=[],
                                 )
                             ],
                             transitions=[
@@ -361,6 +417,7 @@ class TestModelStateFactory:
                                     condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Picking",
@@ -390,6 +447,7 @@ class TestModelStateFactory:
                                         ),
                                     ],
                                     doc=None,
+                                    target_history=None,
                                 ),
                             ],
                             enters=[],
@@ -399,6 +457,8 @@ class TestModelStateFactory:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -409,6 +469,7 @@ class TestModelStateFactory:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Conveyor",
@@ -421,6 +482,7 @@ class TestModelStateFactory:
                             ),
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Robot",
@@ -433,6 +495,7 @@ class TestModelStateFactory:
                             ),
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -442,6 +505,8 @@ class TestModelStateFactory:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -452,6 +517,7 @@ class TestModelStateFactory:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 )
             ],
             enters=[],
@@ -461,6 +527,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_list_on_enters(self, state_factory):
@@ -523,6 +591,7 @@ class TestModelStateFactory:
         assert state_factory_line.name == "Line"
         assert state_factory_line.path == ("Factory", "Line")
         assert sorted(state_factory_line.substates.keys()) == ["Conveyor", "Robot"]
+        assert state_factory_line.regions == {}
         assert state_factory_line.events == {}
         assert len(state_factory_line.transitions) == 3
         assert state_factory_line.transitions[0].from_state == INIT_STATE
@@ -536,6 +605,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line.transitions[0].target_history is None
+        assert state_factory_line.transitions[0].history_role is None
+        assert state_factory_line.transitions[0].history_user_guard is None
         assert state_factory_line.transitions[1].from_state == "Conveyor"
         assert state_factory_line.transitions[1].to_state == "Robot"
         assert state_factory_line.transitions[1].event is None
@@ -549,6 +621,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line.transitions[1].target_history is None
+        assert state_factory_line.transitions[1].history_role is None
+        assert state_factory_line.transitions[1].history_user_guard is None
         assert state_factory_line.transitions[2].from_state == "Robot"
         assert state_factory_line.transitions[2].to_state == "Conveyor"
         assert state_factory_line.transitions[2].event is None
@@ -562,6 +637,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line.transitions[2].target_history is None
+        assert state_factory_line.transitions[2].history_role is None
+        assert state_factory_line.transitions[2].history_user_guard is None
         assert state_factory_line.named_functions == {}
         assert state_factory_line.on_enters == []
         assert state_factory_line.on_durings == []
@@ -573,6 +651,8 @@ class TestModelStateFactory:
         assert state_factory_line.extra_name == "Assembly Line"
         assert not state_factory_line.is_pseudo
         assert state_factory_line.doc is None
+        assert not state_factory_line.is_history_gate
+        assert not state_factory_line.is_forced_gate
         assert state_factory_line.abstract_on_during_aspects == []
         assert state_factory_line.abstract_on_durings == []
         assert state_factory_line.abstract_on_enters == []
@@ -589,6 +669,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line.init_transitions[0].target_history is None
+        assert state_factory_line.init_transitions[0].history_role is None
+        assert state_factory_line.init_transitions[0].history_user_guard is None
         assert not state_factory_line.is_leaf_state
         assert not state_factory_line.is_root_state
         assert not state_factory_line.is_stoppable
@@ -616,6 +699,14 @@ class TestModelStateFactory:
         assert state_factory_line.transitions_entering_children[
             0
         ].parent_ref().path == ("Factory", "Line")
+        assert (
+            state_factory_line.transitions_entering_children[0].target_history is None
+        )
+        assert state_factory_line.transitions_entering_children[0].history_role is None
+        assert (
+            state_factory_line.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_factory_line.transitions_entering_children_simplified) == 1
         assert (
             state_factory_line.transitions_entering_children_simplified[0].from_state
@@ -646,6 +737,22 @@ class TestModelStateFactory:
         assert state_factory_line.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Factory", "Line")
+        assert (
+            state_factory_line.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_factory_line.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_factory_line.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert state_factory_line.transitions_from == []
         assert len(state_factory_line.transitions_to) == 1
         assert state_factory_line.transitions_to[0].from_state == INIT_STATE
@@ -656,6 +763,9 @@ class TestModelStateFactory:
         assert state_factory_line.transitions_to[0].doc is None
         assert state_factory_line.transitions_to[0].parent_ref().name == "Factory"
         assert state_factory_line.transitions_to[0].parent_ref().path == ("Factory",)
+        assert state_factory_line.transitions_to[0].target_history is None
+        assert state_factory_line.transitions_to[0].history_role is None
+        assert state_factory_line.transitions_to[0].history_user_guard is None
 
     def test_state_factory_line_to_ast_node(self, state_factory_line):
         ast_node = state_factory_line.to_ast_node()
@@ -685,6 +795,8 @@ class TestModelStateFactory:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
@@ -695,6 +807,7 @@ class TestModelStateFactory:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Feeding",
@@ -724,6 +837,7 @@ class TestModelStateFactory:
                                 ),
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -733,6 +847,8 @@ class TestModelStateFactory:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Robot",
@@ -754,6 +870,8 @@ class TestModelStateFactory:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
@@ -764,6 +882,7 @@ class TestModelStateFactory:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Picking",
@@ -793,6 +912,7 @@ class TestModelStateFactory:
                                 ),
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -802,6 +922,8 @@ class TestModelStateFactory:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -812,6 +934,7 @@ class TestModelStateFactory:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Conveyor",
@@ -824,6 +947,7 @@ class TestModelStateFactory:
                     ),
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Robot",
@@ -836,6 +960,7 @@ class TestModelStateFactory:
                     ),
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -845,6 +970,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_line_list_on_enters(self, state_factory_line):
@@ -915,6 +1042,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.name == "Conveyor"
         assert state_factory_line_conveyor.path == ("Factory", "Line", "Conveyor")
         assert sorted(state_factory_line_conveyor.substates.keys()) == ["Feeding"]
+        assert state_factory_line_conveyor.regions == {}
         assert state_factory_line_conveyor.events == {}
         assert len(state_factory_line_conveyor.transitions) == 2
         assert state_factory_line_conveyor.transitions[0].from_state == INIT_STATE
@@ -931,6 +1059,9 @@ class TestModelStateFactory:
             "Line",
             "Conveyor",
         )
+        assert state_factory_line_conveyor.transitions[0].target_history is None
+        assert state_factory_line_conveyor.transitions[0].history_role is None
+        assert state_factory_line_conveyor.transitions[0].history_user_guard is None
         assert state_factory_line_conveyor.transitions[1].from_state == "Feeding"
         assert state_factory_line_conveyor.transitions[1].to_state == "Feeding"
         assert state_factory_line_conveyor.transitions[1].event is None
@@ -958,6 +1089,9 @@ class TestModelStateFactory:
             "Line",
             "Conveyor",
         )
+        assert state_factory_line_conveyor.transitions[1].target_history is None
+        assert state_factory_line_conveyor.transitions[1].history_role is None
+        assert state_factory_line_conveyor.transitions[1].history_user_guard is None
         assert state_factory_line_conveyor.named_functions == {}
         assert state_factory_line_conveyor.on_enters == []
         assert state_factory_line_conveyor.on_durings == []
@@ -969,6 +1103,8 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.extra_name is None
         assert not state_factory_line_conveyor.is_pseudo
         assert state_factory_line_conveyor.doc is None
+        assert not state_factory_line_conveyor.is_history_gate
+        assert not state_factory_line_conveyor.is_forced_gate
         assert state_factory_line_conveyor.abstract_on_during_aspects == []
         assert state_factory_line_conveyor.abstract_on_durings == []
         assert state_factory_line_conveyor.abstract_on_enters == []
@@ -988,6 +1124,11 @@ class TestModelStateFactory:
             "Factory",
             "Line",
             "Conveyor",
+        )
+        assert state_factory_line_conveyor.init_transitions[0].target_history is None
+        assert state_factory_line_conveyor.init_transitions[0].history_role is None
+        assert (
+            state_factory_line_conveyor.init_transitions[0].history_user_guard is None
         )
         assert not state_factory_line_conveyor.is_leaf_state
         assert not state_factory_line_conveyor.is_root_state
@@ -1026,6 +1167,20 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.transitions_entering_children[
             0
         ].parent_ref().path == ("Factory", "Line", "Conveyor")
+        assert (
+            state_factory_line_conveyor.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_factory_line_conveyor.transitions_entering_children[0].history_role
+            is None
+        )
+        assert (
+            state_factory_line_conveyor.transitions_entering_children[
+                0
+            ].history_user_guard
+            is None
+        )
         assert (
             len(state_factory_line_conveyor.transitions_entering_children_simplified)
             == 1
@@ -1073,6 +1228,24 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Factory", "Line", "Conveyor")
+        assert (
+            state_factory_line_conveyor.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_factory_line_conveyor.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_factory_line_conveyor.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_factory_line_conveyor.transitions_from) == 1
         assert state_factory_line_conveyor.transitions_from[0].from_state == "Conveyor"
         assert state_factory_line_conveyor.transitions_from[0].to_state == "Robot"
@@ -1089,6 +1262,11 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line_conveyor.transitions_from[0].target_history is None
+        assert state_factory_line_conveyor.transitions_from[0].history_role is None
+        assert (
+            state_factory_line_conveyor.transitions_from[0].history_user_guard is None
+        )
         assert len(state_factory_line_conveyor.transitions_to) == 2
         assert state_factory_line_conveyor.transitions_to[0].from_state == INIT_STATE
         assert state_factory_line_conveyor.transitions_to[0].to_state == "Conveyor"
@@ -1101,6 +1279,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line_conveyor.transitions_to[0].target_history is None
+        assert state_factory_line_conveyor.transitions_to[0].history_role is None
+        assert state_factory_line_conveyor.transitions_to[0].history_user_guard is None
         assert state_factory_line_conveyor.transitions_to[1].from_state == "Robot"
         assert state_factory_line_conveyor.transitions_to[1].to_state == "Conveyor"
         assert state_factory_line_conveyor.transitions_to[1].event is None
@@ -1114,6 +1295,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line_conveyor.transitions_to[1].target_history is None
+        assert state_factory_line_conveyor.transitions_to[1].history_role is None
+        assert state_factory_line_conveyor.transitions_to[1].history_user_guard is None
 
     def test_state_factory_line_conveyor_to_ast_node(self, state_factory_line_conveyor):
         ast_node = state_factory_line_conveyor.to_ast_node()
@@ -1137,6 +1321,8 @@ class TestModelStateFactory:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -1147,6 +1333,7 @@ class TestModelStateFactory:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Feeding",
@@ -1176,6 +1363,7 @@ class TestModelStateFactory:
                         ),
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1185,6 +1373,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_line_conveyor_list_on_enters(
@@ -1274,6 +1464,7 @@ class TestModelStateFactory:
             "Feeding",
         )
         assert sorted(state_factory_line_conveyor_feeding.substates.keys()) == []
+        assert state_factory_line_conveyor_feeding.regions == {}
         assert state_factory_line_conveyor_feeding.events == {}
         assert state_factory_line_conveyor_feeding.transitions == []
         assert state_factory_line_conveyor_feeding.named_functions == {}
@@ -1291,6 +1482,8 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.extra_name is None
         assert not state_factory_line_conveyor_feeding.is_pseudo
         assert state_factory_line_conveyor_feeding.doc is None
+        assert not state_factory_line_conveyor_feeding.is_history_gate
+        assert not state_factory_line_conveyor_feeding.is_forced_gate
         assert state_factory_line_conveyor_feeding.abstract_on_during_aspects == []
         assert state_factory_line_conveyor_feeding.abstract_on_durings == []
         assert state_factory_line_conveyor_feeding.abstract_on_enters == []
@@ -1355,6 +1548,17 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.transitions_from[
             0
         ].parent_ref().path == ("Factory", "Line", "Conveyor")
+        assert (
+            state_factory_line_conveyor_feeding.transitions_from[0].target_history
+            is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_from[0].history_role is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_from[0].history_user_guard
+            is None
+        )
         assert len(state_factory_line_conveyor_feeding.transitions_to) == 2
         assert (
             state_factory_line_conveyor_feeding.transitions_to[0].from_state
@@ -1374,6 +1578,16 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.transitions_to[
             0
         ].parent_ref().path == ("Factory", "Line", "Conveyor")
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[0].target_history is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[0].history_role is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[0].history_user_guard
+            is None
+        )
         assert (
             state_factory_line_conveyor_feeding.transitions_to[1].from_state
             == "Feeding"
@@ -1405,6 +1619,16 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.transitions_to[
             1
         ].parent_ref().path == ("Factory", "Line", "Conveyor")
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[1].target_history is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[1].history_role is None
+        )
+        assert (
+            state_factory_line_conveyor_feeding.transitions_to[1].history_user_guard
+            is None
+        )
 
     def test_state_factory_line_conveyor_feeding_to_ast_node(
         self, state_factory_line_conveyor_feeding
@@ -1424,6 +1648,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_line_conveyor_feeding_list_on_enters(
@@ -1523,6 +1749,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot.name == "Robot"
         assert state_factory_line_robot.path == ("Factory", "Line", "Robot")
         assert sorted(state_factory_line_robot.substates.keys()) == ["Picking"]
+        assert state_factory_line_robot.regions == {}
         assert state_factory_line_robot.events == {}
         assert len(state_factory_line_robot.transitions) == 2
         assert state_factory_line_robot.transitions[0].from_state == INIT_STATE
@@ -1537,6 +1764,9 @@ class TestModelStateFactory:
             "Line",
             "Robot",
         )
+        assert state_factory_line_robot.transitions[0].target_history is None
+        assert state_factory_line_robot.transitions[0].history_role is None
+        assert state_factory_line_robot.transitions[0].history_user_guard is None
         assert state_factory_line_robot.transitions[1].from_state == "Picking"
         assert state_factory_line_robot.transitions[1].to_state == "Picking"
         assert state_factory_line_robot.transitions[1].event is None
@@ -1562,6 +1792,9 @@ class TestModelStateFactory:
             "Line",
             "Robot",
         )
+        assert state_factory_line_robot.transitions[1].target_history is None
+        assert state_factory_line_robot.transitions[1].history_role is None
+        assert state_factory_line_robot.transitions[1].history_user_guard is None
         assert state_factory_line_robot.named_functions == {}
         assert state_factory_line_robot.on_enters == []
         assert state_factory_line_robot.on_durings == []
@@ -1573,6 +1806,8 @@ class TestModelStateFactory:
         assert state_factory_line_robot.extra_name is None
         assert not state_factory_line_robot.is_pseudo
         assert state_factory_line_robot.doc is None
+        assert not state_factory_line_robot.is_history_gate
+        assert not state_factory_line_robot.is_forced_gate
         assert state_factory_line_robot.abstract_on_during_aspects == []
         assert state_factory_line_robot.abstract_on_durings == []
         assert state_factory_line_robot.abstract_on_enters == []
@@ -1590,6 +1825,9 @@ class TestModelStateFactory:
             "Line",
             "Robot",
         )
+        assert state_factory_line_robot.init_transitions[0].target_history is None
+        assert state_factory_line_robot.init_transitions[0].history_role is None
+        assert state_factory_line_robot.init_transitions[0].history_user_guard is None
         assert not state_factory_line_robot.is_leaf_state
         assert not state_factory_line_robot.is_root_state
         assert not state_factory_line_robot.is_stoppable
@@ -1619,6 +1857,18 @@ class TestModelStateFactory:
         assert state_factory_line_robot.transitions_entering_children[
             0
         ].parent_ref().path == ("Factory", "Line", "Robot")
+        assert (
+            state_factory_line_robot.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_factory_line_robot.transitions_entering_children[0].history_role
+            is None
+        )
+        assert (
+            state_factory_line_robot.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert (
             len(state_factory_line_robot.transitions_entering_children_simplified) == 1
         )
@@ -1659,6 +1909,24 @@ class TestModelStateFactory:
         assert state_factory_line_robot.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Factory", "Line", "Robot")
+        assert (
+            state_factory_line_robot.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_factory_line_robot.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_factory_line_robot.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_factory_line_robot.transitions_from) == 1
         assert state_factory_line_robot.transitions_from[0].from_state == "Robot"
         assert state_factory_line_robot.transitions_from[0].to_state == "Conveyor"
@@ -1673,6 +1941,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line_robot.transitions_from[0].target_history is None
+        assert state_factory_line_robot.transitions_from[0].history_role is None
+        assert state_factory_line_robot.transitions_from[0].history_user_guard is None
         assert len(state_factory_line_robot.transitions_to) == 1
         assert state_factory_line_robot.transitions_to[0].from_state == "Conveyor"
         assert state_factory_line_robot.transitions_to[0].to_state == "Robot"
@@ -1687,6 +1958,9 @@ class TestModelStateFactory:
             "Factory",
             "Line",
         )
+        assert state_factory_line_robot.transitions_to[0].target_history is None
+        assert state_factory_line_robot.transitions_to[0].history_role is None
+        assert state_factory_line_robot.transitions_to[0].history_user_guard is None
 
     def test_state_factory_line_robot_to_ast_node(self, state_factory_line_robot):
         ast_node = state_factory_line_robot.to_ast_node()
@@ -1710,6 +1984,8 @@ class TestModelStateFactory:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -1720,6 +1996,7 @@ class TestModelStateFactory:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Picking",
@@ -1749,6 +2026,7 @@ class TestModelStateFactory:
                         ),
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1758,6 +2036,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_line_robot_list_on_enters(self, state_factory_line_robot):
@@ -1833,6 +2113,7 @@ class TestModelStateFactory:
             "Picking",
         )
         assert sorted(state_factory_line_robot_picking.substates.keys()) == []
+        assert state_factory_line_robot_picking.regions == {}
         assert state_factory_line_robot_picking.events == {}
         assert state_factory_line_robot_picking.transitions == []
         assert state_factory_line_robot_picking.named_functions == {}
@@ -1850,6 +2131,8 @@ class TestModelStateFactory:
         assert state_factory_line_robot_picking.extra_name is None
         assert not state_factory_line_robot_picking.is_pseudo
         assert state_factory_line_robot_picking.doc is None
+        assert not state_factory_line_robot_picking.is_history_gate
+        assert not state_factory_line_robot_picking.is_forced_gate
         assert state_factory_line_robot_picking.abstract_on_during_aspects == []
         assert state_factory_line_robot_picking.abstract_on_durings == []
         assert state_factory_line_robot_picking.abstract_on_enters == []
@@ -1910,6 +2193,14 @@ class TestModelStateFactory:
         assert state_factory_line_robot_picking.transitions_from[
             0
         ].parent_ref().path == ("Factory", "Line", "Robot")
+        assert (
+            state_factory_line_robot_picking.transitions_from[0].target_history is None
+        )
+        assert state_factory_line_robot_picking.transitions_from[0].history_role is None
+        assert (
+            state_factory_line_robot_picking.transitions_from[0].history_user_guard
+            is None
+        )
         assert len(state_factory_line_robot_picking.transitions_to) == 2
         assert (
             state_factory_line_robot_picking.transitions_to[0].from_state == INIT_STATE
@@ -1927,6 +2218,12 @@ class TestModelStateFactory:
             "Factory",
             "Line",
             "Robot",
+        )
+        assert state_factory_line_robot_picking.transitions_to[0].target_history is None
+        assert state_factory_line_robot_picking.transitions_to[0].history_role is None
+        assert (
+            state_factory_line_robot_picking.transitions_to[0].history_user_guard
+            is None
         )
         assert (
             state_factory_line_robot_picking.transitions_to[1].from_state == "Picking"
@@ -1958,6 +2255,12 @@ class TestModelStateFactory:
             "Line",
             "Robot",
         )
+        assert state_factory_line_robot_picking.transitions_to[1].target_history is None
+        assert state_factory_line_robot_picking.transitions_to[1].history_role is None
+        assert (
+            state_factory_line_robot_picking.transitions_to[1].history_user_guard
+            is None
+        )
 
     def test_state_factory_line_robot_picking_to_ast_node(
         self, state_factory_line_robot_picking
@@ -1977,6 +2280,8 @@ class TestModelStateFactory:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_factory_line_robot_picking_list_on_enters(

@@ -102,31 +102,60 @@ class TestModelStateLab:
     def test_model(self, model):
         assert model.defines == {
             "exact_counter": VarDefine(
-                name="exact_counter", type="int", init=Integer(value=1), doc=None
+                name="exact_counter",
+                type="int",
+                init=Integer(value=1),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "set_status_flag": VarDefine(
-                name="set_status_flag", type="int", init=Integer(value=2), doc=None
+                name="set_status_flag",
+                type="int",
+                init=Integer(value=2),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "sensor_temp": VarDefine(
-                name="sensor_temp", type="int", init=Integer(value=3), doc=None
+                name="sensor_temp",
+                type="int",
+                init=Integer(value=3),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "pair_main_low_a_main_b_low": VarDefine(
                 name="pair_main_low_a_main_b_low",
                 type="int",
                 init=Integer(value=4),
                 doc=None,
+                role=VariableRole.CONTROL,
             ),
             "fallback_timeout": VarDefine(
-                name="fallback_timeout", type="int", init=Integer(value=5), doc=None
+                name="fallback_timeout",
+                type="int",
+                init=Integer(value=5),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "set_a": VarDefine(
-                name="set_a", type="int", init=Integer(value=6), doc=None
+                name="set_a",
+                type="int",
+                init=Integer(value=6),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "set_b": VarDefine(
-                name="set_b", type="int", init=Integer(value=7), doc=None
+                name="set_b",
+                type="int",
+                init=Integer(value=7),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "set_c": VarDefine(
-                name="set_c", type="int", init=Integer(value=8), doc=None
+                name="set_c",
+                type="int",
+                init=Integer(value=8),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "Lab"
@@ -140,39 +169,64 @@ class TestModelStateLab:
                 type="int",
                 expr=dsl_nodes.Integer(raw="1"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="set_status_flag",
                 type="int",
                 expr=dsl_nodes.Integer(raw="2"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="sensor_temp",
                 type="int",
                 expr=dsl_nodes.Integer(raw="3"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="pair_main_low_a_main_b_low",
                 type="int",
                 expr=dsl_nodes.Integer(raw="4"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="fallback_timeout",
                 type="int",
                 expr=dsl_nodes.Integer(raw="5"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="set_a", type="int", expr=dsl_nodes.Integer(raw="6"), doc=None
+                name="set_a",
+                type="int",
+                expr=dsl_nodes.Integer(raw="6"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="set_b", type="int", expr=dsl_nodes.Integer(raw="7"), doc=None
+                name="set_b",
+                type="int",
+                expr=dsl_nodes.Integer(raw="7"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="set_c", type="int", expr=dsl_nodes.Integer(raw="8"), doc=None
+                name="set_c",
+                type="int",
+                expr=dsl_nodes.Integer(raw="8"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
         ]
         assert ast_node.root_state.name == "Lab"
@@ -181,6 +235,7 @@ class TestModelStateLab:
         assert state_lab.name == "Lab"
         assert state_lab.path == ("Lab",)
         assert sorted(state_lab.substates.keys()) == ["Worker"]
+        assert state_lab.regions == {}
         assert state_lab.events == {}
         assert len(state_lab.transitions) == 1
         assert state_lab.transitions[0].from_state == INIT_STATE
@@ -191,6 +246,9 @@ class TestModelStateLab:
         assert state_lab.transitions[0].doc is None
         assert state_lab.transitions[0].parent_ref().name == "Lab"
         assert state_lab.transitions[0].parent_ref().path == ("Lab",)
+        assert state_lab.transitions[0].target_history is None
+        assert state_lab.transitions[0].history_role is None
+        assert state_lab.transitions[0].history_user_guard is None
         assert state_lab.named_functions == {}
         assert state_lab.on_enters == []
         assert state_lab.on_durings == []
@@ -201,6 +259,8 @@ class TestModelStateLab:
         assert state_lab.extra_name is None
         assert not state_lab.is_pseudo
         assert state_lab.doc is None
+        assert not state_lab.is_history_gate
+        assert not state_lab.is_forced_gate
         assert state_lab.abstract_on_during_aspects == []
         assert state_lab.abstract_on_durings == []
         assert state_lab.abstract_on_enters == []
@@ -214,6 +274,9 @@ class TestModelStateLab:
         assert state_lab.init_transitions[0].doc is None
         assert state_lab.init_transitions[0].parent_ref().name == "Lab"
         assert state_lab.init_transitions[0].parent_ref().path == ("Lab",)
+        assert state_lab.init_transitions[0].target_history is None
+        assert state_lab.init_transitions[0].history_role is None
+        assert state_lab.init_transitions[0].history_user_guard is None
         assert not state_lab.is_leaf_state
         assert state_lab.is_root_state
         assert not state_lab.is_stoppable
@@ -231,6 +294,9 @@ class TestModelStateLab:
         assert state_lab.transitions_entering_children[0].doc is None
         assert state_lab.transitions_entering_children[0].parent_ref().name == "Lab"
         assert state_lab.transitions_entering_children[0].parent_ref().path == ("Lab",)
+        assert state_lab.transitions_entering_children[0].target_history is None
+        assert state_lab.transitions_entering_children[0].history_role is None
+        assert state_lab.transitions_entering_children[0].history_user_guard is None
         assert len(state_lab.transitions_entering_children_simplified) == 1
         assert (
             state_lab.transitions_entering_children_simplified[0].from_state
@@ -250,6 +316,16 @@ class TestModelStateLab:
         assert state_lab.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Lab",)
+        assert (
+            state_lab.transitions_entering_children_simplified[0].target_history is None
+        )
+        assert (
+            state_lab.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_lab.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_lab.transitions_from) == 1
         assert state_lab.transitions_from[0].from_state == "Lab"
         assert state_lab.transitions_from[0].to_state == EXIT_STATE
@@ -258,6 +334,9 @@ class TestModelStateLab:
         assert state_lab.transitions_from[0].effects == []
         assert state_lab.transitions_from[0].doc is None
         assert state_lab.transitions_from[0].parent_ref is None
+        assert state_lab.transitions_from[0].target_history is None
+        assert state_lab.transitions_from[0].history_role is None
+        assert state_lab.transitions_from[0].history_user_guard is None
         assert len(state_lab.transitions_to) == 1
         assert state_lab.transitions_to[0].from_state == INIT_STATE
         assert state_lab.transitions_to[0].to_state == "Lab"
@@ -266,6 +345,9 @@ class TestModelStateLab:
         assert state_lab.transitions_to[0].effects == []
         assert state_lab.transitions_to[0].doc is None
         assert state_lab.transitions_to[0].parent_ref is None
+        assert state_lab.transitions_to[0].target_history is None
+        assert state_lab.transitions_to[0].history_role is None
+        assert state_lab.transitions_to[0].history_user_guard is None
 
     def test_state_lab_to_ast_node(self, state_lab):
         ast_node = state_lab.to_ast_node()
@@ -345,6 +427,8 @@ class TestModelStateLab:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Active",
@@ -380,6 +464,8 @@ class TestModelStateLab:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -390,6 +476,7 @@ class TestModelStateLab:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -402,6 +489,7 @@ class TestModelStateLab:
                             ),
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Active",
@@ -423,6 +511,7 @@ class TestModelStateLab:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -432,6 +521,8 @@ class TestModelStateLab:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -442,6 +533,7 @@ class TestModelStateLab:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 )
             ],
             enters=[],
@@ -451,6 +543,8 @@ class TestModelStateLab:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lab_list_on_enters(self, state_lab):
@@ -513,6 +607,7 @@ class TestModelStateLab:
         assert state_lab_worker.name == "Worker"
         assert state_lab_worker.path == ("Lab", "Worker")
         assert sorted(state_lab_worker.substates.keys()) == ["Active", "Idle"]
+        assert state_lab_worker.regions == {}
         assert state_lab_worker.events == {}
         assert len(state_lab_worker.transitions) == 3
         assert state_lab_worker.transitions[0].from_state == INIT_STATE
@@ -523,6 +618,9 @@ class TestModelStateLab:
         assert state_lab_worker.transitions[0].doc is None
         assert state_lab_worker.transitions[0].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[0].parent_ref().path == ("Lab", "Worker")
+        assert state_lab_worker.transitions[0].target_history is None
+        assert state_lab_worker.transitions[0].history_role is None
+        assert state_lab_worker.transitions[0].history_user_guard is None
         assert state_lab_worker.transitions[1].from_state == "Idle"
         assert state_lab_worker.transitions[1].to_state == "Active"
         assert state_lab_worker.transitions[1].event is None
@@ -533,6 +631,9 @@ class TestModelStateLab:
         assert state_lab_worker.transitions[1].doc is None
         assert state_lab_worker.transitions[1].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[1].parent_ref().path == ("Lab", "Worker")
+        assert state_lab_worker.transitions[1].target_history is None
+        assert state_lab_worker.transitions[1].history_role is None
+        assert state_lab_worker.transitions[1].history_user_guard is None
         assert state_lab_worker.transitions[2].from_state == "Active"
         assert state_lab_worker.transitions[2].to_state == "Idle"
         assert state_lab_worker.transitions[2].event is None
@@ -554,6 +655,9 @@ class TestModelStateLab:
         assert state_lab_worker.transitions[2].doc is None
         assert state_lab_worker.transitions[2].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[2].parent_ref().path == ("Lab", "Worker")
+        assert state_lab_worker.transitions[2].target_history is None
+        assert state_lab_worker.transitions[2].history_role is None
+        assert state_lab_worker.transitions[2].history_user_guard is None
         assert state_lab_worker.named_functions == {}
         assert state_lab_worker.on_enters == []
         assert state_lab_worker.on_durings == []
@@ -565,6 +669,8 @@ class TestModelStateLab:
         assert state_lab_worker.extra_name == "Mapping Matrix"
         assert not state_lab_worker.is_pseudo
         assert state_lab_worker.doc is None
+        assert not state_lab_worker.is_history_gate
+        assert not state_lab_worker.is_forced_gate
         assert state_lab_worker.abstract_on_during_aspects == []
         assert state_lab_worker.abstract_on_durings == []
         assert state_lab_worker.abstract_on_enters == []
@@ -581,6 +687,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker.init_transitions[0].target_history is None
+        assert state_lab_worker.init_transitions[0].history_role is None
+        assert state_lab_worker.init_transitions[0].history_user_guard is None
         assert not state_lab_worker.is_leaf_state
         assert not state_lab_worker.is_root_state
         assert not state_lab_worker.is_stoppable
@@ -606,6 +715,11 @@ class TestModelStateLab:
         assert state_lab_worker.transitions_entering_children[0].parent_ref().path == (
             "Lab",
             "Worker",
+        )
+        assert state_lab_worker.transitions_entering_children[0].target_history is None
+        assert state_lab_worker.transitions_entering_children[0].history_role is None
+        assert (
+            state_lab_worker.transitions_entering_children[0].history_user_guard is None
         )
         assert len(state_lab_worker.transitions_entering_children_simplified) == 1
         assert (
@@ -635,6 +749,20 @@ class TestModelStateLab:
         assert state_lab_worker.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Lab", "Worker")
+        assert (
+            state_lab_worker.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_lab_worker.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_lab_worker.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert state_lab_worker.transitions_from == []
         assert len(state_lab_worker.transitions_to) == 1
         assert state_lab_worker.transitions_to[0].from_state == INIT_STATE
@@ -645,6 +773,9 @@ class TestModelStateLab:
         assert state_lab_worker.transitions_to[0].doc is None
         assert state_lab_worker.transitions_to[0].parent_ref().name == "Lab"
         assert state_lab_worker.transitions_to[0].parent_ref().path == ("Lab",)
+        assert state_lab_worker.transitions_to[0].target_history is None
+        assert state_lab_worker.transitions_to[0].history_role is None
+        assert state_lab_worker.transitions_to[0].history_user_guard is None
 
     def test_state_lab_worker_to_ast_node(self, state_lab_worker):
         ast_node = state_lab_worker.to_ast_node()
@@ -710,6 +841,8 @@ class TestModelStateLab:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Active",
@@ -743,6 +876,8 @@ class TestModelStateLab:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -753,6 +888,7 @@ class TestModelStateLab:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -765,6 +901,7 @@ class TestModelStateLab:
                     ),
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Active",
@@ -786,6 +923,7 @@ class TestModelStateLab:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -795,6 +933,8 @@ class TestModelStateLab:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lab_worker_list_on_enters(self, state_lab_worker):
@@ -859,6 +999,7 @@ class TestModelStateLab:
         assert state_lab_worker_idle.name == "Idle"
         assert state_lab_worker_idle.path == ("Lab", "Worker", "Idle")
         assert sorted(state_lab_worker_idle.substates.keys()) == []
+        assert state_lab_worker_idle.regions == {}
         assert state_lab_worker_idle.events == {}
         assert state_lab_worker_idle.transitions == []
         assert state_lab_worker_idle.named_functions == {}
@@ -934,6 +1075,8 @@ class TestModelStateLab:
         assert state_lab_worker_idle.extra_name is None
         assert not state_lab_worker_idle.is_pseudo
         assert state_lab_worker_idle.doc is None
+        assert not state_lab_worker_idle.is_history_gate
+        assert not state_lab_worker_idle.is_forced_gate
         assert state_lab_worker_idle.abstract_on_during_aspects == []
         assert state_lab_worker_idle.abstract_on_durings == []
         assert state_lab_worker_idle.abstract_on_enters == []
@@ -1030,6 +1173,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker_idle.transitions_from[0].target_history is None
+        assert state_lab_worker_idle.transitions_from[0].history_role is None
+        assert state_lab_worker_idle.transitions_from[0].history_user_guard is None
         assert len(state_lab_worker_idle.transitions_to) == 2
         assert state_lab_worker_idle.transitions_to[0].from_state == INIT_STATE
         assert state_lab_worker_idle.transitions_to[0].to_state == "Idle"
@@ -1042,6 +1188,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker_idle.transitions_to[0].target_history is None
+        assert state_lab_worker_idle.transitions_to[0].history_role is None
+        assert state_lab_worker_idle.transitions_to[0].history_user_guard is None
         assert state_lab_worker_idle.transitions_to[1].from_state == "Active"
         assert state_lab_worker_idle.transitions_to[1].to_state == "Idle"
         assert state_lab_worker_idle.transitions_to[1].event is None
@@ -1066,6 +1215,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker_idle.transitions_to[1].target_history is None
+        assert state_lab_worker_idle.transitions_to[1].history_role is None
+        assert state_lab_worker_idle.transitions_to[1].history_user_guard is None
 
     def test_state_lab_worker_idle_to_ast_node(self, state_lab_worker_idle):
         ast_node = state_lab_worker_idle.to_ast_node()
@@ -1123,6 +1275,8 @@ class TestModelStateLab:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lab_worker_idle_list_on_enters(self, state_lab_worker_idle):
@@ -1303,6 +1457,7 @@ class TestModelStateLab:
         assert state_lab_worker_active.name == "Active"
         assert state_lab_worker_active.path == ("Lab", "Worker", "Active")
         assert sorted(state_lab_worker_active.substates.keys()) == []
+        assert state_lab_worker_active.regions == {}
         assert state_lab_worker_active.events == {}
         assert state_lab_worker_active.transitions == []
         assert state_lab_worker_active.named_functions == {}
@@ -1357,6 +1512,8 @@ class TestModelStateLab:
         assert state_lab_worker_active.extra_name is None
         assert not state_lab_worker_active.is_pseudo
         assert state_lab_worker_active.doc is None
+        assert not state_lab_worker_active.is_history_gate
+        assert not state_lab_worker_active.is_forced_gate
         assert state_lab_worker_active.abstract_on_during_aspects == []
         assert state_lab_worker_active.abstract_on_durings == []
         assert state_lab_worker_active.abstract_on_enters == []
@@ -1449,6 +1606,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker_active.transitions_from[0].target_history is None
+        assert state_lab_worker_active.transitions_from[0].history_role is None
+        assert state_lab_worker_active.transitions_from[0].history_user_guard is None
         assert len(state_lab_worker_active.transitions_to) == 1
         assert state_lab_worker_active.transitions_to[0].from_state == "Idle"
         assert state_lab_worker_active.transitions_to[0].to_state == "Active"
@@ -1463,6 +1623,9 @@ class TestModelStateLab:
             "Lab",
             "Worker",
         )
+        assert state_lab_worker_active.transitions_to[0].target_history is None
+        assert state_lab_worker_active.transitions_to[0].history_role is None
+        assert state_lab_worker_active.transitions_to[0].history_user_guard is None
 
     def test_state_lab_worker_active_to_ast_node(self, state_lab_worker_active):
         ast_node = state_lab_worker_active.to_ast_node()
@@ -1496,6 +1659,8 @@ class TestModelStateLab:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lab_worker_active_list_on_enters(self, state_lab_worker_active):

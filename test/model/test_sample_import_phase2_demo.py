@@ -95,6 +95,7 @@ class TestModelStateSystem:
         assert state_system.name == "System"
         assert state_system.path == ("System",)
         assert sorted(state_system.substates.keys()) == ["LeftMotor"]
+        assert state_system.regions == {}
         assert state_system.events == {}
         assert len(state_system.transitions) == 1
         assert state_system.transitions[0].from_state == INIT_STATE
@@ -105,6 +106,9 @@ class TestModelStateSystem:
         assert state_system.transitions[0].doc is None
         assert state_system.transitions[0].parent_ref().name == "System"
         assert state_system.transitions[0].parent_ref().path == ("System",)
+        assert state_system.transitions[0].target_history is None
+        assert state_system.transitions[0].history_role is None
+        assert state_system.transitions[0].history_user_guard is None
         assert state_system.named_functions == {}
         assert state_system.on_enters == []
         assert state_system.on_durings == []
@@ -115,6 +119,8 @@ class TestModelStateSystem:
         assert state_system.extra_name is None
         assert not state_system.is_pseudo
         assert state_system.doc is None
+        assert not state_system.is_history_gate
+        assert not state_system.is_forced_gate
         assert state_system.abstract_on_during_aspects == []
         assert state_system.abstract_on_durings == []
         assert state_system.abstract_on_enters == []
@@ -128,6 +134,9 @@ class TestModelStateSystem:
         assert state_system.init_transitions[0].doc is None
         assert state_system.init_transitions[0].parent_ref().name == "System"
         assert state_system.init_transitions[0].parent_ref().path == ("System",)
+        assert state_system.init_transitions[0].target_history is None
+        assert state_system.init_transitions[0].history_role is None
+        assert state_system.init_transitions[0].history_user_guard is None
         assert not state_system.is_leaf_state
         assert state_system.is_root_state
         assert not state_system.is_stoppable
@@ -149,6 +158,9 @@ class TestModelStateSystem:
         assert state_system.transitions_entering_children[0].parent_ref().path == (
             "System",
         )
+        assert state_system.transitions_entering_children[0].target_history is None
+        assert state_system.transitions_entering_children[0].history_role is None
+        assert state_system.transitions_entering_children[0].history_user_guard is None
         assert len(state_system.transitions_entering_children_simplified) == 1
         assert (
             state_system.transitions_entering_children_simplified[0].from_state
@@ -169,6 +181,18 @@ class TestModelStateSystem:
         assert state_system.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("System",)
+        assert (
+            state_system.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_system.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_system.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_system.transitions_from) == 1
         assert state_system.transitions_from[0].from_state == "System"
         assert state_system.transitions_from[0].to_state == EXIT_STATE
@@ -177,6 +201,9 @@ class TestModelStateSystem:
         assert state_system.transitions_from[0].effects == []
         assert state_system.transitions_from[0].doc is None
         assert state_system.transitions_from[0].parent_ref is None
+        assert state_system.transitions_from[0].target_history is None
+        assert state_system.transitions_from[0].history_role is None
+        assert state_system.transitions_from[0].history_user_guard is None
         assert len(state_system.transitions_to) == 1
         assert state_system.transitions_to[0].from_state == INIT_STATE
         assert state_system.transitions_to[0].to_state == "System"
@@ -185,6 +212,9 @@ class TestModelStateSystem:
         assert state_system.transitions_to[0].effects == []
         assert state_system.transitions_to[0].doc is None
         assert state_system.transitions_to[0].parent_ref is None
+        assert state_system.transitions_to[0].target_history is None
+        assert state_system.transitions_to[0].history_role is None
+        assert state_system.transitions_to[0].history_user_guard is None
 
     def test_state_system_to_ast_node(self, state_system):
         ast_node = state_system.to_ast_node()
@@ -222,6 +252,8 @@ class TestModelStateSystem:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Running",
@@ -243,6 +275,8 @@ class TestModelStateSystem:
                                     force_transitions=[],
                                     is_pseudo=False,
                                     doc=None,
+                                    histories=[],
+                                    regions=[],
                                 )
                             ],
                             transitions=[
@@ -253,6 +287,7 @@ class TestModelStateSystem:
                                     condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 )
                             ],
                             enters=[],
@@ -262,6 +297,8 @@ class TestModelStateSystem:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -272,6 +309,7 @@ class TestModelStateSystem:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -282,6 +320,7 @@ class TestModelStateSystem:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -292,6 +331,7 @@ class TestModelStateSystem:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[
@@ -303,6 +343,8 @@ class TestModelStateSystem:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -313,6 +355,7 @@ class TestModelStateSystem:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 )
             ],
             enters=[],
@@ -322,6 +365,8 @@ class TestModelStateSystem:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_system_list_on_enters(self, state_system):
@@ -384,6 +429,7 @@ class TestModelStateSystem:
         assert state_system_leftmotor.name == "LeftMotor"
         assert state_system_leftmotor.path == ("System", "LeftMotor")
         assert sorted(state_system_leftmotor.substates.keys()) == ["Idle", "Running"]
+        assert state_system_leftmotor.regions == {}
         assert state_system_leftmotor.events == {
             "Reset": Event(
                 name="Reset",
@@ -404,6 +450,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor.transitions[0].target_history is None
+        assert state_system_leftmotor.transitions[0].history_role is None
+        assert state_system_leftmotor.transitions[0].history_user_guard is None
         assert state_system_leftmotor.transitions[1].from_state == "Idle"
         assert state_system_leftmotor.transitions[1].to_state == "Running"
         assert state_system_leftmotor.transitions[1].event == Event(
@@ -420,6 +469,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor.transitions[1].target_history is None
+        assert state_system_leftmotor.transitions[1].history_role is None
+        assert state_system_leftmotor.transitions[1].history_user_guard is None
         assert state_system_leftmotor.transitions[2].from_state == "Running"
         assert state_system_leftmotor.transitions[2].to_state == "Idle"
         assert state_system_leftmotor.transitions[2].event == Event(
@@ -433,6 +485,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor.transitions[2].target_history is None
+        assert state_system_leftmotor.transitions[2].history_role is None
+        assert state_system_leftmotor.transitions[2].history_user_guard is None
         assert sorted(state_system_leftmotor.named_functions.keys()) == ["InitMotor"]
         assert state_system_leftmotor.named_functions["InitMotor"].stage == "enter"
         assert state_system_leftmotor.named_functions["InitMotor"].aspect is None
@@ -509,6 +564,8 @@ class TestModelStateSystem:
         assert state_system_leftmotor.extra_name == "Left Motor"
         assert not state_system_leftmotor.is_pseudo
         assert state_system_leftmotor.doc is None
+        assert not state_system_leftmotor.is_history_gate
+        assert not state_system_leftmotor.is_forced_gate
         assert state_system_leftmotor.abstract_on_during_aspects == []
         assert state_system_leftmotor.abstract_on_durings == []
         assert len(state_system_leftmotor.abstract_on_enters) == 1
@@ -559,6 +616,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor.init_transitions[0].target_history is None
+        assert state_system_leftmotor.init_transitions[0].history_role is None
+        assert state_system_leftmotor.init_transitions[0].history_user_guard is None
         assert not state_system_leftmotor.is_leaf_state
         assert not state_system_leftmotor.is_root_state
         assert not state_system_leftmotor.is_stoppable
@@ -587,6 +647,17 @@ class TestModelStateSystem:
         assert state_system_leftmotor.transitions_entering_children[
             0
         ].parent_ref().path == ("System", "LeftMotor")
+        assert (
+            state_system_leftmotor.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_system_leftmotor.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_system_leftmotor.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_system_leftmotor.transitions_entering_children_simplified) == 1
         assert (
             state_system_leftmotor.transitions_entering_children_simplified[
@@ -623,6 +694,24 @@ class TestModelStateSystem:
         assert state_system_leftmotor.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("System", "LeftMotor")
+        assert (
+            state_system_leftmotor.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_system_leftmotor.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_system_leftmotor.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert state_system_leftmotor.transitions_from == []
         assert len(state_system_leftmotor.transitions_to) == 1
         assert state_system_leftmotor.transitions_to[0].from_state == INIT_STATE
@@ -633,6 +722,9 @@ class TestModelStateSystem:
         assert state_system_leftmotor.transitions_to[0].doc is None
         assert state_system_leftmotor.transitions_to[0].parent_ref().name == "System"
         assert state_system_leftmotor.transitions_to[0].parent_ref().path == ("System",)
+        assert state_system_leftmotor.transitions_to[0].target_history is None
+        assert state_system_leftmotor.transitions_to[0].history_role is None
+        assert state_system_leftmotor.transitions_to[0].history_user_guard is None
 
     def test_state_system_leftmotor_to_ast_node(self, state_system_leftmotor):
         ast_node = state_system_leftmotor.to_ast_node()
@@ -660,6 +752,8 @@ class TestModelStateSystem:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Running",
@@ -681,6 +775,8 @@ class TestModelStateSystem:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
@@ -691,6 +787,7 @@ class TestModelStateSystem:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         )
                     ],
                     enters=[],
@@ -700,6 +797,8 @@ class TestModelStateSystem:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -710,6 +809,7 @@ class TestModelStateSystem:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -720,6 +820,7 @@ class TestModelStateSystem:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -728,6 +829,7 @@ class TestModelStateSystem:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[dsl_nodes.EnterAbstractFunction(name="InitMotor", doc=None)],
@@ -737,6 +839,8 @@ class TestModelStateSystem:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_system_leftmotor_list_on_enters(self, state_system_leftmotor):
@@ -911,6 +1015,7 @@ class TestModelStateSystem:
         assert state_system_leftmotor_idle.name == "Idle"
         assert state_system_leftmotor_idle.path == ("System", "LeftMotor", "Idle")
         assert sorted(state_system_leftmotor_idle.substates.keys()) == []
+        assert state_system_leftmotor_idle.regions == {}
         assert state_system_leftmotor_idle.events == {
             "Start": Event(
                 name="Start",
@@ -931,6 +1036,8 @@ class TestModelStateSystem:
         assert state_system_leftmotor_idle.extra_name is None
         assert not state_system_leftmotor_idle.is_pseudo
         assert state_system_leftmotor_idle.doc is None
+        assert not state_system_leftmotor_idle.is_history_gate
+        assert not state_system_leftmotor_idle.is_forced_gate
         assert state_system_leftmotor_idle.abstract_on_during_aspects == []
         assert state_system_leftmotor_idle.abstract_on_durings == []
         assert state_system_leftmotor_idle.abstract_on_enters == []
@@ -974,6 +1081,11 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor_idle.transitions_from[0].target_history is None
+        assert state_system_leftmotor_idle.transitions_from[0].history_role is None
+        assert (
+            state_system_leftmotor_idle.transitions_from[0].history_user_guard is None
+        )
         assert len(state_system_leftmotor_idle.transitions_to) == 2
         assert state_system_leftmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_system_leftmotor_idle.transitions_to[0].to_state == "Idle"
@@ -989,6 +1101,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor_idle.transitions_to[0].target_history is None
+        assert state_system_leftmotor_idle.transitions_to[0].history_role is None
+        assert state_system_leftmotor_idle.transitions_to[0].history_user_guard is None
         assert state_system_leftmotor_idle.transitions_to[1].from_state == "Running"
         assert state_system_leftmotor_idle.transitions_to[1].to_state == "Idle"
         assert state_system_leftmotor_idle.transitions_to[1].event == Event(
@@ -1005,6 +1120,9 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
         )
+        assert state_system_leftmotor_idle.transitions_to[1].target_history is None
+        assert state_system_leftmotor_idle.transitions_to[1].history_role is None
+        assert state_system_leftmotor_idle.transitions_to[1].history_user_guard is None
 
     def test_state_system_leftmotor_idle_to_ast_node(self, state_system_leftmotor_idle):
         ast_node = state_system_leftmotor_idle.to_ast_node()
@@ -1022,6 +1140,8 @@ class TestModelStateSystem:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_system_leftmotor_idle_list_on_enters(
@@ -1115,6 +1235,7 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.name == "Running"
         assert state_system_leftmotor_running.path == ("System", "LeftMotor", "Running")
         assert sorted(state_system_leftmotor_running.substates.keys()) == ["Spin"]
+        assert state_system_leftmotor_running.regions == {}
         assert state_system_leftmotor_running.events == {}
         assert len(state_system_leftmotor_running.transitions) == 1
         assert state_system_leftmotor_running.transitions[0].from_state == INIT_STATE
@@ -1131,6 +1252,9 @@ class TestModelStateSystem:
             "LeftMotor",
             "Running",
         )
+        assert state_system_leftmotor_running.transitions[0].target_history is None
+        assert state_system_leftmotor_running.transitions[0].history_role is None
+        assert state_system_leftmotor_running.transitions[0].history_user_guard is None
         assert state_system_leftmotor_running.named_functions == {}
         assert state_system_leftmotor_running.on_enters == []
         assert state_system_leftmotor_running.on_durings == []
@@ -1145,6 +1269,8 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.extra_name is None
         assert not state_system_leftmotor_running.is_pseudo
         assert state_system_leftmotor_running.doc is None
+        assert not state_system_leftmotor_running.is_history_gate
+        assert not state_system_leftmotor_running.is_forced_gate
         assert state_system_leftmotor_running.abstract_on_during_aspects == []
         assert state_system_leftmotor_running.abstract_on_durings == []
         assert state_system_leftmotor_running.abstract_on_enters == []
@@ -1166,6 +1292,12 @@ class TestModelStateSystem:
             "System",
             "LeftMotor",
             "Running",
+        )
+        assert state_system_leftmotor_running.init_transitions[0].target_history is None
+        assert state_system_leftmotor_running.init_transitions[0].history_role is None
+        assert (
+            state_system_leftmotor_running.init_transitions[0].history_user_guard
+            is None
         )
         assert not state_system_leftmotor_running.is_leaf_state
         assert not state_system_leftmotor_running.is_root_state
@@ -1209,6 +1341,22 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.transitions_entering_children[
             0
         ].parent_ref().path == ("System", "LeftMotor", "Running")
+        assert (
+            state_system_leftmotor_running.transitions_entering_children[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_system_leftmotor_running.transitions_entering_children[0].history_role
+            is None
+        )
+        assert (
+            state_system_leftmotor_running.transitions_entering_children[
+                0
+            ].history_user_guard
+            is None
+        )
         assert (
             len(state_system_leftmotor_running.transitions_entering_children_simplified)
             == 1
@@ -1258,6 +1406,24 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("System", "LeftMotor", "Running")
+        assert (
+            state_system_leftmotor_running.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_system_leftmotor_running.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_system_leftmotor_running.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_system_leftmotor_running.transitions_from) == 1
         assert (
             state_system_leftmotor_running.transitions_from[0].from_state == "Running"
@@ -1276,6 +1442,12 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.transitions_from[0].parent_ref().path == (
             "System",
             "LeftMotor",
+        )
+        assert state_system_leftmotor_running.transitions_from[0].target_history is None
+        assert state_system_leftmotor_running.transitions_from[0].history_role is None
+        assert (
+            state_system_leftmotor_running.transitions_from[0].history_user_guard
+            is None
         )
         assert len(state_system_leftmotor_running.transitions_to) == 1
         assert state_system_leftmotor_running.transitions_to[0].from_state == "Idle"
@@ -1296,6 +1468,11 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running.transitions_to[0].parent_ref().path == (
             "System",
             "LeftMotor",
+        )
+        assert state_system_leftmotor_running.transitions_to[0].target_history is None
+        assert state_system_leftmotor_running.transitions_to[0].history_role is None
+        assert (
+            state_system_leftmotor_running.transitions_to[0].history_user_guard is None
         )
 
     def test_state_system_leftmotor_running_to_ast_node(
@@ -1322,6 +1499,8 @@ class TestModelStateSystem:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -1332,6 +1511,7 @@ class TestModelStateSystem:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 )
             ],
             enters=[],
@@ -1341,6 +1521,8 @@ class TestModelStateSystem:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_system_leftmotor_running_list_on_enters(
@@ -1430,6 +1612,7 @@ class TestModelStateSystem:
             "Spin",
         )
         assert sorted(state_system_leftmotor_running_spin.substates.keys()) == []
+        assert state_system_leftmotor_running_spin.regions == {}
         assert state_system_leftmotor_running_spin.events == {}
         assert state_system_leftmotor_running_spin.transitions == []
         assert state_system_leftmotor_running_spin.named_functions == {}
@@ -1447,6 +1630,8 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running_spin.extra_name is None
         assert not state_system_leftmotor_running_spin.is_pseudo
         assert state_system_leftmotor_running_spin.doc is None
+        assert not state_system_leftmotor_running_spin.is_history_gate
+        assert not state_system_leftmotor_running_spin.is_forced_gate
         assert state_system_leftmotor_running_spin.abstract_on_during_aspects == []
         assert state_system_leftmotor_running_spin.abstract_on_durings == []
         assert state_system_leftmotor_running_spin.abstract_on_enters == []
@@ -1496,6 +1681,16 @@ class TestModelStateSystem:
         assert state_system_leftmotor_running_spin.transitions_to[
             0
         ].parent_ref().path == ("System", "LeftMotor", "Running")
+        assert (
+            state_system_leftmotor_running_spin.transitions_to[0].target_history is None
+        )
+        assert (
+            state_system_leftmotor_running_spin.transitions_to[0].history_role is None
+        )
+        assert (
+            state_system_leftmotor_running_spin.transitions_to[0].history_user_guard
+            is None
+        )
 
     def test_state_system_leftmotor_running_spin_to_ast_node(
         self, state_system_leftmotor_running_spin
@@ -1515,6 +1710,8 @@ class TestModelStateSystem:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_system_leftmotor_running_spin_list_on_enters(

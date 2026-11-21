@@ -137,19 +137,47 @@ def state_trafficlight_forced_gate_5(state_trafficlight):
 class TestModelStateTrafficLight:
     def test_model(self, model):
         assert model.defines == {
-            "a": VarDefine(name="a", type="int", init=Integer(value=0), doc=None),
-            "b": VarDefine(name="b", type="int", init=Integer(value=0), doc=None),
+            "a": VarDefine(
+                name="a",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
+            "b": VarDefine(
+                name="b",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
             "round_count": VarDefine(
-                name="round_count", type="int", init=Integer(value=0), doc=None
+                name="round_count",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "__forced_0": VarDefine(
-                name="__forced_0", type="int", init=Integer(value=0), doc=None
+                name="__forced_0",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "__forced_1": VarDefine(
-                name="__forced_1", type="int", init=Integer(value=0), doc=None
+                name="__forced_1",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "__forced_2": VarDefine(
-                name="__forced_2", type="int", init=Integer(value=0), doc=None
+                name="__forced_2",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "TrafficLight"
@@ -163,6 +191,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling="def",
             ),
             dsl_nodes.DefAssignment(
@@ -170,6 +199,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling="def",
             ),
             dsl_nodes.DefAssignment(
@@ -177,6 +207,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling="def",
             ),
             dsl_nodes.DefAssignment(
@@ -184,6 +215,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling=None,
             ),
             dsl_nodes.DefAssignment(
@@ -191,6 +223,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling=None,
             ),
             dsl_nodes.DefAssignment(
@@ -198,6 +231,7 @@ class TestModelStateTrafficLight:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
                 spelling=None,
             ),
         ]

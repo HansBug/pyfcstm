@@ -297,9 +297,9 @@ Use the output to check what the earlier steps observed:
 
    The charger as ``pyfcstm plantuml -i charger.fcstm`` draws it. A drawing
    shows the model as written, not what conversion produced: a transition that
-   enters a history names it as ``Session[H]`` or ``Session[H*]``, the default
-   of a shallow history is the arrow out of ``[H]``, and the default of a deep
-   history is the ``[H*]`` line in the description of the owner. Each forced
+   enters a history names it as ``Session[H]`` or ``Session[H*]``, and the
+   default of each history is the ``[H]`` or ``[H*]`` line in the description
+   of the owner. Each forced
    transition is one arrow per phase. The variables, guarded initial transitions
    and relays above are not drawn.
    The labels are code identifiers only, so one figure serves both languages.

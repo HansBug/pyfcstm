@@ -307,7 +307,7 @@ def test_plantuml_draws_history_as_written_and_escapes_names_with_underscores(mo
     source = load_state_machine_from_text(WASHER).to_plantuml(options)
     # The drawing shows the history of the model, not what it was lowered into.
     assert "__hist" not in source
-    assert "[H] --> washer__program__idle" in source
+    assert "washer__program : [H] -> Idle" in source
     assert "washer__program : [H*] -> Wash.Fill" in source
     assert "washer__program[H]" in source and "washer__program[H*]" in source
     # Creole treats ``__`` as underline markup, so notes, legends and state

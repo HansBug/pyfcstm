@@ -161,10 +161,10 @@ Diagrams
 ~~~~~~~~
 
 A model that uses history is drawn as written. PlantUML shows a transition that
-enters a history as ``Owner[H]`` or ``Owner[H*]``, the default of a shallow
-history as the arrow out of ``[H]``, and the default of a deep history as a
-``[H*] -> Child.Leaf`` line in the description of the owner, because PlantUML
-cannot draw an arrow out of a deep history that a transition enters. The
+enters a history as ``Owner[H]`` or ``Owner[H*]``, and the default of each
+history as a ``[H] -> Child`` or ``[H*] -> Child.Leaf`` line in the description
+of the owner, because PlantUML cannot draw an arrow out of a history that a
+transition enters. The
 diagram snapshot labels such a transition ``Owner.[H]`` or ``Owner.[H*]``.
 The hidden variables, gate states and route transitions that history is lowered
 into are not drawn, as is already the case for forced declarations.

@@ -3025,26 +3025,20 @@ class State(AstExportable, PlantUMLExportable):
                 _write_plantuml_transitions(
                     sf, self, _name_safe, config, event_colors, active_paths
                 )
-                shallow_default = getattr(self, "history_defaults", {}).get("shallow")
-                if should_expand_substates and shallow_default is not None:
-                    # Where the shallow history of this state leads by default.
-                    print(
-                        "    [H] --> %s" % sequence_safe([*self.path, *shallow_default]),
-                        file=sf,
-                    )
-
                 print("}", file=sf, end="")
-            deep_default = getattr(self, "history_defaults", {}).get("deep")
-            if deep_default is not None:
-                # PlantUML cannot draw an arrow out of the deep history of a
-                # state that another transition enters, so where it leads by
-                # default is a line of the state's description.
-                print("", file=sf)
-                print(
-                    "%s : [H*] -> %s" % (_name_safe(), ".".join(deep_default)),
-                    file=sf,
-                    end="",
-                )
+            for kind, mark in (("shallow", "[H]"), ("deep", "[H*]")):
+                default = getattr(self, "history_defaults", {}).get(kind)
+                if default is not None:
+                    # PlantUML cannot draw an arrow out of the history of a
+                    # state that another transition enters (the deep one in
+                    # every release, the shallow one in 1.2023), so where it
+                    # leads by default is a line of the state's description.
+                    print("", file=sf)
+                    print(
+                        "%s : %s -> %s" % (_name_safe(), mark, ".".join(default)),
+                        file=sf,
+                        end="",
+                    )
 
             _write_plantuml_actions(
                 sf,
@@ -3863,6 +3857,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
             _plain_forced_view=None,
             _forced_flags=(),
             _build_warnings=(),
+            # Python 3.7's ``dataclasses.replace`` insists on every init-only
+            # field; ``None`` makes a copy of a valid machine raise as usual.
+            _validation_sink=None,
         )
 
     def _as_written(self) -> "StateMachine":
@@ -6710,7 +6707,7 @@ def _build_assembled_state_machine(
     # recorded something to lower when ``lower`` is true and the build does
     # not keep the plain expansion.
     forced_flags = forced_expansion.lower(d_defines)
-    # A drawing writes the history of an owner as ``[H] --> default``, so the
+    # A drawing writes where the history of an owner leads by default, so the
     # owner remembers where each kind of its history leads by default.
     states_by_path = {state.path: state for state in root_state.walk_states()}
     for owner in history_owners:

@@ -13,6 +13,9 @@ USER_VARS = {
     "fill_entries": 0,
     "agitate_entries": 0,
     "wash_initials": 0,
+    # The hidden variable of the forced ``!Program -> Paused`` of the model: an
+    # ordinary variable, so a hot start supplies it like the others.
+    "__forced_0": 0,
 }
 
 

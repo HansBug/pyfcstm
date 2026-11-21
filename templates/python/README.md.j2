@@ -1,4 +1,4 @@
-{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '0' if item.name in model.forced_variables else ('1' if item.type == 'int' else '1.0') }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 
 {% set doc_event_paths = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
@@ -201,7 +201,9 @@ machine = Device(
 
 ### Hot Start
 
-The following fragment follows a successful cycle of `app.py`. Save state, all control/output values and all parameters from the same checkpoint, then construct another `Device`. The example covers a live leaf checkpoint; a composite path deliberately starts in its initial-transition wait mode. Hot start does not replay entry actions. It requires complete snapshots and is not an API for changing parameters in a running instance. A checkpoint is not a portable binary serialization format.
+The following fragment follows a successful cycle of `app.py`. Save state, all control/output values and all parameters from the same checkpoint, then construct another `Device`. The example covers a live leaf checkpoint; a composite path deliberately starts in its initial-transition wait mode. Hot start does not replay entry actions. It requires complete snapshots and is not an API for changing parameters in a running instance. A checkpoint is not a portable binary serialization format.{% if model.forced_variables %}
+
+The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint. They are ordinary variables of the model: a hot start takes them from the saved checkpoint like every other variable. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}
 
 <!-- example:hot-start -->
 

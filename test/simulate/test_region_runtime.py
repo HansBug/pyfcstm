@@ -955,7 +955,10 @@ def test_handler_runs_while_a_region_initial_chain_starts_with_a_pseudo_state():
     assert seen == ["Root.Owner{R: [init]}"]
 
 
-FORCED_LOOP_MODEL = """def int x = 0;
+# The transitions of S60 and S62 and the first one of S59 are what two forced
+# declarations of a random model used to expand into. A forced transition is no
+# longer taken from the pseudo state S60, so they are written out here.
+UNSETTLED_REGION_MODEL = """def int x = 0;
 def int y = 0;
 state Root {
     event E2; event E3;
@@ -973,11 +976,14 @@ state Root {
                         [*] -> S60;
                         pseudo state S60;
                         state S62;
-                        !* -> S62 : /E2;
+                        S60 -> [*] : /E2;
+                        S60 -> S62 : /E2;
+                        S62 -> [*] : /E2;
+                        S62 -> S62 : /E2;
                     }
+                    S59 -> S59 : /E2;
                     S59 -> [*] : if [x % 4 == 1];
                     S59 -> S59 : if [y % 3 == 1] effect { x = x + 1; }
-                    !* -> S59 : /E2;
                 }
                 region R65 { [*] -> S66; state S66; }
             }
@@ -990,8 +996,8 @@ state Root {
 
 @pytest.mark.unittest
 def test_cycle_without_a_stable_region_position_is_a_delta():
-    """A forced chain that cannot settle a region makes the whole cycle a Delta."""
-    runtime = SimulationRuntime(load_state_machine_from_text(FORCED_LOOP_MODEL))
+    """A chain that cannot settle a region makes the whole cycle a Delta."""
+    runtime = SimulationRuntime(load_state_machine_from_text(UNSETTLED_REGION_MODEL))
     runtime.cycle()
     runtime.cycle(["Root.E2", "Root.E3"])
     before = (str(runtime.configuration), dict(runtime.vars))

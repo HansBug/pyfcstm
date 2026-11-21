@@ -1,6 +1,90 @@
 Release Notes
 =============
 
+Unreleased
+----------
+
+Forced Transitions
+~~~~~~~~~~~~~~~~~~
+
+A forced transition ``!S -> T`` whose source ``S`` has states inside it is now
+carried out the same way in every model: its event and guard are decided once,
+at the state the machine rests in, and nothing on the way up asks again.
+Earlier releases put a copy of the event and the guard on every state below
+``S``, pseudo states included, and judged each copy again as the exit moved up.
+Models without forced transitions are not affected. For models that have them,
+four behaviours change:
+
+- **A guard that refers to a state inside the source.**
+  ``!P -> Q : if [active("Root.P.a2")];`` is taken when the machine rests in
+  ``a2``. It used to be judged again after ``a2`` had been left, where it could
+  never hold.
+- **An exit action that changes what the guard reads.** The guard is no longer
+  judged again after the exit actions on the way out have run, so they cannot
+  cancel the transition half-way and leave the machine in its old state.
+- **An entry that passes through a pseudo state.** A forced transition is not
+  taken from a pseudo state. When its event or guard already holds in the cycle
+  that enters ``S`` through a pseudo state, the entry now completes and the
+  forced transition is taken in the next cycle.
+- **A target that cannot be entered.** The forced transition then takes
+  nothing: it does not leave the state the machine rests in and does not
+  consume the event, and no other transition that leaves ``S`` picks the
+  machine up half-way. The transitions of the resting state itself are tried
+  as usual.
+
+``CycleResult.consumed_events`` lists the event of a forced transition once.
+It used to list it once for every level that was left.
+
+Three things become visible:
+
+- Each such declaration is carried out with a hidden ``int`` variable
+  ``__forced_<n>``; a name the model already uses is skipped. Like ``__hist_*``
+  it appears in ``StateMachine.defines``, ``runtime.vars``, the variable
+  snapshots of abstract handlers and the variable tables of generated code, and
+  it is an ordinary variable everywhere: a hot start supplies it like every
+  other variable, and BMC treats it like every other variable. The machine only
+  raises it inside a cycle, so it is 0 at every point where a run rests.
+  :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names.
+- A transition with an event that leaves a state on the way of a forced exit is
+  split through a generated pseudo state ``__forced_gate_<n>``. The pseudo
+  state appears in ``walk_states()`` and as one more state passed through in an
+  execution trace.
+- ``to_ast_node()`` exports the machine that runs, with those variables and
+  pseudo states, as it already does for history. The model loaded from the
+  exported text is the same machine: it takes the same cycles and the same hot
+  starts, and every reachability and BMC question gets the same answer. A model
+  in which a forced transition takes the regions of a state away is the
+  exception: it is still exported with every forced transition in the older
+  form, and a machine loaded from that text can behave differently.
+
+PlantUML, the diagram viewer and ``pyfcstm inspect`` keep showing a forced
+transition as one transition per state it applies to. For a model with any
+forced declaration they show the model as it was loaded: a model object edited
+afterwards is drawn without the edit. A declaration whose sources have nothing
+inside them stays one transition per source and gets no variable. In collect
+mode (``parse_dsl_node_to_state_machine(..., collect=True)``) a faulty forced
+declaration is reported once instead of once per level it was expanded to.
+
+The machine that runs carries no trace of a forced declaration: none of its
+transitions is marked ``Transition.is_forced`` or keeps a ``forced_origin``. It
+is plain FCSTM, and everything that executes it or answers a question about it,
+the simulator, the generated runtimes, BMC, the analyses of
+:mod:`pyfcstm.verify` and the analyzers of
+:mod:`pyfcstm.diagnostics.analyzers`, takes it as it is, with the generated
+transitions and the gate states ``__forced_gate_<n>`` that code walking
+``walk_states()`` and ``State.transitions`` meets. The marks exist only in the
+model as written, which drawings and
+:func:`pyfcstm.diagnostics.inspect.inspect_model` are built from, so the
+warnings that are about a declaration itself, such as
+``W_FORCED_GUARD_UNSAT``, come from the inspect report. The per-transition
+algorithm ``forced_guard_unsat_under_init`` therefore only reports a
+transition that is handed to it marked.
+
+Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
+text of a model with forced transitions against stored values needs new
+expected values. A hot-start snapshot taken from ``runtime.vars`` keeps its
+``__forced_*`` entries and supplies them with the other variables.
+
 v0.6.0
 ------
 

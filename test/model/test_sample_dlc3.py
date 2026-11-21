@@ -77,13 +77,21 @@ def state_lx_error(state_lx):
     return state_lx.substates["ERROR"]
 
 
+@pytest.fixture()
+def state_lx_forced_gate_0(state_lx):
+    return state_lx.substates["__forced_gate_0"]
+
+
 @pytest.mark.unittest
 class TestModelStateLx:
     def test_model(self, model):
         assert model.defines == {
             "Event": VarDefine(
                 name="Event", type="int", init=Integer(value=0), doc=None
-            )
+            ),
+            "__forced_0": VarDefine(
+                name="__forced_0", type="int", init=Integer(value=0), doc=None
+            ),
         }
         assert model.root_state.name == "LX"
         assert model.root_state.path == ("LX",)
@@ -92,55 +100,113 @@ class TestModelStateLx:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="Event", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
-            )
+                name="Event",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                spelling="def",
+            ),
+            dsl_nodes.DefAssignment(
+                name="__forced_0",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                spelling=None,
+            ),
         ]
         assert ast_node.root_state.name == "LX"
 
     def test_state_lx(self, state_lx):
         assert state_lx.name == "LX"
         assert state_lx.path == ("LX",)
-        assert sorted(state_lx.substates.keys()) == ["ERROR", "LX2"]
+        assert sorted(state_lx.substates.keys()) == ["ERROR", "LX2", "__forced_gate_0"]
+        assert state_lx.regions == {}
         assert state_lx.events == {
             "E1": Event(name="E1", state_path=("LX",), extra_name=None, doc=None)
         }
-        assert len(state_lx.transitions) == 4
+        assert len(state_lx.transitions) == 6
         assert state_lx.transitions[0].from_state == "LX2"
         assert state_lx.transitions[0].to_state == "ERROR"
-        assert state_lx.transitions[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx.transitions[0].event is None
+        assert state_lx.transitions[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx.transitions[0].guard is None
-        assert state_lx.transitions[0].effects == []
+        assert state_lx.transitions[0].effects == [
+            Operation(var_name="__forced_0", expr=Integer(value=0))
+        ]
+        assert state_lx.transitions[0].exit_group_levels == 0
         assert state_lx.transitions[0].doc is None
         assert state_lx.transitions[0].parent_ref().name == "LX"
         assert state_lx.transitions[0].parent_ref().path == ("LX",)
-        assert state_lx.transitions[1].from_state == "ERROR"
-        assert state_lx.transitions[1].to_state == "ERROR"
+        assert state_lx.transitions[0].target_history is None
+        assert state_lx.transitions[0].history_role is None
+        assert state_lx.transitions[0].history_user_guard is None
+        assert state_lx.transitions[1].from_state == "LX2"
+        assert state_lx.transitions[1].to_state == "__forced_gate_0"
         assert state_lx.transitions[1].event == Event(
             name="E1", state_path=("LX",), extra_name=None, doc=None
         )
         assert state_lx.transitions[1].guard is None
         assert state_lx.transitions[1].effects == []
+        assert state_lx.transitions[1].exit_group_levels == 0
         assert state_lx.transitions[1].doc is None
         assert state_lx.transitions[1].parent_ref().name == "LX"
         assert state_lx.transitions[1].parent_ref().path == ("LX",)
-        assert state_lx.transitions[2].from_state == INIT_STATE
-        assert state_lx.transitions[2].to_state == "LX2"
-        assert state_lx.transitions[2].event is None
+        assert state_lx.transitions[1].target_history is None
+        assert state_lx.transitions[1].history_role is None
+        assert state_lx.transitions[1].history_user_guard is None
+        assert state_lx.transitions[2].from_state == "ERROR"
+        assert state_lx.transitions[2].to_state == "ERROR"
+        assert state_lx.transitions[2].event == Event(
+            name="E1", state_path=("LX",), extra_name=None, doc=None
+        )
         assert state_lx.transitions[2].guard is None
         assert state_lx.transitions[2].effects == []
+        assert state_lx.transitions[2].exit_group_levels == 0
         assert state_lx.transitions[2].doc is None
         assert state_lx.transitions[2].parent_ref().name == "LX"
         assert state_lx.transitions[2].parent_ref().path == ("LX",)
-        assert state_lx.transitions[3].from_state == "ERROR"
-        assert state_lx.transitions[3].to_state == EXIT_STATE
+        assert state_lx.transitions[2].target_history is None
+        assert state_lx.transitions[2].history_role is None
+        assert state_lx.transitions[2].history_user_guard is None
+        assert state_lx.transitions[3].from_state == INIT_STATE
+        assert state_lx.transitions[3].to_state == "LX2"
         assert state_lx.transitions[3].event is None
         assert state_lx.transitions[3].guard is None
         assert state_lx.transitions[3].effects == []
+        assert state_lx.transitions[3].exit_group_levels == 0
         assert state_lx.transitions[3].doc is None
         assert state_lx.transitions[3].parent_ref().name == "LX"
         assert state_lx.transitions[3].parent_ref().path == ("LX",)
+        assert state_lx.transitions[3].target_history is None
+        assert state_lx.transitions[3].history_role is None
+        assert state_lx.transitions[3].history_user_guard is None
+        assert state_lx.transitions[4].from_state == "ERROR"
+        assert state_lx.transitions[4].to_state == EXIT_STATE
+        assert state_lx.transitions[4].event is None
+        assert state_lx.transitions[4].guard is None
+        assert state_lx.transitions[4].effects == []
+        assert state_lx.transitions[4].exit_group_levels == 0
+        assert state_lx.transitions[4].doc is None
+        assert state_lx.transitions[4].parent_ref().name == "LX"
+        assert state_lx.transitions[4].parent_ref().path == ("LX",)
+        assert state_lx.transitions[4].target_history is None
+        assert state_lx.transitions[4].history_role is None
+        assert state_lx.transitions[4].history_user_guard is None
+        assert state_lx.transitions[5].from_state == "__forced_gate_0"
+        assert state_lx.transitions[5].to_state == "ERROR"
+        assert state_lx.transitions[5].event is None
+        assert state_lx.transitions[5].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
+        )
+        assert state_lx.transitions[5].effects == []
+        assert state_lx.transitions[5].exit_group_levels == 0
+        assert state_lx.transitions[5].doc is None
+        assert state_lx.transitions[5].parent_ref().name == "LX"
+        assert state_lx.transitions[5].parent_ref().path == ("LX",)
+        assert state_lx.transitions[5].target_history is None
+        assert state_lx.transitions[5].history_role is None
+        assert state_lx.transitions[5].history_user_guard is None
         assert sorted(state_lx.named_functions.keys()) == ["act1"]
         assert state_lx.named_functions["act1"].stage == "enter"
         assert state_lx.named_functions["act1"].aspect is None
@@ -195,10 +261,16 @@ class TestModelStateLx:
         assert state_lx.on_exits == []
         assert state_lx.on_during_aspects == []
         assert state_lx.parent_ref is None
-        assert state_lx.substate_name_to_id == {"LX2": 0, "ERROR": 1}
+        assert state_lx.substate_name_to_id == {
+            "LX2": 0,
+            "ERROR": 1,
+            "__forced_gate_0": 2,
+        }
         assert state_lx.extra_name is None
         assert not state_lx.is_pseudo
         assert state_lx.doc is None
+        assert not state_lx.is_history_gate
+        assert not state_lx.is_forced_gate
         assert state_lx.abstract_on_during_aspects == []
         assert state_lx.abstract_on_durings == []
         assert len(state_lx.abstract_on_enters) == 1
@@ -225,9 +297,13 @@ class TestModelStateLx:
         assert state_lx.init_transitions[0].event is None
         assert state_lx.init_transitions[0].guard is None
         assert state_lx.init_transitions[0].effects == []
+        assert state_lx.init_transitions[0].exit_group_levels == 0
         assert state_lx.init_transitions[0].doc is None
         assert state_lx.init_transitions[0].parent_ref().name == "LX"
         assert state_lx.init_transitions[0].parent_ref().path == ("LX",)
+        assert state_lx.init_transitions[0].target_history is None
+        assert state_lx.init_transitions[0].history_role is None
+        assert state_lx.init_transitions[0].history_user_guard is None
         assert not state_lx.is_leaf_state
         assert state_lx.is_root_state
         assert not state_lx.is_stoppable
@@ -258,9 +334,13 @@ class TestModelStateLx:
         assert state_lx.transitions_entering_children[0].event is None
         assert state_lx.transitions_entering_children[0].guard is None
         assert state_lx.transitions_entering_children[0].effects == []
+        assert state_lx.transitions_entering_children[0].exit_group_levels == 0
         assert state_lx.transitions_entering_children[0].doc is None
         assert state_lx.transitions_entering_children[0].parent_ref().name == "LX"
         assert state_lx.transitions_entering_children[0].parent_ref().path == ("LX",)
+        assert state_lx.transitions_entering_children[0].target_history is None
+        assert state_lx.transitions_entering_children[0].history_role is None
+        assert state_lx.transitions_entering_children[0].history_user_guard is None
         assert len(state_lx.transitions_entering_children_simplified) == 1
         assert (
             state_lx.transitions_entering_children_simplified[0].from_state
@@ -270,6 +350,9 @@ class TestModelStateLx:
         assert state_lx.transitions_entering_children_simplified[0].event is None
         assert state_lx.transitions_entering_children_simplified[0].guard is None
         assert state_lx.transitions_entering_children_simplified[0].effects == []
+        assert (
+            state_lx.transitions_entering_children_simplified[0].exit_group_levels == 0
+        )
         assert state_lx.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lx.transitions_entering_children_simplified[0].parent_ref().name
@@ -278,22 +361,38 @@ class TestModelStateLx:
         assert state_lx.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("LX",)
+        assert (
+            state_lx.transitions_entering_children_simplified[0].target_history is None
+        )
+        assert state_lx.transitions_entering_children_simplified[0].history_role is None
+        assert (
+            state_lx.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_lx.transitions_from) == 1
         assert state_lx.transitions_from[0].from_state == "LX"
         assert state_lx.transitions_from[0].to_state == EXIT_STATE
         assert state_lx.transitions_from[0].event is None
         assert state_lx.transitions_from[0].guard is None
         assert state_lx.transitions_from[0].effects == []
+        assert state_lx.transitions_from[0].exit_group_levels == 0
         assert state_lx.transitions_from[0].doc is None
         assert state_lx.transitions_from[0].parent_ref is None
+        assert state_lx.transitions_from[0].target_history is None
+        assert state_lx.transitions_from[0].history_role is None
+        assert state_lx.transitions_from[0].history_user_guard is None
         assert len(state_lx.transitions_to) == 1
         assert state_lx.transitions_to[0].from_state == INIT_STATE
         assert state_lx.transitions_to[0].to_state == "LX"
         assert state_lx.transitions_to[0].event is None
         assert state_lx.transitions_to[0].guard is None
         assert state_lx.transitions_to[0].effects == []
+        assert state_lx.transitions_to[0].exit_group_levels == 0
         assert state_lx.transitions_to[0].doc is None
         assert state_lx.transitions_to[0].parent_ref is None
+        assert state_lx.transitions_to[0].target_history is None
+        assert state_lx.transitions_to[0].history_role is None
+        assert state_lx.transitions_to[0].history_user_guard is None
 
     def test_state_lx_to_ast_node(self, state_lx):
         ast_node = state_lx.to_ast_node()
@@ -335,6 +434,8 @@ class TestModelStateLx:
                                             force_transitions=[],
                                             is_pseudo=False,
                                             doc=None,
+                                            histories=[],
+                                            regions=[],
                                         )
                                     ],
                                     transitions=[
@@ -345,8 +446,14 @@ class TestModelStateLx:
                                                 path=["E1"], is_absolute=True
                                             ),
                                             condition_expr=None,
-                                            post_operations=[],
+                                            post_operations=[
+                                                dsl_nodes.OperationAssignment(
+                                                    name="__forced_0",
+                                                    expr=dsl_nodes.Integer(raw="1"),
+                                                )
+                                            ],
                                             doc=None,
+                                            target_history=None,
                                         ),
                                         dsl_nodes.TransitionDefinition(
                                             from_state=INIT_STATE,
@@ -355,6 +462,7 @@ class TestModelStateLx:
                                             condition_expr=None,
                                             post_operations=[],
                                             doc=None,
+                                            target_history=None,
                                         ),
                                     ],
                                     enters=[],
@@ -364,18 +472,23 @@ class TestModelStateLx:
                                     force_transitions=[],
                                     is_pseudo=False,
                                     doc=None,
+                                    histories=[],
+                                    regions=[],
                                 )
                             ],
                             transitions=[
                                 dsl_nodes.TransitionDefinition(
                                     from_state="LX4",
                                     to_state=EXIT_STATE,
-                                    event_id=dsl_nodes.ChainID(
-                                        path=["E1"], is_absolute=True
+                                    event_id=None,
+                                    condition_expr=dsl_nodes.BinaryOp(
+                                        expr1=dsl_nodes.Name(name="__forced_0"),
+                                        op="==",
+                                        expr2=dsl_nodes.Integer(raw="1"),
                                     ),
-                                    condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
@@ -384,6 +497,7 @@ class TestModelStateLx:
                                     condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 ),
                             ],
                             enters=[],
@@ -393,16 +507,23 @@ class TestModelStateLx:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
                         dsl_nodes.TransitionDefinition(
                             from_state="start",
                             to_state=EXIT_STATE,
-                            event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
-                            condition_expr=None,
+                            event_id=None,
+                            condition_expr=dsl_nodes.BinaryOp(
+                                expr1=dsl_nodes.Name(name="__forced_0"),
+                                op="==",
+                                expr2=dsl_nodes.Integer(raw="1"),
+                            ),
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -411,6 +532,7 @@ class TestModelStateLx:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -420,6 +542,8 @@ class TestModelStateLx:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="ERROR",
@@ -435,16 +559,53 @@ class TestModelStateLx:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
+                ),
+                dsl_nodes.StateDefinition(
+                    name="__forced_gate_0",
+                    extra_name=None,
+                    events=[],
+                    imports=[],
+                    substates=[],
+                    transitions=[],
+                    enters=[],
+                    durings=[],
+                    exits=[],
+                    during_aspects=[],
+                    force_transitions=[],
+                    is_pseudo=True,
+                    doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
                 dsl_nodes.TransitionDefinition(
                     from_state="LX2",
                     to_state="ERROR",
+                    event_id=None,
+                    condition_expr=dsl_nodes.BinaryOp(
+                        expr1=dsl_nodes.Name(name="__forced_0"),
+                        op="==",
+                        expr2=dsl_nodes.Integer(raw="1"),
+                    ),
+                    post_operations=[
+                        dsl_nodes.OperationAssignment(
+                            name="__forced_0", expr=dsl_nodes.Integer(raw="0")
+                        )
+                    ],
+                    doc=None,
+                    target_history=None,
+                ),
+                dsl_nodes.TransitionDefinition(
+                    from_state="LX2",
+                    to_state="__forced_gate_0",
                     event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=False),
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="ERROR",
@@ -453,6 +614,7 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -461,6 +623,7 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="ERROR",
@@ -469,6 +632,20 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
+                ),
+                dsl_nodes.TransitionDefinition(
+                    from_state="__forced_gate_0",
+                    to_state="ERROR",
+                    event_id=None,
+                    condition_expr=dsl_nodes.BinaryOp(
+                        expr1=dsl_nodes.Name(name="__forced_0"),
+                        op="==",
+                        expr2=dsl_nodes.Integer(raw="0"),
+                    ),
+                    post_operations=[],
+                    doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[
@@ -481,6 +658,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_list_on_enters(self, state_lx):
@@ -751,26 +930,35 @@ class TestModelStateLx:
         assert state_lx_lx2.name == "LX2"
         assert state_lx_lx2.path == ("LX", "LX2")
         assert sorted(state_lx_lx2.substates.keys()) == ["start"]
+        assert state_lx_lx2.regions == {}
         assert state_lx_lx2.events == {}
         assert len(state_lx_lx2.transitions) == 2
         assert state_lx_lx2.transitions[0].from_state == "start"
         assert state_lx_lx2.transitions[0].to_state == EXIT_STATE
-        assert state_lx_lx2.transitions[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_lx2.transitions[0].event is None
+        assert state_lx_lx2.transitions[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_lx2.transitions[0].guard is None
         assert state_lx_lx2.transitions[0].effects == []
+        assert state_lx_lx2.transitions[0].exit_group_levels == 0
         assert state_lx_lx2.transitions[0].doc is None
         assert state_lx_lx2.transitions[0].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions[0].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2.transitions[0].target_history is None
+        assert state_lx_lx2.transitions[0].history_role is None
+        assert state_lx_lx2.transitions[0].history_user_guard is None
         assert state_lx_lx2.transitions[1].from_state == INIT_STATE
         assert state_lx_lx2.transitions[1].to_state == "start"
         assert state_lx_lx2.transitions[1].event is None
         assert state_lx_lx2.transitions[1].guard is None
         assert state_lx_lx2.transitions[1].effects == []
+        assert state_lx_lx2.transitions[1].exit_group_levels == 0
         assert state_lx_lx2.transitions[1].doc is None
         assert state_lx_lx2.transitions[1].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions[1].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2.transitions[1].target_history is None
+        assert state_lx_lx2.transitions[1].history_role is None
+        assert state_lx_lx2.transitions[1].history_user_guard is None
         assert state_lx_lx2.named_functions == {}
         assert state_lx_lx2.on_enters == []
         assert state_lx_lx2.on_durings == []
@@ -782,6 +970,8 @@ class TestModelStateLx:
         assert state_lx_lx2.extra_name is None
         assert not state_lx_lx2.is_pseudo
         assert state_lx_lx2.doc is None
+        assert not state_lx_lx2.is_history_gate
+        assert not state_lx_lx2.is_forced_gate
         assert state_lx_lx2.abstract_on_during_aspects == []
         assert state_lx_lx2.abstract_on_durings == []
         assert state_lx_lx2.abstract_on_enters == []
@@ -792,9 +982,13 @@ class TestModelStateLx:
         assert state_lx_lx2.init_transitions[0].event is None
         assert state_lx_lx2.init_transitions[0].guard is None
         assert state_lx_lx2.init_transitions[0].effects == []
+        assert state_lx_lx2.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2.init_transitions[0].doc is None
         assert state_lx_lx2.init_transitions[0].parent_ref().name == "LX2"
         assert state_lx_lx2.init_transitions[0].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2.init_transitions[0].target_history is None
+        assert state_lx_lx2.init_transitions[0].history_role is None
+        assert state_lx_lx2.init_transitions[0].history_user_guard is None
         assert not state_lx_lx2.is_leaf_state
         assert not state_lx_lx2.is_root_state
         assert not state_lx_lx2.is_stoppable
@@ -810,12 +1004,16 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_entering_children[0].event is None
         assert state_lx_lx2.transitions_entering_children[0].guard is None
         assert state_lx_lx2.transitions_entering_children[0].effects == []
+        assert state_lx_lx2.transitions_entering_children[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_entering_children[0].doc is None
         assert state_lx_lx2.transitions_entering_children[0].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions_entering_children[0].parent_ref().path == (
             "LX",
             "LX2",
         )
+        assert state_lx_lx2.transitions_entering_children[0].target_history is None
+        assert state_lx_lx2.transitions_entering_children[0].history_role is None
+        assert state_lx_lx2.transitions_entering_children[0].history_user_guard is None
         assert len(state_lx_lx2.transitions_entering_children_simplified) == 1
         assert (
             state_lx_lx2.transitions_entering_children_simplified[0].from_state
@@ -827,6 +1025,10 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_entering_children_simplified[0].event is None
         assert state_lx_lx2.transitions_entering_children_simplified[0].guard is None
         assert state_lx_lx2.transitions_entering_children_simplified[0].effects == []
+        assert (
+            state_lx_lx2.transitions_entering_children_simplified[0].exit_group_levels
+            == 0
+        )
         assert state_lx_lx2.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lx_lx2.transitions_entering_children_simplified[0].parent_ref().name
@@ -835,26 +1037,62 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("LX", "LX2")
-        assert len(state_lx_lx2.transitions_from) == 1
+        assert (
+            state_lx_lx2.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_lx_lx2.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_lx_lx2.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
+        assert len(state_lx_lx2.transitions_from) == 2
         assert state_lx_lx2.transitions_from[0].from_state == "LX2"
         assert state_lx_lx2.transitions_from[0].to_state == "ERROR"
-        assert state_lx_lx2.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_lx2.transitions_from[0].event is None
+        assert state_lx_lx2.transitions_from[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_lx2.transitions_from[0].guard is None
-        assert state_lx_lx2.transitions_from[0].effects == []
+        assert state_lx_lx2.transitions_from[0].effects == [
+            Operation(var_name="__forced_0", expr=Integer(value=0))
+        ]
+        assert state_lx_lx2.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_from[0].doc is None
         assert state_lx_lx2.transitions_from[0].parent_ref().name == "LX"
         assert state_lx_lx2.transitions_from[0].parent_ref().path == ("LX",)
+        assert state_lx_lx2.transitions_from[0].target_history is None
+        assert state_lx_lx2.transitions_from[0].history_role is None
+        assert state_lx_lx2.transitions_from[0].history_user_guard is None
+        assert state_lx_lx2.transitions_from[1].from_state == "LX2"
+        assert state_lx_lx2.transitions_from[1].to_state == "__forced_gate_0"
+        assert state_lx_lx2.transitions_from[1].event == Event(
+            name="E1", state_path=("LX",), extra_name=None, doc=None
+        )
+        assert state_lx_lx2.transitions_from[1].guard is None
+        assert state_lx_lx2.transitions_from[1].effects == []
+        assert state_lx_lx2.transitions_from[1].exit_group_levels == 0
+        assert state_lx_lx2.transitions_from[1].doc is None
+        assert state_lx_lx2.transitions_from[1].parent_ref().name == "LX"
+        assert state_lx_lx2.transitions_from[1].parent_ref().path == ("LX",)
+        assert state_lx_lx2.transitions_from[1].target_history is None
+        assert state_lx_lx2.transitions_from[1].history_role is None
+        assert state_lx_lx2.transitions_from[1].history_user_guard is None
         assert len(state_lx_lx2.transitions_to) == 1
         assert state_lx_lx2.transitions_to[0].from_state == INIT_STATE
         assert state_lx_lx2.transitions_to[0].to_state == "LX2"
         assert state_lx_lx2.transitions_to[0].event is None
         assert state_lx_lx2.transitions_to[0].guard is None
         assert state_lx_lx2.transitions_to[0].effects == []
+        assert state_lx_lx2.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_to[0].doc is None
         assert state_lx_lx2.transitions_to[0].parent_ref().name == "LX"
         assert state_lx_lx2.transitions_to[0].parent_ref().path == ("LX",)
+        assert state_lx_lx2.transitions_to[0].target_history is None
+        assert state_lx_lx2.transitions_to[0].history_role is None
+        assert state_lx_lx2.transitions_to[0].history_user_guard is None
 
     def test_state_lx_lx2_to_ast_node(self, state_lx_lx2):
         ast_node = state_lx_lx2.to_ast_node()
@@ -890,6 +1128,8 @@ class TestModelStateLx:
                                     force_transitions=[],
                                     is_pseudo=False,
                                     doc=None,
+                                    histories=[],
+                                    regions=[],
                                 )
                             ],
                             transitions=[
@@ -900,8 +1140,14 @@ class TestModelStateLx:
                                         path=["E1"], is_absolute=True
                                     ),
                                     condition_expr=None,
-                                    post_operations=[],
+                                    post_operations=[
+                                        dsl_nodes.OperationAssignment(
+                                            name="__forced_0",
+                                            expr=dsl_nodes.Integer(raw="1"),
+                                        )
+                                    ],
                                     doc=None,
+                                    target_history=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
@@ -910,6 +1156,7 @@ class TestModelStateLx:
                                     condition_expr=None,
                                     post_operations=[],
                                     doc=None,
+                                    target_history=None,
                                 ),
                             ],
                             enters=[],
@@ -919,16 +1166,23 @@ class TestModelStateLx:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
                         dsl_nodes.TransitionDefinition(
                             from_state="LX4",
                             to_state=EXIT_STATE,
-                            event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
-                            condition_expr=None,
+                            event_id=None,
+                            condition_expr=dsl_nodes.BinaryOp(
+                                expr1=dsl_nodes.Name(name="__forced_0"),
+                                op="==",
+                                expr2=dsl_nodes.Integer(raw="1"),
+                            ),
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -937,6 +1191,7 @@ class TestModelStateLx:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -946,16 +1201,23 @@ class TestModelStateLx:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
                 dsl_nodes.TransitionDefinition(
                     from_state="start",
                     to_state=EXIT_STATE,
-                    event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
-                    condition_expr=None,
+                    event_id=None,
+                    condition_expr=dsl_nodes.BinaryOp(
+                        expr1=dsl_nodes.Name(name="__forced_0"),
+                        op="==",
+                        expr2=dsl_nodes.Integer(raw="1"),
+                    ),
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -964,6 +1226,7 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -973,6 +1236,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_lx2_list_on_enters(self, state_lx_lx2):
@@ -1035,15 +1300,17 @@ class TestModelStateLx:
         assert state_lx_lx2_start.name == "start"
         assert state_lx_lx2_start.path == ("LX", "LX2", "start")
         assert sorted(state_lx_lx2_start.substates.keys()) == ["LX4"]
+        assert state_lx_lx2_start.regions == {}
         assert state_lx_lx2_start.events == {}
         assert len(state_lx_lx2_start.transitions) == 2
         assert state_lx_lx2_start.transitions[0].from_state == "LX4"
         assert state_lx_lx2_start.transitions[0].to_state == EXIT_STATE
-        assert state_lx_lx2_start.transitions[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_lx2_start.transitions[0].event is None
+        assert state_lx_lx2_start.transitions[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_lx2_start.transitions[0].guard is None
         assert state_lx_lx2_start.transitions[0].effects == []
+        assert state_lx_lx2_start.transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions[0].doc is None
         assert state_lx_lx2_start.transitions[0].parent_ref().name == "start"
         assert state_lx_lx2_start.transitions[0].parent_ref().path == (
@@ -1051,11 +1318,15 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start.transitions[0].target_history is None
+        assert state_lx_lx2_start.transitions[0].history_role is None
+        assert state_lx_lx2_start.transitions[0].history_user_guard is None
         assert state_lx_lx2_start.transitions[1].from_state == INIT_STATE
         assert state_lx_lx2_start.transitions[1].to_state == "LX4"
         assert state_lx_lx2_start.transitions[1].event is None
         assert state_lx_lx2_start.transitions[1].guard is None
         assert state_lx_lx2_start.transitions[1].effects == []
+        assert state_lx_lx2_start.transitions[1].exit_group_levels == 0
         assert state_lx_lx2_start.transitions[1].doc is None
         assert state_lx_lx2_start.transitions[1].parent_ref().name == "start"
         assert state_lx_lx2_start.transitions[1].parent_ref().path == (
@@ -1063,6 +1334,9 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start.transitions[1].target_history is None
+        assert state_lx_lx2_start.transitions[1].history_role is None
+        assert state_lx_lx2_start.transitions[1].history_user_guard is None
         assert state_lx_lx2_start.named_functions == {}
         assert state_lx_lx2_start.on_enters == []
         assert state_lx_lx2_start.on_durings == []
@@ -1074,6 +1348,8 @@ class TestModelStateLx:
         assert state_lx_lx2_start.extra_name is None
         assert not state_lx_lx2_start.is_pseudo
         assert state_lx_lx2_start.doc is None
+        assert not state_lx_lx2_start.is_history_gate
+        assert not state_lx_lx2_start.is_forced_gate
         assert state_lx_lx2_start.abstract_on_during_aspects == []
         assert state_lx_lx2_start.abstract_on_durings == []
         assert state_lx_lx2_start.abstract_on_enters == []
@@ -1084,6 +1360,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start.init_transitions[0].event is None
         assert state_lx_lx2_start.init_transitions[0].guard is None
         assert state_lx_lx2_start.init_transitions[0].effects == []
+        assert state_lx_lx2_start.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start.init_transitions[0].doc is None
         assert state_lx_lx2_start.init_transitions[0].parent_ref().name == "start"
         assert state_lx_lx2_start.init_transitions[0].parent_ref().path == (
@@ -1091,6 +1368,9 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start.init_transitions[0].target_history is None
+        assert state_lx_lx2_start.init_transitions[0].history_role is None
+        assert state_lx_lx2_start.init_transitions[0].history_user_guard is None
         assert not state_lx_lx2_start.is_leaf_state
         assert not state_lx_lx2_start.is_root_state
         assert not state_lx_lx2_start.is_stoppable
@@ -1108,6 +1388,9 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_entering_children[0].event is None
         assert state_lx_lx2_start.transitions_entering_children[0].guard is None
         assert state_lx_lx2_start.transitions_entering_children[0].effects == []
+        assert (
+            state_lx_lx2_start.transitions_entering_children[0].exit_group_levels == 0
+        )
         assert state_lx_lx2_start.transitions_entering_children[0].doc is None
         assert (
             state_lx_lx2_start.transitions_entering_children[0].parent_ref().name
@@ -1116,6 +1399,14 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_entering_children[
             0
         ].parent_ref().path == ("LX", "LX2", "start")
+        assert (
+            state_lx_lx2_start.transitions_entering_children[0].target_history is None
+        )
+        assert state_lx_lx2_start.transitions_entering_children[0].history_role is None
+        assert (
+            state_lx_lx2_start.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_lx_lx2_start.transitions_entering_children_simplified) == 1
         assert (
             state_lx_lx2_start.transitions_entering_children_simplified[0].from_state
@@ -1135,6 +1426,12 @@ class TestModelStateLx:
             state_lx_lx2_start.transitions_entering_children_simplified[0].effects == []
         )
         assert (
+            state_lx_lx2_start.transitions_entering_children_simplified[
+                0
+            ].exit_group_levels
+            == 0
+        )
+        assert (
             state_lx_lx2_start.transitions_entering_children_simplified[0].doc is None
         )
         assert (
@@ -1146,26 +1443,50 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("LX", "LX2", "start")
+        assert (
+            state_lx_lx2_start.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_lx_lx2_start.transitions_entering_children_simplified[0].history_role
+            is None
+        )
+        assert (
+            state_lx_lx2_start.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_lx_lx2_start.transitions_from) == 1
         assert state_lx_lx2_start.transitions_from[0].from_state == "start"
         assert state_lx_lx2_start.transitions_from[0].to_state == EXIT_STATE
-        assert state_lx_lx2_start.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_lx2_start.transitions_from[0].event is None
+        assert state_lx_lx2_start.transitions_from[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_lx2_start.transitions_from[0].guard is None
         assert state_lx_lx2_start.transitions_from[0].effects == []
+        assert state_lx_lx2_start.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions_from[0].doc is None
         assert state_lx_lx2_start.transitions_from[0].parent_ref().name == "LX2"
         assert state_lx_lx2_start.transitions_from[0].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2_start.transitions_from[0].target_history is None
+        assert state_lx_lx2_start.transitions_from[0].history_role is None
+        assert state_lx_lx2_start.transitions_from[0].history_user_guard is None
         assert len(state_lx_lx2_start.transitions_to) == 1
         assert state_lx_lx2_start.transitions_to[0].from_state == INIT_STATE
         assert state_lx_lx2_start.transitions_to[0].to_state == "start"
         assert state_lx_lx2_start.transitions_to[0].event is None
         assert state_lx_lx2_start.transitions_to[0].guard is None
         assert state_lx_lx2_start.transitions_to[0].effects == []
+        assert state_lx_lx2_start.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions_to[0].doc is None
         assert state_lx_lx2_start.transitions_to[0].parent_ref().name == "LX2"
         assert state_lx_lx2_start.transitions_to[0].parent_ref().path == ("LX", "LX2")
+        assert state_lx_lx2_start.transitions_to[0].target_history is None
+        assert state_lx_lx2_start.transitions_to[0].history_role is None
+        assert state_lx_lx2_start.transitions_to[0].history_user_guard is None
 
     def test_state_lx_lx2_start_to_ast_node(self, state_lx_lx2_start):
         ast_node = state_lx_lx2_start.to_ast_node()
@@ -1195,6 +1516,8 @@ class TestModelStateLx:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         )
                     ],
                     transitions=[
@@ -1203,8 +1526,13 @@ class TestModelStateLx:
                             to_state=EXIT_STATE,
                             event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
                             condition_expr=None,
-                            post_operations=[],
+                            post_operations=[
+                                dsl_nodes.OperationAssignment(
+                                    name="__forced_0", expr=dsl_nodes.Integer(raw="1")
+                                )
+                            ],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -1213,6 +1541,7 @@ class TestModelStateLx:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -1222,16 +1551,23 @@ class TestModelStateLx:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
                 dsl_nodes.TransitionDefinition(
                     from_state="LX4",
                     to_state=EXIT_STATE,
-                    event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
-                    condition_expr=None,
+                    event_id=None,
+                    condition_expr=dsl_nodes.BinaryOp(
+                        expr1=dsl_nodes.Name(name="__forced_0"),
+                        op="==",
+                        expr2=dsl_nodes.Integer(raw="1"),
+                    ),
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -1240,6 +1576,7 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1249,6 +1586,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_lx2_start_list_on_enters(self, state_lx_lx2_start):
@@ -1319,6 +1658,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.name == "LX4"
         assert state_lx_lx2_start_lx4.path == ("LX", "LX2", "start", "LX4")
         assert sorted(state_lx_lx2_start_lx4.substates.keys()) == ["LX5"]
+        assert state_lx_lx2_start_lx4.regions == {}
         assert state_lx_lx2_start_lx4.events == {}
         assert len(state_lx_lx2_start_lx4.transitions) == 2
         assert state_lx_lx2_start_lx4.transitions[0].from_state == "LX5"
@@ -1327,7 +1667,10 @@ class TestModelStateLx:
             name="E1", state_path=("LX",), extra_name=None, doc=None
         )
         assert state_lx_lx2_start_lx4.transitions[0].guard is None
-        assert state_lx_lx2_start_lx4.transitions[0].effects == []
+        assert state_lx_lx2_start_lx4.transitions[0].effects == [
+            Operation(var_name="__forced_0", expr=Integer(value=1))
+        ]
+        assert state_lx_lx2_start_lx4.transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions[0].doc is None
         assert state_lx_lx2_start_lx4.transitions[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.transitions[0].parent_ref().path == (
@@ -1336,11 +1679,15 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4.transitions[0].target_history is None
+        assert state_lx_lx2_start_lx4.transitions[0].history_role is None
+        assert state_lx_lx2_start_lx4.transitions[0].history_user_guard is None
         assert state_lx_lx2_start_lx4.transitions[1].from_state == INIT_STATE
         assert state_lx_lx2_start_lx4.transitions[1].to_state == "LX5"
         assert state_lx_lx2_start_lx4.transitions[1].event is None
         assert state_lx_lx2_start_lx4.transitions[1].guard is None
         assert state_lx_lx2_start_lx4.transitions[1].effects == []
+        assert state_lx_lx2_start_lx4.transitions[1].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions[1].doc is None
         assert state_lx_lx2_start_lx4.transitions[1].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.transitions[1].parent_ref().path == (
@@ -1349,6 +1696,9 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4.transitions[1].target_history is None
+        assert state_lx_lx2_start_lx4.transitions[1].history_role is None
+        assert state_lx_lx2_start_lx4.transitions[1].history_user_guard is None
         assert state_lx_lx2_start_lx4.named_functions == {}
         assert state_lx_lx2_start_lx4.on_enters == []
         assert state_lx_lx2_start_lx4.on_durings == []
@@ -1360,6 +1710,8 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.extra_name is None
         assert not state_lx_lx2_start_lx4.is_pseudo
         assert state_lx_lx2_start_lx4.doc is None
+        assert not state_lx_lx2_start_lx4.is_history_gate
+        assert not state_lx_lx2_start_lx4.is_forced_gate
         assert state_lx_lx2_start_lx4.abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4.abstract_on_durings == []
         assert state_lx_lx2_start_lx4.abstract_on_enters == []
@@ -1370,6 +1722,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.init_transitions[0].event is None
         assert state_lx_lx2_start_lx4.init_transitions[0].guard is None
         assert state_lx_lx2_start_lx4.init_transitions[0].effects == []
+        assert state_lx_lx2_start_lx4.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.init_transitions[0].doc is None
         assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().path == (
@@ -1378,6 +1731,9 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4.init_transitions[0].target_history is None
+        assert state_lx_lx2_start_lx4.init_transitions[0].history_role is None
+        assert state_lx_lx2_start_lx4.init_transitions[0].history_user_guard is None
         assert not state_lx_lx2_start_lx4.is_leaf_state
         assert not state_lx_lx2_start_lx4.is_root_state
         assert not state_lx_lx2_start_lx4.is_stoppable
@@ -1396,6 +1752,10 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].event is None
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].effects == []
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children[0].exit_group_levels
+            == 0
+        )
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].doc is None
         assert (
             state_lx_lx2_start_lx4.transitions_entering_children[0].parent_ref().name
@@ -1404,6 +1764,17 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_entering_children[
             0
         ].parent_ref().path == ("LX", "LX2", "start", "LX4")
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_lx_lx2_start_lx4.transitions_entering_children_simplified) == 1
         assert (
             state_lx_lx2_start_lx4.transitions_entering_children_simplified[
@@ -1428,6 +1799,12 @@ class TestModelStateLx:
             == []
         )
         assert (
+            state_lx_lx2_start_lx4.transitions_entering_children_simplified[
+                0
+            ].exit_group_levels
+            == 0
+        )
+        assert (
             state_lx_lx2_start_lx4.transitions_entering_children_simplified[0].doc
             is None
         )
@@ -1440,14 +1817,33 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("LX", "LX2", "start", "LX4")
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_lx_lx2_start_lx4.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_lx_lx2_start_lx4.transitions_from) == 1
         assert state_lx_lx2_start_lx4.transitions_from[0].from_state == "LX4"
         assert state_lx_lx2_start_lx4.transitions_from[0].to_state == EXIT_STATE
-        assert state_lx_lx2_start_lx4.transitions_from[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_lx2_start_lx4.transitions_from[0].event is None
+        assert state_lx_lx2_start_lx4.transitions_from[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_lx2_start_lx4.transitions_from[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_from[0].effects == []
+        assert state_lx_lx2_start_lx4.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions_from[0].doc is None
         assert state_lx_lx2_start_lx4.transitions_from[0].parent_ref().name == "start"
         assert state_lx_lx2_start_lx4.transitions_from[0].parent_ref().path == (
@@ -1455,12 +1851,16 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start_lx4.transitions_from[0].target_history is None
+        assert state_lx_lx2_start_lx4.transitions_from[0].history_role is None
+        assert state_lx_lx2_start_lx4.transitions_from[0].history_user_guard is None
         assert len(state_lx_lx2_start_lx4.transitions_to) == 1
         assert state_lx_lx2_start_lx4.transitions_to[0].from_state == INIT_STATE
         assert state_lx_lx2_start_lx4.transitions_to[0].to_state == "LX4"
         assert state_lx_lx2_start_lx4.transitions_to[0].event is None
         assert state_lx_lx2_start_lx4.transitions_to[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_to[0].effects == []
+        assert state_lx_lx2_start_lx4.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions_to[0].doc is None
         assert state_lx_lx2_start_lx4.transitions_to[0].parent_ref().name == "start"
         assert state_lx_lx2_start_lx4.transitions_to[0].parent_ref().path == (
@@ -1468,6 +1868,9 @@ class TestModelStateLx:
             "LX2",
             "start",
         )
+        assert state_lx_lx2_start_lx4.transitions_to[0].target_history is None
+        assert state_lx_lx2_start_lx4.transitions_to[0].history_role is None
+        assert state_lx_lx2_start_lx4.transitions_to[0].history_user_guard is None
 
     def test_state_lx_lx2_start_lx4_to_ast_node(self, state_lx_lx2_start_lx4):
         ast_node = state_lx_lx2_start_lx4.to_ast_node()
@@ -1491,6 +1894,8 @@ class TestModelStateLx:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -1499,8 +1904,13 @@ class TestModelStateLx:
                     to_state=EXIT_STATE,
                     event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=True),
                     condition_expr=None,
-                    post_operations=[],
+                    post_operations=[
+                        dsl_nodes.OperationAssignment(
+                            name="__forced_0", expr=dsl_nodes.Integer(raw="1")
+                        )
+                    ],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -1509,6 +1919,7 @@ class TestModelStateLx:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1518,6 +1929,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_lx2_start_lx4_list_on_enters(self, state_lx_lx2_start_lx4):
@@ -1588,6 +2001,7 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.name == "LX5"
         assert state_lx_lx2_start_lx4_lx5.path == ("LX", "LX2", "start", "LX4", "LX5")
         assert sorted(state_lx_lx2_start_lx4_lx5.substates.keys()) == []
+        assert state_lx_lx2_start_lx4_lx5.regions == {}
         assert state_lx_lx2_start_lx4_lx5.events == {}
         assert state_lx_lx2_start_lx4_lx5.transitions == []
         assert state_lx_lx2_start_lx4_lx5.named_functions == {}
@@ -1606,6 +2020,8 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.extra_name is None
         assert not state_lx_lx2_start_lx4_lx5.is_pseudo
         assert state_lx_lx2_start_lx4_lx5.doc is None
+        assert not state_lx_lx2_start_lx4_lx5.is_history_gate
+        assert not state_lx_lx2_start_lx4_lx5.is_forced_gate
         assert state_lx_lx2_start_lx4_lx5.abstract_on_during_aspects == []
         assert state_lx_lx2_start_lx4_lx5.abstract_on_durings == []
         assert state_lx_lx2_start_lx4_lx5.abstract_on_enters == []
@@ -1636,7 +2052,10 @@ class TestModelStateLx:
             name="E1", state_path=("LX",), extra_name=None, doc=None
         )
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].guard is None
-        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].effects == []
+        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].effects == [
+            Operation(var_name="__forced_0", expr=Integer(value=1))
+        ]
+        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].doc is None
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].parent_ref().path == (
@@ -1645,12 +2064,16 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].target_history is None
+        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].history_role is None
+        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].history_user_guard is None
         assert len(state_lx_lx2_start_lx4_lx5.transitions_to) == 1
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].from_state == INIT_STATE
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].to_state == "LX5"
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].event is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].guard is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].effects == []
+        assert state_lx_lx2_start_lx4_lx5.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].doc is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].parent_ref().path == (
@@ -1659,6 +2082,9 @@ class TestModelStateLx:
             "start",
             "LX4",
         )
+        assert state_lx_lx2_start_lx4_lx5.transitions_to[0].target_history is None
+        assert state_lx_lx2_start_lx4_lx5.transitions_to[0].history_role is None
+        assert state_lx_lx2_start_lx4_lx5.transitions_to[0].history_user_guard is None
 
     def test_state_lx_lx2_start_lx4_lx5_to_ast_node(self, state_lx_lx2_start_lx4_lx5):
         ast_node = state_lx_lx2_start_lx4_lx5.to_ast_node()
@@ -1676,6 +2102,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_lx2_start_lx4_lx5_list_on_enters(
@@ -1767,6 +2195,7 @@ class TestModelStateLx:
         assert state_lx_error.name == "ERROR"
         assert state_lx_error.path == ("LX", "ERROR")
         assert sorted(state_lx_error.substates.keys()) == []
+        assert state_lx_error.regions == {}
         assert state_lx_error.events == {}
         assert state_lx_error.transitions == []
         assert state_lx_error.named_functions == {}
@@ -1780,6 +2209,8 @@ class TestModelStateLx:
         assert state_lx_error.extra_name is None
         assert not state_lx_error.is_pseudo
         assert state_lx_error.doc is None
+        assert not state_lx_error.is_history_gate
+        assert not state_lx_error.is_forced_gate
         assert state_lx_error.abstract_on_during_aspects == []
         assert state_lx_error.abstract_on_durings == []
         assert state_lx_error.abstract_on_enters == []
@@ -1805,28 +2236,42 @@ class TestModelStateLx:
         )
         assert state_lx_error.transitions_from[0].guard is None
         assert state_lx_error.transitions_from[0].effects == []
+        assert state_lx_error.transitions_from[0].exit_group_levels == 0
         assert state_lx_error.transitions_from[0].doc is None
         assert state_lx_error.transitions_from[0].parent_ref().name == "LX"
         assert state_lx_error.transitions_from[0].parent_ref().path == ("LX",)
+        assert state_lx_error.transitions_from[0].target_history is None
+        assert state_lx_error.transitions_from[0].history_role is None
+        assert state_lx_error.transitions_from[0].history_user_guard is None
         assert state_lx_error.transitions_from[1].from_state == "ERROR"
         assert state_lx_error.transitions_from[1].to_state == EXIT_STATE
         assert state_lx_error.transitions_from[1].event is None
         assert state_lx_error.transitions_from[1].guard is None
         assert state_lx_error.transitions_from[1].effects == []
+        assert state_lx_error.transitions_from[1].exit_group_levels == 0
         assert state_lx_error.transitions_from[1].doc is None
         assert state_lx_error.transitions_from[1].parent_ref().name == "LX"
         assert state_lx_error.transitions_from[1].parent_ref().path == ("LX",)
-        assert len(state_lx_error.transitions_to) == 2
+        assert state_lx_error.transitions_from[1].target_history is None
+        assert state_lx_error.transitions_from[1].history_role is None
+        assert state_lx_error.transitions_from[1].history_user_guard is None
+        assert len(state_lx_error.transitions_to) == 3
         assert state_lx_error.transitions_to[0].from_state == "LX2"
         assert state_lx_error.transitions_to[0].to_state == "ERROR"
-        assert state_lx_error.transitions_to[0].event == Event(
-            name="E1", state_path=("LX",), extra_name=None, doc=None
+        assert state_lx_error.transitions_to[0].event is None
+        assert state_lx_error.transitions_to[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
-        assert state_lx_error.transitions_to[0].guard is None
-        assert state_lx_error.transitions_to[0].effects == []
+        assert state_lx_error.transitions_to[0].effects == [
+            Operation(var_name="__forced_0", expr=Integer(value=0))
+        ]
+        assert state_lx_error.transitions_to[0].exit_group_levels == 0
         assert state_lx_error.transitions_to[0].doc is None
         assert state_lx_error.transitions_to[0].parent_ref().name == "LX"
         assert state_lx_error.transitions_to[0].parent_ref().path == ("LX",)
+        assert state_lx_error.transitions_to[0].target_history is None
+        assert state_lx_error.transitions_to[0].history_role is None
+        assert state_lx_error.transitions_to[0].history_user_guard is None
         assert state_lx_error.transitions_to[1].from_state == "ERROR"
         assert state_lx_error.transitions_to[1].to_state == "ERROR"
         assert state_lx_error.transitions_to[1].event == Event(
@@ -1834,9 +2279,27 @@ class TestModelStateLx:
         )
         assert state_lx_error.transitions_to[1].guard is None
         assert state_lx_error.transitions_to[1].effects == []
+        assert state_lx_error.transitions_to[1].exit_group_levels == 0
         assert state_lx_error.transitions_to[1].doc is None
         assert state_lx_error.transitions_to[1].parent_ref().name == "LX"
         assert state_lx_error.transitions_to[1].parent_ref().path == ("LX",)
+        assert state_lx_error.transitions_to[1].target_history is None
+        assert state_lx_error.transitions_to[1].history_role is None
+        assert state_lx_error.transitions_to[1].history_user_guard is None
+        assert state_lx_error.transitions_to[2].from_state == "__forced_gate_0"
+        assert state_lx_error.transitions_to[2].to_state == "ERROR"
+        assert state_lx_error.transitions_to[2].event is None
+        assert state_lx_error.transitions_to[2].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
+        )
+        assert state_lx_error.transitions_to[2].effects == []
+        assert state_lx_error.transitions_to[2].exit_group_levels == 0
+        assert state_lx_error.transitions_to[2].doc is None
+        assert state_lx_error.transitions_to[2].parent_ref().name == "LX"
+        assert state_lx_error.transitions_to[2].parent_ref().path == ("LX",)
+        assert state_lx_error.transitions_to[2].target_history is None
+        assert state_lx_error.transitions_to[2].history_role is None
+        assert state_lx_error.transitions_to[2].history_user_guard is None
 
     def test_state_lx_error_to_ast_node(self, state_lx_error):
         ast_node = state_lx_error.to_ast_node()
@@ -1854,6 +2317,8 @@ class TestModelStateLx:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_lx_error_list_on_enters(self, state_lx_error):
@@ -1919,10 +2384,176 @@ class TestModelStateLx:
         lst = state_lx_error.list_on_during_aspect_recursively(with_ids=True)
         assert lst == []
 
+    def test_state_lx_forced_gate_0(self, state_lx_forced_gate_0):
+        assert state_lx_forced_gate_0.name == "__forced_gate_0"
+        assert state_lx_forced_gate_0.path == ("LX", "__forced_gate_0")
+        assert sorted(state_lx_forced_gate_0.substates.keys()) == []
+        assert state_lx_forced_gate_0.regions == {}
+        assert state_lx_forced_gate_0.events == {}
+        assert state_lx_forced_gate_0.transitions == []
+        assert state_lx_forced_gate_0.named_functions == {}
+        assert state_lx_forced_gate_0.on_enters == []
+        assert state_lx_forced_gate_0.on_durings == []
+        assert state_lx_forced_gate_0.on_exits == []
+        assert state_lx_forced_gate_0.on_during_aspects == []
+        assert state_lx_forced_gate_0.parent_ref().name == "LX"
+        assert state_lx_forced_gate_0.parent_ref().path == ("LX",)
+        assert state_lx_forced_gate_0.substate_name_to_id == {}
+        assert state_lx_forced_gate_0.extra_name is None
+        assert state_lx_forced_gate_0.is_pseudo
+        assert state_lx_forced_gate_0.doc is None
+        assert not state_lx_forced_gate_0.is_history_gate
+        assert state_lx_forced_gate_0.is_forced_gate
+        assert state_lx_forced_gate_0.abstract_on_during_aspects == []
+        assert state_lx_forced_gate_0.abstract_on_durings == []
+        assert state_lx_forced_gate_0.abstract_on_enters == []
+        assert state_lx_forced_gate_0.abstract_on_exits == []
+        assert state_lx_forced_gate_0.init_transitions == []
+        assert state_lx_forced_gate_0.is_leaf_state
+        assert not state_lx_forced_gate_0.is_root_state
+        assert not state_lx_forced_gate_0.is_stoppable
+        assert state_lx_forced_gate_0.non_abstract_on_during_aspects == []
+        assert state_lx_forced_gate_0.non_abstract_on_durings == []
+        assert state_lx_forced_gate_0.non_abstract_on_enters == []
+        assert state_lx_forced_gate_0.non_abstract_on_exits == []
+        assert state_lx_forced_gate_0.parent.name == "LX"
+        assert state_lx_forced_gate_0.parent.path == ("LX",)
+        assert state_lx_forced_gate_0.transitions_entering_children == []
+        assert len(state_lx_forced_gate_0.transitions_entering_children_simplified) == 1
+        assert (
+            state_lx_forced_gate_0.transitions_entering_children_simplified[0] is None
+        )
+        assert len(state_lx_forced_gate_0.transitions_from) == 1
+        assert (
+            state_lx_forced_gate_0.transitions_from[0].from_state == "__forced_gate_0"
+        )
+        assert state_lx_forced_gate_0.transitions_from[0].to_state == "ERROR"
+        assert state_lx_forced_gate_0.transitions_from[0].event is None
+        assert state_lx_forced_gate_0.transitions_from[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
+        )
+        assert state_lx_forced_gate_0.transitions_from[0].effects == []
+        assert state_lx_forced_gate_0.transitions_from[0].exit_group_levels == 0
+        assert state_lx_forced_gate_0.transitions_from[0].doc is None
+        assert state_lx_forced_gate_0.transitions_from[0].parent_ref().name == "LX"
+        assert state_lx_forced_gate_0.transitions_from[0].parent_ref().path == ("LX",)
+        assert state_lx_forced_gate_0.transitions_from[0].target_history is None
+        assert state_lx_forced_gate_0.transitions_from[0].history_role is None
+        assert state_lx_forced_gate_0.transitions_from[0].history_user_guard is None
+        assert len(state_lx_forced_gate_0.transitions_to) == 1
+        assert state_lx_forced_gate_0.transitions_to[0].from_state == "LX2"
+        assert state_lx_forced_gate_0.transitions_to[0].to_state == "__forced_gate_0"
+        assert state_lx_forced_gate_0.transitions_to[0].event == Event(
+            name="E1", state_path=("LX",), extra_name=None, doc=None
+        )
+        assert state_lx_forced_gate_0.transitions_to[0].guard is None
+        assert state_lx_forced_gate_0.transitions_to[0].effects == []
+        assert state_lx_forced_gate_0.transitions_to[0].exit_group_levels == 0
+        assert state_lx_forced_gate_0.transitions_to[0].doc is None
+        assert state_lx_forced_gate_0.transitions_to[0].parent_ref().name == "LX"
+        assert state_lx_forced_gate_0.transitions_to[0].parent_ref().path == ("LX",)
+        assert state_lx_forced_gate_0.transitions_to[0].target_history is None
+        assert state_lx_forced_gate_0.transitions_to[0].history_role is None
+        assert state_lx_forced_gate_0.transitions_to[0].history_user_guard is None
+
+    def test_state_lx_forced_gate_0_to_ast_node(self, state_lx_forced_gate_0):
+        ast_node = state_lx_forced_gate_0.to_ast_node()
+        assert ast_node == dsl_nodes.StateDefinition(
+            name="__forced_gate_0",
+            extra_name=None,
+            events=[],
+            imports=[],
+            substates=[],
+            transitions=[],
+            enters=[],
+            durings=[],
+            exits=[],
+            during_aspects=[],
+            force_transitions=[],
+            is_pseudo=True,
+            doc=None,
+            histories=[],
+            regions=[],
+        )
+
+    def test_state_lx_forced_gate_0_list_on_enters(self, state_lx_forced_gate_0):
+        lst = state_lx_forced_gate_0.list_on_enters()
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(with_ids=False)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(with_ids=True)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=False, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=False, with_ids=True)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=True, with_ids=False)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_enters(is_abstract=True, with_ids=True)
+        assert lst == []
+
+    def test_state_lx_forced_gate_0_during_aspects(self, state_lx_forced_gate_0):
+        lst = state_lx_forced_gate_0.list_on_during_aspects()
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(aspect="before")
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(aspect="after")
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(is_abstract=False)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(
+            is_abstract=False, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(
+            is_abstract=False, aspect="after"
+        )
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(is_abstract=True)
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(
+            is_abstract=True, aspect="before"
+        )
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspects(
+            is_abstract=True, aspect="after"
+        )
+        assert lst == []
+
+    def test_state_lx_forced_gate_0_during_aspect_recursively(
+        self, state_lx_forced_gate_0
+    ):
+        lst = state_lx_forced_gate_0.list_on_during_aspect_recursively()
+        assert lst == []
+
+        lst = state_lx_forced_gate_0.list_on_during_aspect_recursively(with_ids=True)
+        assert lst == []
+
     def test_to_ast_node_str(self, model, text_aligner):
         text_aligner.assert_equal(
             expect=textwrap.dedent("""
 def int Event = 0;
+def int __forced_0 = 0;
 state LX {
     enter {
     }
@@ -1931,21 +2562,28 @@ state LX {
         state start {
             state LX4 {
                 state LX5;
-                LX5 -> [*] : /E1;
+                LX5 -> [*] : /E1 effect {
+                    __forced_0 = 1;
+                }
                 [*] -> LX5;
             }
-            LX4 -> [*] : /E1;
+            LX4 -> [*] : if [__forced_0 == 1];
             [*] -> LX4;
         }
-        start -> [*] : /E1;
+        start -> [*] : if [__forced_0 == 1];
         [*] -> start;
     }
     state ERROR;
+    pseudo state __forced_gate_0;
     event E1;
-    LX2 -> ERROR : E1;
+    LX2 -> ERROR : if [__forced_0 == 1] effect {
+        __forced_0 = 0;
+    }
+    LX2 -> __forced_gate_0 : E1;
     ERROR -> ERROR : E1;
     [*] -> LX2;
     ERROR -> [*];
+    __forced_gate_0 -> ERROR : if [__forced_0 == 0];
 }
             """).strip(),
             actual=str(model.to_ast_node()),

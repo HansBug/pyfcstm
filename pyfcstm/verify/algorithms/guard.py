@@ -338,7 +338,12 @@ def forced_guard_unsat_under_init(
     r"""Detect a forced-transition guard unsatisfiable under initial values.
 
     Forced transitions are expanded over a source state and its descendants.
-    This algorithm checks only forced transitions with guards and asks whether
+    A loaded machine carries no mark of its forced declarations (it runs as
+    the plain machine they expand to), so this algorithm is handed a
+    transition marked :attr:`Transition.is_forced`, the way
+    :func:`pyfcstm.diagnostics.inspect.inspect_model` hands it the
+    transitions of the model as written. It checks only forced transitions
+    with guards and asks whether
     the guard can hold immediately under DSL declaration initializers.  It is
     intentionally narrower than :func:`dead_guard`: a guard may be satisfiable
     in general while still impossible at the forced-transition initial point.
@@ -384,12 +389,16 @@ def forced_guard_unsat_under_init(
         ...     return parse_dsl_node_to_state_machine(ast)
         >>> def variables(machine):
         ...     return tuple(machine.defines.values())
+        >>> from dataclasses import replace
         >>> def forced_transition(machine):
-        ...     return next(
-        ...         transition
-        ...         for state in machine.walk_states()
-        ...         for transition in state.transitions
-        ...         if transition.is_forced
+        ...     return replace(
+        ...         next(
+        ...             transition
+        ...             for state in machine.walk_states()
+        ...             for transition in state.transitions
+        ...             if transition.guard is not None
+        ...         ),
+        ...         is_forced=True,
         ...     )
         >>> # The declaration initializer pins x to 0, so x > 0 is impossible.
         >>> machine = parse_machine('''

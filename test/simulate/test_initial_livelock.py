@@ -11,19 +11,26 @@ from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
 pytestmark = pytest.mark.unittest
 
+# One event leaves the pseudo state, each composite above it and enters A
+# again, which leads back to the same pseudo state inside one cycle. The exits
+# are written out: a forced transition is not taken from a pseudo state, so a
+# forced declaration on A would not build this loop.
 MODEL = '''
 state R {
+    event loop;
     state A {
         state B {
             pseudo state P;
             [*] -> P;
+            P -> [*] : /loop;
         }
         [*] -> B;
+        B -> [*] : /loop;
     }
     state Idle;
     [*] -> Idle;
     Idle -> A :: go;
-    !A -> A :: loop;
+    A -> A : /loop;
 }
 '''
 
@@ -37,7 +44,7 @@ def test_nested_initial_loop_reports_path_and_preserves_cycle(recursion_limit):
     try:
         sys.setrecursionlimit(recursion_limit)
         with pytest.raises(SimulationRuntimeDfsError, match='same cycle') as caught:
-            runtime.cycle(['R.Idle.go', 'R.A.loop'])
+            runtime.cycle(['R.Idle.go', 'R.loop'])
     finally:
         sys.setrecursionlimit(previous_limit)
     assert 'R.A.B.P' in str(caught.value)
@@ -58,9 +65,9 @@ def test_missing_loop_event_still_rejects_dead_end():
 
 
 @pytest.mark.parametrize('source,events,want', [
-    (MODEL.replace('!A -> A :: loop;',
-                   '!A -> A :: loop; Idle -> Idle :: go;'),
-     ['R.Idle.go', 'R.A.loop'], ('R', 'Idle')),
+    (MODEL.replace('A -> A : /loop;',
+                   'A -> A : /loop; Idle -> Idle :: go;'),
+     ['R.Idle.go', 'R.loop'], ('R', 'Idle')),
     ('''state R {
         pseudo state P; state Ready;
         [*] -> P; [*] -> Ready;
@@ -108,7 +115,7 @@ def test_cli_nested_initial_loop_has_readable_failure(tmp_path):
     path.write_text(MODEL)
     result = CliRunner().invoke(cli, [
         'simulate', '-i', str(path), '--no-color',
-        '-e', 'cycle; cycle R.Idle.go R.A.loop',
+        '-e', 'cycle; cycle R.Idle.go R.loop',
     ])
     assert result.exit_code == 1
     assert not isinstance(result.exception, RecursionError)

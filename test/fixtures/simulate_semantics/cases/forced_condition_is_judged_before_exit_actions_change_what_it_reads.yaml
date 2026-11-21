@@ -1,0 +1,35 @@
+title: A forced condition is judged once, before the exit actions on the way change the variable it reads
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The exit action of a1 clears armed. The plain expansion judged the condition again one level up, found it false and stayed in a1 for good.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+      armed: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+      armed: 0
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 3
+      armed: 0

@@ -209,6 +209,18 @@ Abstract handler registration::
 
     runtime.register_handlers_from_object(MyHandlers())
 
+The module contains:
+
+* :class:`SimulationRuntime` - Cycle-based runtime for one state machine
+* :class:`CycleResult` - Immutable result of one :meth:`SimulationRuntime.cycle` call
+* :class:`ExecutionTraceEntry` - One observation of a committed cycle
+* :class:`SimulationRuntimeDfsError` - A closed loop or an exceeded safety limit
+* :class:`SimulationRuntimeEventError` - An invalid cycle event input
+* :class:`SimulationRuntimeExpressionError` - A failed guard, expression or writeback
+* :class:`SimulationRuntimeActionReferenceError` - An unresolvable lifecycle action reference
+* :class:`SimulationRuntimeTerminalStateError` - An active-state query after termination
+* :class:`SimulationRuntimeRegionQueryError` - A single-path query on a machine with regions
+
 Example::
 
     >>> from pyfcstm.model import load_state_machine_from_text

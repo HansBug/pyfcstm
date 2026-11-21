@@ -108,7 +108,7 @@ def test_build_leaf_level_macro_graph_init_cascade_and_leaf_bubble():
     assert graph.edges["System.Orphan"] == tuple()
 
 
-def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
+def test_build_leaf_level_macro_graph_includes_the_gate_of_a_forced_declaration():
     topology = _import_topology()
     machine = _parse(
         """
@@ -127,8 +127,81 @@ def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
 
     graph = topology.build_leaf_level_macro_graph(machine)
 
-    assert graph.edges["Root.A.A1"] == ("Root.Error",)
-    assert graph.edges["Root.A.A2"] == ("Root.Error",)
+    # The graph is that of the machine that runs: the forced declaration is
+    # carried out through a generated gate state, which is a node like any other.
+    assert graph.edges["Root.A.A1"] == ("Root.Error", "Root.__forced_gate_0")
+    assert graph.edges["Root.A.A2"] == ("Root.Error", "Root.__forced_gate_0")
+    assert graph.edges["Root.__forced_gate_0"] == ("Root.Error",)
+
+
+def test_topological_finite_accepts_a_reachable_cycle_that_can_leave():
+    topology = _import_topology()
+    machine = _parse(
+        """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B;
+            B -> A;
+            B -> [*];
+        }
+        """
+    )
+
+    assert topology.strongly_connected_components(machine) == (("Root.A", "Root.B"),)
+    report = topology.topological_finite(machine)
+
+    # The cycle between A and B is reachable, but B can leave it, so it is
+    # neither a trap nor a deadlock.
+    assert (report.finite, report.counterexamples) == (True, ())
+
+
+FORCED_THROUGH_A_PSEUDO_STATE = """
+state Root {
+    [*] -> A;
+    state A { [*] -> J; pseudo state J; }
+    state T;
+    state Lost;
+    !A -> T :: Go;
+    T -> [*];
+}
+"""
+
+
+def _result_of(topology, analysis, machine):
+    result = getattr(topology, analysis)(machine)
+    if analysis == "build_leaf_level_macro_graph":
+        return dict(result.edges)
+    if analysis == "topological_finite":
+        return (result.finite, result.counterexamples)
+    if analysis == "topological_inevitable_terminator":
+        return (result.inevitable, result.counterexample_path)
+    return result
+
+
+@pytest.mark.parametrize(
+    "analysis",
+    [
+        "build_leaf_level_macro_graph",
+        "topological_reachable_set",
+        "unreachable_states",
+        "strongly_connected_components",
+        "topological_finite",
+        "topological_inevitable_terminator",
+        "event_emission_to_consumer_reachable",
+    ],
+)
+def test_every_analysis_gives_a_forced_declaration_the_result_of_its_expansion(analysis):
+    """A forced declaration is syntactic sugar: its expansion, loaded as a plain
+    model, gets exactly the same answer from every analysis."""
+    topology = _import_topology()
+    machine = _parse(FORCED_THROUGH_A_PSEUDO_STATE)
+    assert machine.forced_variables == ("__forced_0",)
+    expansion = _parse(str(machine.to_ast_node()))
+    assert expansion.forced_variables == ()
+
+    assert _result_of(topology, analysis, machine) == _result_of(topology, analysis, expansion)
 
 
 def test_topological_reachable_set_handles_nested_hierarchy_and_bubble():

@@ -8,7 +8,7 @@ trap 'rm -rf "$workdir"' EXIT
 # Run one batch script and show the final ``current`` report.
 run() {
     pyfcstm simulate -i charger_restart.fcstm -e "$1" --no-color > "$workdir/out.txt"
-    sed 's/[[:space:]]*$//' "$workdir/out.txt" | tail -n 8
+    sed 's/[[:space:]]*$//' "$workdir/out.txt" | tail -n 10
 }
 
 # Plug in, authorize, finish precharge and reach ConstantVoltage.

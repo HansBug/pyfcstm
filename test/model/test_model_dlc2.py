@@ -93,7 +93,16 @@ def green(in_service):
 
 @pytest.fixture()
 def transition_1(root_state_1):
-    return root_state_1.transitions[-2]
+    # ``Idle -> Idle :: E2`` as written. Idle is the source of two forced
+    # declarations, so the transition gives way to them through a gate.
+    (transition,) = [
+        item
+        for item in root_state_1.transitions
+        if item.from_state == "Idle"
+        and item.event is not None
+        and item.event.name == "E2"
+    ]
+    return transition
 
 
 @pytest.fixture()
@@ -112,6 +121,9 @@ def expected_to_str_result():
 def int a = 0;
 def int b = 0;
 def int round_count = 0;
+def int __forced_0 = 0;
+def int __forced_1 = 0;
+def int __forced_2 = 0;
 state TrafficLight {
     state InService {
         state Red;
@@ -120,12 +132,24 @@ state TrafficLight {
         event ServiceError;
         event Start;
         event Maintain;
-        Red -> [*] : ServiceError;
-        Red -> [*] : /GodDamnFuckUp;
-        Yellow -> [*] : ServiceError;
-        Yellow -> [*] : /GodDamnFuckUp;
-        Green -> [*] : ServiceError;
-        Green -> [*] : /GodDamnFuckUp;
+        Red -> [*] : ServiceError effect {
+            __forced_0 = 1;
+        }
+        Red -> [*] : /GodDamnFuckUp effect {
+            __forced_2 = 1;
+        }
+        Yellow -> [*] : ServiceError effect {
+            __forced_0 = 1;
+        }
+        Yellow -> [*] : /GodDamnFuckUp effect {
+            __forced_2 = 1;
+        }
+        Green -> [*] : ServiceError effect {
+            __forced_0 = 1;
+        }
+        Green -> [*] : /GodDamnFuckUp effect {
+            __forced_2 = 1;
+        }
         [*] -> Red :: Start effect {
             b = 1;
         }
@@ -152,25 +176,57 @@ state TrafficLight {
         }
         event GiveUpThinking;
         event E2;
-        ToBe -> [*] : GiveUpThinking;
-        ToBe -> [*] : /GodDamnFuckUp;
-        NotToBe -> [*] : GiveUpThinking;
-        NotToBe -> [*] : /GodDamnFuckUp;
+        ToBe -> [*] : GiveUpThinking effect {
+            __forced_1 = 1;
+        }
+        ToBe -> [*] : /GodDamnFuckUp effect {
+            __forced_2 = 1;
+        }
+        NotToBe -> [*] : GiveUpThinking effect {
+            __forced_1 = 1;
+        }
+        NotToBe -> [*] : /GodDamnFuckUp effect {
+            __forced_2 = 1;
+        }
         [*] -> ToBe;
         ToBe -> NotToBe :: E1;
         NotToBe -> ToBe :: E1;
         NotToBe -> [*] :: E2;
     }
+    pseudo state __forced_gate_0;
+    pseudo state __forced_gate_1;
+    pseudo state __forced_gate_2;
+    pseudo state __forced_gate_3;
+    pseudo state __forced_gate_4;
+    pseudo state __forced_gate_5;
     event GodDamnFuckUp;
     event E2;
-    InService -> [*] :: ServiceError;
-    InService -> [*] : GodDamnFuckUp;
-    Idle -> InService :: GiveUpThinking;
-    Idle -> [*] : GodDamnFuckUp;
+    InService -> [*] : if [__forced_0 == 1 && __forced_2 == 0] effect {
+        __forced_0 = 0;
+    }
+    InService -> __forced_gate_0 :: ServiceError;
+    InService -> [*] : if [__forced_2 == 1 && __forced_0 == 0] effect {
+        __forced_2 = 0;
+    }
+    InService -> __forced_gate_1 : GodDamnFuckUp;
+    Idle -> InService : if [__forced_1 == 1 && __forced_2 == 0] effect {
+        __forced_1 = 0;
+    }
+    Idle -> __forced_gate_3 :: GiveUpThinking;
+    Idle -> [*] : if [__forced_2 == 1 && __forced_1 == 0] effect {
+        __forced_2 = 0;
+    }
+    Idle -> __forced_gate_4 : GodDamnFuckUp;
     [*] -> InService;
-    InService -> Idle :: Maintain;
-    Idle -> Idle :: E2;
-    Idle -> [*];
+    InService -> __forced_gate_2 :: Maintain;
+    Idle -> __forced_gate_5 :: E2;
+    Idle -> [*] : if [__forced_1 == 0 && __forced_2 == 0];
+    __forced_gate_0 -> [*] : if [__forced_0 == 0 && __forced_2 == 0];
+    __forced_gate_1 -> [*] : if [__forced_0 == 0 && __forced_2 == 0];
+    __forced_gate_2 -> Idle : if [__forced_0 == 0 && __forced_2 == 0];
+    __forced_gate_3 -> InService : if [__forced_1 == 0 && __forced_2 == 0];
+    __forced_gate_4 -> [*] : if [__forced_1 == 0 && __forced_2 == 0];
+    __forced_gate_5 -> Idle : if [__forced_1 == 0 && __forced_2 == 0];
 }
     """).strip()
 
@@ -184,7 +240,23 @@ class TestModelModelDLC2:
             "round_count": VarDefine(
                 name="round_count", type="int", init=Integer(value=0)
             ),
+            # One hidden variable per forced declaration whose source has
+            # states inside it; all three declarations of this model do.
+            "__forced_0": VarDefine(
+                name="__forced_0", type="int", init=Integer(value=0)
+            ),
+            "__forced_1": VarDefine(
+                name="__forced_1", type="int", init=Integer(value=0)
+            ),
+            "__forced_2": VarDefine(
+                name="__forced_2", type="int", init=Integer(value=0)
+            ),
         }
+        assert demo_model_1.forced_variables == (
+            "__forced_0",
+            "__forced_1",
+            "__forced_2",
+        )
 
         assert demo_model_1.root_state.name == "TrafficLight"
         assert demo_model_1.root_state.path == ("TrafficLight",)
@@ -201,12 +273,29 @@ class TestModelModelDLC2:
             dsl_nodes.DefAssignment(
                 name="round_count", type="int", expr=dsl_nodes.Integer(raw="0")
             ),
+            dsl_nodes.DefAssignment(
+                name="__forced_0", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
+            dsl_nodes.DefAssignment(
+                name="__forced_1", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
+            dsl_nodes.DefAssignment(
+                name="__forced_2", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
         ]
         assert ast_node.root_state.name == "TrafficLight"
 
-    def test_transition_dlcs(self, transition_1, transition_2, transition_3):
+    def test_transition_dlcs(
+        self, root_state_1, transition_1, transition_2, transition_3
+    ):
         assert transition_1.from_state == "Idle"
-        assert transition_1.to_state == "Idle"
+        gate = root_state_1.substates[transition_1.to_state]
+        assert gate.is_forced_gate
+        (through,) = [
+            item for item in root_state_1.transitions if item.from_state == gate.name
+        ]
+        assert through.to_state == "Idle"
+        assert through.event is None
         assert transition_1.event.name == "E2"
         assert transition_1.event.state_path == ("TrafficLight", "Idle")
         assert transition_1.event.path == ("TrafficLight", "Idle", "E2")
@@ -369,14 +458,14 @@ class TestModelModelDLC2:
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
         assert lst[0].guard is None
-        assert lst[0].effects == []
+        assert lst[0].effects == [Operation(var_name="__forced_0", expr=Integer(value=1))]
         assert lst[0].parent is in_service
 
         assert lst[1].from_state == "Red"
         assert lst[1].to_state == dsl_nodes.EXIT_STATE
         assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[1].guard is None
-        assert lst[1].effects == []
+        assert lst[1].effects == [Operation(var_name="__forced_2", expr=Integer(value=1))]
         assert lst[1].parent is in_service
 
         assert lst[2].from_state == "Yellow"
@@ -385,14 +474,14 @@ class TestModelModelDLC2:
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
         assert lst[2].guard is None
-        assert lst[2].effects == []
+        assert lst[2].effects == [Operation(var_name="__forced_0", expr=Integer(value=1))]
         assert lst[2].parent is in_service
 
         assert lst[3].from_state == "Yellow"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
         assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[3].guard is None
-        assert lst[3].effects == []
+        assert lst[3].effects == [Operation(var_name="__forced_2", expr=Integer(value=1))]
         assert lst[3].parent is in_service
 
         assert lst[4].from_state == "Green"
@@ -401,21 +490,19 @@ class TestModelModelDLC2:
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
         assert lst[4].guard is None
-        assert lst[4].effects == []
+        assert lst[4].effects == [Operation(var_name="__forced_0", expr=Integer(value=1))]
         assert lst[4].parent is in_service
 
         assert lst[5].from_state == "Green"
         assert lst[5].to_state == dsl_nodes.EXIT_STATE
         assert lst[5].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[5].guard is None
-        assert lst[5].effects == []
+        assert lst[5].effects == [Operation(var_name="__forced_2", expr=Integer(value=1))]
         assert lst[5].parent is in_service
 
         assert lst[6].from_state == dsl_nodes.INIT_STATE
         assert lst[6].to_state == "Red"
-        assert lst[6].event == Event(
-            name="Start", state_path=("TrafficLight", "InService")
-        )
+        assert lst[6].event == Event(name="Start", state_path=("TrafficLight", "InService"))
         assert lst[6].guard is None
         assert lst[6].effects == [Operation(var_name="b", expr=Integer(value=1))]
         assert lst[6].parent is in_service
@@ -437,16 +524,12 @@ class TestModelModelDLC2:
         assert lst[9].from_state == "Yellow"
         assert lst[9].to_state == "Red"
         assert lst[9].event is None
-        assert lst[9].guard == BinaryOp(
-            x=Variable(name="a"), op=">=", y=Integer(value=10)
-        )
+        assert lst[9].guard == BinaryOp(x=Variable(name="a"), op=">=", y=Integer(value=10))
         assert lst[9].effects == [
             Operation(var_name="b", expr=Integer(value=1)),
             Operation(
                 var_name="round_count",
-                expr=BinaryOp(
-                    x=Variable(name="round_count"), op="+", y=Integer(value=1)
-                ),
+                expr=BinaryOp(x=Variable(name="round_count"), op="+", y=Integer(value=1)),
             ),
         ]
         assert lst[9].parent is in_service
@@ -474,14 +557,14 @@ class TestModelModelDLC2:
             name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
         assert lst[0].guard is None
-        assert lst[0].effects == []
+        assert lst[0].effects == [Operation(var_name="__forced_1", expr=Integer(value=1))]
         assert lst[0].parent is idle
 
         assert lst[1].from_state == "ToBe"
         assert lst[1].to_state == dsl_nodes.EXIT_STATE
         assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[1].guard is None
-        assert lst[1].effects == []
+        assert lst[1].effects == [Operation(var_name="__forced_2", expr=Integer(value=1))]
         assert lst[1].parent is idle
 
         assert lst[2].from_state == "NotToBe"
@@ -490,14 +573,14 @@ class TestModelModelDLC2:
             name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
         assert lst[2].guard is None
-        assert lst[2].effects == []
+        assert lst[2].effects == [Operation(var_name="__forced_1", expr=Integer(value=1))]
         assert lst[2].parent is idle
 
         assert lst[3].from_state == "NotToBe"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
         assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[3].guard is None
-        assert lst[3].effects == []
+        assert lst[3].effects == [Operation(var_name="__forced_2", expr=Integer(value=1))]
         assert lst[3].parent is idle
 
         assert lst[4].from_state == dsl_nodes.INIT_STATE
@@ -509,9 +592,7 @@ class TestModelModelDLC2:
 
         assert lst[5].from_state == "ToBe"
         assert lst[5].to_state == "NotToBe"
-        assert lst[5].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "ToBe")
-        )
+        assert lst[5].event == Event(name="E1", state_path=("TrafficLight", "Idle", "ToBe"))
         assert lst[5].guard is None
         assert lst[5].effects == []
         assert lst[5].parent is idle
@@ -536,68 +617,182 @@ class TestModelModelDLC2:
 
     def test_transitions_for_root_state_1(self, root_state_1):
         lst = root_state_1.transitions
-        assert len(lst) == 8
+        assert len(lst) == 18
         assert lst[0].from_state == "InService"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(
-            name="ServiceError", state_path=("TrafficLight", "InService")
+        assert lst[0].event is None
+        assert lst[0].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_0"), op="==", y=Integer(value=1)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
-        assert lst[0].guard is None
-        assert lst[0].effects == []
+        assert lst[0].effects == [Operation(var_name="__forced_0", expr=Integer(value=0))]
         assert lst[0].parent is root_state_1
 
         assert lst[1].from_state == "InService"
-        assert lst[1].to_state == dsl_nodes.EXIT_STATE
-        assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert lst[1].to_state == "__forced_gate_0"
+        assert lst[1].event == Event(
+            name="ServiceError", state_path=("TrafficLight", "InService")
+        )
         assert lst[1].guard is None
         assert lst[1].effects == []
         assert lst[1].parent is root_state_1
 
-        assert lst[2].from_state == "Idle"
-        assert lst[2].to_state == "InService"
-        assert lst[2].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle")
+        assert lst[2].from_state == "InService"
+        assert lst[2].to_state == dsl_nodes.EXIT_STATE
+        assert lst[2].event is None
+        assert lst[2].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=1)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_0"), op="==", y=Integer(value=0)),
         )
-        assert lst[2].guard is None
-        assert lst[2].effects == []
+        assert lst[2].effects == [Operation(var_name="__forced_2", expr=Integer(value=0))]
         assert lst[2].parent is root_state_1
 
-        assert lst[3].from_state == "Idle"
-        assert lst[3].to_state == dsl_nodes.EXIT_STATE
+        assert lst[3].from_state == "InService"
+        assert lst[3].to_state == "__forced_gate_1"
         assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[3].guard is None
         assert lst[3].effects == []
         assert lst[3].parent is root_state_1
 
-        assert lst[4].from_state == dsl_nodes.INIT_STATE
+        assert lst[4].from_state == "Idle"
         assert lst[4].to_state == "InService"
         assert lst[4].event is None
-        assert lst[4].guard is None
-        assert lst[4].effects == []
+        assert lst[4].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=1)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[4].effects == [Operation(var_name="__forced_1", expr=Integer(value=0))]
         assert lst[4].parent is root_state_1
 
-        assert lst[5].from_state == "InService"
-        assert lst[5].to_state == "Idle"
+        assert lst[5].from_state == "Idle"
+        assert lst[5].to_state == "__forced_gate_3"
         assert lst[5].event == Event(
-            name="Maintain", state_path=("TrafficLight", "InService")
+            name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
         assert lst[5].guard is None
         assert lst[5].effects == []
         assert lst[5].parent is root_state_1
 
         assert lst[6].from_state == "Idle"
-        assert lst[6].to_state == "Idle"
-        assert lst[6].event == Event(name="E2", state_path=("TrafficLight", "Idle"))
-        assert lst[6].guard is None
-        assert lst[6].effects == []
+        assert lst[6].to_state == dsl_nodes.EXIT_STATE
+        assert lst[6].event is None
+        assert lst[6].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=1)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=0)),
+        )
+        assert lst[6].effects == [Operation(var_name="__forced_2", expr=Integer(value=0))]
         assert lst[6].parent is root_state_1
 
         assert lst[7].from_state == "Idle"
-        assert lst[7].to_state == dsl_nodes.EXIT_STATE
-        assert lst[7].event is None
+        assert lst[7].to_state == "__forced_gate_4"
+        assert lst[7].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
         assert lst[7].guard is None
         assert lst[7].effects == []
         assert lst[7].parent is root_state_1
+
+        assert lst[8].from_state == dsl_nodes.INIT_STATE
+        assert lst[8].to_state == "InService"
+        assert lst[8].event is None
+        assert lst[8].guard is None
+        assert lst[8].effects == []
+        assert lst[8].parent is root_state_1
+
+        assert lst[9].from_state == "InService"
+        assert lst[9].to_state == "__forced_gate_2"
+        assert lst[9].event == Event(
+            name="Maintain", state_path=("TrafficLight", "InService")
+        )
+        assert lst[9].guard is None
+        assert lst[9].effects == []
+        assert lst[9].parent is root_state_1
+
+        assert lst[10].from_state == "Idle"
+        assert lst[10].to_state == "__forced_gate_5"
+        assert lst[10].event == Event(name="E2", state_path=("TrafficLight", "Idle"))
+        assert lst[10].guard is None
+        assert lst[10].effects == []
+        assert lst[10].parent is root_state_1
+
+        assert lst[11].from_state == "Idle"
+        assert lst[11].to_state == dsl_nodes.EXIT_STATE
+        assert lst[11].event is None
+        assert lst[11].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[11].effects == []
+        assert lst[11].parent is root_state_1
+
+        assert lst[12].from_state == "__forced_gate_0"
+        assert lst[12].to_state == dsl_nodes.EXIT_STATE
+        assert lst[12].event is None
+        assert lst[12].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_0"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[12].effects == []
+        assert lst[12].parent is root_state_1
+
+        assert lst[13].from_state == "__forced_gate_1"
+        assert lst[13].to_state == dsl_nodes.EXIT_STATE
+        assert lst[13].event is None
+        assert lst[13].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_0"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[13].effects == []
+        assert lst[13].parent is root_state_1
+
+        assert lst[14].from_state == "__forced_gate_2"
+        assert lst[14].to_state == "Idle"
+        assert lst[14].event is None
+        assert lst[14].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_0"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[14].effects == []
+        assert lst[14].parent is root_state_1
+
+        assert lst[15].from_state == "__forced_gate_3"
+        assert lst[15].to_state == "InService"
+        assert lst[15].event is None
+        assert lst[15].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[15].effects == []
+        assert lst[15].parent is root_state_1
+
+        assert lst[16].from_state == "__forced_gate_4"
+        assert lst[16].to_state == dsl_nodes.EXIT_STATE
+        assert lst[16].event is None
+        assert lst[16].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[16].effects == []
+        assert lst[16].parent is root_state_1
+
+        assert lst[17].from_state == "__forced_gate_5"
+        assert lst[17].to_state == "Idle"
+        assert lst[17].event is None
+        assert lst[17].guard == BinaryOp(
+            x=BinaryOp(x=Variable(name="__forced_1"), op="==", y=Integer(value=0)),
+            op="&&",
+            y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
+        )
+        assert lst[17].effects == []
+        assert lst[17].parent is root_state_1
 
         # print(f'lst = root_state_1.transitions')
         # print(f'assert len(lst) == {len(lst)!r}')

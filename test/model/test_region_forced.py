@@ -1,5 +1,9 @@
 """Forced transitions that reach regions, as the model exposes them."""
 
+import dataclasses
+import gc
+import json
+
 import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
@@ -9,6 +13,7 @@ from pyfcstm.model import (
     load_state_machine_from_text,
     parse_dsl_node_to_state_machine,
 )
+from pyfcstm.model.region import walk_namespaces
 from pyfcstm.simulate import SimulationRuntime
 from test.testings.simulate_semantics import build_state_machine_from_case, iter_semantic_cases
 
@@ -30,6 +35,12 @@ def _guards(namespace, source):
     return [str(edge.guard) for edge in namespace.transitions if edge.from_state == source]
 
 
+def _transitions(model):
+    for namespace in walk_namespaces(model.root_state):
+        for edge in namespace.transitions:
+            yield namespace, edge
+
+
 def test_a_declaration_that_reaches_regions_installs_one_hidden_variable():
     model = load_state_machine_from_text(OWNER)
     assert list(model.defines) == ['__forced_0']
@@ -43,7 +54,7 @@ def test_a_state_resting_in_a_region_raises_the_variable_and_pseudo_states_get_n
     exits = [edge for edge in region.transitions if edge.exit_group_levels]
     assert [(edge.from_state, edge.exit_group_levels) for edge in exits] == [('A1', 1), ('A2', 1)]
     for edge in exits:
-        assert edge.is_forced and edge.event.path_name == 'Root.Stop'
+        assert edge.event.path_name == 'Root.Stop'
         assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
     assert not [edge for edge in region.transitions if edge.from_state == 'Gate']
 
@@ -54,10 +65,14 @@ def test_the_declaring_level_decides_in_two_steps_and_keeps_the_declared_transit
     assert (first.event, str(first.guard)) == (None, '__forced_0 == 1')
     assert [(op.var_name, str(op.expr)) for op in first.effects] == [('__forced_0', '0')]
     # The declared transition keeps its event for the case that control comes
-    # back without the variable raised, and gives way while it is raised.
-    assert declared.event.path_name == 'Root.Stop'
-    assert str(declared.guard) == '__forced_0 == 0'
+    # back without the variable raised. While the variable is raised it gives
+    # way: its event leads to a gate that only opens once the variable is lowered.
+    assert declared.event.path_name == 'Root.Stop' and declared.guard is None
     assert declared.effects == []
+    gate = root.substates[declared.to_state]
+    assert gate.is_pseudo and gate.is_forced_gate and gate.name == '__forced_gate_0'
+    hop, = [edge for edge in root.transitions if edge.from_state == gate.name]
+    assert (hop.to_state, hop.event, str(hop.guard)) == ('Idle', None, '__forced_0 == 0')
 
 
 def test_other_outgoing_transitions_give_way_while_the_variable_is_raised():
@@ -82,23 +97,35 @@ state Root {
 }''')
     assert sorted(model.defines) == ['__forced_0', '__forced_1', 'x']
     root = model.root_state
-    plain = next(edge for edge in root.transitions if edge.to_state == 'Plain')
-    evented = next(edge for edge in root.transitions if edge.to_state == 'Evented')
-    # Both declarations ask the variable to be lowered, the first one outermost.
+
+    def into(target):
+        return [edge for edge in root.transitions if edge.to_state == target]
+
+    def through_gate(event_path):
+        first = next(edge for edge in root.transitions
+                     if edge.event is not None and edge.event.path_name == event_path)
+        assert first.guard is None and root.substates[first.to_state].is_forced_gate
+        return next(edge for edge in root.transitions if edge.from_state == first.to_state)
+
+    # A transition without an event simply gets the extra conditions, the
+    # first declaration outermost.
+    plain, = into('Plain')
     assert str(plain.guard) == 'x > 0 && __forced_0 == 0 && __forced_1 == 0'
-    assert evented.event.path_name == 'Root.Other'
-    assert str(evented.guard) == '__forced_0 == 0 && __forced_1 == 0'
-    # The transitions of one declaration give way to the other one as well, so
-    # whichever declaration started the exit is the only one that goes on.
-    alpha = [edge for edge in root.transitions if edge.to_state == 'ToAlpha']
-    assert [str(edge.guard) for edge in alpha] == [
-        '__forced_0 == 1 && __forced_1 == 0', '__forced_0 == 0 && __forced_1 == 0']
-    beta = [edge for edge in root.transitions if edge.to_state == 'ToBeta']
-    assert str(beta[0].guard).startswith('__forced_1 == 1')
-    assert str(beta[1].guard) == '__forced_0 == 0 && __forced_1 == 0'
+    # A transition with an event keeps the event and reaches its target through
+    # a gate that asks every variable to be lowered.
+    assert str(through_gate('Root.Other').guard) == '__forced_0 == 0 && __forced_1 == 0'
+    assert through_gate('Root.Other').to_state == 'Evented'
+    # The two declarations give way to each other in the same way, so whichever
+    # one started the exit is the only one that goes on.
+    relay_alpha, hop_alpha = into('ToAlpha')
+    relay_beta, hop_beta = into('ToBeta')
+    assert str(relay_alpha.guard) == '__forced_0 == 1 && __forced_1 == 0'
+    assert str(relay_beta.guard) == '__forced_1 == 1 && __forced_0 == 0'
+    assert str(hop_alpha.guard) == str(hop_beta.guard) == '__forced_0 == 0 && __forced_1 == 0'
+    assert hop_alpha is through_gate('Root.Alpha') and hop_beta is through_gate('Root.Beta')
 
 
-def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
+def test_a_declaration_beside_regions_is_lowered_like_one_that_reaches_them():
     model = load_state_machine_from_text('''state Root {
     event Stop;
     [*] -> Plain;
@@ -115,18 +142,22 @@ def test_a_declaration_that_does_not_reach_regions_keeps_its_plain_expansion():
     state Idle;
     !Plain -> Idle : /Stop;
 }''')
-    assert not model.defines
+    # Whether a declaration reaches regions no longer decides how it is
+    # expanded: every declaration is decided once, where the machine rests.
+    assert model.forced_variables == ('__forced_0',)
     plain = model.root_state.substates['Plain']
-    # The expansion lands on every state below, pseudo states included, and
-    # repeats the event.
-    assert sorted(edge.from_state for edge in plain.transitions if edge.is_forced) == ['A', 'B', 'Gate']
-    assert all(edge.event.path_name == 'Root.Stop' for edge in plain.transitions if edge.is_forced)
-    # A declaration that does not reach regions is not lowered, so the model
-    # carries no hidden variable.
-    assert not model.defines
+    started = [edge for edge in plain.transitions
+               if edge.event is not None and edge.event.path_name == 'Root.Stop']
+    # A state that can be rested in starts the exit; the pseudo state holds
+    # nothing, and nothing takes a group of regions away.
+    assert [edge.from_state for edge in started] == ['A', 'B']
+    for edge in started:
+        assert edge.event.path_name == 'Root.Stop' and edge.guard is None
+        assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
+        assert not edge.exit_group_levels
 
 
-def test_a_declaration_below_regions_without_regions_in_its_scope_is_not_lowered():
+def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
     model = load_state_machine_from_text('''state Root {
     event Stop;
     [*] -> P;
@@ -140,11 +171,26 @@ def test_a_declaration_below_regions_without_regions_in_its_scope_is_not_lowered
         region B { [*] -> B1; state B1; }
     }
 }''')
-    assert not model.defines
+    assert model.forced_variables == ('__forced_0',)
     region = model.root_state.substates['P'].regions['A']
     q = region.substates['Q']
-    assert sorted(edge.from_state for edge in q.transitions if edge.is_forced) == ['Q1', 'Q2']
-    assert not any(edge.exit_group_levels for edge in q.transitions)
+    assert [edge.from_state for edge in q.transitions
+            if edge.event is not None and edge.event.path_name == 'Root.Stop'] == ['Q1', 'Q2']
+    # The declaration stays inside region A: only Q is left, never the group.
+    assert not any(edge.exit_group_levels for _, edge in _transitions(model))
+    relay, declared = [edge for edge in region.transitions if edge.from_state == 'Q']
+    assert (relay.to_state, relay.event, str(relay.guard)) == ('Done', None, '__forced_0 == 1')
+    assert region.substates[declared.to_state].is_forced_gate
+    # Nothing in this machine is beyond the language, so it is exported as it runs.
+    exported = str(model.to_ast_node())
+    assert 'def int __forced_0 = 0;' in exported
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    assert str(runtime.configuration) == 'Root.P{A: Q.Q1, B: B1}'
+    runtime.cycle('Root.Stop')
+    assert str(runtime.configuration) == 'Root.P{A: Done, B: B1}'
+    assert runtime.vars['__forced_0'] == 0
 
 
 @pytest.mark.parametrize('taken', ['__forced_0', '_forced_0', '___forced_0'])
@@ -179,17 +225,50 @@ def test_forced_declarations_reach_each_owner_below_the_declared_state():
     assert [(edge.from_state, edge.exit_group_levels) for region in inner.regions.values()
             for edge in region.transitions if edge.exit_group_levels] == [('X1', 2), ('Y1', 2)]
     # The composite-like owner Inner holds no transition of its own for the declaration.
-    assert not [edge for edge in outer.regions['R1'].transitions if edge.is_forced]
+    assert not [edge for edge in outer.regions['R1'].transitions
+                if edge.event is not None and edge.event.path_name == 'Root.Halt']
 
 
 def test_inspect_judges_the_model_as_written():
     report = inspect_model(load_state_machine_from_text(OWNER))
-    assert '__forced' not in report.to_json()
+    assert '__forced' not in json.dumps(report.to_json())
     # The forced declaration is reported once, as written.
     assert len(report.forced_transitions) == 1
     # Only the transition written on the level of the declaration is expanded;
     # nothing is put into the regions.
     assert sum(item.is_forced for item in report.transitions) == 1
+
+
+def test_a_state_is_shown_as_written_after_its_machine_is_no_longer_kept():
+    kept = load_state_machine_from_text(OWNER)
+    # Only the root state is kept; the machine object it came from is dropped.
+    root = load_state_machine_from_text(OWNER).root_state
+    gc.collect()
+    assert root.to_plantuml('full') == kept.root_state.to_plantuml('full')
+    assert '__forced' not in root.to_plantuml('full')
+    run = root.substates['Run']
+    assert run.regions['A'].to_plantuml('full') == \
+        kept.root_state.substates['Run'].regions['A'].to_plantuml('full')
+    # This machine takes a group away, so its states export the plain expansion too.
+    assert str(root.to_ast_node()) == str(kept.root_state.to_ast_node())
+    assert '__forced' not in str(root.to_ast_node())
+
+
+def test_a_region_kept_on_its_own_is_shown_the_same_before_and_after_a_collection():
+    kept = load_state_machine_from_text(OWNER).root_state.substates['Run']
+
+    def only_the_region():
+        return load_state_machine_from_text(OWNER).root_state.substates['Run'].regions['A']
+
+    region = only_the_region()
+    before = region.to_plantuml('full')
+    gc.collect()
+    after = region.to_plantuml('full')
+    assert before == after == kept.regions['A'].to_plantuml('full')
+    assert '__forced' not in after
+    # The group of this owner is taken away, so the region exports the plain expansion too.
+    assert str(region.to_ast_node()) == str(kept.regions['A'].to_ast_node())
+    assert '__forced' not in str(region.to_ast_node())
 
 
 def test_plantuml_draws_the_declaration_once_and_hides_how_it_is_carried_out():
@@ -228,15 +307,21 @@ def test_a_wildcard_declaration_keeps_the_transition_of_a_pseudo_sibling_on_its_
 }''')
     by_source = {}
     for edge in model.root_state.transitions:
-        if edge.is_forced:
+        if not isinstance(edge.from_state, str) or edge.from_state.startswith('__forced_gate'):
+            continue
+        if edge.event is None and edge.guard is not None or (
+                edge.event is not None and edge.event.path_name == 'Root.Stop'):
             by_source.setdefault(edge.from_state, []).append(edge)
     # On its own level every state, a pseudo one included, holds the declared
-    # transition; only the state that owns regions needs the copy that decides.
+    # transition; only the state that owns regions needs the copy that decides
+    # in front of it, which carries the raised variable and no event.
     assert sorted(by_source) == ['Gate', 'Idle', 'Quiet', 'Run']
-    assert [len(by_source[name]) for name in ('Gate', 'Idle', 'Quiet', 'Run')] == [1, 1, 1, 2]
+    assert [[edge.event is not None for edge in by_source[name]]
+            for name in ('Gate', 'Idle', 'Quiet', 'Run')] == [[True], [True], [True], [False, True]]
     # Below the declaration a pseudo state is passed through, not left.
     region = model.root_state.substates['Run'].regions['A']
-    assert [edge.from_state for edge in region.transitions if edge.is_forced] == ['A1']
+    assert [edge.from_state for edge in region.transitions
+            if edge.event is not None and edge.event.path_name == 'Root.Stop'] == ['A1']
 
 
 def test_diagram_snapshot_shows_the_declaration_once_and_hides_how_it_is_carried_out():
@@ -289,12 +374,15 @@ EVENTED_NEIGHBOURS = '''state Root {
 }'''
 
 
-def test_a_transition_that_gives_way_exports_its_event_and_the_machine_exports_the_plain_expansion():
-    """An event transition that gives way has an event and a guard; the language cannot write both."""
+def test_an_event_transition_gives_way_through_a_gate_and_the_machine_exports_the_plain_expansion():
     model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
-    go = next(edge for edge in model.root_state.transitions if edge.to_state == 'Next')
-    assert go.event is not None and go.guard is not None
-    assert str(go.to_ast_node()) == 'Run -> Next :: Go;'
+    root = model.root_state
+    go = next(edge for edge in root.transitions
+              if edge.event is not None and edge.event.name == 'Go')
+    gate = root.substates[go.to_state]
+    assert go.guard is None and gate.is_forced_gate
+    # Each of the three transitions of the model is something the language can write.
+    assert str(go.to_ast_node()) == 'Run -> %s :: Go;' % gate.name
     exported = str(model.to_ast_node())
     assert 'Run -> Idle :: Stop;' in exported and 'Run -> Off :: Kill;' in exported
     # Exporting what was exported gives the same text again.
@@ -302,6 +390,84 @@ def test_a_transition_that_gives_way_exports_its_event_and_the_machine_exports_t
     drawing = model.to_plantuml('full')
     assert '__forced' not in drawing
     assert drawing.count('root__run --> root__next') == 1
+
+
+def _region_cases():
+    return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
+
+
+@pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)
+def test_no_transition_carries_an_event_and_a_guard(case):
+    """The model keeps the rule of the language whatever a forced declaration lowers into."""
+    model = build_state_machine_from_case(case)
+    for _, edge in _transitions(model):
+        assert edge.event is None or edge.guard is None
+        # A transition that follows the rule can be copied like any dataclass.
+        assert dataclasses.replace(edge).to_state == edge.to_state
+
+
+def test_a_transition_through_a_gate_behaves_like_the_transition_as_written():
+    model = load_state_machine_from_text('''def int x = 0;
+def int seen = 0;
+state Root {
+    [*] -> Run;
+    state Run {
+        exit { seen = seen * 10 + 1; }
+        region A { [*] -> A1; state A1; A1 -> [*] :: Done; }
+    }
+    state Idle;
+    state Next { enter { seen = seen * 10 + 3; } }
+    !Run -> Idle :: Stop;
+    Run -> Next :: Go effect { x = x + 1; seen = seen * 10 + 2; }
+}''')
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    # Go alone does nothing while the region works.
+    runtime.cycle('Root.Run.Go')
+    assert str(runtime.configuration) == 'Root.Run{A: A1}'
+    # Once the region is done the transition is taken: exit, effect, enter,
+    # the effect exactly once.
+    result = runtime.cycle(['Root.Run.Go', 'Root.Run.A.A1.Done'], trace=True)
+    assert str(runtime.configuration) == 'Root.Next'
+    assert (runtime.vars['x'], runtime.vars['seen']) == (1, 123)
+    assert result.consumed_events == ('Root.Run.A.A1.Done', 'Root.Run.Go')
+    entered = [entry.state_path[-1] for entry in result.trace if entry.kind == 'state_enter']
+    # The trace shows the gate as one more state passed through.
+    go = next(edge for edge in model.root_state.transitions
+              if edge.event is not None and edge.event.name == 'Go')
+    assert model.root_state.substates[go.to_state].is_forced_gate
+    assert entered == [go.to_state, 'Next']
+
+
+def test_a_gate_shows_itself():
+    """A gate exists only in the machine that runs, so it has nothing to stand in for it."""
+    model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
+    gate = next(state for state in model.root_state.substates.values() if state.is_forced_gate)
+    assert str(gate.to_ast_node()) == 'pseudo state %s;' % gate.name
+    assert gate.name in gate.to_plantuml('full')
+    # The machine itself is shown without it.
+    assert '__forced' not in model.to_plantuml('full')
+    assert '__forced' not in str(model.to_ast_node())
+
+
+def test_a_state_the_user_named_like_a_gate_is_left_alone():
+    model = load_state_machine_from_text('''state Root {
+    [*] -> Run;
+    state Run { region A { [*] -> A1; state A1; A1 -> [*] :: Done; } }
+    state Idle;
+    pseudo state __forced_gate_0;
+    __forced_gate_0 -> Idle;
+    !Run -> Idle :: Stop;
+    Run -> __forced_gate_0 :: Go;
+}''')
+    root = model.root_state
+    gates = sorted(state.name for state in root.substates.values() if state.is_forced_gate)
+    assert gates == ['__forced_gate_1', '__forced_gate_2']
+    assert not root.substates['__forced_gate_0'].is_forced_gate
+    runtime = SimulationRuntime(model)
+    runtime.cycle()
+    runtime.cycle(['Root.Run.Go', 'Root.Run.A.A1.Done'])
+    assert str(runtime.configuration) == 'Root.Idle'
 
 
 COMPOSITE_OVER_OWNER = '''state Root {
@@ -467,10 +633,6 @@ def test_a_faulty_declaration_is_reported_once_however_far_it_is_carried(declara
     assert [item.code for item in diagnostics] == [code]
     # The message quotes the declaration as written, not a carried copy of it.
     assert '! Run -> Idle' in diagnostics[0].message
-
-
-def _region_cases():
-    return [case for case in iter_semantic_cases() if 'regions' in case.data['categories']]
 
 
 @pytest.mark.parametrize('case', _region_cases(), ids=lambda case: case.id)

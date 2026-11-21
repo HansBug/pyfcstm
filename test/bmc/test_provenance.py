@@ -1053,10 +1053,12 @@ def test_forced_transition_expansions_share_source_provenance(tmp_path: Path) ->
     source_path.write_text(source, encoding="utf-8")
 
     model = load_state_machine_from_file(source_path)
+    # The machine that runs marks nothing as forced; the expansions are the
+    # transitions that carry the declared event.
     forced = [
         transition
         for transition in model.root_state.transitions
-        if transition.is_forced
+        if transition.event is not None and transition.event.path_name == "Root.Go"
     ]
     registry = SourceDocumentRegistry(
         model._source_documents, display_root=model._source_root
@@ -3337,7 +3339,7 @@ def test_a_forced_expansion_names_the_file_it_was_written_in(tmp_path: Path) -> 
     expanded = [
         transition
         for transition in worker.transitions
-        if getattr(transition, "is_forced", False)
+        if transition.event is not None and transition.event.path_name.endswith("Panic")
     ]
 
     assert expanded, "the forced declaration should reach the imported state"
@@ -3403,7 +3405,7 @@ def test_an_expansion_names_its_declaration_across_two_import_levels(
         expansions = [
             transition
             for transition in host.transitions
-            if getattr(transition, "is_forced", False)
+            if transition.event is not None
         ]
         assert expansions, "the declaration should reach %s" % label
         for transition in expansions:
@@ -3470,10 +3472,13 @@ def test_an_expansion_outranks_the_clone_its_host_state_holds(
     mid = machine.root_state.substates["Mid"]
 
     for label, host in (("Mid", mid), ("Mid.Deep", mid.substates["Deep"])):
+        # The module's own ``D1 -> D2 :: Ev;`` carries the event too; the
+        # expansions are the transitions written in the root file.
         expansions = [
             transition
             for transition in host.transitions
-            if getattr(transition, "is_forced", False)
+            if transition.event is not None
+            and getattr(transition, "_source_path", None) == str(main.resolve())
         ]
         assert expansions, "the declaration should reach %s" % label
         for transition in expansions:

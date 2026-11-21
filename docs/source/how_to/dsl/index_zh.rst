@@ -537,7 +537,7 @@ JSON 中重点看：
    .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
       :language: text
 
-   深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。
+   深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。\ ``__forced_0``\ 是执行 ``!Program`` 这条强制转换用的隐藏变量，状态机停驻时它总是 0。
 4. **检查模型。**\ 检查按作者书写的模型进行判断，因此历史本身不会产生额外的诊断：
 
    .. code-block:: bash

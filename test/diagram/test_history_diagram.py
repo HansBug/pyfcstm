@@ -57,3 +57,29 @@ def test_a_model_with_history_and_a_forced_declaration_shows_both_as_written():
     forced = [item for item in data['rootState']['transitions'] if item['forced']]
     assert [item['label'] for item in forced] == ['Work -> Paused Pause']
     assert any(label.startswith('Paused -> Work.[H]') for _, label in _labels(data['rootState']))
+
+
+def test_a_model_with_history_and_no_forced_declaration_is_drawn_as_written():
+    model = load_state_machine_from_text('''state Root {
+    event Pause;
+    event Resume;
+    event Next;
+    [*] -> Work;
+    state Work {
+        [*] -> A;
+        [H] -> A;
+        state A;
+        state B;
+        A -> B :: Next;
+    }
+    state Paused;
+    Work -> Paused :: Pause;
+    Paused -> Work.[H] :: Resume;
+}''')
+    assert not model.forced_transitions
+    drawing = model.to_plantuml('full')
+    assert '__hist' not in drawing
+    assert '[H] --> root__work__a' in drawing and 'root__work[H]' in drawing
+    data = model.diagram().to_dict()
+    assert '__hist' not in json.dumps(data) and data['variables'] == []
+    assert any(label.startswith('Paused -> Work.[H]') for _, label in _labels(data['rootState']))

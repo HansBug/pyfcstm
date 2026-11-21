@@ -4826,7 +4826,6 @@ def inspect_model(
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             has_regions=bool(regions),
-            has_active_queries=bool(machine.active_queries),
         )
         verify_results = _run_verify_inspect_algorithms(
             machine,

@@ -217,7 +217,7 @@ Inspect 报告参考
 
 可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
 
-带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``；对只使用 ``active()`` 查询的模型，这些算法的 ``reason_code`` 为 ``active_query_unsupported``。求解器局部算法会在区域内运行；含 ``active()`` 查询的守卫报告为 ``undecidable_skip`` 而不做判断，区域内状态的生命周期检查也因同样的原因被跳过。
+带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``。求解器局部算法会在区域内运行；含 ``active()`` 查询的守卫报告为 ``undecidable_skip`` 而不做判断，区域内状态的生命周期检查也因同样的原因被跳过。
 
 验证执行元数据
 ----------------------------------------

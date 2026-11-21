@@ -691,7 +691,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         for mode in _SUPPORTED_POLICY_MODES
     }
     assert mode_counts == {
-        "hard_pass": 218,
+        "hard_pass": 220,
         "partial": 0,
         "runtime_error": 19,
         "expected_unsupported": 10,

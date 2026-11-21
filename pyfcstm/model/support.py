@@ -1,12 +1,14 @@
 """
 Explicit boundaries for consumers that still require a single active path.
 
-Region models and ``active()`` queries are understood by the model layer, but
-some consumers (execution, analysis, rendering, export) still assume one
+Region models are understood by the model layer, but some consumers (analysis,
+rendering, export, code generation, bounded model checking) still assume one
 active state at a time. Instead of silently producing a wrong result for such
 a model, those consumers call :func:`require_supported_model` first and fail
 with a structured ``E_UNSUPPORTED_FEATURE`` diagnostic that names the
-operation and the feature.
+operation and the feature. ``active()`` queries are not a boundary: they are
+lowered into ordinary hidden variables, so every consumer takes them like any
+other model.
 
 The module contains:
 
@@ -40,18 +42,15 @@ from ..utils.validate import ModelDiagnostic
 
 def require_supported_model(model, operation: str) -> None:
     """
-    Reject region and activity models before an unsupported consumer works.
+    Reject region models before an unsupported consumer works.
 
-    Two features are checked: ``active()`` queries anywhere in the model
-    (``feature='active'``) and any region in the subtree (``feature='region'``,
-    one diagnostic per region). Problems are emitted through a strict
+    Every region in the subtree is reported with ``feature='region'``, one
+    diagnostic per region. Problems are emitted through a strict
     :class:`~pyfcstm.diagnostics.sink.DiagnosticSink`, which raises at the
-    first one, so ``error.diagnostics`` holds exactly one entry. Models
-    without either feature pass silently.
-
-    The queries of a model are recorded on every one of its states, so a state
-    subtree taken from a model that uses ``active()`` is rejected as well,
-    while a subtree is only checked for regions it contains itself.
+    first one, so ``error.diagnostics`` holds exactly one entry. Models without
+    regions pass silently. ``active()`` queries never matter here: the model
+    lowers them into ordinary variables, so the operations that call this
+    function work on a model that uses them.
 
     :param model: State machine or state subtree passed to a public consumer.
     :type model: Union[pyfcstm.model.model.StateMachine, pyfcstm.model.model.State]
@@ -62,7 +61,7 @@ def require_supported_model(model, operation: str) -> None:
     :rtype: None
     :raises pyfcstm.utils.validate.ModelValidationError: If the operation cannot
         preserve the model; each diagnostic has code ``E_UNSUPPORTED_FEATURE``
-        and ``refs['feature']`` set to ``'region'`` or ``'active'``.
+        and ``refs['feature']`` set to ``'region'``.
 
     Example::
 
@@ -73,25 +72,10 @@ def require_supported_model(model, operation: str) -> None:
         ... def int x = 0;
         ... state Root { [*] -> I; state I; I -> J : if [active("Root.J")]; state J; }
         ... ''')
-        >>> try:
-        ...     require_supported_model(queried, 'demo export')
-        ... except ModelValidationError as error:
-        ...     print([(item.message, item.refs['feature']) for item in error.diagnostics])
-        [('demo export does not support active queries yet.', 'active')]
-        >>> try:
-        ...     require_supported_model(queried.root_state.substates['J'], 'demo export')
-        ... except ModelValidationError as error:
-        ...     print(len(error.diagnostics))
-        1
+        >>> require_supported_model(queried, 'demo export') is None
+        True
     """
     root = getattr(model, 'root_state', model)
-    if getattr(root, '_active_queries', ()):
-        DiagnosticSink().emit(ModelDiagnostic(
-            code='E_UNSUPPORTED_FEATURE', severity='error',
-            message='%s does not support active queries yet.' % operation,
-            span=root._span,
-            refs={'feature': 'active', 'source_path': getattr(root, '_source_path', None)},
-        ))
     for namespace in walk_namespaces(root):
         if isinstance(namespace, Region):
             DiagnosticSink().emit(ModelDiagnostic(

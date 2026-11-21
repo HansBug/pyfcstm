@@ -881,10 +881,10 @@ def test_inspect_with_verify_accepts_models_that_only_use_active_queries():
                          'max_call_count_scaling': 'quadratic_in_states'}):
         report = inspect_text(source, enable_verify=True, **options)
         by_name = {item.algorithm_name: item for item in report.verification.algorithms}
-        assert by_name['topological_reachable_set'].result_kind == 'not_run'
-        assert by_name['topological_reachable_set'].reason_code == 'active_query_unsupported'
+        assert by_name['topological_reachable_set'].result_kind != 'not_run'
+        assert by_name['topological_reachable_set'].reason_code is None
         validate_against_shipped_schema(report)
-    assert report.verification.algorithms[0].reason_code == 'active_query_unsupported'
+    assert report.verification.algorithms[0].reason_code is None
     result = run_cli_text_verify(source)
     assert result.exitcode == 0, result.stderr
 

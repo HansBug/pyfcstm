@@ -262,7 +262,7 @@ With ``--enable-verify`` the single-active-path topology algorithms
 ``strongly_connected_components``, ``topological_finite``,
 ``topological_inevitable_terminator`` and
 ``event_emission_to_consumer_reachable``) are reported as ``not_run`` with the
-``reason_code`` ``requires_single_active_path`` for a model with regions, and with ``active_query_unsupported`` for a model that uses ``active()`` queries. The
+``reason_code`` ``requires_single_active_path`` for a model with regions. The
 solver-local algorithms run inside regions; a guard that contains an
 ``active()`` query is reported as ``undecidable_skip`` instead of being
 judged, and the lifecycle check of a state inside a region is skipped for the

@@ -382,7 +382,6 @@ def project_inspect_eligibility(
     max_call_count_scaling: CallCountScaling = "linear_in_transitions",
     registry: Optional[Mapping[str, VerifyAlgorithmMeta]] = None,
     has_regions: bool = False,
-    has_active_queries: bool = False,
 ) -> Tuple[InspectEligibility, ...]:
     """Project inspect eligibility for every algorithm in registry order.
 
@@ -402,11 +401,6 @@ def project_inspect_eligibility(
         leaf path and cannot judge a model whose regions run side by side, so
         they are excluded with the reason ``requires_single_active_path``.
     :type has_regions: bool, optional
-    :param has_active_queries: Whether the inspected model uses ``active()``
-        queries, defaults to ``False``. The structural topology algorithms do
-        not model state activity, so they are excluded with the reason
-        ``active_query_unsupported``.
-    :type has_active_queries: bool, optional
     :return: Complete policy projection in registry order.
     :rtype: Tuple[InspectEligibility, ...]
 
@@ -441,8 +435,6 @@ def project_inspect_eligibility(
             ) or (
                 "requires_single_active_path"
                 if has_regions and meta.complexity_tier == "structural"
-                else "active_query_unsupported"
-                if has_active_queries and meta.complexity_tier == "structural"
                 else None
             ),
         )
@@ -925,7 +917,6 @@ def run_inspect_algorithms(
     _validate_max_call_count_scaling(max_call_count_scaling)
 
     has_regions = machine.has_regions
-    has_active_queries = bool(machine.active_queries)
 
     if registry is None:
         from .registry import REGISTRY
@@ -938,7 +929,6 @@ def run_inspect_algorithms(
         max_call_count_scaling=max_call_count_scaling,
         registry=registry,
         has_regions=has_regions,
-        has_active_queries=has_active_queries,
     ):
         if not item.eligible:
             continue

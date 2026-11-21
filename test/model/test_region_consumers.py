@@ -12,9 +12,8 @@ SOURCE = 'state Root { region Worker { state Idle; [*] -> Idle; } }'
 
 
 @pytest.mark.parametrize('single_file', [False, True])
-@pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
-def test_renderer_refusal_preserves_existing_output(tmp_path, single_file, source):
-    model = load_state_machine_from_text(source)
+def test_renderer_refusal_preserves_existing_output(tmp_path, single_file):
+    model = load_state_machine_from_text(SOURCE)
     templates = tmp_path / 'templates'
     templates.mkdir()
     (templates / 'config.yaml').write_text('{}', encoding='utf-8')

@@ -637,8 +637,8 @@ def test_brief_stack_refuses_models_with_regions_and_points_to_configuration():
 
 
 @pytest.mark.unittest
-def test_active_query_without_regions_runs_from_a_cold_start_only():
-    """A model that only uses active() simulates, but hot start stays refused."""
+def test_active_query_without_regions_runs_from_a_cold_start_and_a_hot_start():
+    """A model that only uses active() simulates, and hot start treats its flag like any variable."""
     source = """
     def int seen = 0;
     state Root {
@@ -651,12 +651,18 @@ def test_active_query_without_regions_runs_from_a_cold_start_only():
     runtime.cycle()
     runtime.cycle()
     assert runtime.vars["seen"] == 2
-    with pytest.raises(ModelValidationError, match="does not support active queries"):
-        SimulationRuntime(
+    # The flag is an ordinary variable: it comes with the checkpoint, and
+    # whatever is given is what the machine runs on.
+    for flag, expected in ((1, 1), (0, 0)):
+        hot = SimulationRuntime(
             model,
             initial_state="Root.A",
-            initial_vars={"seen": 0, "__active_Root_A": 1},
+            initial_vars={"seen": 0, "__active_Root_A": flag},
         )
+        hot.cycle()
+        assert hot.vars["seen"] == expected
+    with pytest.raises(ValueError, match="must provide all variables"):
+        SimulationRuntime(model, initial_state="Root.A", initial_vars={"seen": 0})
 
 
 @pytest.mark.unittest

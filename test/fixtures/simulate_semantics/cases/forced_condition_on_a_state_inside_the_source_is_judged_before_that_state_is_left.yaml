@@ -1,0 +1,39 @@
+title: A forced condition that asks whether a state inside the source is active is judged before that state is left
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The condition is judged once, at a2, and the composite is taken away. Asked again after a2 had been left it would never hold, and the machine would stay in a2 for good.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.P.a2
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 3
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 4

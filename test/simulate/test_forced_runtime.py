@@ -1,8 +1,7 @@
 """Forced transitions of models without regions, through the public simulator.
 
 The scenarios that the generated runtimes run as well live in the shared
-fixture corpus (``forced_*``). What is here either asks ``active()``, which the
-generated runtimes and BMC do not take yet, or observes something the shared
+fixture corpus (``forced_*``). What is here observes something the shared
 corpus does not carry: event accounting and what a handler sees.
 """
 
@@ -12,56 +11,6 @@ from pyfcstm.model import load_state_machine_from_text
 from pyfcstm.simulate import SimulationRuntime
 
 pytestmark = pytest.mark.unittest
-
-
-def _run(source, inputs):
-    """Return ``(leaf name, n)`` after each cycle of ``source`` fed with input ``u``."""
-    runtime = SimulationRuntime(load_state_machine_from_text(source), input_source={'u': 0})
-    seen = []
-    for value in inputs:
-        result = runtime.cycle(inputs={'u': value})
-        assert result.delta is False
-        seen.append((runtime.current_state.path[-1], runtime.vars['n']))
-    return seen
-
-
-def test_a_condition_on_a_state_inside_the_source_is_judged_before_that_state_is_left():
-    # The guard asks whether a2 is active. It is judged once, at a2, and the
-    # composite is taken away; asked again after a2 had been left it would
-    # never hold, and the machine would stay in a2 for good.
-    assert _run('''input int u;
-def int n = 0;
-state Root {
-    [*] -> P;
-    state P {
-        [*] -> a1;
-        state a1 { during { n = n + 1; } }
-        state a2 { during { n = n + 1; } }
-        a1 -> a2 : if [u == 1];
-    }
-    state Q { during { n = n + 1; } }
-    !P -> Q : if [active("Root.P.a2")];
-}''', [0, 1, 1, 1]) == [('a1', 1), ('a2', 2), ('Q', 3), ('Q', 4)]
-
-
-def test_a_condition_on_a_state_two_levels_inside_the_source_is_carried_up_unchanged():
-    # Leaving c2 goes through C and then P; neither level asks again.
-    assert _run('''input int u;
-def int n = 0;
-state Root {
-    [*] -> P;
-    state P {
-        [*] -> C;
-        state C {
-            [*] -> c1;
-            state c1 { during { n = n + 1; } }
-            state c2 { during { n = n + 1; } }
-            c1 -> c2 : if [u == 1];
-        }
-    }
-    state Q { during { n = n + 1; } }
-    !P -> Q : if [active("Root.P.C.c2")];
-}''', [0, 1, 1, 1]) == [('c1', 1), ('c2', 2), ('Q', 3), ('Q', 4)]
 
 
 def test_an_event_of_a_forced_transition_that_takes_nothing_is_not_used():

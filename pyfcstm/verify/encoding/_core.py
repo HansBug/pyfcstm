@@ -354,11 +354,7 @@ def _transition_index(transition: Transition) -> Optional[int]:
     index_map = _TRANSITION_INDEX_SCOPE.get()
     if index_map is None:
         # Direct public algorithm calls have no enclosing inspect run. Build a
-        # fresh map so mutations to the model that is analysed are reflected.
-        # The map belongs to the machine the transition sits in. An algorithm
-        # that takes a whole machine hands on transitions of the plain forced
-        # expansion; a caller that hands on a transition of a loaded model
-        # has it counted in the machine that runs.
+        # fresh map so mutations to the public model are always reflected.
         index_map = _transition_index_map(owner)
     return index_map.get(id(transition))
 

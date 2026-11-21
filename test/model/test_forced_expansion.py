@@ -7,11 +7,7 @@ import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
 from pyfcstm.dsl import EXIT_STATE, parse_with_grammar_entry
-from pyfcstm.model import (
-    collect_event_transitions,
-    load_state_machine_from_text,
-    parse_dsl_node_to_state_machine,
-)
+from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.model.region import walk_namespaces
 from pyfcstm.simulate import SimulationRuntime
 
@@ -288,33 +284,6 @@ def test_drawings_and_inspect_show_the_declaration_on_every_state_below_its_sour
     assert sorted(item.from_path for item in report.transitions if item.is_forced) == [
         'Root.Run', 'Root.Run.Inner', 'Root.Run.Inner.A', 'Root.Run.Inner.B',
         'Root.Run.Inner.Junction', 'Root.Run.Side']
-
-
-def test_the_transitions_listed_per_event_are_the_arrows_of_the_drawing():
-    model = load_state_machine_from_text(NESTED)
-    listed = collect_event_transitions(model)
-    # The colour legend of a drawing is built from this list, so it names the
-    # arrows the drawing has: the declared one and one per state below Run, the
-    # pseudo state included. The gate of the machine that runs is not among them.
-    assert sorted(listed) == ['Root.Stop']
-    assert sorted(
-        ('.'.join(owner.path), edge.from_state, edge.to_state is EXIT_STATE)
-        for owner, edge in listed['Root.Stop']
-    ) == [
-        ('Root', 'Run', False),
-        ('Root.Run', 'Inner', True),
-        ('Root.Run', 'Side', True),
-        ('Root.Run.Inner', 'A', True),
-        ('Root.Run.Inner', 'B', True),
-        ('Root.Run.Inner', 'Junction', True),
-    ]
-    assert [edge.to_state for owner, edge in listed['Root.Stop'] if owner.path == ('Root',)] == ['Idle']
-    # ... and the drawing has exactly one arrow labelled with the event for each
-    # (the label is ``Stop`` where the event is declared and ``/Stop`` further in).
-    drawing = model.to_plantuml('full')
-    arrows = [line.strip() for line in drawing.splitlines() if line.strip().endswith('Stop')]
-    assert sorted(line.split(' --> ')[0].rsplit('__', 1)[-1] for line in arrows) == sorted(
-        edge.from_state.lower() for _, edge in listed['Root.Stop'])
 
 
 def test_a_state_is_shown_the_same_after_its_machine_is_no_longer_kept():

@@ -139,12 +139,6 @@ def collect_const_fold_warnings(
     (a region itself has no ``during`` actions). An ``active("...")`` query is
     never a constant.
 
-    A forced declaration is judged in its plain expansion (see
-    :mod:`pyfcstm.model.forced`): one transition on every state it applies to,
-    with the guard as written, and positions that count those transitions.
-    The hidden variable, relays and gate states that carry the declaration out
-    in the machine that runs are not looked at.
-
     Diagnostics are returned in model traversal order; within one state the
     guard warnings come before the ``during`` warnings.
 
@@ -191,7 +185,6 @@ def collect_const_fold_warnings(
         return []
     from ...model.region import walk_namespaces
 
-    machine = machine._with_plain_forced()
     diagnostics: List[ModelDiagnostic] = []
     defined_vars = set(machine.defines)
     transition_indexes = _transition_indexes(machine)

@@ -483,7 +483,6 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
         >>> graph.edges["Root.Idle"]
         ('⊥_root',)
     """
-    machine = machine._with_plain_forced()
     return _macro_graph(machine, _history_projection(machine))
 
 
@@ -684,7 +683,6 @@ def topological_reachable_set(machine: StateMachine) -> Dict[str, Tuple[str, ...
         >>> topological_reachable_set(machine)["Root.A"]
         ('Root.B',)
     """
-    machine = machine._with_plain_forced()
     history = _history_projection(machine)
     graph = _macro_graph(machine, history)
     result: Dict[str, Tuple[str, ...]] = {}
@@ -733,7 +731,6 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
     root_path = _state_path(machine.root_state)
     # History routes lead to every leaf a restore could re-enter, but a restore
     # only re-enters leaves already reached; only the defaults add reachability.
-    machine = machine._with_plain_forced()
     history = _history_projection(machine)
     graph = _macro_graph(machine, history)
     reachable = _closure_from(
@@ -1008,7 +1005,6 @@ def topological_finite(machine: StateMachine) -> FinitenessReport:
         >>> report.counterexamples
         (('deadlock', 'Root.B'),)
     """
-    machine = machine._with_plain_forced()
     history = _history_projection(machine)
     graph = _macro_graph(machine, history)
     reachable = _root_reachable_leaf_paths(machine, graph, history)
@@ -1066,7 +1062,6 @@ def topological_inevitable_terminator(machine: StateMachine) -> InevitabilityRep
         >>> report.counterexample_path
         ('Root.A',)
     """
-    machine = machine._with_plain_forced()
     history = _history_projection(machine)
     graph = _macro_graph(machine, history)
     reachable = _root_reachable_leaf_paths(machine, graph, history)
@@ -1343,7 +1338,6 @@ def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ..
         >>> event_emission_to_consumer_reachable(machine)
         ('Root.Panic',)
     """
-    machine = machine._with_plain_forced()
     history = _history_projection(machine)
     graph = _macro_graph(machine, history)
     unreachable_events = []

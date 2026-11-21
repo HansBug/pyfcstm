@@ -127,8 +127,11 @@ def test_build_leaf_level_macro_graph_uses_forced_expansion_and_parent_bubble():
 
     graph = topology.build_leaf_level_macro_graph(machine)
 
-    assert graph.edges["Root.A.A1"] == ("Root.Error",)
-    assert graph.edges["Root.A.A2"] == ("Root.Error",)
+    # The graph is that of the machine that runs: the forced declaration is
+    # carried out through a generated gate state, which is a node like any other.
+    assert graph.edges["Root.A.A1"] == ("Root.Error", "Root.__forced_gate_0")
+    assert graph.edges["Root.A.A2"] == ("Root.Error", "Root.__forced_gate_0")
+    assert graph.edges["Root.__forced_gate_0"] == ("Root.Error",)
 
 
 def test_topological_finite_accepts_a_reachable_cycle_that_can_leave():
@@ -166,47 +169,39 @@ state Root {
 """
 
 
+def _result_of(topology, analysis, machine):
+    result = getattr(topology, analysis)(machine)
+    if analysis == "build_leaf_level_macro_graph":
+        return dict(result.edges)
+    if analysis == "topological_finite":
+        return (result.finite, result.counterexamples)
+    if analysis == "topological_inevitable_terminator":
+        return (result.inevitable, result.counterexample_path)
+    return result
+
+
 @pytest.mark.parametrize(
-    "analysis,expected",
+    "analysis",
     [
-        (
-            "topological_reachable_set",
-            {
-                "Root": ("Root.A.J", "Root.T"),
-                "Root.A": ("Root.A.J", "Root.T"),
-                "Root.A.J": ("Root.T",),
-                "Root.T": (),
-                "Root.Lost": (),
-            },
-        ),
-        ("unreachable_states", ("Root.Lost",)),
-        ("topological_finite", (True, ())),
-        ("topological_inevitable_terminator", (True, None)),
-        ("event_emission_to_consumer_reachable", ()),
+        "build_leaf_level_macro_graph",
+        "topological_reachable_set",
+        "unreachable_states",
+        "strongly_connected_components",
+        "topological_finite",
+        "topological_inevitable_terminator",
+        "event_emission_to_consumer_reachable",
     ],
 )
-def test_every_analysis_judges_a_forced_declaration_on_every_state_below_its_source(
-    analysis, expected
-):
-    """The analyses read a forced declaration the way a drawing shows it.
-
-    The machine that runs carries the declaration out with a hidden variable
-    and a generated pseudo state, and leaves the pseudo state ``J`` without a
-    transition. The analyses keep judging one transition on every state below
-    the source, ``J`` included, so ``T`` counts as reachable through ``J`` and
-    nothing generated shows up in a result.
-    """
+def test_every_analysis_gives_a_forced_declaration_the_result_of_its_expansion(analysis):
+    """A forced declaration is syntactic sugar: its expansion, loaded as a plain
+    model, gets exactly the same answer from every analysis."""
     topology = _import_topology()
     machine = _parse(FORCED_THROUGH_A_PSEUDO_STATE)
     assert machine.forced_variables == ("__forced_0",)
+    expansion = _parse(str(machine.to_ast_node()))
+    assert expansion.forced_variables == ()
 
-    result = getattr(topology, analysis)(machine)
-
-    if analysis == "topological_finite":
-        result = (result.finite, result.counterexamples)
-    elif analysis == "topological_inevitable_terminator":
-        result = (result.inevitable, result.counterexample_path)
-    assert result == expected
+    assert _result_of(topology, analysis, machine) == _result_of(topology, analysis, expansion)
 
 
 def test_topological_reachable_set_handles_nested_hierarchy_and_bubble():

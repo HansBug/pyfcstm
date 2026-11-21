@@ -118,9 +118,7 @@ def collect_numeric_warnings(
     Collect C/C++ deployment-profile numeric warnings for a model.
 
     Expressions in states **and regions** are examined: guards, effects,
-    lifecycle actions and region aspects alike. The guard of a forced
-    declaration is examined once for every state the declaration applies to,
-    as in its plain expansion (see :mod:`pyfcstm.model.forced`).
+    lifecycle actions and region aspects alike.
 
     :param machine: State-machine model to inspect. ``None`` is accepted so
         callers can mirror other analyzer entry points during defensive
@@ -144,7 +142,6 @@ def collect_numeric_warnings(
     """
     if machine is None:
         return []
-    machine = machine._with_plain_forced()
     var_types = {name: var_define.type for name, var_define in machine.defines.items()}
     diagnostics: List[ModelDiagnostic] = []
     for context in _iter_expression_contexts(machine):

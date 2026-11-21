@@ -7,8 +7,6 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
 from pyfcstm.verify import (
-    CALL_COUNT_SCALING_ORDER,
-    COMPLEXITY_TIER_ORDER,
     AlgorithmResult,
     composite_init_guards_incomplete,
     dead_guard,
@@ -17,7 +15,6 @@ from pyfcstm.verify import (
     enter_postcondition_implies_during_precondition,
     forced_guard_unsat_under_init,
     guard_tautology,
-    run_inspect_algorithms,
     transition_shadowed_by_predecessor,
 )
 from pyfcstm.verify.encoding import _core as encoding_core
@@ -5111,8 +5108,9 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result == AlgorithmResult(kind="sat")
 
 
-class TestMachineLevelAlgorithmsOnForcedDeclarations:
-    """What the algorithms that take a whole machine report for a forced model."""
+class TestForcedDeclarationsGiveTheResultOfTheirExpansion:
+    """A forced declaration is syntactic sugar: the model loaded from its
+    expansion is analysed exactly like the model that declares it."""
 
     SOURCE = """
     def int x = 0;
@@ -5134,154 +5132,40 @@ class TestMachineLevelAlgorithmsOnForcedDeclarations:
     }
     """
 
-    def test_shadowing_is_judged_on_the_declaration_as_written(self):
-        machine = parse_machine(self.SOURCE)
-        assert machine.forced_variables == ("__forced_0",)
+    @staticmethod
+    def _verdict_of(result):
+        # What is compared is the answer: the kind, the reason and every
+        # finding with the transitions it names. A witness is whatever the
+        # solver picked, and ``is_forced`` only says which declaration a
+        # transition was generated from, as ``combo_origin_refs`` does for a
+        # combo trigger; neither is part of the answer.
+        ignored = {"witness", "is_forced", "forced_origin"}
 
-        result = transition_shadowed_by_predecessor(machine, variables(machine))
+        def strip(value):
+            if isinstance(value, dict):
+                return {k: strip(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, (list, tuple)):
+                return [strip(v) for v in value]
+            return value
 
-        assert result.kind == "unsat"
-        # The transitions an author wrote are named, with the positions they
-        # have among all transitions of the plain expansion, counted from the
-        # root; nothing generated to carry the forced declaration out shows up.
-        assert "__forced" not in repr(result.diagnostics)
-        shadowed = [
-            (
-                item["data"]["transition"]["to_state"],
-                item["data"]["transition"]["event"],
-                item["data"]["transition"]["guard"],
-                item["data"]["transition"]["transition_index"],
-                [
-                    (by["to_state"], by["event"], by["is_forced"], by["transition_index"])
-                    for by in item["data"]["shadowed_by"]
-                ],
-            )
-            for item in result.diagnostics
-        ]
-        assert shadowed == [
-            ("R", "Root.Stop", None, 2, [("Q", "Root.Stop", True, 0)]),
-            (
-                "Q",
-                None,
-                "x > 2",
-                4,
-                [
-                    ("Q", "Root.Stop", True, 0),
-                    ("R", "Root.Stop", False, 2),
-                    ("R", None, False, 3),
-                ],
-            ),
-        ]
-
-    def test_initial_guard_coverage_counts_positions_in_the_declaration_as_written(
-        self,
-    ):
-        machine = parse_machine(self.SOURCE)
-
-        result = composite_init_guards_incomplete(machine, variables(machine))
-
-        # Forced lowering adds no initial transition and changes none, so the
-        # one guarded initial of P is all there is to judge. Its position
-        # counts the transitions of the plain expansion; the relay and the
-        # gates of the machine that runs would move it to 10.
-        assert result.kind == "sat"
-        assert "__forced" not in repr(result.diagnostics)
-        assert [
-            (
-                item["data"]["state"],
-                [
-                    (initial["to_state"], initial["guard"], initial["transition_index"])
-                    for initial in item["data"]["init_transitions"]
-                ],
-            )
-            for item in result.diagnostics
-        ] == [("Root.P", [("a1", "x >= 0", 7)])]
+        return result.kind, result.reason, strip(list(result.diagnostics))
 
     @pytest.mark.parametrize(
-        "source",
-        [
-            SOURCE,
-            """
-            def int x = 0;
-            state Root {
-                event Stop;
-                [*] -> First : if [x >= 0];
-                state First {
-                    region A { [*] -> A1 : if [x > 0]; state A1; }
-                    region B { [*] -> B1; state B1; }
-                }
-                state Second;
-                !First -> Second : /Stop;
-                First -> Second : /Stop;
-            }
-            """,
-        ],
-        ids=["composite", "owner_of_regions"],
+        "algorithm",
+        [transition_shadowed_by_predecessor, composite_init_guards_incomplete],
+        ids=["shadowing", "initial_guards"],
     )
-    def test_a_direct_call_and_an_inspect_run_report_the_same(self, source):
-        machine = parse_machine(source)
+    def test_the_whole_machine_algorithms_agree(self, algorithm):
+        machine = parse_machine(self.SOURCE)
         assert machine.forced_variables == ("__forced_0",)
-        through_inspect = {
-            item.algorithm_name: item
-            for item in run_inspect_algorithms(
-                machine,
-                max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
-                max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
-            )
-        }
+        expansion = parse_machine(str(machine.to_ast_node()))
+        assert expansion.forced_variables == ()
 
-        for algorithm in (
-            transition_shadowed_by_predecessor,
-            composite_init_guards_incomplete,
-        ):
-            direct = algorithm(machine, variables(machine))
-            inspected = through_inspect[algorithm.__name__]
-            assert direct.kind == inspected.result_kind
-            # Kind, positions and every transition named are the same. The
-            # witness values in a finding are whatever the solver picked; for
-            # these two models it picks the same in either call.
-            assert list(direct.diagnostics) == list(inspected.diagnostics)
-            assert direct.diagnostics, "the model is built to give both a finding"
+        declared = algorithm(machine, variables(machine))
+        expanded = algorithm(expansion, variables(expansion))
 
-    def test_a_direct_call_and_an_inspect_run_skip_for_the_same_reason(self):
-        machine = parse_machine(
-            """
-            def int x = 0;
-            state Root {
-                event Stop;
-                [*] -> P;
-                state P {
-                    [*] -> a1 : if [sin(x) > 0];
-                    state a1 { during { x = x + 1; } }
-                }
-                state Q;
-                state R;
-                !P -> Q : /Stop;
-                P -> R : if [sin(x) > 0];
-                P -> Q : if [x > 2];
-            }
-            """
-        )
-        assert machine.forced_variables == ("__forced_0",)
-        through_inspect = {
-            item.algorithm_name: item
-            for item in run_inspect_algorithms(
-                machine,
-                max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
-                max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
-            )
-        }
-
-        for algorithm in (
-            transition_shadowed_by_predecessor,
-            composite_init_guards_incomplete,
-        ):
-            direct = algorithm(machine, variables(machine))
-            inspected = through_inspect[algorithm.__name__]
-            # A guard the solver cannot express stops both the same way.
-            assert direct.kind == inspected.result_kind == "undecidable_skip"
-            assert direct.reason == inspected.reason
-            assert "sin" in direct.reason
+        assert declared.kind != "undecidable_skip"
+        assert self._verdict_of(declared) == self._verdict_of(expanded)
 
 
 class TestCompositeInitGuardsIncomplete:

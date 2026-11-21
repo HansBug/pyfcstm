@@ -60,14 +60,7 @@ def transition_shadowed_by_predecessor(
     initial-transition domains, translating each event/guard trigger into a
     predicate and asking whether a later trigger can ever be enabled after all
     prior triggers are disabled. The transitions of a ``region`` form their own
-    ordered domains, so shadowing inside regions is found too. A forced
-    declaration is judged in its plain expansion, one transition on every
-    state it applies to (see :mod:`pyfcstm.model.forced`), so a result names
-    the transitions an author wrote and nothing generated to carry them out;
-    the transition positions in a result count in that expansion. Where a
-    forced declaration is carried out by a hidden variable, the expansion is
-    built from the model as it was loaded, so a later edit of the model object
-    does not reach it.
+    ordered domains, so shadowing inside regions is found too.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
@@ -149,9 +142,6 @@ def transition_shadowed_by_predecessor(
         >>> transition_shadowed_by_predecessor(machine, variables(machine)).kind
         'sat'
     """
-    # Like every other analysis, judge a forced declaration in its plain
-    # expansion and not in the hidden variable and relays that carry it out.
-    machine = machine._with_plain_forced()
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_type_constraints,
@@ -373,11 +363,7 @@ def composite_init_guards_incomplete(
     variable and event input assignment that disables all initial-transition
     triggers. A ``region`` is checked like a composite state: each region has
     its own initial transitions, while a state that owns regions has none of its
-    own and is skipped. Like :func:`transition_shadowed_by_predecessor`, the
-    algorithm reads a model with forced declarations in their plain expansion
-    (see :mod:`pyfcstm.model.forced`): forced lowering leaves initial
-    transitions alone, but the transitions it generates would shift the
-    positions a result reports.
+    own and is skipped.
 
     For a composite state with initial transitions ``i_1, ..., i_n``, let
     ``H_k(V, E)`` be the trigger predicate for initial transition ``i_k``.
@@ -447,9 +433,6 @@ def composite_init_guards_incomplete(
         >>> composite_init_guards_incomplete(machine, variables(machine)).kind
         'unsat'
     """
-    # Positions in the result count in the plain expansion of forced
-    # declarations, as they do for every other analysis.
-    machine = machine._with_plain_forced()
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_init_constraints_or_result,

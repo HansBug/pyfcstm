@@ -820,13 +820,6 @@ class Transition(AstExportable):
     :param forced_origin: Original forced transition text, set where
         ``is_forced`` is set.
     :type forced_origin: Optional[str]
-    :param exit_group_levels: ``0`` for an ordinary transition. A positive
-        value marks the transition that forced expansion places on a state
-        resting inside a region: instead of leaving the single source state it
-        takes the whole group of the owner that many owners outward away (see
-        :mod:`pyfcstm.model.forced`), and the owner then continues through its
-        own outgoing transitions.
-    :type exit_group_levels: int
     :param combo_origin_refs: References from this generated transition back
         to original combo trigger terms.
     :type combo_origin_refs: Tuple[ComboOriginRef, ...]
@@ -879,7 +872,6 @@ class Transition(AstExportable):
     event_scope: Optional[str] = field(default=None, compare=False)
     is_forced: bool = field(default=False, compare=False)
     forced_origin: Optional[str] = field(default=None, compare=False)
-    exit_group_levels: int = field(default=0, compare=False)
     combo_origin_refs: Tuple[ComboOriginRef, ...] = field(
         default_factory=tuple, compare=False
     )
@@ -2828,9 +2820,6 @@ class State(AstExportable, PlantUMLExportable):
                 event Halt;
             }
         """
-        shown = shown_namespace(self, export=True)
-        if shown is not self:
-            return shown.to_ast_node()
         substate_nodes = [
             substate.to_ast_node() for _, substate in self.substates.items()
         ]
@@ -3502,20 +3491,11 @@ class _PlainForcedView:
 
     :param program: Import-assembled program the machine was built from.
     :type program: pyfcstm.dsl.node.StateMachineDSLProgram
-    :param takes_groups: Whether the machine that runs has transitions that
-        take a group of regions away, which the language cannot write.
-    :type takes_groups: bool
-
-    :ivar takes_groups: The value of the parameter of the same name.
-    :vartype takes_groups: bool
     """
 
-    def __init__(
-        self, program: dsl_nodes.StateMachineDSLProgram, takes_groups: bool
-    ) -> None:
+    def __init__(self, program: dsl_nodes.StateMachineDSLProgram) -> None:
         self._program = program
         self._machine: Optional["StateMachine"] = None
-        self.takes_groups = takes_groups
 
     def machine(self) -> "StateMachine":
         """
@@ -3623,10 +3603,6 @@ class StateMachine(AstExportable, PlantUMLExportable):
     _plain_forced_view: Optional[_PlainForcedView] = field(
         default=None, compare=False, repr=False
     )
-    # Whether a forced declaration was expanded into transitions that take a
-    # group of regions away. The language cannot write those, so only such a
-    # machine is exported in its plain expansion instead of as it runs.
-    _forced_takes_groups: bool = field(default=False, compare=False, repr=False)
     # The warnings and infos a strict build emitted while converting the
     # model; a collecting build returns them to its caller instead.
     _build_warnings: Tuple[ModelDiagnostic, ...] = field(
@@ -3893,8 +3869,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
         Return the machine that keeps forced declarations in their plain expansion.
 
         A forced declaration whose source has states or regions inside it is
-        lowered into a hidden variable, relay transitions, gates and, inside
-        regions, exit-group transitions (see :mod:`pyfcstm.model.forced`). That
+        lowered into a hidden variable, relay transitions and gates, and inside
+        regions a follower on every state that can be rested in (see
+        :mod:`pyfcstm.model.forced`). That
         is what runs; a reader of the model expects one transition on every
         state the declaration applies to. Drawings and inspect reports
         therefore use this machine instead: it is built from the same
@@ -3977,12 +3954,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         The export is the machine that runs: what history, activity queries
         and forced declarations were lowered into is written out as the plain
         FCSTM it is, hidden variables and gate states included, so loading the
-        text gives a machine that takes the same cycles. The one exception is
-        a forced declaration that reaches regions. It is lowered into
-        transitions that take a whole group of regions away, which the
-        language cannot write, so a machine that has one is exported with
-        every forced declaration in its plain expansion; that text does not
-        carry the forced behaviour over.
+        text gives a machine that takes the same cycles.
 
         :return: A state machine DSL program AST node
         :rtype: dsl_nodes.StateMachineDSLProgram
@@ -4000,11 +3972,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
             ... }
             ... ''')
             >>> text = str(model.to_ast_node())
-            >>> '__forced' in text, 'Run -> Idle : Stop;' in text
-            (False, True)
+            >>> '__forced_0' in text, 'A1 -> [*]' in text
+            (True, True)
+            >>> again = load_state_machine_from_text(text)
+            >>> list(again.defines) == list(model.defines)
+            True
         """
-        if self._forced_takes_groups:
-            return self._with_plain_forced().to_ast_node()
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
                 def_item.to_ast_node() for _, def_item in self.defines.items()
@@ -4686,9 +4659,7 @@ def parse_dsl_node_to_state_machine(
         # machine and every state and region of it share the holder: whichever
         # of them a caller keeps still shows the declarations as written, and
         # nothing leads from a state back to its machine.
-        machine._plain_forced_view = _PlainForcedView(
-            dnode, machine._forced_takes_groups
-        )
+        machine._plain_forced_view = _PlainForcedView(dnode)
         for namespace in walk_namespaces(machine.root_state):
             namespace._plain_forced_view = machine._plain_forced_view
 
@@ -6665,7 +6636,6 @@ def _build_assembled_state_machine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_expansion.declarations),
-        _forced_takes_groups=forced_expansion.takes_groups_away,
         history_owners=history_owners,
         active_queries=active_queries,
         _forced_flags=forced_flags,

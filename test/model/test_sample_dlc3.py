@@ -134,7 +134,6 @@ class TestModelStateLx:
         assert state_lx.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_lx.transitions[0].exit_group_levels == 0
         assert state_lx.transitions[0].doc is None
         assert state_lx.transitions[0].parent_ref().name == "LX"
         assert state_lx.transitions[0].parent_ref().path == ("LX",)
@@ -148,7 +147,6 @@ class TestModelStateLx:
         )
         assert state_lx.transitions[1].guard is None
         assert state_lx.transitions[1].effects == []
-        assert state_lx.transitions[1].exit_group_levels == 0
         assert state_lx.transitions[1].doc is None
         assert state_lx.transitions[1].parent_ref().name == "LX"
         assert state_lx.transitions[1].parent_ref().path == ("LX",)
@@ -162,7 +160,6 @@ class TestModelStateLx:
         )
         assert state_lx.transitions[2].guard is None
         assert state_lx.transitions[2].effects == []
-        assert state_lx.transitions[2].exit_group_levels == 0
         assert state_lx.transitions[2].doc is None
         assert state_lx.transitions[2].parent_ref().name == "LX"
         assert state_lx.transitions[2].parent_ref().path == ("LX",)
@@ -174,7 +171,6 @@ class TestModelStateLx:
         assert state_lx.transitions[3].event is None
         assert state_lx.transitions[3].guard is None
         assert state_lx.transitions[3].effects == []
-        assert state_lx.transitions[3].exit_group_levels == 0
         assert state_lx.transitions[3].doc is None
         assert state_lx.transitions[3].parent_ref().name == "LX"
         assert state_lx.transitions[3].parent_ref().path == ("LX",)
@@ -186,7 +182,6 @@ class TestModelStateLx:
         assert state_lx.transitions[4].event is None
         assert state_lx.transitions[4].guard is None
         assert state_lx.transitions[4].effects == []
-        assert state_lx.transitions[4].exit_group_levels == 0
         assert state_lx.transitions[4].doc is None
         assert state_lx.transitions[4].parent_ref().name == "LX"
         assert state_lx.transitions[4].parent_ref().path == ("LX",)
@@ -200,7 +195,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_lx.transitions[5].effects == []
-        assert state_lx.transitions[5].exit_group_levels == 0
         assert state_lx.transitions[5].doc is None
         assert state_lx.transitions[5].parent_ref().name == "LX"
         assert state_lx.transitions[5].parent_ref().path == ("LX",)
@@ -297,7 +291,6 @@ class TestModelStateLx:
         assert state_lx.init_transitions[0].event is None
         assert state_lx.init_transitions[0].guard is None
         assert state_lx.init_transitions[0].effects == []
-        assert state_lx.init_transitions[0].exit_group_levels == 0
         assert state_lx.init_transitions[0].doc is None
         assert state_lx.init_transitions[0].parent_ref().name == "LX"
         assert state_lx.init_transitions[0].parent_ref().path == ("LX",)
@@ -334,7 +327,6 @@ class TestModelStateLx:
         assert state_lx.transitions_entering_children[0].event is None
         assert state_lx.transitions_entering_children[0].guard is None
         assert state_lx.transitions_entering_children[0].effects == []
-        assert state_lx.transitions_entering_children[0].exit_group_levels == 0
         assert state_lx.transitions_entering_children[0].doc is None
         assert state_lx.transitions_entering_children[0].parent_ref().name == "LX"
         assert state_lx.transitions_entering_children[0].parent_ref().path == ("LX",)
@@ -350,9 +342,6 @@ class TestModelStateLx:
         assert state_lx.transitions_entering_children_simplified[0].event is None
         assert state_lx.transitions_entering_children_simplified[0].guard is None
         assert state_lx.transitions_entering_children_simplified[0].effects == []
-        assert (
-            state_lx.transitions_entering_children_simplified[0].exit_group_levels == 0
-        )
         assert state_lx.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lx.transitions_entering_children_simplified[0].parent_ref().name
@@ -375,7 +364,6 @@ class TestModelStateLx:
         assert state_lx.transitions_from[0].event is None
         assert state_lx.transitions_from[0].guard is None
         assert state_lx.transitions_from[0].effects == []
-        assert state_lx.transitions_from[0].exit_group_levels == 0
         assert state_lx.transitions_from[0].doc is None
         assert state_lx.transitions_from[0].parent_ref is None
         assert state_lx.transitions_from[0].target_history is None
@@ -387,7 +375,6 @@ class TestModelStateLx:
         assert state_lx.transitions_to[0].event is None
         assert state_lx.transitions_to[0].guard is None
         assert state_lx.transitions_to[0].effects == []
-        assert state_lx.transitions_to[0].exit_group_levels == 0
         assert state_lx.transitions_to[0].doc is None
         assert state_lx.transitions_to[0].parent_ref is None
         assert state_lx.transitions_to[0].target_history is None
@@ -940,7 +927,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_lx_lx2.transitions[0].effects == []
-        assert state_lx_lx2.transitions[0].exit_group_levels == 0
         assert state_lx_lx2.transitions[0].doc is None
         assert state_lx_lx2.transitions[0].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions[0].parent_ref().path == ("LX", "LX2")
@@ -952,7 +938,6 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions[1].event is None
         assert state_lx_lx2.transitions[1].guard is None
         assert state_lx_lx2.transitions[1].effects == []
-        assert state_lx_lx2.transitions[1].exit_group_levels == 0
         assert state_lx_lx2.transitions[1].doc is None
         assert state_lx_lx2.transitions[1].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions[1].parent_ref().path == ("LX", "LX2")
@@ -982,7 +967,6 @@ class TestModelStateLx:
         assert state_lx_lx2.init_transitions[0].event is None
         assert state_lx_lx2.init_transitions[0].guard is None
         assert state_lx_lx2.init_transitions[0].effects == []
-        assert state_lx_lx2.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2.init_transitions[0].doc is None
         assert state_lx_lx2.init_transitions[0].parent_ref().name == "LX2"
         assert state_lx_lx2.init_transitions[0].parent_ref().path == ("LX", "LX2")
@@ -1004,7 +988,6 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_entering_children[0].event is None
         assert state_lx_lx2.transitions_entering_children[0].guard is None
         assert state_lx_lx2.transitions_entering_children[0].effects == []
-        assert state_lx_lx2.transitions_entering_children[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_entering_children[0].doc is None
         assert state_lx_lx2.transitions_entering_children[0].parent_ref().name == "LX2"
         assert state_lx_lx2.transitions_entering_children[0].parent_ref().path == (
@@ -1025,10 +1008,6 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_entering_children_simplified[0].event is None
         assert state_lx_lx2.transitions_entering_children_simplified[0].guard is None
         assert state_lx_lx2.transitions_entering_children_simplified[0].effects == []
-        assert (
-            state_lx_lx2.transitions_entering_children_simplified[0].exit_group_levels
-            == 0
-        )
         assert state_lx_lx2.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lx_lx2.transitions_entering_children_simplified[0].parent_ref().name
@@ -1059,7 +1038,6 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_lx_lx2.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_from[0].doc is None
         assert state_lx_lx2.transitions_from[0].parent_ref().name == "LX"
         assert state_lx_lx2.transitions_from[0].parent_ref().path == ("LX",)
@@ -1073,7 +1051,6 @@ class TestModelStateLx:
         )
         assert state_lx_lx2.transitions_from[1].guard is None
         assert state_lx_lx2.transitions_from[1].effects == []
-        assert state_lx_lx2.transitions_from[1].exit_group_levels == 0
         assert state_lx_lx2.transitions_from[1].doc is None
         assert state_lx_lx2.transitions_from[1].parent_ref().name == "LX"
         assert state_lx_lx2.transitions_from[1].parent_ref().path == ("LX",)
@@ -1086,7 +1063,6 @@ class TestModelStateLx:
         assert state_lx_lx2.transitions_to[0].event is None
         assert state_lx_lx2.transitions_to[0].guard is None
         assert state_lx_lx2.transitions_to[0].effects == []
-        assert state_lx_lx2.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2.transitions_to[0].doc is None
         assert state_lx_lx2.transitions_to[0].parent_ref().name == "LX"
         assert state_lx_lx2.transitions_to[0].parent_ref().path == ("LX",)
@@ -1310,7 +1286,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_lx_lx2_start.transitions[0].effects == []
-        assert state_lx_lx2_start.transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions[0].doc is None
         assert state_lx_lx2_start.transitions[0].parent_ref().name == "start"
         assert state_lx_lx2_start.transitions[0].parent_ref().path == (
@@ -1326,7 +1301,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions[1].event is None
         assert state_lx_lx2_start.transitions[1].guard is None
         assert state_lx_lx2_start.transitions[1].effects == []
-        assert state_lx_lx2_start.transitions[1].exit_group_levels == 0
         assert state_lx_lx2_start.transitions[1].doc is None
         assert state_lx_lx2_start.transitions[1].parent_ref().name == "start"
         assert state_lx_lx2_start.transitions[1].parent_ref().path == (
@@ -1360,7 +1334,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start.init_transitions[0].event is None
         assert state_lx_lx2_start.init_transitions[0].guard is None
         assert state_lx_lx2_start.init_transitions[0].effects == []
-        assert state_lx_lx2_start.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start.init_transitions[0].doc is None
         assert state_lx_lx2_start.init_transitions[0].parent_ref().name == "start"
         assert state_lx_lx2_start.init_transitions[0].parent_ref().path == (
@@ -1388,9 +1361,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_entering_children[0].event is None
         assert state_lx_lx2_start.transitions_entering_children[0].guard is None
         assert state_lx_lx2_start.transitions_entering_children[0].effects == []
-        assert (
-            state_lx_lx2_start.transitions_entering_children[0].exit_group_levels == 0
-        )
         assert state_lx_lx2_start.transitions_entering_children[0].doc is None
         assert (
             state_lx_lx2_start.transitions_entering_children[0].parent_ref().name
@@ -1424,12 +1394,6 @@ class TestModelStateLx:
         )
         assert (
             state_lx_lx2_start.transitions_entering_children_simplified[0].effects == []
-        )
-        assert (
-            state_lx_lx2_start.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
         )
         assert (
             state_lx_lx2_start.transitions_entering_children_simplified[0].doc is None
@@ -1467,7 +1431,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_lx_lx2_start.transitions_from[0].effects == []
-        assert state_lx_lx2_start.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions_from[0].doc is None
         assert state_lx_lx2_start.transitions_from[0].parent_ref().name == "LX2"
         assert state_lx_lx2_start.transitions_from[0].parent_ref().path == ("LX", "LX2")
@@ -1480,7 +1443,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start.transitions_to[0].event is None
         assert state_lx_lx2_start.transitions_to[0].guard is None
         assert state_lx_lx2_start.transitions_to[0].effects == []
-        assert state_lx_lx2_start.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start.transitions_to[0].doc is None
         assert state_lx_lx2_start.transitions_to[0].parent_ref().name == "LX2"
         assert state_lx_lx2_start.transitions_to[0].parent_ref().path == ("LX", "LX2")
@@ -1670,7 +1632,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_lx_lx2_start_lx4.transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions[0].doc is None
         assert state_lx_lx2_start_lx4.transitions[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.transitions[0].parent_ref().path == (
@@ -1687,7 +1648,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions[1].event is None
         assert state_lx_lx2_start_lx4.transitions[1].guard is None
         assert state_lx_lx2_start_lx4.transitions[1].effects == []
-        assert state_lx_lx2_start_lx4.transitions[1].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions[1].doc is None
         assert state_lx_lx2_start_lx4.transitions[1].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.transitions[1].parent_ref().path == (
@@ -1722,7 +1682,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.init_transitions[0].event is None
         assert state_lx_lx2_start_lx4.init_transitions[0].guard is None
         assert state_lx_lx2_start_lx4.init_transitions[0].effects == []
-        assert state_lx_lx2_start_lx4.init_transitions[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.init_transitions[0].doc is None
         assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4.init_transitions[0].parent_ref().path == (
@@ -1752,10 +1711,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].event is None
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].effects == []
-        assert (
-            state_lx_lx2_start_lx4.transitions_entering_children[0].exit_group_levels
-            == 0
-        )
         assert state_lx_lx2_start_lx4.transitions_entering_children[0].doc is None
         assert (
             state_lx_lx2_start_lx4.transitions_entering_children[0].parent_ref().name
@@ -1799,12 +1754,6 @@ class TestModelStateLx:
             == []
         )
         assert (
-            state_lx_lx2_start_lx4.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
-        assert (
             state_lx_lx2_start_lx4.transitions_entering_children_simplified[0].doc
             is None
         )
@@ -1843,7 +1792,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_lx_lx2_start_lx4.transitions_from[0].effects == []
-        assert state_lx_lx2_start_lx4.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions_from[0].doc is None
         assert state_lx_lx2_start_lx4.transitions_from[0].parent_ref().name == "start"
         assert state_lx_lx2_start_lx4.transitions_from[0].parent_ref().path == (
@@ -1860,7 +1808,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4.transitions_to[0].event is None
         assert state_lx_lx2_start_lx4.transitions_to[0].guard is None
         assert state_lx_lx2_start_lx4.transitions_to[0].effects == []
-        assert state_lx_lx2_start_lx4.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4.transitions_to[0].doc is None
         assert state_lx_lx2_start_lx4.transitions_to[0].parent_ref().name == "start"
         assert state_lx_lx2_start_lx4.transitions_to[0].parent_ref().path == (
@@ -2055,7 +2002,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_lx_lx2_start_lx4_lx5.transitions_from[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].doc is None
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4_lx5.transitions_from[0].parent_ref().path == (
@@ -2073,7 +2019,6 @@ class TestModelStateLx:
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].event is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].guard is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].effects == []
-        assert state_lx_lx2_start_lx4_lx5.transitions_to[0].exit_group_levels == 0
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].doc is None
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].parent_ref().name == "LX4"
         assert state_lx_lx2_start_lx4_lx5.transitions_to[0].parent_ref().path == (
@@ -2236,7 +2181,6 @@ class TestModelStateLx:
         )
         assert state_lx_error.transitions_from[0].guard is None
         assert state_lx_error.transitions_from[0].effects == []
-        assert state_lx_error.transitions_from[0].exit_group_levels == 0
         assert state_lx_error.transitions_from[0].doc is None
         assert state_lx_error.transitions_from[0].parent_ref().name == "LX"
         assert state_lx_error.transitions_from[0].parent_ref().path == ("LX",)
@@ -2248,7 +2192,6 @@ class TestModelStateLx:
         assert state_lx_error.transitions_from[1].event is None
         assert state_lx_error.transitions_from[1].guard is None
         assert state_lx_error.transitions_from[1].effects == []
-        assert state_lx_error.transitions_from[1].exit_group_levels == 0
         assert state_lx_error.transitions_from[1].doc is None
         assert state_lx_error.transitions_from[1].parent_ref().name == "LX"
         assert state_lx_error.transitions_from[1].parent_ref().path == ("LX",)
@@ -2265,7 +2208,6 @@ class TestModelStateLx:
         assert state_lx_error.transitions_to[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_lx_error.transitions_to[0].exit_group_levels == 0
         assert state_lx_error.transitions_to[0].doc is None
         assert state_lx_error.transitions_to[0].parent_ref().name == "LX"
         assert state_lx_error.transitions_to[0].parent_ref().path == ("LX",)
@@ -2279,7 +2221,6 @@ class TestModelStateLx:
         )
         assert state_lx_error.transitions_to[1].guard is None
         assert state_lx_error.transitions_to[1].effects == []
-        assert state_lx_error.transitions_to[1].exit_group_levels == 0
         assert state_lx_error.transitions_to[1].doc is None
         assert state_lx_error.transitions_to[1].parent_ref().name == "LX"
         assert state_lx_error.transitions_to[1].parent_ref().path == ("LX",)
@@ -2293,7 +2234,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_lx_error.transitions_to[2].effects == []
-        assert state_lx_error.transitions_to[2].exit_group_levels == 0
         assert state_lx_error.transitions_to[2].doc is None
         assert state_lx_error.transitions_to[2].parent_ref().name == "LX"
         assert state_lx_error.transitions_to[2].parent_ref().path == ("LX",)
@@ -2433,7 +2373,6 @@ class TestModelStateLx:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_lx_forced_gate_0.transitions_from[0].effects == []
-        assert state_lx_forced_gate_0.transitions_from[0].exit_group_levels == 0
         assert state_lx_forced_gate_0.transitions_from[0].doc is None
         assert state_lx_forced_gate_0.transitions_from[0].parent_ref().name == "LX"
         assert state_lx_forced_gate_0.transitions_from[0].parent_ref().path == ("LX",)
@@ -2448,7 +2387,6 @@ class TestModelStateLx:
         )
         assert state_lx_forced_gate_0.transitions_to[0].guard is None
         assert state_lx_forced_gate_0.transitions_to[0].effects == []
-        assert state_lx_forced_gate_0.transitions_to[0].exit_group_levels == 0
         assert state_lx_forced_gate_0.transitions_to[0].doc is None
         assert state_lx_forced_gate_0.transitions_to[0].parent_ref().name == "LX"
         assert state_lx_forced_gate_0.transitions_to[0].parent_ref().path == ("LX",)

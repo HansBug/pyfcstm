@@ -224,7 +224,7 @@ def namespace_actions(namespace):
                    ('on_enters', 'on_durings', 'on_exits', 'on_during_aspects')))
 
 
-def shown_namespace(namespace, export=False):
+def shown_namespace(namespace):
     """
     Return the state or region that is shown in place of ``namespace``.
 
@@ -232,11 +232,8 @@ def shown_namespace(namespace, export=False):
     :mod:`pyfcstm.model.forced`) is drawn through the machine that keeps the
     plain expansion, and so is any state or region of it: the PlantUML text of
     every level comes from the counterpart with the same path in that machine.
-    The DSL export follows the same route only when the lowered machine cannot
-    be written in the language, which is the case when a declaration takes a
-    whole group of regions away
-    (:meth:`pyfcstm.model.model.StateMachine.to_ast_node`); otherwise a state
-    or region exports itself, as the machine does.
+    The DSL export does not use it: a state or region exports itself, as the
+    machine does, and the text it writes loads to the machine that runs.
 
     Every other namespace, and every namespace of the plain machine itself, is
     its own counterpart. So is a gate that forced lowering added
@@ -245,9 +242,6 @@ def shown_namespace(namespace, export=False):
 
     :param namespace: A state or a region of a built machine.
     :type namespace: Union[pyfcstm.model.model.State, Region]
-    :param export: Whether the answer is wanted for the DSL export rather than
-        for a drawing, defaults to ``False``.
-    :type export: bool, optional
     :return: The namespace to show.
     :rtype: Union[pyfcstm.model.model.State, Region]
 
@@ -268,11 +262,11 @@ def shown_namespace(namespace, export=False):
         >>> shown = shown_namespace(root)
         >>> shown is root, shown.path == root.path
         (False, True)
-        >>> '__forced' in str(root.to_ast_node()), 'Run -> Idle : Stop;' in str(root.to_ast_node())
-        (False, True)
+        >>> '__forced' in str(root.to_ast_node())
+        True
     """
     view = getattr(namespace, "_plain_forced_view", None)
-    if view is None or (export and not view.takes_groups):
+    if view is None:
         return namespace
     shown = view.machine().root_state
     for name in namespace.path[1:]:
@@ -1059,9 +1053,6 @@ class Region(AstExportable):
         from .model import State
         from .imports import _mark_generated_combo_pseudo_node
 
-        shown = shown_namespace(self, export=True)
-        if shown is not self:
-            return shown.to_ast_node()
         children = [state.to_ast_node() for state in self.substates.values()]
         node = dsl_nodes.RegionDefinition(
             name=self.name,

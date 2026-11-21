@@ -5,13 +5,16 @@ A forced transition ``!S -> T : /Stop;`` is syntactic sugar: model conversion
 expands it into ordinary transitions, so the simulator, templates and BMC never
 see a forced construct. Taking ``S`` away means leaving the state the machine
 rests in below ``S``, every composite state on the way up and, where ``S``
-contains a state that owns regions, the whole group of every such owner. The
-event and the guard of the declaration are decided **once**, at the place where
-the machine rests, and nothing on the way up asks again. An exit action that
-changes what the guard reads, or a guard that asks whether a state inside ``S``
-is active, therefore cannot turn the transition away half-way, and a forced
-transition that cannot be carried out to the end takes nothing at all. The
-expansion works in two steps.
+contains a state that owns regions, every region of every such owner. The
+event and the guard of the declaration are decided **once**, by the first state
+that sees them, and nothing on the way up asks again: the states that come
+later only look at a hidden variable. An exit action that changes what the
+guard reads, or a guard that asks whether a state inside ``S`` is active,
+therefore cannot turn the transition away half-way. Without regions a forced
+transition that cannot be carried out to the end takes nothing at all. With
+regions the regions that were finished stay finished while the last one waits
+for the target to be enterable, because each region finishes through its own
+ordinary transition. The expansion works in two steps.
 
 Expansion (:class:`ForcedExpansion`, done while forced transitions are
 resolved):
@@ -20,10 +23,9 @@ resolved):
 * Every state below ``S`` that is outside a region gets a ``-> [*]`` transition
   that repeats the declared event and guard.
 * Every state inside a region of an owner below ``S`` that can be rested in
-  gets an *exit-group* transition
-  (:attr:`pyfcstm.model.model.Transition.exit_group_levels`): when it is taken
-  the whole group of the outermost owner below ``S`` leaves, regions in reverse
-  declaration order and deepest state first, and control returns to that owner.
+  gets the same ``-> [*]`` transition, which finishes its region. Once the
+  variable of the second step exists, each such state also gets a follower in
+  front of it that finishes the region when another region has already decided.
 * Pseudo states get none: they are never rested in, so a forced transition is
   not taken while an entry only passes through one.
 
@@ -32,16 +34,23 @@ Lowering (:meth:`ForcedExpansion.lower`): one hidden ``int`` variable
 already decided.
 
 1. The transitions that start the exit from a resting state raise the variable
-   in their effect and keep the declared event and guard.
+   in their effect and keep the declared event and guard. A resting state inside
+   a region also gets a follower in front of its starter, a transition with no
+   event that only waits for the variable: the regions of an owner are advanced
+   one after the other, so the first region that sees the event and the guard
+   raises the variable, and every region after it, in the same cycle or a later
+   one, finishes when it sees the variable raised.
 2. Every composite or owner on the way up gets a relay transition that has no
    event and only waits for the variable.
 3. On the level of the declaration a copy that waits for the variable and
    lowers it goes first; the declared transition stays behind it for the case
    that control comes back to its source without the variable raised.
-4. While the variable is raised, every other outgoing transition of the states
-   on the way gives way, the declared transition included: each of them has to
-   wait until the variable is lowered. A forced transition whose target cannot
-   be entered therefore takes nothing, whatever else leaves the same state.
+4. While the variable is raised, every other outgoing transition of the
+   composites and owners on the way gives way, the declared transition
+   included: each of them has to wait until the variable is lowered. Without
+   regions a forced transition whose target cannot be entered therefore takes
+   nothing, whatever else leaves the same state. A resting state inside a region
+   does not give way: its region goes on working until the group can leave.
 
 A declaration whose sources have nothing inside them needs none of this: its
 declared transitions are all there is, and it gets no variable.
@@ -72,9 +81,8 @@ no hidden variable. Everything that executes the machine or answers a question
 about it, the simulator, the generated runtimes, BMC and the analyses of
 :mod:`pyfcstm.verify`, takes the machine as it runs, so none of them knows that
 a declaration was ever written. The DSL export writes that machine, hidden
-variables and gates included, as it does for a lowered history; only a machine
-with exit-group transitions, the one thing the language cannot write, is
-exported in its plain expansion (see
+variables and gates included, as it does for a lowered history, so the text
+loads to the machine that runs (see
 :meth:`pyfcstm.model.model.StateMachine.to_ast_node`).
 
 The module contains:
@@ -100,11 +108,12 @@ Example::
     ... ''')
     >>> list(model.defines)
     ['__forced_0']
+    >>> from pyfcstm.dsl.node import EXIT_STATE
     >>> run = model.root_state.substates['Run']
-    >>> [(t.from_state, t.to_state, t.exit_group_levels)
+    >>> [(t.from_state, str(t.guard), t.event is not None)
     ...  for region in run.regions.values()
-    ...  for t in region.transitions if t.exit_group_levels]
-    [('A1', EXIT_STATE, 1), ('B1', EXIT_STATE, 1)]
+    ...  for t in region.transitions if t.to_state is EXIT_STATE]
+    [('A1', '__forced_0 == 1', False), ('A1', 'None', True), ('B1', '__forced_0 == 1', False), ('B1', 'None', True)]
     >>> [(t.from_state, t.to_state, t.event is not None, str(t.guard))
     ...  for t in model.root_state.transitions if isinstance(t.from_state, str)]
     [('Run', 'Idle', False, '__forced_0 == 1'), ('Run', '__forced_gate_0', True, 'None'), ('__forced_gate_0', 'Idle', False, '__forced_0 == 0')]
@@ -181,13 +190,14 @@ class _Carried:
     :param forced_id: Number of the declaration, or ``None`` in a build that
         keeps the plain expansion.
     :type forced_id: Optional[int]
-    :param exit_levels: Number of owners crossed since the declaring level.
-    :type exit_levels: int
+    :param inside_region: Whether the declaration crossed into a region of an
+        owner since the declaring level.
+    :type inside_region: bool
     """
 
     node: dsl_nodes.ForceTransitionDefinition
     forced_id: Optional[int]
-    exit_levels: int
+    inside_region: bool
 
 
 @dataclass
@@ -225,8 +235,9 @@ class _Resolved:
     :param forced_id: Number of the declaration, or ``None`` in a build that
         keeps the plain expansion.
     :type forced_id: Optional[int]
-    :param exit_levels: Number of owners crossed since the declaring level.
-    :type exit_levels: int
+    :param inside_region: Whether the declaration crossed into a region of an
+        owner since the declaring level.
+    :type inside_region: bool
     :param local: Whether the declaration is written in this namespace rather
         than carried into it.
     :type local: bool
@@ -245,16 +256,16 @@ class _Resolved:
     doc: Optional[str]
     target_history: Optional[str]
     forced_id: Optional[int]
-    exit_levels: int
+    inside_region: bool
     local: bool
 
-    def carried(self, exit_levels: int) -> _Carried:
+    def carried(self, inside_region: bool) -> _Carried:
         """
         Build the record that takes the declaration one level deeper.
 
-        :param exit_levels: Number of owners crossed once the next level is
-            reached.
-        :type exit_levels: int
+        :param inside_region: Whether the declaration has crossed into a
+            region once the next level is reached.
+        :type inside_region: bool
         :return: The declaration as it applies to every state of that level.
         :rtype: _Carried
         """
@@ -274,7 +285,7 @@ class _Resolved:
             # after the first level, and the span alone cannot supply one
             # across documents.
             setattr(node, "_source_path", self.source_path)
-        return _Carried(node, self.forced_id, exit_levels)
+        return _Carried(node, self.forced_id, inside_region)
 
 
 @dataclass
@@ -289,11 +300,15 @@ class _Expanded:
     :param declared: Whether it is the transition written on the declaring
         level rather than one of the transitions below the source.
     :type declared: bool
+    :param in_region: Whether the transition sits below a region of an owner
+        that is below the declaring level.
+    :type in_region: bool
     """
 
     namespace: _Namespace
     transition: Transition
     declared: bool
+    in_region: bool
 
 
 @dataclass
@@ -359,11 +374,12 @@ class ForcedInheritance:
             ...     !Run -> Idle : /Stop;
             ... }
             ... ''')
+            >>> from pyfcstm.dsl.node import EXIT_STATE
             >>> region = model.root_state.substates['Run'].regions['A']
-            >>> [(t.from_state, t.exit_group_levels) for t in region.transitions if t.exit_group_levels]
-            [('A1', 1)]
+            >>> [(t.from_state, str(t.guard)) for t in region.transitions if t.to_state is EXIT_STATE]
+            [('A1', '__forced_0 == 1'), ('A1', 'None')]
         """
-        return [item.carried(item.exit_levels + 1) for item in self.resolved]
+        return [item.carried(True) for item in self.resolved]
 
 
 class ForcedExpansion:
@@ -404,12 +420,6 @@ class ForcedExpansion:
     :ivar declarations: One summary per declaration, in the order they were
         resolved; it becomes :attr:`pyfcstm.model.model.StateMachine.forced_transitions`.
     :vartype declarations: List[Dict[str, object]]
-    :ivar takes_groups_away: Whether any expanded transition takes a whole
-        group of regions away
-        (:attr:`pyfcstm.model.model.Transition.exit_group_levels`). The
-        language cannot write such a transition, so a machine that has one is
-        exported in its plain expansion.
-    :vartype takes_groups_away: bool
 
     Example::
 
@@ -479,7 +489,6 @@ class ForcedExpansion:
         # What each numbered declaration was expanded into, for :meth:`lower`.
         self._expanded: Dict[int, List[_Expanded]] = {}
         self.declarations: List[Dict[str, object]] = []
-        self.takes_groups_away = False
 
     def expand(
         self,
@@ -537,9 +546,9 @@ class ForcedExpansion:
             inherited = [item for item in inherited if item.forced_id is not None]
 
         resolved: List[_Resolved] = []
-        work = [(item.node, item.forced_id, item.exit_levels, False) for item in inherited]
-        work.extend((item, None, 0, True) for item in node.force_transitions)
-        for f_transnode, carried_id, carried_levels, local in work:
+        work = [(item.node, item.forced_id, item.inside_region, False) for item in inherited]
+        work.extend((item, None, False, True) for item in node.force_transitions)
+        for f_transnode, carried_id, carried_inside, local in work:
             # If either side of a forced transition is unresolved, skip the
             # rest of its processing and do not record it. Otherwise collect
             # mode keeps a record with a bad source or target that quietly
@@ -748,7 +757,7 @@ class ForcedExpansion:
                         if local
                         else carried_id
                     ),
-                    exit_levels=carried_levels,
+                    inside_region=carried_inside,
                     local=local,
                 )
             )
@@ -769,12 +778,7 @@ class ForcedExpansion:
                     # take away from it; control only passes through.
                     continue
 
-                carried = item.carried(item.exit_levels)
-                if item.exit_levels and (substate.substates or substate.regions):
-                    # Inside a region only a state that can be rested in holds
-                    # the transition; a composite or owner passes it down.
-                    below.append(carried)
-                    continue
+                carried = item.carried(item.inside_region)
                 transition = Transition(
                     from_state=subnode.name,
                     to_state=item.to_state,
@@ -785,18 +789,17 @@ class ForcedExpansion:
                     event_scope=item.event_scope,
                     is_forced=True,
                     forced_origin=item.origin,
-                    exit_group_levels=item.exit_levels,
                     _span=item.span,
                     target_history=item.target_history,
                 )
                 transitions.append(transition)
-                if item.exit_levels:
-                    self.takes_groups_away = True
                 if item.source_path is not None:
                     setattr(transition, "_source_path", item.source_path)
                 if item.forced_id is not None:
                     self._expanded.setdefault(item.forced_id, []).append(
-                        _Expanded(current_state, transition, item.local)
+                        _Expanded(
+                            current_state, transition, item.local, item.inside_region
+                        )
                     )
                 below.append(carried)
 
@@ -846,8 +849,9 @@ class ForcedExpansion:
             ...     !Run -> Idle : /Stop;
             ... }
             ... ''')
+            >>> from pyfcstm.dsl.node import EXIT_STATE
             >>> a1 = model.root_state.substates['Run'].regions['A'].transitions
-            >>> [str(op.expr) for t in a1 if t.exit_group_levels for op in t.effects]
+            >>> [str(op.expr) for t in a1 if t.to_state is EXIT_STATE for op in t.effects]
             ['1']
             >>> [(t.to_state, str(t.guard), t.is_forced, t.forced_origin)
             ...  for t in model.root_state.transitions if t.from_state == 'Run'][0]
@@ -913,6 +917,19 @@ class ForcedExpansion:
                         Operation(var_name=name, expr=Integer(1)),
                         *transition.effects,
                     ]
+                    if item.in_region:
+                        # The other regions of the owner have their own
+                        # resting states. Whichever of them decides first
+                        # raises the variable, and the states that come
+                        # later, in this cycle or a later one, finish their
+                        # regions when they see it.
+                        follower = replace(
+                            transition, event=None, guard=raised, effects=[]
+                        )
+                        carrying.add(id(follower))
+                        namespace.transitions.insert(
+                            namespace.transitions.index(transition), follower
+                        )
             defines[name] = VarDefine(name=name, type="int", init=Integer(0))
             names.append(name)
             waiting.append((lowered, relays, carrying))

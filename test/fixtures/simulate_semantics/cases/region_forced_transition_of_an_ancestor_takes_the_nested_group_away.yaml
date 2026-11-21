@@ -1,4 +1,4 @@
-title: A forced transition declared for an ancestor of the owner takes the whole group, regions in reverse order
+title: A forced transition declared for an ancestor of the owner takes the whole group, regions in declaration order
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
@@ -18,4 +18,4 @@ steps:
   expect:
     configuration: Root.Safe
     vars:
-      seq: 123
+      seq: 213

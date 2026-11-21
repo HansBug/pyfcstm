@@ -404,8 +404,8 @@ def test_handler_configuration_reflects_the_moment_of_the_call():
 
 
 @pytest.mark.unittest
-def test_trace_lists_regions_in_order_and_exits_in_reverse_order():
-    """Entering follows the declaration order and a group exit runs backwards."""
+def test_trace_lists_regions_in_order_and_exits_in_the_same_order():
+    """Entering and a forced group exit both follow the declaration order."""
     runtime = _controller()
     runtime.cycle(inputs={"fault": 0, "requested": 0})
     entered = runtime.cycle(
@@ -419,11 +419,11 @@ def test_trace_lists_regions_in_order_and_exits_in_reverse_order():
     )
     assert [
         entry.state_path[-1] for entry in left.trace if entry.kind == "state_exit"
-    ] == ["Off", "Watching", "Running"]
+    ] == ["Watching", "Off", "Running"]
 
 
 @pytest.mark.unittest
-def test_nested_group_exits_inside_out_when_the_outer_group_is_preempted():
+def test_nested_group_exits_inside_out_when_the_outer_group_is_forced_away():
     """The deepest states leave first and every owner exits once."""
     model = load_state_machine_from_text(
         """
@@ -462,8 +462,8 @@ def test_nested_group_exits_inside_out_when_the_outer_group_is_preempted():
     assert str(runtime.configuration) == "Root.P{A: Q{A1: L1, A2: L2}, B: N}"
     runtime.cycle("Root.Stop")
     assert str(runtime.configuration) == "Root.Idle"
-    # B first, then A: inside A, region A2 before A1, then Q, then P.
-    assert runtime.vars["order"] == 4 * 10 ** 4 + 2 * 10 ** 3 + 1 * 10 ** 2 + 3 * 10 + 5
+    # A first: inside A, region A1 before A2, then Q; then B, then P.
+    assert runtime.vars["order"] == 1 * 10 ** 4 + 2 * 10 ** 3 + 3 * 10 ** 2 + 4 * 10 + 5
 
 
 @pytest.mark.unittest
@@ -867,9 +867,9 @@ def test_exit_handlers_during_a_group_exit_still_see_the_state_being_left():
     runtime.cycle("Root.Kill")
     assert str(runtime.configuration) == "Root.Off"
     assert seen == [
-        # Regions leave in reverse order, so B is already done when A leaves.
-        "Root.Run{A: Mid.L, B: [done]}",
-        "Root.Run{A: Mid, B: [done]}",
+        # Regions leave in declaration order, so B still rests in S when A leaves.
+        "Root.Run{A: Mid.L, B: S}",
+        "Root.Run{A: Mid, B: S}",
     ]
 
 
@@ -1454,13 +1454,13 @@ def test_forced_group_exit_uses_the_event_once_and_traces_the_exits_in_order():
         for entry in result.trace
         if entry.kind in ("state_exit", "state_enter")
     ] == [
-        ("state_exit", "B1"),
         ("state_exit", "A1"),
+        ("state_exit", "B1"),
         ("state_exit", "P"),
         ("state_enter", "ToBeta"),
     ]
     assert str(runtime.configuration) == "Root.ToBeta"
-    assert runtime.vars["seq"] == 218
+    assert runtime.vars["seq"] == 128
 
 
 @pytest.mark.unittest
@@ -1473,7 +1473,7 @@ def test_two_forced_events_in_one_cycle_take_the_earlier_declaration_only():
         assert str(runtime.configuration) == "Root.ToAlpha"
         assert result.consumed_events == ("Root.Alpha",)
         assert result.unconsumed_events == ("Root.Beta",)
-        assert runtime.vars["seq"] == 217
+        assert runtime.vars["seq"] == 127
 
 
 @pytest.mark.unittest

@@ -801,8 +801,10 @@ class StateMachineModelBuilder {
                 inheritedForSubstates.get(substateDefinition.name)!,
             );
         }
-        // A forced transition declared on an ancestor takes the whole group
-        // away; it is not copied onto the states inside a region.
+        // The model is built as written: a forced transition declared on an
+        // ancestor is shown on that level and is not copied onto the states
+        // inside a region. The transitions that finish those regions belong to
+        // the machine that runs, which the Python model lowers.
         for (const regionDefinition of astRegionViews(definition)) {
             this.finalizeTransitions(regionDefinition, currentState.regions[regionDefinition.name], []);
         }

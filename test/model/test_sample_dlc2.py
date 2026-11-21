@@ -240,7 +240,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_trafficlight.transitions[0].exit_group_levels == 0
         assert state_trafficlight.transitions[0].doc is None
         assert state_trafficlight.transitions[0].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[0].parent_ref().path == ("TrafficLight",)
@@ -257,7 +256,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[1].guard is None
         assert state_trafficlight.transitions[1].effects == []
-        assert state_trafficlight.transitions[1].exit_group_levels == 0
         assert state_trafficlight.transitions[1].doc is None
         assert state_trafficlight.transitions[1].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[1].parent_ref().path == ("TrafficLight",)
@@ -275,7 +273,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[2].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=0))
         ]
-        assert state_trafficlight.transitions[2].exit_group_levels == 0
         assert state_trafficlight.transitions[2].doc is None
         assert state_trafficlight.transitions[2].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[2].parent_ref().path == ("TrafficLight",)
@@ -292,7 +289,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[3].guard is None
         assert state_trafficlight.transitions[3].effects == []
-        assert state_trafficlight.transitions[3].exit_group_levels == 0
         assert state_trafficlight.transitions[3].doc is None
         assert state_trafficlight.transitions[3].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[3].parent_ref().path == ("TrafficLight",)
@@ -310,7 +306,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[4].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=0))
         ]
-        assert state_trafficlight.transitions[4].exit_group_levels == 0
         assert state_trafficlight.transitions[4].doc is None
         assert state_trafficlight.transitions[4].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[4].parent_ref().path == ("TrafficLight",)
@@ -327,7 +322,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[5].guard is None
         assert state_trafficlight.transitions[5].effects == []
-        assert state_trafficlight.transitions[5].exit_group_levels == 0
         assert state_trafficlight.transitions[5].doc is None
         assert state_trafficlight.transitions[5].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[5].parent_ref().path == ("TrafficLight",)
@@ -345,7 +339,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[6].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=0))
         ]
-        assert state_trafficlight.transitions[6].exit_group_levels == 0
         assert state_trafficlight.transitions[6].doc is None
         assert state_trafficlight.transitions[6].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[6].parent_ref().path == ("TrafficLight",)
@@ -362,7 +355,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[7].guard is None
         assert state_trafficlight.transitions[7].effects == []
-        assert state_trafficlight.transitions[7].exit_group_levels == 0
         assert state_trafficlight.transitions[7].doc is None
         assert state_trafficlight.transitions[7].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[7].parent_ref().path == ("TrafficLight",)
@@ -374,7 +366,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[8].event is None
         assert state_trafficlight.transitions[8].guard is None
         assert state_trafficlight.transitions[8].effects == []
-        assert state_trafficlight.transitions[8].exit_group_levels == 0
         assert state_trafficlight.transitions[8].doc is None
         assert state_trafficlight.transitions[8].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[8].parent_ref().path == ("TrafficLight",)
@@ -391,7 +382,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[9].guard is None
         assert state_trafficlight.transitions[9].effects == []
-        assert state_trafficlight.transitions[9].exit_group_levels == 0
         assert state_trafficlight.transitions[9].doc is None
         assert state_trafficlight.transitions[9].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[9].parent_ref().path == ("TrafficLight",)
@@ -405,7 +395,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight.transitions[10].guard is None
         assert state_trafficlight.transitions[10].effects == []
-        assert state_trafficlight.transitions[10].exit_group_levels == 0
         assert state_trafficlight.transitions[10].doc is None
         assert state_trafficlight.transitions[10].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[10].parent_ref().path == ("TrafficLight",)
@@ -421,7 +410,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[11].effects == []
-        assert state_trafficlight.transitions[11].exit_group_levels == 0
         assert state_trafficlight.transitions[11].doc is None
         assert state_trafficlight.transitions[11].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[11].parent_ref().path == ("TrafficLight",)
@@ -437,7 +425,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[12].effects == []
-        assert state_trafficlight.transitions[12].exit_group_levels == 0
         assert state_trafficlight.transitions[12].doc is None
         assert state_trafficlight.transitions[12].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[12].parent_ref().path == ("TrafficLight",)
@@ -453,7 +440,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[13].effects == []
-        assert state_trafficlight.transitions[13].exit_group_levels == 0
         assert state_trafficlight.transitions[13].doc is None
         assert state_trafficlight.transitions[13].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[13].parent_ref().path == ("TrafficLight",)
@@ -469,7 +455,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[14].effects == []
-        assert state_trafficlight.transitions[14].exit_group_levels == 0
         assert state_trafficlight.transitions[14].doc is None
         assert state_trafficlight.transitions[14].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[14].parent_ref().path == ("TrafficLight",)
@@ -485,7 +470,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[15].effects == []
-        assert state_trafficlight.transitions[15].exit_group_levels == 0
         assert state_trafficlight.transitions[15].doc is None
         assert state_trafficlight.transitions[15].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[15].parent_ref().path == ("TrafficLight",)
@@ -501,7 +485,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[16].effects == []
-        assert state_trafficlight.transitions[16].exit_group_levels == 0
         assert state_trafficlight.transitions[16].doc is None
         assert state_trafficlight.transitions[16].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[16].parent_ref().path == ("TrafficLight",)
@@ -517,7 +500,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight.transitions[17].effects == []
-        assert state_trafficlight.transitions[17].exit_group_levels == 0
         assert state_trafficlight.transitions[17].doc is None
         assert state_trafficlight.transitions[17].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[17].parent_ref().path == ("TrafficLight",)
@@ -555,7 +537,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.init_transitions[0].event is None
         assert state_trafficlight.init_transitions[0].guard is None
         assert state_trafficlight.init_transitions[0].effects == []
-        assert state_trafficlight.init_transitions[0].exit_group_levels == 0
         assert state_trafficlight.init_transitions[0].doc is None
         assert (
             state_trafficlight.init_transitions[0].parent_ref().name == "TrafficLight"
@@ -584,9 +565,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_entering_children[0].event is None
         assert state_trafficlight.transitions_entering_children[0].guard is None
         assert state_trafficlight.transitions_entering_children[0].effects == []
-        assert (
-            state_trafficlight.transitions_entering_children[0].exit_group_levels == 0
-        )
         assert state_trafficlight.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight.transitions_entering_children[0].parent_ref().name
@@ -622,12 +600,6 @@ class TestModelStateTrafficLight:
             state_trafficlight.transitions_entering_children_simplified[0].effects == []
         )
         assert (
-            state_trafficlight.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
-        assert (
             state_trafficlight.transitions_entering_children_simplified[0].doc is None
         )
         assert (
@@ -661,7 +633,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_from[0].event is None
         assert state_trafficlight.transitions_from[0].guard is None
         assert state_trafficlight.transitions_from[0].effects == []
-        assert state_trafficlight.transitions_from[0].exit_group_levels == 0
         assert state_trafficlight.transitions_from[0].doc is None
         assert state_trafficlight.transitions_from[0].parent_ref is None
         assert state_trafficlight.transitions_from[0].target_history is None
@@ -673,7 +644,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_to[0].event is None
         assert state_trafficlight.transitions_to[0].guard is None
         assert state_trafficlight.transitions_to[0].effects == []
-        assert state_trafficlight.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight.transitions_to[0].doc is None
         assert state_trafficlight.transitions_to[0].parent_ref is None
         assert state_trafficlight.transitions_to[0].target_history is None
@@ -1662,7 +1632,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[0].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[0].doc is None
         assert (
             state_trafficlight_inservice.transitions[0].parent_ref().name == "InService"
@@ -1686,7 +1655,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[1].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[1].doc is None
         assert (
             state_trafficlight_inservice.transitions[1].parent_ref().name == "InService"
@@ -1710,7 +1678,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[2].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[2].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[2].doc is None
         assert (
             state_trafficlight_inservice.transitions[2].parent_ref().name == "InService"
@@ -1734,7 +1701,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[3].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[3].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[3].doc is None
         assert (
             state_trafficlight_inservice.transitions[3].parent_ref().name == "InService"
@@ -1758,7 +1724,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[4].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[4].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[4].doc is None
         assert (
             state_trafficlight_inservice.transitions[4].parent_ref().name == "InService"
@@ -1782,7 +1747,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[5].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[5].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[5].doc is None
         assert (
             state_trafficlight_inservice.transitions[5].parent_ref().name == "InService"
@@ -1806,7 +1770,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[6].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.transitions[6].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[6].doc is None
         assert (
             state_trafficlight_inservice.transitions[6].parent_ref().name == "InService"
@@ -1825,7 +1788,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[7].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
-        assert state_trafficlight_inservice.transitions[7].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[7].doc is None
         assert (
             state_trafficlight_inservice.transitions[7].parent_ref().name == "InService"
@@ -1844,7 +1806,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[8].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
-        assert state_trafficlight_inservice.transitions[8].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[8].doc is None
         assert (
             state_trafficlight_inservice.transitions[8].parent_ref().name == "InService"
@@ -1871,7 +1832,6 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
-        assert state_trafficlight_inservice.transitions[9].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[9].doc is None
         assert (
             state_trafficlight_inservice.transitions[9].parent_ref().name == "InService"
@@ -1890,7 +1850,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions[10].guard is None
         assert state_trafficlight_inservice.transitions[10].effects == []
-        assert state_trafficlight_inservice.transitions[10].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[10].doc is None
         assert (
             state_trafficlight_inservice.transitions[10].parent_ref().name
@@ -1910,7 +1869,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions[11].guard is None
         assert state_trafficlight_inservice.transitions[11].effects == []
-        assert state_trafficlight_inservice.transitions[11].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions[11].doc is None
         assert (
             state_trafficlight_inservice.transitions[11].parent_ref().name
@@ -1957,7 +1915,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.init_transitions[0].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice.init_transitions[0].exit_group_levels == 0
         assert state_trafficlight_inservice.init_transitions[0].doc is None
         assert (
             state_trafficlight_inservice.init_transitions[0].parent_ref().name
@@ -2004,12 +1961,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_entering_children[
             0
         ].effects == [Operation(var_name="b", expr=Integer(value=1))]
-        assert (
-            state_trafficlight_inservice.transitions_entering_children[
-                0
-            ].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_entering_children[0]
@@ -2068,12 +2019,6 @@ class TestModelStateTrafficLight:
             0
         ].effects == [Operation(var_name="b", expr=Integer(value=1))]
         assert (
-            state_trafficlight_inservice.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
-        assert (
             state_trafficlight_inservice.transitions_entering_children_simplified[0].doc
             is None
         )
@@ -2122,7 +2067,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_trafficlight_inservice.transitions_from[0].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[0].parent_ref().name
@@ -2151,7 +2095,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions_from[1].guard is None
         assert state_trafficlight_inservice.transitions_from[1].effects == []
-        assert state_trafficlight_inservice.transitions_from[1].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[1].parent_ref().name
@@ -2178,7 +2121,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_from[2].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=0))
         ]
-        assert state_trafficlight_inservice.transitions_from[2].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[2].parent_ref().name
@@ -2207,7 +2149,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions_from[3].guard is None
         assert state_trafficlight_inservice.transitions_from[3].effects == []
-        assert state_trafficlight_inservice.transitions_from[3].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_from[3].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[3].parent_ref().name
@@ -2236,7 +2177,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions_from[4].guard is None
         assert state_trafficlight_inservice.transitions_from[4].effects == []
-        assert state_trafficlight_inservice.transitions_from[4].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_from[4].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[4].parent_ref().name
@@ -2262,7 +2202,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_to[0].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=0))
         ]
-        assert state_trafficlight_inservice.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_to[0].parent_ref().name
@@ -2279,7 +2218,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_to[1].event is None
         assert state_trafficlight_inservice.transitions_to[1].guard is None
         assert state_trafficlight_inservice.transitions_to[1].effects == []
-        assert state_trafficlight_inservice.transitions_to[1].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice.transitions_to[1].parent_ref().name
@@ -2303,7 +2241,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_inservice.transitions_to[2].effects == []
-        assert state_trafficlight_inservice.transitions_to[2].exit_group_levels == 0
         assert state_trafficlight_inservice.transitions_to[2].doc is None
         assert (
             state_trafficlight_inservice.transitions_to[2].parent_ref().name
@@ -2715,9 +2652,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_red.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_red.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[0].parent_ref().name
@@ -2748,9 +2682,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.transitions_from[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_red.transitions_from[1].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_red.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[1].parent_ref().name
@@ -2774,9 +2705,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.transitions_from[2].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
-        assert (
-            state_trafficlight_inservice_red.transitions_from[2].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_red.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[2].parent_ref().name
@@ -2808,7 +2736,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
-        assert state_trafficlight_inservice_red.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_inservice_red.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_to[0].parent_ref().name
@@ -2839,7 +2766,6 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
-        assert state_trafficlight_inservice_red.transitions_to[1].exit_group_levels == 0
         assert state_trafficlight_inservice_red.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_to[1].parent_ref().name
@@ -3043,10 +2969,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_yellow.transitions_from[0].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[0].parent_ref().name
@@ -3084,10 +3006,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.transitions_from[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_yellow.transitions_from[1].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[1].parent_ref().name
@@ -3125,10 +3043,6 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
-        assert (
-            state_trafficlight_inservice_yellow.transitions_from[2].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[2].parent_ref().name
@@ -3160,10 +3074,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice_yellow.transitions_from[3].guard is None
         assert state_trafficlight_inservice_yellow.transitions_from[3].effects == []
-        assert (
-            state_trafficlight_inservice_yellow.transitions_from[3].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_from[3].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[3].parent_ref().name
@@ -3195,9 +3105,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
-        assert (
-            state_trafficlight_inservice_yellow.transitions_to[0].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[0].parent_ref().name
@@ -3227,9 +3134,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice_yellow.transitions_to[1].guard is None
         assert state_trafficlight_inservice_yellow.transitions_to[1].effects == []
-        assert (
-            state_trafficlight_inservice_yellow.transitions_to[1].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[1].parent_ref().name
@@ -3259,9 +3163,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice_yellow.transitions_to[2].guard is None
         assert state_trafficlight_inservice_yellow.transitions_to[2].effects == []
-        assert (
-            state_trafficlight_inservice_yellow.transitions_to[2].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_yellow.transitions_to[2].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[2].parent_ref().name
@@ -3473,10 +3374,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_green.transitions_from[0].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_green.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[0].parent_ref().name
@@ -3513,10 +3410,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_from[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_inservice_green.transitions_from[1].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_green.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[1].parent_ref().name
@@ -3547,10 +3440,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_from[2].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
-        assert (
-            state_trafficlight_inservice_green.transitions_from[2].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_green.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[2].parent_ref().name
@@ -3581,10 +3470,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice_green.transitions_from[3].guard is None
         assert state_trafficlight_inservice_green.transitions_from[3].effects == []
-        assert (
-            state_trafficlight_inservice_green.transitions_from[3].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_inservice_green.transitions_from[3].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[3].parent_ref().name
@@ -3612,9 +3497,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
-        assert (
-            state_trafficlight_inservice_green.transitions_to[0].exit_group_levels == 0
-        )
         assert state_trafficlight_inservice_green.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_to[0].parent_ref().name
@@ -3777,7 +3659,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[0].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle.transitions[0].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[0].doc is None
         assert state_trafficlight_idle.transitions[0].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[0].parent_ref().path == (
@@ -3799,7 +3680,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle.transitions[1].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[1].doc is None
         assert state_trafficlight_idle.transitions[1].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[1].parent_ref().path == (
@@ -3821,7 +3701,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[2].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle.transitions[2].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[2].doc is None
         assert state_trafficlight_idle.transitions[2].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[2].parent_ref().path == (
@@ -3843,7 +3722,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[3].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle.transitions[3].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[3].doc is None
         assert state_trafficlight_idle.transitions[3].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[3].parent_ref().path == (
@@ -3858,7 +3736,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[4].event is None
         assert state_trafficlight_idle.transitions[4].guard is None
         assert state_trafficlight_idle.transitions[4].effects == []
-        assert state_trafficlight_idle.transitions[4].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[4].doc is None
         assert state_trafficlight_idle.transitions[4].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[4].parent_ref().path == (
@@ -3878,7 +3755,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions[5].guard is None
         assert state_trafficlight_idle.transitions[5].effects == []
-        assert state_trafficlight_idle.transitions[5].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[5].doc is None
         assert state_trafficlight_idle.transitions[5].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[5].parent_ref().path == (
@@ -3898,7 +3774,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions[6].guard is None
         assert state_trafficlight_idle.transitions[6].effects == []
-        assert state_trafficlight_idle.transitions[6].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[6].doc is None
         assert state_trafficlight_idle.transitions[6].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[6].parent_ref().path == (
@@ -3918,7 +3793,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions[7].guard is None
         assert state_trafficlight_idle.transitions[7].effects == []
-        assert state_trafficlight_idle.transitions[7].exit_group_levels == 0
         assert state_trafficlight_idle.transitions[7].doc is None
         assert state_trafficlight_idle.transitions[7].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[7].parent_ref().path == (
@@ -3951,7 +3825,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.init_transitions[0].event is None
         assert state_trafficlight_idle.init_transitions[0].guard is None
         assert state_trafficlight_idle.init_transitions[0].effects == []
-        assert state_trafficlight_idle.init_transitions[0].exit_group_levels == 0
         assert state_trafficlight_idle.init_transitions[0].doc is None
         assert state_trafficlight_idle.init_transitions[0].parent_ref().name == "Idle"
         assert state_trafficlight_idle.init_transitions[0].parent_ref().path == (
@@ -3981,10 +3854,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_entering_children[0].event is None
         assert state_trafficlight_idle.transitions_entering_children[0].guard is None
         assert state_trafficlight_idle.transitions_entering_children[0].effects == []
-        assert (
-            state_trafficlight_idle.transitions_entering_children[0].exit_group_levels
-            == 0
-        )
         assert state_trafficlight_idle.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight_idle.transitions_entering_children[0].parent_ref().name
@@ -4031,12 +3900,6 @@ class TestModelStateTrafficLight:
             == []
         )
         assert (
-            state_trafficlight_idle.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
-        assert (
             state_trafficlight_idle.transitions_entering_children_simplified[0].doc
             is None
         )
@@ -4079,7 +3942,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[0].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=0))
         ]
-        assert state_trafficlight_idle.transitions_from[0].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle.transitions_from[0].parent_ref().name
@@ -4101,7 +3963,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions_from[1].guard is None
         assert state_trafficlight_idle.transitions_from[1].effects == []
-        assert state_trafficlight_idle.transitions_from[1].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle.transitions_from[1].parent_ref().name
@@ -4124,7 +3985,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[2].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=0))
         ]
-        assert state_trafficlight_idle.transitions_from[2].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle.transitions_from[2].parent_ref().name
@@ -4146,7 +4006,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions_from[3].guard is None
         assert state_trafficlight_idle.transitions_from[3].effects == []
-        assert state_trafficlight_idle.transitions_from[3].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[3].doc is None
         assert (
             state_trafficlight_idle.transitions_from[3].parent_ref().name
@@ -4165,7 +4024,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle.transitions_from[4].guard is None
         assert state_trafficlight_idle.transitions_from[4].effects == []
-        assert state_trafficlight_idle.transitions_from[4].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[4].doc is None
         assert (
             state_trafficlight_idle.transitions_from[4].parent_ref().name
@@ -4186,7 +4044,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_idle.transitions_from[5].effects == []
-        assert state_trafficlight_idle.transitions_from[5].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_from[5].doc is None
         assert (
             state_trafficlight_idle.transitions_from[5].parent_ref().name
@@ -4208,7 +4065,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_idle.transitions_to[0].effects == []
-        assert state_trafficlight_idle.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle.transitions_to[0].parent_ref().name
@@ -4229,7 +4085,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_idle.transitions_to[1].effects == []
-        assert state_trafficlight_idle.transitions_to[1].exit_group_levels == 0
         assert state_trafficlight_idle.transitions_to[1].doc is None
         assert (
             state_trafficlight_idle.transitions_to[1].parent_ref().name
@@ -4538,7 +4393,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_from[0].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle_tobe.transitions_from[0].exit_group_levels == 0
         assert state_trafficlight_idle_tobe.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[0].parent_ref().name == "Idle"
@@ -4564,7 +4418,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_from[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert state_trafficlight_idle_tobe.transitions_from[1].exit_group_levels == 0
         assert state_trafficlight_idle_tobe.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[1].parent_ref().name == "Idle"
@@ -4588,7 +4441,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_tobe.transitions_from[2].guard is None
         assert state_trafficlight_idle_tobe.transitions_from[2].effects == []
-        assert state_trafficlight_idle_tobe.transitions_from[2].exit_group_levels == 0
         assert state_trafficlight_idle_tobe.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[2].parent_ref().name == "Idle"
@@ -4608,7 +4460,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_to[0].event is None
         assert state_trafficlight_idle_tobe.transitions_to[0].guard is None
         assert state_trafficlight_idle_tobe.transitions_to[0].effects == []
-        assert state_trafficlight_idle_tobe.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_idle_tobe.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_to[0].parent_ref().name == "Idle"
@@ -4630,7 +4481,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_tobe.transitions_to[1].guard is None
         assert state_trafficlight_idle_tobe.transitions_to[1].effects == []
-        assert state_trafficlight_idle_tobe.transitions_to[1].exit_group_levels == 0
         assert state_trafficlight_idle_tobe.transitions_to[1].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_to[1].parent_ref().name == "Idle"
@@ -4834,9 +4684,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_nottobe.transitions_from[0].effects == [
             Operation(var_name="__forced_1", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_idle_nottobe.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_idle_nottobe.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[0].parent_ref().name
@@ -4869,9 +4716,6 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_nottobe.transitions_from[1].effects == [
             Operation(var_name="__forced_2", expr=Integer(value=1))
         ]
-        assert (
-            state_trafficlight_idle_nottobe.transitions_from[1].exit_group_levels == 0
-        )
         assert state_trafficlight_idle_nottobe.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[1].parent_ref().name
@@ -4900,9 +4744,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_nottobe.transitions_from[2].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[2].effects == []
-        assert (
-            state_trafficlight_idle_nottobe.transitions_from[2].exit_group_levels == 0
-        )
         assert state_trafficlight_idle_nottobe.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[2].parent_ref().name
@@ -4933,9 +4774,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_nottobe.transitions_from[3].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[3].effects == []
-        assert (
-            state_trafficlight_idle_nottobe.transitions_from[3].exit_group_levels == 0
-        )
         assert state_trafficlight_idle_nottobe.transitions_from[3].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[3].parent_ref().name
@@ -4963,7 +4801,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_nottobe.transitions_to[0].guard is None
         assert state_trafficlight_idle_nottobe.transitions_to[0].effects == []
-        assert state_trafficlight_idle_nottobe.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_idle_nottobe.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_to[0].parent_ref().name
@@ -5154,9 +4991,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_0.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_0.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_0.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_0.transitions_from[0].parent_ref().name
@@ -5189,7 +5023,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_0.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_0.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_0.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_0.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_0.transitions_to[0].parent_ref().name
@@ -5377,9 +5210,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_1.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_1.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_1.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_1.transitions_from[0].parent_ref().name
@@ -5412,7 +5242,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_1.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_1.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_1.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_1.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_1.transitions_to[0].parent_ref().name
@@ -5598,9 +5427,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_2.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_2.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_2.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_2.transitions_from[0].parent_ref().name
@@ -5633,7 +5459,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_2.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_2.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_2.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_2.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_2.transitions_to[0].parent_ref().name
@@ -5821,9 +5646,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_3.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_3.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_3.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_3.transitions_from[0].parent_ref().name
@@ -5854,7 +5676,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_3.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_3.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_3.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_3.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_3.transitions_to[0].parent_ref().name
@@ -6042,9 +5863,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_4.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_4.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_4.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_4.transitions_from[0].parent_ref().name
@@ -6075,7 +5893,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_4.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_4.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_4.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_4.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_4.transitions_to[0].parent_ref().name
@@ -6261,9 +6078,6 @@ class TestModelStateTrafficLight:
             y=BinaryOp(x=Variable(name="__forced_2"), op="==", y=Integer(value=0)),
         )
         assert state_trafficlight_forced_gate_5.transitions_from[0].effects == []
-        assert (
-            state_trafficlight_forced_gate_5.transitions_from[0].exit_group_levels == 0
-        )
         assert state_trafficlight_forced_gate_5.transitions_from[0].doc is None
         assert (
             state_trafficlight_forced_gate_5.transitions_from[0].parent_ref().name
@@ -6291,7 +6105,6 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_forced_gate_5.transitions_to[0].guard is None
         assert state_trafficlight_forced_gate_5.transitions_to[0].effects == []
-        assert state_trafficlight_forced_gate_5.transitions_to[0].exit_group_levels == 0
         assert state_trafficlight_forced_gate_5.transitions_to[0].doc is None
         assert (
             state_trafficlight_forced_gate_5.transitions_to[0].parent_ref().name

@@ -3,7 +3,7 @@
 import pytest
 
 from pyfcstm.dsl import parse_state_machine_dsl
-from pyfcstm.dsl.node import RegionDefinition, StateDefinition, StateMachineDSLProgram
+from pyfcstm.dsl.node import EXIT_STATE, RegionDefinition, StateDefinition, StateMachineDSLProgram
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.utils import ModelValidationError
 
@@ -77,13 +77,14 @@ def test_region_event_ownership_and_completion_edges():
     go_edge = next(edge for edge in right.transitions if edge.event is right.events['Go'])
     assert (go_edge.from_state, go_edge.to_state) == ('On', 'Off')
     assert go_edge.parent is right
-    # The forced declaration of the owner puts a group exit in front of the
-    # ordinary edges of every region.
+    # The forced declaration of the owner puts a follower and a starter, both
+    # finishing the region, in front of the ordinary edges of every region.
     assert [edge for edge in right.substates['On'].transitions_from
-            if not edge.exit_group_levels] == [go_edge]
+            if str(edge.guard) != '__forced_0 == 1'
+            and not [op for op in edge.effects if op.var_name == '__forced_0']] == [go_edge]
 
 
-def test_owner_forced_edge_reaches_every_region_as_a_group_exit():
+def test_owner_forced_edge_reaches_every_region_as_a_follower_and_a_starter():
     model = load_state_machine_from_text(ORDERED)
     owner = model.root_state.substates['Job']
     # On the level of the declaration: the copy that decides once comes first,
@@ -93,11 +94,14 @@ def test_owner_forced_edge_reaches_every_region_as_a_group_exit():
         ('Job', 'Idle'), ('Job', '__forced_gate_0')]
     assert owner.transitions == []
     for region in owner.regions.values():
-        forced = [edge for edge in region.transitions if edge.exit_group_levels]
-        # One per state that can be rested in, and always a group exit, never
-        # the completion of the region.
-        assert [edge.from_state for edge in forced] == list(region.substates)
-        assert all(edge.exit_group_levels == 1 for edge in forced)
+        followers = [edge for edge in region.transitions
+                     if edge.event is None and str(edge.guard) == '__forced_0 == 1']
+        starters = [edge for edge in region.transitions
+                    if [op.var_name for op in edge.effects] == ['__forced_0']]
+        # One of each per state that can be rested in; both finish the region.
+        assert [edge.from_state for edge in followers] == list(region.substates)
+        assert [edge.from_state for edge in starters] == list(region.substates)
+        assert all(edge.to_state is EXIT_STATE for edge in followers + starters)
     assert model.forced_transitions[0]['from_path'] == 'Root.Job'
 
 

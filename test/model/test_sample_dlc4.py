@@ -205,7 +205,6 @@ class TestModelStateL1:
         assert state_l1.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_l1.transitions[0].exit_group_levels == 0
         assert state_l1.transitions[0].doc is None
         assert state_l1.transitions[0].parent_ref().name == "L1"
         assert state_l1.transitions[0].parent_ref().path == ("L1",)
@@ -219,7 +218,6 @@ class TestModelStateL1:
         )
         assert state_l1.transitions[1].guard is None
         assert state_l1.transitions[1].effects == []
-        assert state_l1.transitions[1].exit_group_levels == 0
         assert state_l1.transitions[1].doc is None
         assert state_l1.transitions[1].parent_ref().name == "L1"
         assert state_l1.transitions[1].parent_ref().path == ("L1",)
@@ -231,7 +229,6 @@ class TestModelStateL1:
         assert state_l1.transitions[2].event is None
         assert state_l1.transitions[2].guard is None
         assert state_l1.transitions[2].effects == []
-        assert state_l1.transitions[2].exit_group_levels == 0
         assert state_l1.transitions[2].doc is None
         assert state_l1.transitions[2].parent_ref().name == "L1"
         assert state_l1.transitions[2].parent_ref().path == ("L1",)
@@ -243,7 +240,6 @@ class TestModelStateL1:
         assert state_l1.transitions[3].event is None
         assert state_l1.transitions[3].guard is None
         assert state_l1.transitions[3].effects == []
-        assert state_l1.transitions[3].exit_group_levels == 0
         assert state_l1.transitions[3].doc is None
         assert state_l1.transitions[3].parent_ref().name == "L1"
         assert state_l1.transitions[3].parent_ref().path == ("L1",)
@@ -257,7 +253,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1.transitions[4].effects == []
-        assert state_l1.transitions[4].exit_group_levels == 0
         assert state_l1.transitions[4].doc is None
         assert state_l1.transitions[4].parent_ref().name == "L1"
         assert state_l1.transitions[4].parent_ref().path == ("L1",)
@@ -290,7 +285,6 @@ class TestModelStateL1:
         assert state_l1.init_transitions[0].event is None
         assert state_l1.init_transitions[0].guard is None
         assert state_l1.init_transitions[0].effects == []
-        assert state_l1.init_transitions[0].exit_group_levels == 0
         assert state_l1.init_transitions[0].doc is None
         assert state_l1.init_transitions[0].parent_ref().name == "L1"
         assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
@@ -311,7 +305,6 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children[0].event is None
         assert state_l1.transitions_entering_children[0].guard is None
         assert state_l1.transitions_entering_children[0].effects == []
-        assert state_l1.transitions_entering_children[0].exit_group_levels == 0
         assert state_l1.transitions_entering_children[0].doc is None
         assert state_l1.transitions_entering_children[0].parent_ref().name == "L1"
         assert state_l1.transitions_entering_children[0].parent_ref().path == ("L1",)
@@ -327,9 +320,6 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children_simplified[0].event is None
         assert state_l1.transitions_entering_children_simplified[0].guard is None
         assert state_l1.transitions_entering_children_simplified[0].effects == []
-        assert (
-            state_l1.transitions_entering_children_simplified[0].exit_group_levels == 0
-        )
         assert state_l1.transitions_entering_children_simplified[0].doc is None
         assert (
             state_l1.transitions_entering_children_simplified[0].parent_ref().name
@@ -352,7 +342,6 @@ class TestModelStateL1:
         assert state_l1.transitions_from[0].event is None
         assert state_l1.transitions_from[0].guard is None
         assert state_l1.transitions_from[0].effects == []
-        assert state_l1.transitions_from[0].exit_group_levels == 0
         assert state_l1.transitions_from[0].doc is None
         assert state_l1.transitions_from[0].parent_ref is None
         assert state_l1.transitions_from[0].target_history is None
@@ -364,7 +353,6 @@ class TestModelStateL1:
         assert state_l1.transitions_to[0].event is None
         assert state_l1.transitions_to[0].guard is None
         assert state_l1.transitions_to[0].effects == []
-        assert state_l1.transitions_to[0].exit_group_levels == 0
         assert state_l1.transitions_to[0].doc is None
         assert state_l1.transitions_to[0].parent_ref is None
         assert state_l1.transitions_to[0].target_history is None
@@ -1196,7 +1184,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_l1_l11.transitions[0].effects == []
-        assert state_l1_l11.transitions[0].exit_group_levels == 0
         assert state_l1_l11.transitions[0].doc is None
         assert state_l1_l11.transitions[0].parent_ref().name == "L11"
         assert state_l1_l11.transitions[0].parent_ref().path == ("L1", "L11")
@@ -1212,7 +1199,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[1].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11.transitions[1].exit_group_levels == 0
         assert state_l1_l11.transitions[1].doc is None
         assert state_l1_l11.transitions[1].parent_ref().name == "L11"
         assert state_l1_l11.transitions[1].parent_ref().path == ("L1", "L11")
@@ -1228,7 +1214,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[2].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11.transitions[2].exit_group_levels == 0
         assert state_l1_l11.transitions[2].doc is None
         assert state_l1_l11.transitions[2].parent_ref().name == "L11"
         assert state_l1_l11.transitions[2].parent_ref().path == ("L1", "L11")
@@ -1240,7 +1225,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions[3].event is None
         assert state_l1_l11.transitions[3].guard is None
         assert state_l1_l11.transitions[3].effects == []
-        assert state_l1_l11.transitions[3].exit_group_levels == 0
         assert state_l1_l11.transitions[3].doc is None
         assert state_l1_l11.transitions[3].parent_ref().name == "L11"
         assert state_l1_l11.transitions[3].parent_ref().path == ("L1", "L11")
@@ -1254,7 +1238,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11.transitions[4].guard is None
         assert state_l1_l11.transitions[4].effects == []
-        assert state_l1_l11.transitions[4].exit_group_levels == 0
         assert state_l1_l11.transitions[4].doc is None
         assert state_l1_l11.transitions[4].parent_ref().name == "L11"
         assert state_l1_l11.transitions[4].parent_ref().path == ("L1", "L11")
@@ -1268,7 +1251,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11.transitions[5].guard is None
         assert state_l1_l11.transitions[5].effects == []
-        assert state_l1_l11.transitions[5].exit_group_levels == 0
         assert state_l1_l11.transitions[5].doc is None
         assert state_l1_l11.transitions[5].parent_ref().name == "L11"
         assert state_l1_l11.transitions[5].parent_ref().path == ("L1", "L11")
@@ -1282,7 +1264,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11.transitions[6].guard is None
         assert state_l1_l11.transitions[6].effects == []
-        assert state_l1_l11.transitions[6].exit_group_levels == 0
         assert state_l1_l11.transitions[6].doc is None
         assert state_l1_l11.transitions[6].parent_ref().name == "L11"
         assert state_l1_l11.transitions[6].parent_ref().path == ("L1", "L11")
@@ -1296,7 +1277,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11.transitions[7].guard is None
         assert state_l1_l11.transitions[7].effects == []
-        assert state_l1_l11.transitions[7].exit_group_levels == 0
         assert state_l1_l11.transitions[7].doc is None
         assert state_l1_l11.transitions[7].parent_ref().name == "L11"
         assert state_l1_l11.transitions[7].parent_ref().path == ("L1", "L11")
@@ -1310,7 +1290,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11.transitions[8].effects == []
-        assert state_l1_l11.transitions[8].exit_group_levels == 0
         assert state_l1_l11.transitions[8].doc is None
         assert state_l1_l11.transitions[8].parent_ref().name == "L11"
         assert state_l1_l11.transitions[8].parent_ref().path == ("L1", "L11")
@@ -1324,7 +1303,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11.transitions[9].effects == []
-        assert state_l1_l11.transitions[9].exit_group_levels == 0
         assert state_l1_l11.transitions[9].doc is None
         assert state_l1_l11.transitions[9].parent_ref().name == "L11"
         assert state_l1_l11.transitions[9].parent_ref().path == ("L1", "L11")
@@ -1360,7 +1338,6 @@ class TestModelStateL1:
         assert state_l1_l11.init_transitions[0].event is None
         assert state_l1_l11.init_transitions[0].guard is None
         assert state_l1_l11.init_transitions[0].effects == []
-        assert state_l1_l11.init_transitions[0].exit_group_levels == 0
         assert state_l1_l11.init_transitions[0].doc is None
         assert state_l1_l11.init_transitions[0].parent_ref().name == "L11"
         assert state_l1_l11.init_transitions[0].parent_ref().path == ("L1", "L11")
@@ -1382,7 +1359,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions_entering_children[0].event is None
         assert state_l1_l11.transitions_entering_children[0].guard is None
         assert state_l1_l11.transitions_entering_children[0].effects == []
-        assert state_l1_l11.transitions_entering_children[0].exit_group_levels == 0
         assert state_l1_l11.transitions_entering_children[0].doc is None
         assert state_l1_l11.transitions_entering_children[0].parent_ref().name == "L11"
         assert state_l1_l11.transitions_entering_children[0].parent_ref().path == (
@@ -1403,10 +1379,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions_entering_children_simplified[0].event is None
         assert state_l1_l11.transitions_entering_children_simplified[0].guard is None
         assert state_l1_l11.transitions_entering_children_simplified[0].effects == []
-        assert (
-            state_l1_l11.transitions_entering_children_simplified[0].exit_group_levels
-            == 0
-        )
         assert state_l1_l11.transitions_entering_children_simplified[0].doc is None
         assert (
             state_l1_l11.transitions_entering_children_simplified[0].parent_ref().name
@@ -1437,7 +1409,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=0))
         ]
-        assert state_l1_l11.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11.transitions_from[0].doc is None
         assert state_l1_l11.transitions_from[0].parent_ref().name == "L1"
         assert state_l1_l11.transitions_from[0].parent_ref().path == ("L1",)
@@ -1451,7 +1422,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11.transitions_from[1].guard is None
         assert state_l1_l11.transitions_from[1].effects == []
-        assert state_l1_l11.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11.transitions_from[1].doc is None
         assert state_l1_l11.transitions_from[1].parent_ref().name == "L1"
         assert state_l1_l11.transitions_from[1].parent_ref().path == ("L1",)
@@ -1464,7 +1434,6 @@ class TestModelStateL1:
         assert state_l1_l11.transitions_to[0].event is None
         assert state_l1_l11.transitions_to[0].guard is None
         assert state_l1_l11.transitions_to[0].effects == []
-        assert state_l1_l11.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11.transitions_to[0].doc is None
         assert state_l1_l11.transitions_to[0].parent_ref().name == "L1"
         assert state_l1_l11.transitions_to[0].parent_ref().path == ("L1",)
@@ -2172,7 +2141,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_l1_l11_l111.transitions[0].effects == []
-        assert state_l1_l11_l111.transitions[0].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[0].doc is None
         assert state_l1_l11_l111.transitions[0].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[0].parent_ref().path == (
@@ -2192,7 +2160,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[1].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111.transitions[1].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[1].doc is None
         assert state_l1_l11_l111.transitions[1].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[1].parent_ref().path == (
@@ -2212,7 +2179,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[2].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111.transitions[2].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[2].doc is None
         assert state_l1_l11_l111.transitions[2].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[2].parent_ref().path == (
@@ -2228,7 +2194,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions[3].event is None
         assert state_l1_l11_l111.transitions[3].guard is None
         assert state_l1_l11_l111.transitions[3].effects == []
-        assert state_l1_l11_l111.transitions[3].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[3].doc is None
         assert state_l1_l11_l111.transitions[3].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[3].parent_ref().path == (
@@ -2249,7 +2214,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions[4].guard is None
         assert state_l1_l11_l111.transitions[4].effects == []
-        assert state_l1_l11_l111.transitions[4].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[4].doc is None
         assert state_l1_l11_l111.transitions[4].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[4].parent_ref().path == (
@@ -2270,7 +2234,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions[5].guard is None
         assert state_l1_l11_l111.transitions[5].effects == []
-        assert state_l1_l11_l111.transitions[5].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[5].doc is None
         assert state_l1_l11_l111.transitions[5].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[5].parent_ref().path == (
@@ -2291,7 +2254,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions[6].guard is None
         assert state_l1_l11_l111.transitions[6].effects == []
-        assert state_l1_l11_l111.transitions[6].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[6].doc is None
         assert state_l1_l11_l111.transitions[6].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[6].parent_ref().path == (
@@ -2312,7 +2274,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions[7].guard is None
         assert state_l1_l11_l111.transitions[7].effects == []
-        assert state_l1_l11_l111.transitions[7].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[7].doc is None
         assert state_l1_l11_l111.transitions[7].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[7].parent_ref().path == (
@@ -2330,7 +2291,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111.transitions[8].effects == []
-        assert state_l1_l11_l111.transitions[8].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[8].doc is None
         assert state_l1_l11_l111.transitions[8].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[8].parent_ref().path == (
@@ -2348,7 +2308,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111.transitions[9].effects == []
-        assert state_l1_l11_l111.transitions[9].exit_group_levels == 0
         assert state_l1_l11_l111.transitions[9].doc is None
         assert state_l1_l11_l111.transitions[9].parent_ref().name == "L111"
         assert state_l1_l11_l111.transitions[9].parent_ref().path == (
@@ -2388,7 +2347,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.init_transitions[0].event is None
         assert state_l1_l11_l111.init_transitions[0].guard is None
         assert state_l1_l11_l111.init_transitions[0].effects == []
-        assert state_l1_l11_l111.init_transitions[0].exit_group_levels == 0
         assert state_l1_l11_l111.init_transitions[0].doc is None
         assert state_l1_l11_l111.init_transitions[0].parent_ref().name == "L111"
         assert state_l1_l11_l111.init_transitions[0].parent_ref().path == (
@@ -2416,7 +2374,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions_entering_children[0].event is None
         assert state_l1_l11_l111.transitions_entering_children[0].guard is None
         assert state_l1_l11_l111.transitions_entering_children[0].effects == []
-        assert state_l1_l11_l111.transitions_entering_children[0].exit_group_levels == 0
         assert state_l1_l11_l111.transitions_entering_children[0].doc is None
         assert (
             state_l1_l11_l111.transitions_entering_children[0].parent_ref().name
@@ -2451,12 +2408,6 @@ class TestModelStateL1:
         assert (
             state_l1_l11_l111.transitions_entering_children_simplified[0].effects == []
         )
-        assert (
-            state_l1_l11_l111.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
         assert state_l1_l11_l111.transitions_entering_children_simplified[0].doc is None
         assert (
             state_l1_l11_l111.transitions_entering_children_simplified[0]
@@ -2489,7 +2440,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_l1_l11_l111.transitions_from[0].effects == []
-        assert state_l1_l11_l111.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111.transitions_from[0].doc is None
         assert state_l1_l11_l111.transitions_from[0].parent_ref().name == "L11"
         assert state_l1_l11_l111.transitions_from[0].parent_ref().path == ("L1", "L11")
@@ -2503,7 +2453,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions_from[1].guard is None
         assert state_l1_l11_l111.transitions_from[1].effects == []
-        assert state_l1_l11_l111.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111.transitions_from[1].doc is None
         assert state_l1_l11_l111.transitions_from[1].parent_ref().name == "L11"
         assert state_l1_l11_l111.transitions_from[1].parent_ref().path == ("L1", "L11")
@@ -2517,7 +2466,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111.transitions_from[2].guard is None
         assert state_l1_l11_l111.transitions_from[2].effects == []
-        assert state_l1_l11_l111.transitions_from[2].exit_group_levels == 0
         assert state_l1_l11_l111.transitions_from[2].doc is None
         assert state_l1_l11_l111.transitions_from[2].parent_ref().name == "L11"
         assert state_l1_l11_l111.transitions_from[2].parent_ref().path == ("L1", "L11")
@@ -2530,7 +2478,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111.transitions_to[0].event is None
         assert state_l1_l11_l111.transitions_to[0].guard is None
         assert state_l1_l11_l111.transitions_to[0].effects == []
-        assert state_l1_l11_l111.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111.transitions_to[0].doc is None
         assert state_l1_l11_l111.transitions_to[0].parent_ref().name == "L11"
         assert state_l1_l11_l111.transitions_to[0].parent_ref().path == ("L1", "L11")
@@ -3026,7 +2973,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111.transitions[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[0].doc is None
         assert state_l1_l11_l111_l1111.transitions[0].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[0].parent_ref().path == (
@@ -3047,7 +2993,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[1].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111.transitions[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[1].doc is None
         assert state_l1_l11_l111_l1111.transitions[1].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[1].parent_ref().path == (
@@ -3068,7 +3013,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[2].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111.transitions[2].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[2].doc is None
         assert state_l1_l11_l111_l1111.transitions[2].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[2].parent_ref().path == (
@@ -3085,7 +3029,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions[3].event is None
         assert state_l1_l11_l111_l1111.transitions[3].guard is None
         assert state_l1_l11_l111_l1111.transitions[3].effects == []
-        assert state_l1_l11_l111_l1111.transitions[3].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[3].doc is None
         assert state_l1_l11_l111_l1111.transitions[3].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[3].parent_ref().path == (
@@ -3107,7 +3050,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions[4].guard is None
         assert state_l1_l11_l111_l1111.transitions[4].effects == []
-        assert state_l1_l11_l111_l1111.transitions[4].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[4].doc is None
         assert state_l1_l11_l111_l1111.transitions[4].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[4].parent_ref().path == (
@@ -3129,7 +3071,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions[5].guard is None
         assert state_l1_l11_l111_l1111.transitions[5].effects == []
-        assert state_l1_l11_l111_l1111.transitions[5].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[5].doc is None
         assert state_l1_l11_l111_l1111.transitions[5].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[5].parent_ref().path == (
@@ -3151,7 +3092,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions[6].guard is None
         assert state_l1_l11_l111_l1111.transitions[6].effects == []
-        assert state_l1_l11_l111_l1111.transitions[6].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[6].doc is None
         assert state_l1_l11_l111_l1111.transitions[6].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[6].parent_ref().path == (
@@ -3173,7 +3113,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions[7].guard is None
         assert state_l1_l11_l111_l1111.transitions[7].effects == []
-        assert state_l1_l11_l111_l1111.transitions[7].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions[7].doc is None
         assert state_l1_l11_l111_l1111.transitions[7].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.transitions[7].parent_ref().path == (
@@ -3212,7 +3151,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.init_transitions[0].event is None
         assert state_l1_l11_l111_l1111.init_transitions[0].guard is None
         assert state_l1_l11_l111_l1111.init_transitions[0].effects == []
-        assert state_l1_l11_l111_l1111.init_transitions[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.init_transitions[0].doc is None
         assert state_l1_l11_l111_l1111.init_transitions[0].parent_ref().name == "L1111"
         assert state_l1_l11_l111_l1111.init_transitions[0].parent_ref().path == (
@@ -3245,10 +3183,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions_entering_children[0].event is None
         assert state_l1_l11_l111_l1111.transitions_entering_children[0].guard is None
         assert state_l1_l11_l111_l1111.transitions_entering_children[0].effects == []
-        assert (
-            state_l1_l11_l111_l1111.transitions_entering_children[0].exit_group_levels
-            == 0
-        )
         assert state_l1_l11_l111_l1111.transitions_entering_children[0].doc is None
         assert (
             state_l1_l11_l111_l1111.transitions_entering_children[0].parent_ref().name
@@ -3295,12 +3229,6 @@ class TestModelStateL1:
             == []
         )
         assert (
-            state_l1_l11_l111_l1111.transitions_entering_children_simplified[
-                0
-            ].exit_group_levels
-            == 0
-        )
-        assert (
             state_l1_l11_l111_l1111.transitions_entering_children_simplified[0].doc
             is None
         )
@@ -3339,7 +3267,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
         )
         assert state_l1_l11_l111_l1111.transitions_from[0].effects == []
-        assert state_l1_l11_l111_l1111.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions_from[0].doc is None
         assert state_l1_l11_l111_l1111.transitions_from[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1111.transitions_from[0].parent_ref().path == (
@@ -3360,7 +3287,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1111.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions_from[1].doc is None
         assert state_l1_l11_l111_l1111.transitions_from[1].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1111.transitions_from[1].parent_ref().path == (
@@ -3381,7 +3307,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111.transitions_from[2].guard is None
         assert state_l1_l11_l111_l1111.transitions_from[2].effects == []
-        assert state_l1_l11_l111_l1111.transitions_from[2].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions_from[2].doc is None
         assert state_l1_l11_l111_l1111.transitions_from[2].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1111.transitions_from[2].parent_ref().path == (
@@ -3398,7 +3323,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111.transitions_to[0].event is None
         assert state_l1_l11_l111_l1111.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1111.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111.transitions_to[0].doc is None
         assert state_l1_l11_l111_l1111.transitions_to[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1111.transitions_to[0].parent_ref().path == (
@@ -3731,7 +3655,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111_l11111.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11111.transitions_from[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11111.transitions_from[0].parent_ref().name
@@ -3759,7 +3682,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1111_l11111.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11111.transitions_from[1].doc is None
         assert (
             state_l1_l11_l111_l1111_l11111.transitions_from[1].parent_ref().name
@@ -3787,7 +3709,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].effects == []
-        assert state_l1_l11_l111_l1111_l11111.transitions_from[2].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11111.transitions_from[2].doc is None
         assert (
             state_l1_l11_l111_l1111_l11111.transitions_from[2].parent_ref().name
@@ -3811,7 +3732,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11111.transitions_to[0].event is None
         assert state_l1_l11_l111_l1111_l11111.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111_l11111.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1111_l11111.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11111.transitions_to[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11111.transitions_to[0].parent_ref().name
@@ -4017,7 +3937,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111_l11112.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11112.transitions_from[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11112.transitions_from[0].parent_ref().name
@@ -4045,7 +3964,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1111_l11112.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11112.transitions_from[1].doc is None
         assert (
             state_l1_l11_l111_l1111_l11112.transitions_from[1].parent_ref().name
@@ -4074,7 +3992,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1111_l11112.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11112.transitions_to[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11112.transitions_to[0].parent_ref().name
@@ -4277,7 +4194,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1111_l11113.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11113.transitions_from[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11113.transitions_from[0].parent_ref().name
@@ -4305,7 +4221,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1111_l11113.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11113.transitions_from[1].doc is None
         assert (
             state_l1_l11_l111_l1111_l11113.transitions_from[1].parent_ref().name
@@ -4334,7 +4249,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].guard is None
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1111_l11113.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1111_l11113.transitions_to[0].doc is None
         assert (
             state_l1_l11_l111_l1111_l11113.transitions_to[0].parent_ref().name
@@ -4519,7 +4433,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1112.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1112.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1112.transitions_from[0].doc is None
         assert state_l1_l11_l111_l1112.transitions_from[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1112.transitions_from[0].parent_ref().path == (
@@ -4540,7 +4453,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1112.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1112.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1112.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1112.transitions_from[1].doc is None
         assert state_l1_l11_l111_l1112.transitions_from[1].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1112.transitions_from[1].parent_ref().path == (
@@ -4559,7 +4471,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111_l1112.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1112.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1112.transitions_to[0].doc is None
         assert state_l1_l11_l111_l1112.transitions_to[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1112.transitions_to[0].parent_ref().path == (
@@ -4722,7 +4633,6 @@ class TestModelStateL1:
         assert state_l1_l11_l111_l1113.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l111_l1113.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1113.transitions_from[0].doc is None
         assert state_l1_l11_l111_l1113.transitions_from[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1113.transitions_from[0].parent_ref().path == (
@@ -4743,7 +4653,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_l1113.transitions_from[1].guard is None
         assert state_l1_l11_l111_l1113.transitions_from[1].effects == []
-        assert state_l1_l11_l111_l1113.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l111_l1113.transitions_from[1].doc is None
         assert state_l1_l11_l111_l1113.transitions_from[1].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1113.transitions_from[1].parent_ref().path == (
@@ -4762,7 +4671,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111_l1113.transitions_to[0].effects == []
-        assert state_l1_l11_l111_l1113.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_l1113.transitions_to[0].doc is None
         assert state_l1_l11_l111_l1113.transitions_to[0].parent_ref().name == "L111"
         assert state_l1_l11_l111_l1113.transitions_to[0].parent_ref().path == (
@@ -4932,9 +4840,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111_forced_gate_0.transitions_from[0].effects == []
-        assert (
-            state_l1_l11_l111_forced_gate_0.transitions_from[0].exit_group_levels == 0
-        )
         assert state_l1_l11_l111_forced_gate_0.transitions_from[0].doc is None
         assert (
             state_l1_l11_l111_forced_gate_0.transitions_from[0].parent_ref().name
@@ -4965,7 +4870,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_forced_gate_0.transitions_to[0].guard is None
         assert state_l1_l11_l111_forced_gate_0.transitions_to[0].effects == []
-        assert state_l1_l11_l111_forced_gate_0.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_forced_gate_0.transitions_to[0].doc is None
         assert (
             state_l1_l11_l111_forced_gate_0.transitions_to[0].parent_ref().name
@@ -5156,9 +5060,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l111_forced_gate_1.transitions_from[0].effects == []
-        assert (
-            state_l1_l11_l111_forced_gate_1.transitions_from[0].exit_group_levels == 0
-        )
         assert state_l1_l11_l111_forced_gate_1.transitions_from[0].doc is None
         assert (
             state_l1_l11_l111_forced_gate_1.transitions_from[0].parent_ref().name
@@ -5189,7 +5090,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l111_forced_gate_1.transitions_to[0].guard is None
         assert state_l1_l11_l111_forced_gate_1.transitions_to[0].effects == []
-        assert state_l1_l11_l111_forced_gate_1.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l111_forced_gate_1.transitions_to[0].doc is None
         assert (
             state_l1_l11_l111_forced_gate_1.transitions_to[0].parent_ref().name
@@ -5366,7 +5266,6 @@ class TestModelStateL1:
         assert state_l1_l11_l112.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l112.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l112.transitions_from[0].doc is None
         assert state_l1_l11_l112.transitions_from[0].parent_ref().name == "L11"
         assert state_l1_l11_l112.transitions_from[0].parent_ref().path == ("L1", "L11")
@@ -5380,7 +5279,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l112.transitions_from[1].guard is None
         assert state_l1_l11_l112.transitions_from[1].effects == []
-        assert state_l1_l11_l112.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l112.transitions_from[1].doc is None
         assert state_l1_l11_l112.transitions_from[1].parent_ref().name == "L11"
         assert state_l1_l11_l112.transitions_from[1].parent_ref().path == ("L1", "L11")
@@ -5395,7 +5293,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l112.transitions_to[0].effects == []
-        assert state_l1_l11_l112.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l112.transitions_to[0].doc is None
         assert state_l1_l11_l112.transitions_to[0].parent_ref().name == "L11"
         assert state_l1_l11_l112.transitions_to[0].parent_ref().path == ("L1", "L11")
@@ -5543,7 +5440,6 @@ class TestModelStateL1:
         assert state_l1_l11_l113.transitions_from[0].effects == [
             Operation(var_name="__forced_0", expr=Integer(value=1))
         ]
-        assert state_l1_l11_l113.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_l113.transitions_from[0].doc is None
         assert state_l1_l11_l113.transitions_from[0].parent_ref().name == "L11"
         assert state_l1_l11_l113.transitions_from[0].parent_ref().path == ("L1", "L11")
@@ -5557,7 +5453,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_l113.transitions_from[1].guard is None
         assert state_l1_l11_l113.transitions_from[1].effects == []
-        assert state_l1_l11_l113.transitions_from[1].exit_group_levels == 0
         assert state_l1_l11_l113.transitions_from[1].doc is None
         assert state_l1_l11_l113.transitions_from[1].parent_ref().name == "L11"
         assert state_l1_l11_l113.transitions_from[1].parent_ref().path == ("L1", "L11")
@@ -5572,7 +5467,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_l113.transitions_to[0].effects == []
-        assert state_l1_l11_l113.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_l113.transitions_to[0].doc is None
         assert state_l1_l11_l113.transitions_to[0].parent_ref().name == "L11"
         assert state_l1_l11_l113.transitions_to[0].parent_ref().path == ("L1", "L11")
@@ -5723,7 +5617,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_forced_gate_0.transitions_from[0].effects == []
-        assert state_l1_l11_forced_gate_0.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_forced_gate_0.transitions_from[0].doc is None
         assert state_l1_l11_forced_gate_0.transitions_from[0].parent_ref().name == "L11"
         assert state_l1_l11_forced_gate_0.transitions_from[0].parent_ref().path == (
@@ -5743,7 +5636,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_forced_gate_0.transitions_to[0].guard is None
         assert state_l1_l11_forced_gate_0.transitions_to[0].effects == []
-        assert state_l1_l11_forced_gate_0.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_forced_gate_0.transitions_to[0].doc is None
         assert state_l1_l11_forced_gate_0.transitions_to[0].parent_ref().name == "L11"
         assert state_l1_l11_forced_gate_0.transitions_to[0].parent_ref().path == (
@@ -5913,7 +5805,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_l11_forced_gate_1.transitions_from[0].effects == []
-        assert state_l1_l11_forced_gate_1.transitions_from[0].exit_group_levels == 0
         assert state_l1_l11_forced_gate_1.transitions_from[0].doc is None
         assert state_l1_l11_forced_gate_1.transitions_from[0].parent_ref().name == "L11"
         assert state_l1_l11_forced_gate_1.transitions_from[0].parent_ref().path == (
@@ -5933,7 +5824,6 @@ class TestModelStateL1:
         )
         assert state_l1_l11_forced_gate_1.transitions_to[0].guard is None
         assert state_l1_l11_forced_gate_1.transitions_to[0].effects == []
-        assert state_l1_l11_forced_gate_1.transitions_to[0].exit_group_levels == 0
         assert state_l1_l11_forced_gate_1.transitions_to[0].doc is None
         assert state_l1_l11_forced_gate_1.transitions_to[0].parent_ref().name == "L11"
         assert state_l1_l11_forced_gate_1.transitions_to[0].parent_ref().path == (
@@ -6092,7 +5982,6 @@ class TestModelStateL1:
         assert state_l1_l12.transitions_from[0].event is None
         assert state_l1_l12.transitions_from[0].guard is None
         assert state_l1_l12.transitions_from[0].effects == []
-        assert state_l1_l12.transitions_from[0].exit_group_levels == 0
         assert state_l1_l12.transitions_from[0].doc is None
         assert state_l1_l12.transitions_from[0].parent_ref().name == "L1"
         assert state_l1_l12.transitions_from[0].parent_ref().path == ("L1",)
@@ -6233,7 +6122,6 @@ class TestModelStateL1:
             x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
         )
         assert state_l1_forced_gate_0.transitions_from[0].effects == []
-        assert state_l1_forced_gate_0.transitions_from[0].exit_group_levels == 0
         assert state_l1_forced_gate_0.transitions_from[0].doc is None
         assert state_l1_forced_gate_0.transitions_from[0].parent_ref().name == "L1"
         assert state_l1_forced_gate_0.transitions_from[0].parent_ref().path == ("L1",)
@@ -6248,7 +6136,6 @@ class TestModelStateL1:
         )
         assert state_l1_forced_gate_0.transitions_to[0].guard is None
         assert state_l1_forced_gate_0.transitions_to[0].effects == []
-        assert state_l1_forced_gate_0.transitions_to[0].exit_group_levels == 0
         assert state_l1_forced_gate_0.transitions_to[0].doc is None
         assert state_l1_forced_gate_0.transitions_to[0].parent_ref().name == "L1"
         assert state_l1_forced_gate_0.transitions_to[0].parent_ref().path == ("L1",)

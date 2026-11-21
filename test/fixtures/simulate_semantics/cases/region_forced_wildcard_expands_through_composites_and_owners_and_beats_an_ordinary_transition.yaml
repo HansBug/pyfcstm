@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
   notes:
-  - "Exit actions in order: region B, region A, then the owner state P."
+  - "Exit actions in order: region A, region B, then the owner state P."
 categories:
 - regions
 - runtime
@@ -22,11 +22,11 @@ steps:
   expect:
     configuration: Root.Off
     vars:
-      seq: 213
+      seq: 123
     delta: false
 - cycle: []
   expect:
     configuration: Root.Off
     vars:
-      seq: 213
+      seq: 123
     delta: false

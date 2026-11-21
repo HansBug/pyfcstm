@@ -1,9 +1,9 @@
-title: A forced transition above two nested owners takes the outermost group away, deepest regions first and in reverse declaration order
+title: A forced transition above two nested owners takes the outermost group away, the regions of every group in declaration order and each nested owner after its regions
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
   notes:
-  - "The digits are the exit actions in order: region R2, then the nested owner with its regions Y and X in reverse order, then the owner itself; 9 is the entry of the target."
+  - "The digits are the exit actions in order: nested regions X and Y, the nested owner, then region R2, then the owner itself; 9 is the entry of the target."
 categories:
 - regions
 - runtime
@@ -22,11 +22,11 @@ steps:
   expect:
     configuration: Root.Off
     vars:
-      seq: 321459
+      seq: 124359
     delta: false
 - cycle: []
   expect:
     configuration: Root.Off
     vars:
-      seq: 321459
+      seq: 124359
     delta: false

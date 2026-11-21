@@ -8,6 +8,7 @@ import pytest
 
 from pyfcstm.diagnostics.inspect import inspect_model
 from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.dsl.node import EXIT_STATE
 from pyfcstm.model import (
     PlantUMLOptions,
     load_state_machine_from_text,
@@ -48,15 +49,23 @@ def test_a_declaration_that_reaches_regions_installs_one_hidden_variable():
     assert str(model.defines['__forced_0'].init) == '0'
 
 
-def test_a_state_resting_in_a_region_raises_the_variable_and_pseudo_states_get_nothing():
+def test_a_state_resting_in_a_region_follows_and_raises_the_variable_and_pseudo_states_get_nothing():
     run = load_state_machine_from_text(OWNER).root_state.substates['Run']
     region = run.regions['A']
-    exits = [edge for edge in region.transitions if edge.exit_group_levels]
-    assert [(edge.from_state, edge.exit_group_levels) for edge in exits] == [('A1', 1), ('A2', 1)]
-    for edge in exits:
-        assert edge.event.path_name == 'Root.Stop'
-        assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
+    for source in ('A1', 'A2'):
+        follower, starter = [edge for edge in region.transitions
+                             if edge.from_state == source and edge.to_state is EXIT_STATE]
+        # The follower finishes the region once another region decided.
+        assert (follower.event, str(follower.guard), follower.effects) == (None, '__forced_0 == 1', [])
+        # The starter decides on the declared event and raises the variable.
+        assert starter.event.path_name == 'Root.Stop' and starter.guard is None
+        assert [(op.var_name, str(op.expr)) for op in starter.effects] == [('__forced_0', '1')]
+    # The ordinary transition of A1 comes after both and does not give way.
+    ordinary = [edge for edge in region.transitions if edge.from_state == 'A1' and edge.to_state == 'A2']
+    assert [str(edge.guard) for edge in ordinary] == ['None']
     assert not [edge for edge in region.transitions if edge.from_state == 'Gate']
+    # The other region has its own pair.
+    assert len([edge for edge in run.regions['B'].transitions if edge.to_state is EXIT_STATE]) == 2
 
 
 def test_the_declaring_level_decides_in_two_steps_and_keeps_the_declared_transition():
@@ -149,15 +158,14 @@ def test_a_declaration_beside_regions_is_lowered_like_one_that_reaches_them():
     started = [edge for edge in plain.transitions
                if edge.event is not None and edge.event.path_name == 'Root.Stop']
     # A state that can be rested in starts the exit; the pseudo state holds
-    # nothing, and nothing takes a group of regions away.
+    # nothing.
     assert [edge.from_state for edge in started] == ['A', 'B']
     for edge in started:
         assert edge.event.path_name == 'Root.Stop' and edge.guard is None
         assert [(op.var_name, str(op.expr)) for op in edge.effects] == [('__forced_0', '1')]
-        assert not edge.exit_group_levels
 
 
-def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
+def test_a_declaration_inside_a_region_stays_inside_that_region():
     model = load_state_machine_from_text('''state Root {
     event Stop;
     [*] -> P;
@@ -176,12 +184,14 @@ def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
     q = region.substates['Q']
     assert [edge.from_state for edge in q.transitions
             if edge.event is not None and edge.event.path_name == 'Root.Stop'] == ['Q1', 'Q2']
-    # The declaration stays inside region A: only Q is left, never the group.
-    assert not any(edge.exit_group_levels for _, edge in _transitions(model))
+    # The declaration stays inside region A: only Q is left, and no state of
+    # region B holds anything for it.
+    assert not [edge for edge in model.root_state.substates['P'].regions['B'].transitions
+                if edge.to_state is EXIT_STATE]
     relay, declared = [edge for edge in region.transitions if edge.from_state == 'Q']
     assert (relay.to_state, relay.event, str(relay.guard)) == ('Done', None, '__forced_0 == 1')
     assert region.substates[declared.to_state].is_forced_gate
-    # Nothing in this machine is beyond the language, so it is exported as it runs.
+    # The export is the machine that runs and loads to the same machine.
     exported = str(model.to_ast_node())
     assert 'def int __forced_0 = 0;' in exported
     assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
@@ -197,7 +207,8 @@ def test_a_declaration_inside_a_region_is_lowered_without_taking_a_group_away():
 def test_a_variable_the_user_wrote_is_never_taken_for_the_hidden_one(taken):
     model = load_state_machine_from_text('def int %s = 5;\n%s' % (taken, OWNER))
     assert sorted(model.defines) == sorted([taken, '__forced_1'])
-    assert str(model.root_state.substates['Run'].regions['A'].transitions[0].effects[0].var_name) == '__forced_1'
+    region = model.root_state.substates['Run'].regions['A']
+    assert {op.var_name for edge in region.transitions for op in edge.effects} == {'__forced_1'}
 
 
 def test_forced_declarations_reach_each_owner_below_the_declared_state():
@@ -219,14 +230,22 @@ def test_forced_declarations_reach_each_owner_below_the_declared_state():
 }''')
     outer = model.root_state.substates['Outer']
     inner = outer.regions['R1'].substates['Inner']
-    # Every leaf of the outer owner names the outermost owner, whatever lies between.
-    assert [(edge.from_state, edge.exit_group_levels) for edge in outer.regions['R2'].transitions
-            if edge.exit_group_levels] == [('Z1', 1)]
-    assert [(edge.from_state, edge.exit_group_levels) for region in inner.regions.values()
-            for edge in region.transitions if edge.exit_group_levels] == [('X1', 2), ('Y1', 2)]
-    # The composite-like owner Inner holds no transition of its own for the declaration.
-    assert not [edge for edge in outer.regions['R1'].transitions
+    def starters(region):
+        return [edge.from_state for edge in region.transitions
                 if edge.event is not None and edge.event.path_name == 'Root.Halt']
+
+    def followers(region):
+        return [edge.from_state for edge in region.transitions
+                if edge.event is None and str(edge.guard) == '__forced_0 == 1']
+
+    # Every resting state below the declared one, however deep, starts and follows.
+    assert starters(outer.regions['R2']) == followers(outer.regions['R2']) == ['Z1']
+    assert [starters(region) for region in inner.regions.values()] == [['X1'], ['Y1']]
+    assert [followers(region) for region in inner.regions.values()] == [['X1'], ['Y1']]
+    # The nested owner Inner is not rested in: it only waits for the variable
+    # once its own regions are done, to finish region R1.
+    assert starters(outer.regions['R1']) == []
+    assert followers(outer.regions['R1']) == ['Inner']
 
 
 def test_inspect_judges_the_model_as_written():
@@ -249,9 +268,9 @@ def test_a_state_is_shown_as_written_after_its_machine_is_no_longer_kept():
     run = root.substates['Run']
     assert run.regions['A'].to_plantuml('full') == \
         kept.root_state.substates['Run'].regions['A'].to_plantuml('full')
-    # This machine takes a group away, so its states export the plain expansion too.
+    # The export is the machine that runs, whichever object it is asked of.
     assert str(root.to_ast_node()) == str(kept.root_state.to_ast_node())
-    assert '__forced' not in str(root.to_ast_node())
+    assert '__forced_0' in str(root.to_ast_node())
 
 
 def test_a_region_kept_on_its_own_is_shown_the_same_before_and_after_a_collection():
@@ -266,9 +285,9 @@ def test_a_region_kept_on_its_own_is_shown_the_same_before_and_after_a_collectio
     after = region.to_plantuml('full')
     assert before == after == kept.regions['A'].to_plantuml('full')
     assert '__forced' not in after
-    # The group of this owner is taken away, so the region exports the plain expansion too.
+    # The region exports what runs, whichever object it is asked of.
     assert str(region.to_ast_node()) == str(kept.regions['A'].to_ast_node())
-    assert '__forced' not in str(region.to_ast_node())
+    assert '__forced_0' in str(region.to_ast_node())
 
 
 def test_plantuml_draws_the_declaration_once_and_hides_how_it_is_carried_out():
@@ -374,17 +393,19 @@ EVENTED_NEIGHBOURS = '''state Root {
 }'''
 
 
-def test_an_event_transition_gives_way_through_a_gate_and_the_machine_exports_the_plain_expansion():
+def test_an_event_transition_gives_way_through_a_gate_and_the_machine_exports_what_runs():
     model = load_state_machine_from_text(EVENTED_NEIGHBOURS)
     root = model.root_state
     go = next(edge for edge in root.transitions
               if edge.event is not None and edge.event.name == 'Go')
     gate = root.substates[go.to_state]
     assert go.guard is None and gate.is_forced_gate
-    # Each of the three transitions of the model is something the language can write.
+    # The transition and the gate are something the language can write.
     assert str(go.to_ast_node()) == 'Run -> %s :: Go;' % gate.name
     exported = str(model.to_ast_node())
-    assert 'Run -> Idle :: Stop;' in exported and 'Run -> Off :: Kill;' in exported
+    assert exported.count('pseudo state __forced_gate_') == 3
+    assert 'Run -> %s :: Go;' % gate.name in exported
+    assert 'Run -> Idle :: Stop;' not in exported and 'Run -> Off :: Kill;' not in exported
     # Exporting what was exported gives the same text again.
     assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
     drawing = model.to_plantuml('full')
@@ -447,7 +468,7 @@ def test_a_gate_shows_itself():
     assert gate.name in gate.to_plantuml('full')
     # The machine itself is shown without it.
     assert '__forced' not in model.to_plantuml('full')
-    assert '__forced' not in str(model.to_ast_node())
+    assert gate.name in str(model.to_ast_node())
 
 
 def test_a_state_the_user_named_like_a_gate_is_left_alone():
@@ -514,14 +535,16 @@ def test_a_declaration_on_a_composite_above_an_owner_is_drawn_like_any_other_exp
     assert '__forced' not in model.diagram().to_json()
 
 
-def test_two_declarations_on_one_state_export_without_hidden_names_and_without_unguarded_relays():
+def test_two_declarations_on_one_state_export_the_machine_that_runs_and_draw_without_hidden_names():
     model = load_state_machine_from_text(TWO_DECLARATIONS)
     exported = str(model.to_ast_node())
-    assert '__forced' not in exported
-    assert 'O -> [*] : /Stop;' in exported and 'O -> [*] : /Halt;' in exported
-    # The relays of the lowered machine are never exported, and the text
-    # exports the same way again.
+    # Each declaration has its own variable, and its relay waits for it while
+    # the other declaration is not raised.
+    assert 'def int __forced_0 = 0;' in exported and 'def int __forced_1 = 0;' in exported
+    assert 'O -> [*] : if [__forced_0 == 1 && __forced_1 == 0];' in exported
+    assert 'O -> [*] : if [__forced_1 == 1 && __forced_0 == 0];' in exported
     assert 'O -> [*];' not in exported
+    # The text exports the same way again, and a drawing hides the machinery.
     assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
     assert '__forced' not in model.to_plantuml('full')
 
@@ -532,8 +555,10 @@ def test_states_and_regions_export_like_the_machine_they_belong_to():
     owner = root.substates['S'].substates['O']
     region = owner.regions['A']
     leaf = region.substates['A1']
+    for namespace in (root, root.substates['S'], owner, region):
+        assert '__forced' in str(namespace.to_ast_node())
+    assert '__forced' not in str(leaf.to_ast_node())
     for namespace in (root, root.substates['S'], owner, region, leaf):
-        assert '__forced' not in str(namespace.to_ast_node())
         assert '__forced' not in namespace.to_plantuml('full')
     assert str(model.to_ast_node()).count('region A {') == str(owner.to_ast_node()).count('region A {') == 1
     # Each level is the matching part of the machine export, line for line.

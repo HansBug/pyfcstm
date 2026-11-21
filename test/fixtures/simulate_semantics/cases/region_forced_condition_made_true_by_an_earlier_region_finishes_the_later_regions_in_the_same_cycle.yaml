@@ -1,9 +1,9 @@
-title: Only the first working region decides on the forced transition, before any region did work, so a condition that later regions work up to is met a cycle later
+title: A forced condition that an earlier region makes true is seen by the regions after it in the same cycle, and by the earlier region in the next cycle
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
   notes:
-  - Region A raises x to 2 in the second cycle. If region B could still decide in that cycle it would see x = 2 and take the group at once; the group is taken in the third cycle instead.
+  - Region A raises x to 2 in the second cycle, after its own state already looked at the condition. Region B runs after A, sees x = 2 and finishes at once; region A finishes in the third cycle and the owner continues.
 categories:
 - regions
 - runtime
@@ -19,7 +19,7 @@ steps:
     delta: false
 - cycle: []
   expect:
-    configuration: 'Root.P{A: A1, B: B1}'
+    configuration: 'Root.P{A: A1, B: [done]}'
     vars:
       x: 2
     delta: false

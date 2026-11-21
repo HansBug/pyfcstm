@@ -58,8 +58,8 @@ Three things become visible:
   form, and a machine loaded from that text can behave differently.
 
 PlantUML, the diagram viewer and ``pyfcstm inspect`` keep showing a forced
-transition as one transition per state it applies to. For a model with such a
-declaration they show the model as it was loaded: a model object edited
+transition as one transition per state it applies to. For a model with any
+forced declaration they show the model as it was loaded: a model object edited
 afterwards is drawn without the edit. A declaration whose sources have nothing
 inside them stays one transition per source and gets no variable. In collect
 mode (``parse_dsl_node_to_state_machine(..., collect=True)``) a faulty forced

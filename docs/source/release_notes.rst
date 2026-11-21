@@ -35,6 +35,33 @@ four behaviours change:
 ``CycleResult.consumed_events`` lists the event of a forced transition once.
 It used to list it once for every level that was left.
 
+When the source of a forced transition contains regions, each region is finished
+by ordinary ``-> [*]`` transitions, which the language already has; nothing
+takes a whole group away at once. A state that can be rested in below a region
+gets two of them: a starter with the declared event and condition, which raises
+the hidden variable, and in front of it a follower, which waits for the
+variable. Regions advance in declaration order, so the first region whose state
+sees the event and the condition raises the variable and finishes, and every
+region after it finishes in the same cycle when it sees the variable. When the
+last region has finished, the owner continues through its own transitions like
+it does for any group that is done. Three things follow:
+
+- **Regions leave in declaration order.** The exit actions of the first region
+  run first, nested owners leave after their own regions, and the owner exits
+  last.
+- **A condition that becomes true while the regions work.** A region that runs
+  after the one that made it true sees it in the same cycle and finishes at
+  once; the regions before it finish in the next cycle.
+- **A target that cannot be entered.** The regions that finished stay finished,
+  the last region keeps working with the variable raised, and the group leaves
+  in the first cycle in which the target can be entered. When two declarations
+  of one owner compete, the one that was raised first holds the group; the
+  second is not tried in the meantime, which differs from a model without
+  regions, where a target that cannot be entered makes the next declaration
+  count.
+
+The text of ``to_ast_node()`` loads to the same machine in all these cases.
+
 Three things become visible:
 
 - Each such declaration is carried out with a hidden ``int`` variable
@@ -52,10 +79,8 @@ Three things become visible:
 - ``to_ast_node()`` exports the machine that runs, with those variables and
   pseudo states, as it already does for history. The model loaded from the
   exported text is the same machine: it takes the same cycles and the same hot
-  starts, and every reachability and BMC question gets the same answer. A model
-  in which a forced transition takes the regions of a state away is the
-  exception: it is still exported with every forced transition in the older
-  form, and a machine loaded from that text can behave differently.
+  starts, and every reachability and BMC question gets the same answer. That
+  holds for a forced transition that reaches regions as well.
 
 PlantUML, the diagram viewer and ``pyfcstm inspect`` keep showing a forced
 transition as one transition per state it applies to. For a model with any
@@ -84,6 +109,65 @@ Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new
 expected values. A hot-start snapshot taken from ``runtime.vars`` keeps its
 ``__forced_*`` entries and supplies them with the other variables.
+
+History and ``active()``
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The hidden variables of history and of ``active()`` are ordinary variables too,
+so a model and the text it exports behave the same in every stage:
+
+- A hot start no longer checks the values of ``__hist_goto`` and the
+  ``__hist_*`` records, and a havocked start of a BMC query is no longer kept
+  inside the values an execution holds. Whatever value is given is what the
+  machine runs on; ``StateMachine.history_variables()`` still computes valid
+  ones. The category ``domain.history_variable`` of BMC constraint groups no
+  longer exists.
+- A model that uses ``active()`` is accepted by hot start, ``pyfcstm simulate``,
+  code generation, ``pyfcstm bmc`` and the structural ``pyfcstm.verify``
+  algorithms. Its flags ``__active_*`` are supplied by a hot start like any
+  other variable; ``StateMachine.active_variables()`` computes them from a
+  position. Only regions are still refused by those consumers, so the
+  ``E_UNSUPPORTED_FEATURE`` code lists no ``active`` feature any more and the
+  inspect report no longer carries the reason ``active_query_unsupported``.
+
+Inspect and verify
+~~~~~~~~~~~~~~~~~~
+
+With ``--enable-verify``, the findings of the verify pipeline (``W_DEAD_GUARD``,
+``W_GUARD_TAUTOLOGY``, ``W_EFFECT_SMT_NO_OP``, ``I_EFFECT_GUARD_CONTRADICT``,
+``W_TRANSITION_SHADOWED``, ``I_ENTER_DURING_CONTRADICT``,
+``W_COMPOSITE_INIT_INCOMPLETE``, ``I_NONTRIVIAL_SCC``,
+``W_TOPOLOGICAL_NOEXIT``, ``I_TOPOLOGICAL_NON_TERMINATING`` and
+``W_EVENT_UNREACHABLE_EMIT``) are judged on the machine that runs. A model that
+uses history, ``active()`` or a forced declaration and the text it exports then
+give the same ones. The report itself and every finding about what was written
+still come from the model as written, and so does ``W_FORCED_GUARD_UNSAT``,
+which judges a declaration. A condition on ``active("...")`` is judged like any
+condition over its hidden flag instead of being skipped. A finding of the
+machine that runs can name a hidden variable or a generated pseudo state and can
+report something about them: the relay of a forced declaration lowers the
+variable its own guard reads, which is ``I_EFFECT_GUARD_CONTRADICT``. Each such
+finding points at the declaration, history or queried state it was lowered
+from. A combo trigger keeps reporting the findings about its generated guard as
+the term of the trigger, through the ``W_COMBO_*`` codes.
+
+The solver queries of ``pyfcstm.verify`` each run in a Z3 context of their own.
+Extracting one model from the shared context used to turn the answer of a later
+non-linear query from ``sat`` into ``unknown``, so a result depended on what the
+process had solved before. A condition such as ``x ** y > 0``, which Z3 cannot
+decide, now gives ``unknown`` every time.
+
+Diagrams
+~~~~~~~~
+
+A model that uses history is drawn as written. PlantUML shows a transition that
+enters a history as ``Owner[H]`` or ``Owner[H*]``, the default of a shallow
+history as the arrow out of ``[H]``, and the default of a deep history as a
+``[H*] -> Child.Leaf`` line in the description of the owner, because PlantUML
+cannot draw an arrow out of a deep history that a transition enters. The
+diagram snapshot labels such a transition ``Owner.[H]`` or ``Owner.[H*]``.
+The hidden variables, gate states and route transitions that history is lowered
+into are not drawn, as is already the case for forced declarations.
 
 v0.6.0
 ------

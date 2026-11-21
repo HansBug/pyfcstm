@@ -66,6 +66,12 @@ DEFAULT\_STRUCTURE\_STATISTICS\_POLICY
 .. autodata:: DEFAULT_STRUCTURE_STATISTICS_POLICY
 
 
+BEHAVIOR\_DIAGNOSTIC\_CODES
+-----------------------------------------------------
+
+.. autodata:: BEHAVIOR_DIAGNOSTIC_CODES
+
+
 StateInfo
 -----------------------------------------------------
 

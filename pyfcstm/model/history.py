@@ -645,7 +645,6 @@ class _Lowering:
                     operations=operations,
                     is_abstract=False,
                     state_path=(*path, None),
-                    _span=leaf._span,
                 )
                 action.parent = leaf
                 leaf.on_exits.append(action)

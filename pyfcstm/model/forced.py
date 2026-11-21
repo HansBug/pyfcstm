@@ -926,7 +926,6 @@ class ForcedExpansion:
                         follower = replace(
                             transition, event=None, guard=raised, effects=[]
                         )
-                        carrying.add(id(follower))
                         namespace.transitions.insert(
                             namespace.transitions.index(transition), follower
                         )

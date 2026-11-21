@@ -71,6 +71,19 @@ state Root {
     Work -> Paused;
     Paused -> Work.[H] : /Resume;
 }''',
+    'active_condition_inside_its_own_state': '''def int n = 0;
+state Root {
+    [*] -> A;
+    state A { during { if [active("Root.A")] { n = n + 1; } } }
+}''',
+    'forced_loop_through_a_gate': '''state Root {
+    event e;
+    [*] -> a;
+    state a { [*] -> x; state x; }
+    state b;
+    !a -> b :: e;
+    b -> a;
+}''',
     'forced_inside_an_owner_of_regions': '''def int seq = 0;
 state Root {
     event Stop;
@@ -146,3 +159,7 @@ state Root {
     report = inspect_model(model, **SMT)
     assert 'W_FORCED_GUARD_UNSAT' not in BEHAVIOR_DIAGNOSTIC_CODES
     assert 'W_FORCED_GUARD_UNSAT' in {item.code for item in report.diagnostics}
+    # The verification report says the same: the algorithm ran on the model as
+    # written, where the declaration still is a declaration.
+    algorithms = {item.algorithm_name: item for item in report.verification.algorithms}
+    assert algorithms['forced_guard_unsat_under_init'].result_kind == 'unsat'

@@ -4854,24 +4854,23 @@ def _combine_inspect_passes(
         item for item in running.report.diagnostics
         if item.code in BEHAVIOR_DIAGNOSTIC_CODES
     )
-    verification = written.report.verification
-    if written.verify_results is not None:
-        declaration = [
-            item for item in written.verify_results
-            if item.algorithm_name in _DECLARATION_VERIFY_ALGORITHMS
-        ]
-        replaced = {item.algorithm_name for item in declaration}
-        merged = [
-            item for item in running.verify_results
-            if item.algorithm_name not in replaced
-        ] + declaration
-        verification = _verification_report_from_results(
-            running.verify_plan,
-            merged,
-            max_complexity_tier=settings['max_complexity_tier'],
-            max_call_count_scaling=settings['max_call_count_scaling'],
-            smt_timeout_ms=settings['smt_timeout_ms'],
-        )
+    # Both passes ran the verify algorithms: the second one only exists then.
+    declaration = [
+        item for item in written.verify_results
+        if item.algorithm_name in _DECLARATION_VERIFY_ALGORITHMS
+    ]
+    replaced = {item.algorithm_name for item in declaration}
+    merged = [
+        item for item in running.verify_results
+        if item.algorithm_name not in replaced
+    ] + declaration
+    verification = _verification_report_from_results(
+        running.verify_plan,
+        merged,
+        max_complexity_tier=settings['max_complexity_tier'],
+        max_call_count_scaling=settings['max_call_count_scaling'],
+        smt_timeout_ms=settings['smt_timeout_ms'],
+    )
     return replace(written.report, diagnostics=diagnostics, verification=verification)
 
 

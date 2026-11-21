@@ -65,19 +65,20 @@ inside them stays one transition per source and gets no variable. In collect
 mode (``parse_dsl_node_to_state_machine(..., collect=True)``) a faulty forced
 declaration is reported once instead of once per level it was expanded to.
 
-In the machine that runs, ``Transition.is_forced`` marks the transitions that
-carry the declared event and guard. The transitions generated to pass the exit
-on, which only read ``__forced_<n>``, are not marked; they keep
-``forced_origin``, the text of the declaration they were generated for. Both
-fields only say where a transition came from, like ``combo_origin_refs`` on the
-transitions of a combo trigger: nothing that executes the machine or answers a
-reachability or BMC question reads them. Code that walks ``walk_states()`` and
-``State.transitions`` walks the machine that runs, with the generated
-transitions and the gate states ``__forced_gate_<n>``. So do the analyses of
-:mod:`pyfcstm.verify` and the analyzers of :mod:`pyfcstm.diagnostics.analyzers`:
-they judge the machine they are handed.
-:func:`pyfcstm.diagnostics.inspect.inspect_model` and the drawings judge the
-model as written.
+The machine that runs carries no trace of a forced declaration: none of its
+transitions is marked ``Transition.is_forced`` or keeps a ``forced_origin``. It
+is plain FCSTM, and everything that executes it or answers a question about it,
+the simulator, the generated runtimes, BMC, the analyses of
+:mod:`pyfcstm.verify` and the analyzers of
+:mod:`pyfcstm.diagnostics.analyzers`, takes it as it is, with the generated
+transitions and the gate states ``__forced_gate_<n>`` that code walking
+``walk_states()`` and ``State.transitions`` meets. The marks exist only in the
+model as written, which drawings and
+:func:`pyfcstm.diagnostics.inspect.inspect_model` are built from, so the
+warnings that are about a declaration itself, such as
+``W_FORCED_GUARD_UNSAT``, come from the inspect report. The per-transition
+algorithm ``forced_guard_unsat_under_init`` therefore only reports a
+transition that is handed to it marked.
 
 Code that compared ``StateMachine.defines``, ``walk_states()`` or exported DSL
 text of a model with forced transitions against stored values needs new

@@ -24,7 +24,7 @@
 
 PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展示为它作用到的每个状态上各一条转换。对含这类声明的模型，它们展示的是加载时的模型：加载之后再修改模型对象，改动不会出现在这些展示里。来源状态内部没有任何状态的声明保持为每个来源状态一条转换，也不产生隐藏变量。在收集模式（\ ``parse_dsl_node_to_state_machine(..., collect=True)``\ ）下，一条写错的强制转换声明只报告一次，不再按展开的层数重复报告。
 
-在实际运行的状态机里，\ ``Transition.is_forced``\ 标记的是带着声明的事件和条件的那些转换。为了把退出继续向上传而生成的、只读取 ``__forced_<n>`` 的转换不带这个标记，但保留 ``forced_origin``\ （生成它们的那条声明的原文）。这两个字段只说明转换从哪里来，与组合转换的转换上的 ``combo_origin_refs`` 一样：执行状态机、回答可达性或 BMC 问题都不读取它们。自己用 ``walk_states()`` 和 ``State.transitions`` 遍历的代码，遍历的是实际运行的状态机，会遇到生成的转换和门状态 ``__forced_gate_<n>``；\ :mod:`pyfcstm.verify`\ 里的分析和 :mod:`pyfcstm.diagnostics.analyzers`\ 里的分析器也一样，判断的是传给它们的那份状态机。\ :func:`pyfcstm.diagnostics.inspect.inspect_model`\ 和图形判断的是按书写的模型。
+实际运行的状态机上没有任何强制转换声明的痕迹：它的转换都不带 ``Transition.is_forced`` 标记，也没有 ``forced_origin``。它就是普通的 FCSTM，所有执行它、或回答与它有关的问题的环节，包括仿真器、生成的运行时、BMC、\ :mod:`pyfcstm.verify`\ 里的分析和 :mod:`pyfcstm.diagnostics.analyzers`\ 里的分析器，都按它本来的样子处理，会遇到生成的转换和门状态 ``__forced_gate_<n>``，自己用 ``walk_states()`` 和 ``State.transitions`` 遍历的代码也一样。标记只存在于按书写的模型里，图形和 :func:`pyfcstm.diagnostics.inspect.inspect_model`\ 就是从它构建的，所以针对声明本身的告警，例如 ``W_FORCED_GUARD_UNSAT``\ ，来自 inspect 报告；单条转换的算法 ``forced_guard_unsat_under_init`` 也只会报告被传入时带着标记的转换。
 
 如果代码把含强制转换的模型的 ``StateMachine.defines``\ 、\ ``walk_states()``\ 或导出的 DSL 文本与保存的期望值比较，需要更新期望值。从 ``runtime.vars`` 取得的热启动快照要连同其中的 ``__forced_*`` 项一起保存和提供，与其他变量一样。
 

@@ -186,7 +186,9 @@ the root mean the same wherever the machine rests. A name that depends on the
 position, such as ``Go`` or ``.Reset``, is resolved once for every active leaf:
 it is an error if no leaf finds an event, the event is used if the leaves that
 find one all find the same event, and the name is ambiguous, with every
-candidate listed, if they find different events.
+candidate listed, if they find different events. A region that still waits for
+initialization after a hot start has no active leaf yet and does not take part
+in the first cycle; name its events by their full path when that matters.
 
 Basic usage::
 

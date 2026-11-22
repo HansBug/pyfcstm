@@ -35,7 +35,8 @@ def split_init_arguments(text: str) -> List[str]:
 
     The start position is the first word, except that a configuration text such
     as ``Controller.Running{Safety: Watching, Motion: On}`` holds spaces inside
-    its braces and stays one argument. The words after it are the variable
+    its braces and stays one argument; spaces before the opening brace belong to
+    it as well, as the configuration parser allows them. The words after it are the variable
     assignments. Unbalanced braces are left to the configuration parser to
     report: the whole text then becomes the start position.
 
@@ -52,6 +53,8 @@ def split_init_arguments(text: str) -> List[str]:
         ['System.Active', 'counter=10']
         >>> split_init_arguments('Root.P{A: X, B: [done]} n=1 m=2')
         ['Root.P{A: X, B: [done]}', 'n=1', 'm=2']
+        >>> split_init_arguments('Root.P {A: X} n=1')
+        ['Root.P {A: X}', 'n=1']
         >>> split_init_arguments('Root.P{A: X')
         ['Root.P{A: X']
     """
@@ -68,7 +71,7 @@ def split_init_arguments(text: str) -> List[str]:
             if depth == 0:
                 end = index + 1
                 break
-        elif char.isspace() and depth == 0:
+        elif char.isspace() and depth == 0 and not text[index:].lstrip().startswith('{'):
             end = index
             break
     return [text[:end]] + text[end:].split()

@@ -85,20 +85,20 @@ class SimulationCompleter(Completer):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> from pyfcstm.simulate import SimulationRuntime
-        >>> model = load_state_machine_from_text(
-        ...     'state Root { [*] -> Run; state Run {'
-        ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
-        ... )
-        >>> runtime = SimulationRuntime(model)
-        >>> _ = runtime.cycle()
-        >>> from prompt_toolkit.document import Document
-        >>> completer = SimulationCompleter(runtime)
-        >>> [c.text for c in completer.get_completions(Document('init Root.Run.B.'), None)]
-        ['Root.Run.B.Y']
-        >>> list(completer.get_completions(Document('init Root.Run{A: X'), None))
-        []
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { [*] -> Run; state Run {'
+            ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+            ... )
+            >>> runtime = SimulationRuntime(model)
+            >>> _ = runtime.cycle()
+            >>> from prompt_toolkit.document import Document
+            >>> completer = SimulationCompleter(runtime)
+            >>> [c.text for c in completer.get_completions(Document('init Root.Run.B.'), None)]
+            ['Root.Run.B.Y']
+            >>> list(completer.get_completions(Document('init Root.Run{A: X'), None))
+            []
         """
         text = document.text_before_cursor
         words = text.split()

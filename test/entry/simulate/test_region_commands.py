@@ -459,3 +459,12 @@ def test_cycle_completes_the_event_names_that_lead_to_one_event():
     assert "Ping" not in texts
     assert "W.Job.A.Q.A1.W1.Ping" in texts
     assert "W.Job.A.Q.A2.W2.Ping" in texts
+
+
+def test_init_accepts_spaces_before_the_opening_brace(tmp_path):
+    result, output = _session(
+        tmp_path, "init W.Job {A: Q{A1: W1, A2: W2}, B: Comp.In1} n=0 seq=0; cycle"
+    )
+    assert result.exitcode == 0, result.stdout
+    assert "Current State: W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}" in output
+    assert "n = 10101" in output

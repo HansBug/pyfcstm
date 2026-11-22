@@ -86,6 +86,13 @@ def test_a_name_that_leads_to_different_events_is_ambiguous(model):
     assert "Controller.Running.Motion.Off.Ping" in message
 
 
+def test_a_root_based_name_that_does_not_exist_names_the_event_not_the_leaves(model):
+    config = Configuration.parse(model, RESTING)
+    with pytest.raises(ModelLookupError, match="Nope") as caught:
+        config.resolve_event("/Nope")
+    assert "matches no event" not in str(caught.value)
+
+
 def test_a_name_that_no_leaf_finds_is_an_error(model):
     config = Configuration.parse(model, RESTING)
     with pytest.raises(ModelLookupError, match="Nope"):

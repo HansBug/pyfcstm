@@ -157,6 +157,40 @@ def test_a_partial_hot_start_reports_its_waiting_regions_before_the_first_cycle(
     assert runtime.configuration.mode == "stable"
 
 
+def test_a_path_through_nested_regions_leaves_every_other_region_waiting(job):
+    """``W.Job.A.Q.A1.W1`` sits in two regions: ``A2`` and ``B`` wait, ``A1`` is in place."""
+    runtime = _hot(job, "W.Job.A.Q.A1.W1")
+    assert str(runtime.configuration) == "W.Job{A: Q{A1: W1, A2: [init]}, B: [init]}"
+    runtime.cycle()
+    assert str(runtime.configuration) == RESTING
+    # A1 is in place (no enter 2), A2 enters W2 (3), B enters Comp and In1 (4, 5).
+    assert runtime.vars["seq"] == 345
+
+
+ROOT_OWNER = """
+def int n = 0;
+state Root {
+    >> during before { n = n + 1000; }
+    during before { n = n + 7; }
+    enter { n = n + 100000; }
+    region A { [*] -> X; state X { during { n = n + 1; } } }
+    region B { [*] -> Y; state Y { during { n = n + 10; } } }
+}
+"""
+
+
+def test_a_root_owner_written_alone_waits_as_a_whole():
+    model = load_state_machine_from_text(ROOT_OWNER)
+    runtime = SimulationRuntime(model, initial_state="Root", initial_vars={"n": 0})
+    assert str(runtime.configuration) == "Root{A: [init], B: [init]}"
+    assert runtime.configuration.mode == "initialization"
+    runtime.cycle()
+    assert str(runtime.configuration) == "Root{A: X, B: Y}"
+    # The enter of the owner did not run; its ``during before`` boundary actions
+    # are not replayed by a hot start either; the aspect runs once per cycle.
+    assert runtime.vars["n"] == 1011
+
+
 def test_a_state_path_into_a_region_leaves_the_other_regions_waiting(job):
     by_text = _hot(job, "W.Job{B: Comp.In1}")
     by_path = _hot(job, "W.Job.B.Comp.In1")

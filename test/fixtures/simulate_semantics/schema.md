@@ -103,6 +103,7 @@ initial:
 Allowed fields:
 
 - `initial.state`: dot-separated state path string or `null`
+- `initial.configuration`: start position of a regions case (see "Hot start of a region model")
 - `initial.vars`: control-variable initial values or `null`
 - `initial.outputs`: output initial values
 - `initial.expect.raises`: constructor exception expectation
@@ -111,7 +112,7 @@ Without `initial.state`, initial values may be partial: supplied values bypass
 those variables' default initializers; omitted values use DSL initialization.
 Normal entry actions still run when the machine starts cycling.
 
-With `initial.state`, `vars` and `outputs` together must supply every persistent
+With `initial.state` or `initial.configuration`, `vars` and `outputs` together must supply every persistent
 variable. The simulator restores the state hierarchy without replaying entry
 actions. A leaf target resumes active execution; a composite target still needs
 its internal initial transition. Parameters are supplied only at top level;
@@ -123,7 +124,7 @@ is also legal and means no hot-start target is provided. `cycle: null` is still
 rejected; `null` is only meaningful for explicit state sentinels such as
 `initial.state` and `expect.state`.
 
-When `initial.expect` is present, `initial.state` and at least one of
+When `initial.expect` is present, `initial.state` (`initial.configuration` in a regions case) and at least one of
 `initial.vars` / `initial.outputs` must be explicit. Constructor-failure fixtures
 must use `steps: []`.
 
@@ -277,9 +278,29 @@ Rules:
 A case in the `regions` category exercises a model that declares regions. Until
 every shared runner supports regions, such a case must set
 `exclude_runners: [generated_python_alignment, bmc_core]`; the loader rejects a
-`regions` case that leaves either runner selected. Cold-start region cases rely
-on the simulator only; hot start of a region model is not part of the corpus
-yet, so a region case cannot declare `initial`.
+`regions` case that leaves either runner selected. A region case that
+hot-starts names the start position with `initial.configuration` (see below)
+instead of `initial.state`.
+
+### Hot start of a region model
+
+A region case may declare `initial` to hot-start the runtime. Because the start
+position of a model with regions is a tree, it is written with
+`initial.configuration` instead of `initial.state`: a non-empty string handed to
+`SimulationRuntime(initial_state=...)` as it stands. The string is anything that
+argument accepts for a model with regions, for example a configuration text such
+as `Root.P{A: A1, B: [init]}`, a region left out so that it waits for
+initialization, or a plain state path. `initial.state` is rejected in a region
+case and `initial.configuration` in any other case. `initial.vars` must still
+list every persistent variable, hidden ones included, and `initial.expect.raises`
+works as for any other case: it asserts that constructing the runtime fails.
+
+```yaml
+initial:
+  configuration: "Root.P{A: A2, B: [init]}"
+  vars:
+    n: 0
+```
 
 ### Position
 

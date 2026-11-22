@@ -28,6 +28,8 @@ pyfcstm.bmc
     properties
     provenance
     query
+    region_expand
+    region_relation
     relation
     safety
     slicing

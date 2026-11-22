@@ -48,7 +48,7 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 import z3
 
@@ -62,6 +62,7 @@ from .domain import (
 )
 from .engine import BmcPreparedContext
 from .errors import BmcBuildError, UnsupportedBmcQuery
+from pyfcstm.model.region import walk_namespaces
 from .region_expand import (
     ATOM_REGION_DONE,
     ATOM_REGION_ENTER,
@@ -69,6 +70,7 @@ from .region_expand import (
     RegionUnitFormal,
     expand_cold_unit,
     expand_continue_unit,
+    expand_flush_unit,
     expand_init_unit,
     expand_leaf_unit,
 )
@@ -198,30 +200,36 @@ class _Units:
 
     def __init__(self, domain: BmcDomain) -> None:
         self._domain = domain
-        self._leaf: Dict[str, RegionUnitFormal] = {}
-        self._init: Dict[str, RegionUnitFormal] = {}
-        self._cont: Dict[str, RegionUnitFormal] = {}
-        self._cold: Optional[RegionUnitFormal] = None
+        self._cache: Dict[
+            Tuple[str, Optional[str], FrozenSet[str]], RegionUnitFormal
+        ] = {}
 
-    def leaf(self, path: str) -> RegionUnitFormal:
-        if path not in self._leaf:
-            self._leaf[path] = expand_leaf_unit(self._domain, path)
-        return self._leaf[path]
+    def get(
+        self,
+        spec: Tuple[str, Optional[str]],
+        before_done: FrozenSet[str] = frozenset(),
+    ) -> RegionUnitFormal:
+        """Return the unit of ``spec`` for the scopes whose before actions ran."""
+        key = (spec[0], spec[1], before_done)
+        if key not in self._cache:
+            kind, path = spec
+            if kind == "leaf":
+                unit = expand_leaf_unit(self._domain, path, before_done=before_done)
+            elif kind == "init":
+                unit = expand_init_unit(self._domain, path, before_done=before_done)
+            elif kind == "cont":
+                unit = expand_continue_unit(self._domain, path, before_done=before_done)
+            else:
+                unit = expand_cold_unit(self._domain, before_done=before_done)
+            self._cache[key] = unit
+        return self._cache[key]
 
-    def init(self, region_path: str) -> RegionUnitFormal:
-        if region_path not in self._init:
-            self._init[region_path] = expand_init_unit(self._domain, region_path)
-        return self._init[region_path]
-
-    def cont(self, owner_path: str) -> RegionUnitFormal:
-        if owner_path not in self._cont:
-            self._cont[owner_path] = expand_continue_unit(self._domain, owner_path)
-        return self._cont[owner_path]
-
-    def cold(self) -> RegionUnitFormal:
-        if self._cold is None:
-            self._cold = expand_cold_unit(self._domain)
-        return self._cold
+    def flush(self, owed: FrozenSet[str]) -> RegionUnitFormal:
+        """Return the unit that runs the after actions of the owing scopes."""
+        key = ("flush", None, owed)
+        if key not in self._cache:
+            self._cache[key] = expand_flush_unit(self._domain, owed)
+        return self._cache[key]
 
 
 def _regions_of(domain: BmcDomain, owner_path: str) -> Tuple[RegionDomainEntry, ...]:
@@ -362,6 +370,16 @@ class _StepBuilder:
         self.int_names = tuple(
             name for name in self.persistent if z3.is_int(frame_vars[name])
         )
+        # Scopes that declare ``>> during`` aspects.  Each keeps two flags in
+        # the values that flow from unit to unit: whether its before actions
+        # already ran in this cycle, and whether it owes its after actions.
+        self.before_scopes, self.after_scopes = _aspect_scopes(prepared.model)
+        self.has_aspects = bool(self.before_scopes or self.after_scopes)
+        self.ledger_keys = tuple(
+            ["$b:%s" % path for path in self.before_scopes]
+            + ["$o:%s" % path for path in self.after_scopes]
+        )
+        self.slots = self.persistent + self.ledger_keys
         self.constraints: List[z3.BoolRef] = []
         self.cases: List[RegionCaseRelation] = []
         self.delta_terms: List[z3.BoolRef] = []
@@ -382,14 +400,31 @@ class _StepBuilder:
     def fresh_env(self, tag: str) -> _Env:
         self._counter += 1
         frame_vars = self.symbols.frame_vars[self.step]
-        return {
+        env: _Env = {
             name: (z3.Int if z3.is_int(frame_vars[name]) else z3.Real)(
                 "R_%d_%d_%s_%s" % (self.step, self._counter, tag, name)
             )
             for name in self.persistent
         }
+        for key in self.ledger_keys:
+            env[key] = z3.Bool(
+                "R_%d_%d_%s_%s" % (self.step, self._counter, tag, _symbol("", key))
+            )
+        return env
+
+    def start_env(self, frame_vars: Mapping[str, z3.ArithRef]) -> _Env:
+        """Return the values at the start of a cycle: no aspect has run yet."""
+        env: _Env = dict(frame_vars)
+        for key in self.ledger_keys:
+            env[key] = z3.BoolVal(False)
+        return env
 
     def env_equal(
+        self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
+    ) -> z3.BoolRef:
+        return _and(left[name] == right[name] for name in self.slots)
+
+    def vars_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
     ) -> z3.BoolRef:
         return _and(left[name] == right[name] for name in self.persistent)
@@ -401,7 +436,7 @@ class _StepBuilder:
         }
 
     def pre_env(self, env: Mapping[str, z3.ArithRef]) -> Dict[str, object]:
-        merged: Dict[str, object] = dict(env)
+        merged: Dict[str, object] = {name: env[name] for name in self.persistent}
         merged.update(self.symbols.step_inputs[self.step])
         merged.update(self.symbols.parameters)
         return merged
@@ -418,9 +453,31 @@ class _StepBuilder:
     # ------------------------------------------------------------------
     # one unit
     # ------------------------------------------------------------------
+    def flags(
+        self, env: Mapping[str, object], keys: Iterable[str]
+    ) -> List[Tuple[Tuple[str, ...], z3.BoolRef]]:
+        """Enumerate the values the flags ``keys`` can take on ``env``.
+
+        A flag that is already known is not branched on; every other flag
+        takes both values, and each combination comes with the condition that
+        selects it.
+        """
+        options: List[Tuple[Tuple[str, ...], z3.BoolRef]] = [((), z3.BoolVal(True))]
+        for key in keys:
+            flag = z3.simplify(env[key])
+            if z3.is_true(flag):
+                options = [(on + (key,), cond) for on, cond in options]
+            elif z3.is_false(flag):
+                continue
+            else:
+                options = [
+                    (on + (key,), z3.And(cond, flag)) for on, cond in options
+                ] + [(on, z3.And(cond, z3.Not(flag))) for on, cond in options]
+        return options
+
     def lower_unit(
         self,
-        unit: RegionUnitFormal,
+        spec: Tuple[str, Optional[str]],
         gate: z3.BoolRef,
         env_in: _Env,
         ns: Optional[_Namespace],
@@ -433,8 +490,47 @@ class _StepBuilder:
         ``outputs`` is the position symbol and the variable symbols the selected
         path writes; with ``None`` the unit is only asked whether it can
         succeed.  ``record`` keeps the lowered paths for inspection, which only
-        the paths that really run in the step want.
+        the paths that really run in the step want.  A unit whose paths depend
+        on which before actions already ran is lowered once for every
+        combination the flags can take.
         """
+        if not self.has_aspects:
+            return self._lower_variant(
+                self.units.get(spec), gate, env_in, ns, tag, outputs, record
+            )
+        merged = _UnitResult(z3.BoolVal(False))
+        oks = []
+        fallbacks = []
+        keys = ["$b:%s" % path for path in self.before_scopes]
+        for index, (on, condition) in enumerate(self.flags(env_in, keys)):
+            done = frozenset(key[len("$b:") :] for key in on)
+            part = self._lower_variant(
+                self.units.get(spec, done),
+                z3.And(gate, condition),
+                env_in,
+                ns,
+                "%s_v%d" % (tag, index),
+                outputs,
+                record,
+            )
+            oks.append(part.ok)
+            fallbacks.append(part.fallback)
+            merged.facts.extend(part.facts)
+            merged.defs.extend(part.defs)
+        merged.ok = _or(oks)
+        merged.fallback = _or(fallbacks)
+        return merged
+
+    def _lower_variant(
+        self,
+        unit: RegionUnitFormal,
+        gate: z3.BoolRef,
+        env_in: _Env,
+        ns: Optional[_Namespace],
+        tag: str,
+        outputs: Optional[Tuple[z3.ArithRef, _Env]],
+        record: bool,
+    ) -> _UnitResult:
         pre_env = self.pre_env(env_in)
         prepared_cases = []
         for case in unit.cases:
@@ -442,6 +538,12 @@ class _StepBuilder:
                 case, pre_env, self.persistent, None, self.int_names
             )
             final_env = self.persistent_env(lowering.final_env)
+            for path in self.before_scopes:
+                final_env["$b:%s" % path] = z3.BoolVal(path in case.before_done)
+            for path in self.after_scopes:
+                final_env["$o:%s" % path] = z3.Or(
+                    env_in["$o:%s" % path], z3.BoolVal(path in case.owed)
+                )
             entry = None
             terms: Dict[str, z3.BoolRef] = {}
             case_tag = "%s_%s" % (tag, len(prepared_cases))
@@ -573,7 +675,7 @@ class _StepBuilder:
         env_out = self.fresh_env("%s_env" % tag)
         for entered, entered_env in self._entering:
             if entered == owner_path and all(
-                entered_env[name].eq(env_in[name]) for name in self.persistent
+                entered_env[name].eq(env_in[name]) for name in self.slots
             ):
                 # Same owner on the same values: nothing can change, so this
                 # path is the loop the runtime rejects.
@@ -597,12 +699,12 @@ class _StepBuilder:
             nested_facts: List[_Fact] = []
             for index, region in enumerate(regions):
                 position = self.fresh_int("%s_r%d" % (tag, index))
-                unit = self.units.init(region.path)
+                unit = self.units.get(("init", region.path))
                 # A unit that assigns nothing leaves the values as they are, so
                 # they keep their expressions and a loop stays recognizable.
                 env_next = (
                     env
-                    if _assigns_nothing(unit)
+                    if not self.has_aspects and _assigns_nothing(unit)
                     else self.fresh_env("%s_r%d" % (tag, index))
                 )
                 others_live = _or(
@@ -614,7 +716,7 @@ class _StepBuilder:
                 )
                 region_ns = _Namespace(region, others_live, ns)
                 result = self.lower_unit(
-                    unit,
+                    ("init", region.path),
                     z3.BoolVal(True),
                     env,
                     region_ns,
@@ -626,7 +728,15 @@ class _StepBuilder:
                 nested_facts.extend(result.facts)
                 defs.extend(result.defs)
                 positions[region.path] = position
-                env = env_next
+                # The branch of a region is over: the scopes below it that owe
+                # an after action run it now.
+                env = self.flush(
+                    region.path,
+                    z3.BoolVal(True),
+                    env_next,
+                    "%s_f%d" % (tag, index),
+                    real=False,
+                )
             if z3.is_false(z3.simplify(_and(ok_terms))):
                 # A region cannot start on these values, so the whole entry
                 # fails and what follows an entry is never reached.
@@ -638,7 +748,7 @@ class _StepBuilder:
             may_finish = all(
                 any(
                     case.target_kind in ("done", "owner")
-                    for case in self.units.init(region.path).cases
+                    for case in self.units.get(("init", region.path)).cases
                 )
                 for region in regions
             )
@@ -660,7 +770,7 @@ class _StepBuilder:
             )
             if may_finish:
                 cont = self.lower_unit(
-                    self.units.cont(owner_path),
+                    ("cont", owner_path),
                     all_done,
                     env,
                     ns,
@@ -691,7 +801,7 @@ class _StepBuilder:
             raise _internal_bmc_error("a region finished outside every region.")
         region = ns.region
         cont = self.lower_unit(
-            self.units.cont(region.owner_path),
+            ("cont", region.owner_path),
             z3.BoolVal(True),
             env,
             ns.parent,
@@ -769,7 +879,7 @@ class _StepBuilder:
                     )
                     self.assert_positions_next(entry.path, keep, sub_after)
                     result = self.lower_unit(
-                        self.units.cont(entry.path),
+                        ("cont", entry.path),
                         z3.And(unit_gate, sub_done),
                         sub_env,
                         region_ns,
@@ -780,7 +890,7 @@ class _StepBuilder:
                     result.fallback = z3.And(z3.Not(sub_done), sub_fallback)
                 else:
                     result = self.lower_unit(
-                        self.units.leaf(entry.path),
+                        ("leaf", entry.path),
                         unit_gate,
                         env,
                         region_ns,
@@ -794,7 +904,11 @@ class _StepBuilder:
                 z3.Or(z3.Not(z3.And(gate, live)), _or(region_fallback))
             )
             after[region.path] = q
-            env = env_out
+            # The branch of the region is over: the scopes below it that owe an
+            # after action run it now.
+            env = self.flush(
+                region.path, gate, env_out, "%s_f%d" % (tag, index), real=True
+            )
         all_done = _and(
             after[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions
         )
@@ -816,22 +930,87 @@ class _StepBuilder:
     # ------------------------------------------------------------------
     # sources of a step
     # ------------------------------------------------------------------
+    def flush(
+        self,
+        prefix: str,
+        gate: z3.BoolRef,
+        env_in: _Env,
+        tag: str,
+        real: bool,
+    ) -> _Env:
+        """Run the after actions that the scopes under ``prefix`` owe.
+
+        The scopes run innermost first and stop owing. Which scopes owe is
+        read from the flags in ``env_in``; a flag that is not known is branched
+        on. With ``real`` the definedness of the actions becomes a requirement.
+        """
+        keys = ["$o:%s" % path for path in self.after_scopes if _under(path, prefix)]
+        if not keys:
+            return env_in
+        options = self.flags(env_in, keys)
+        if options == [((), options[0][1])] and z3.is_true(options[0][1]):
+            return env_in
+        env_out = self.fresh_env(tag)
+        for on, condition in options:
+            owed = frozenset(key[len("$o:") :] for key in on)
+            antecedent = z3.And(gate, condition)
+            case = self.units.flush(owed).cases[0]
+            lowering = _prepare_case_lowering(
+                case, self.pre_env(env_in), self.persistent, None, self.int_names
+            )
+            final = self.persistent_env(lowering.final_env)
+            for key in self.ledger_keys:
+                final[key] = env_in[key]
+            for key in keys:
+                final[key] = z3.BoolVal(False)
+            parts = [self.env_equal(env_out, final)]
+            if real:
+                parts.extend(
+                    item.constraint for item in lowering.definedness_constraints
+                )
+            self.constraints.append(z3.Implies(antecedent, _and(parts)))
+        return env_out
+
+    def next_env(self, tag: str) -> _Env:
+        """Return where a source writes the values it leaves behind.
+
+        Without aspects these are the variables of the next frame. With aspects
+        the cycle still ends with a flush, so the source writes intermediate
+        values and :meth:`finish_step` carries them into the next frame.
+        """
+        if self.has_aspects:
+            return self.fresh_env(tag)
+        return dict(self.symbols.frame_vars[self.step + 1])
+
+    def finish_step(self, gate: z3.BoolRef, env_mid: _Env) -> None:
+        """Run the flush that ends a cycle and write the next frame's variables."""
+        if not self.has_aspects:
+            return
+        next_vars = self.symbols.frame_vars[self.step + 1]
+        ended = self.symbols.frame_state(self.step + 1) == z3.IntVal(STATE_TERMINATE_ID)
+        # A cycle that ends the machine owes no flush.
+        self.constraints.append(
+            z3.Implies(z3.And(gate, ended), self.vars_equal(next_vars, env_mid))
+        )
+        live = z3.And(gate, z3.Not(ended))
+        env_end = self.flush("", live, env_mid, "end", real=True)
+        self.constraints.append(z3.Implies(live, self.vars_equal(next_vars, env_end)))
+
     def build_leaf_source(self, state_id: int) -> None:
         entry = self.domain.state_by_id(state_id)
         gate = self.symbols.frame_state(self.step) == z3.IntVal(state_id)
+        env_mid = self.next_env("m%d" % state_id)
         result = self.lower_unit(
-            self.units.leaf(entry.path),
+            ("leaf", entry.path),
             gate,
-            dict(self.symbols.frame_vars[self.step]),
+            self.start_env(self.symbols.frame_vars[self.step]),
             None,
             "m%d" % state_id,
-            (
-                self.symbols.frame_state(self.step + 1),
-                dict(self.symbols.frame_vars[self.step + 1]),
-            ),
+            (self.symbols.frame_state(self.step + 1), env_mid),
             record=True,
         )
         self._emit_facts(result)
+        self.finish_step(gate, env_mid)
         self.gamma_terms.append(z3.And(gate, result.fallback))
 
     def build_owner_source(self, state_id: int) -> None:
@@ -841,11 +1020,11 @@ class _StepBuilder:
         env_after, after, all_done, fallback = self.advance_group(
             entry.path,
             gate,
-            dict(self.symbols.frame_vars[self.step]),
+            self.start_env(self.symbols.frame_vars[self.step]),
             None,
             tag,
         )
-        next_vars = dict(self.symbols.frame_vars[self.step + 1])
+        next_vars = self.next_env("%s_n" % tag)
         keep = z3.And(gate, z3.Not(all_done))
         self.constraints.append(
             z3.Implies(
@@ -858,7 +1037,7 @@ class _StepBuilder:
         )
         self.assert_positions_next(entry.path, keep, after)
         result = self.lower_unit(
-            self.units.cont(entry.path),
+            ("cont", entry.path),
             z3.And(gate, all_done),
             env_after,
             None,
@@ -867,6 +1046,7 @@ class _StepBuilder:
             record=True,
         )
         self._emit_facts(result)
+        self.finish_step(gate, next_vars)
         self.gamma_terms.append(z3.And(gate, z3.Not(all_done), fallback))
 
     def initial_env(self) -> _Env:
@@ -899,24 +1079,23 @@ class _StepBuilder:
 
     def build_cold_source(self) -> None:
         gate = self.symbols.frame_state(self.step) == z3.IntVal(STATE_INIT_ID)
-        env_in = (
+        env_in = self.start_env(
             self.initial_env()
             if self.step == 0
             else dict(self.symbols.frame_vars[self.step])
         )
+        env_mid = self.next_env("cold")
         result = self.lower_unit(
-            self.units.cold(),
+            ("cold", None),
             gate,
             env_in,
             None,
             "cold",
-            (
-                self.symbols.frame_state(self.step + 1),
-                dict(self.symbols.frame_vars[self.step + 1]),
-            ),
+            (self.symbols.frame_state(self.step + 1), env_mid),
             record=True,
         )
         self._emit_facts(result)
+        self.finish_step(z3.And(gate, result.ok), env_mid)
         delta = z3.And(gate, z3.Not(result.ok))
         self.delta_terms.append(delta)
         self.constraints.append(
@@ -924,7 +1103,7 @@ class _StepBuilder:
                 delta,
                 z3.And(
                     self.symbols.frame_state(self.step + 1) == z3.IntVal(STATE_INIT_ID),
-                    self.env_equal(
+                    self.vars_equal(
                         dict(self.symbols.frame_vars[self.step + 1]),
                         dict(self.symbols.frame_vars[self.step]),
                     ),
@@ -940,7 +1119,7 @@ class _StepBuilder:
                 z3.And(
                     self.symbols.frame_state(self.step + 1)
                     == z3.IntVal(STATE_TERMINATE_ID),
-                    self.env_equal(
+                    self.vars_equal(
                         dict(self.symbols.frame_vars[self.step + 1]),
                         dict(self.symbols.frame_vars[self.step]),
                     ),
@@ -1001,6 +1180,24 @@ def _statically_false(template, guard_terms: Mapping[str, z3.BoolRef]) -> bool:
     return truth(template) is False
 
 
+def _aspect_scopes(model) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    """Return the paths of the scopes that declare before and after aspects."""
+    before = []
+    after = []
+    for namespace in walk_namespaces(model.root_state):
+        path = ".".join(namespace.path)
+        if namespace.list_on_during_aspects(aspect="before"):
+            before.append(path)
+        if namespace.list_on_during_aspects(aspect="after"):
+            after.append(path)
+    return tuple(sorted(before)), tuple(sorted(after))
+
+
+def _under(path: str, prefix: str) -> bool:
+    """Return whether the scope ``path`` is the scope ``prefix`` or sits below it."""
+    return not prefix or path == prefix or path.startswith(prefix + ".")
+
+
 def _assigns_nothing(unit: RegionUnitFormal) -> bool:
     """Return whether no path of the unit can change a variable.
 
@@ -1022,17 +1219,6 @@ def _symbol(tag: str, label: str) -> str:
 
 def _check_supported(prepared: BmcPreparedContext) -> None:
     model = prepared.model
-    for state in model.walk_states():
-        owner_scopes = [state]
-        for scope in owner_scopes:
-            if scope.list_on_during_aspects(aspect=None):
-                raise UnsupportedBmcQuery(
-                    "'>> during' aspects in a model with regions are not "
-                    "supported by the BMC relation yet."
-                )
-    for region in prepared.domain.regions:
-        owner = prepared.domain.model
-        del owner
     for state in model.walk_states():
         if state.regions and state.list_on_durings(aspect="before"):
             raise UnsupportedBmcQuery(

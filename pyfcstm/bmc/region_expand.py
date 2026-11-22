@@ -30,6 +30,7 @@ The module contains:
 * :class:`RegionUnitFormal` - All paths of one unit.
 * :func:`expand_leaf_unit`, :func:`expand_init_unit`,
   :func:`expand_continue_unit`, :func:`expand_cold_unit` - Unit expanders.
+* :func:`expand_flush_unit` - The after aspects that scopes owe at a flush.
 
 Example::
 
@@ -50,8 +51,8 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import dataclass, replace
+from typing import FrozenSet, Iterable, Optional, Tuple
 
 from .domain import REGION_DONE_ID, STATE_INIT_ID, BmcDomain
 from .errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
@@ -74,11 +75,12 @@ from .macro import (
 )
 from .source import INIT_CASE_PATH, TERMINATE_CASE_PATH
 from pyfcstm.model import State, Transition
-from pyfcstm.model.region import Region
+from pyfcstm.model.region import Region, walk_namespaces
 
 ATOM_REGION_DONE = "region:done"
 ATOM_REGION_ENTER = "region:enter"
 REGION_DONE_CASE_PATH = "__region_done__"
+FLUSH_CASE_PATH = "__flush__"
 _OWNER_ENTERED_MODE = "owner_entered"
 
 
@@ -114,6 +116,17 @@ class RegionCase:
     :type priority_exclusions: Tuple[pyfcstm.bmc.macro.PriorityExclusion, ...]
     :param consumed_events: Event paths consumed by executed transitions.
     :type consumed_events: Tuple[str, ...]
+    :param failed_conditions: Conditions of candidates that were tried and
+        rejected on the way; diagnostic only, defaults to ``()``.
+    :type failed_conditions: Tuple[pyfcstm.bmc.macro.BoolTemplate, ...], optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have run once the path ends, counting those that had already run when
+        the unit started; empty for a model without aspects.
+    :type before_done: FrozenSet[str], optional
+    :param owed: Paths of the scopes that owe a ``>> during after`` action
+        because a leaf below them did during work on this path, defaults to
+        ``frozenset()``.
+    :type owed: FrozenSet[str], optional
 
     Example::
 
@@ -137,6 +150,8 @@ class RegionCase:
     priority_exclusions: Tuple[PriorityExclusion, ...]
     consumed_events: Tuple[str, ...]
     failed_conditions: Tuple[BoolTemplate, ...] = ()
+    before_done: FrozenSet[str] = frozenset()
+    owed: FrozenSet[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -166,6 +181,14 @@ class RegionUnitFormal:
 
 
 @dataclass(frozen=True)
+class _RegionFrontier(_MacroFrontier):
+    """Macro frontier that also tracks which aspects have run on the path."""
+
+    before_done: FrozenSet[str] = frozenset()
+    owed: FrozenSet[str] = frozenset()
+
+
+@dataclass(frozen=True)
 class _UnitSource:
     """Duck-typed source that the shared expander base class reads."""
 
@@ -186,6 +209,11 @@ class _RegionExpander(_MacroExpander):
         self._owner_by_region_path = {
             region.path: region.owner_path for region in self.domain.regions
         }
+        self._aspect_scopes = {}
+        for namespace in walk_namespaces(self.model.root_state):
+            if namespace.list_on_during_aspects(aspect=None):
+                self._aspect_scopes[".".join(namespace.path)] = namespace
+        self._ledger_by_label = {}
 
     # ------------------------------------------------------------------
     # frontier construction
@@ -227,6 +255,70 @@ class _RegionExpander(_MacroExpander):
     # ------------------------------------------------------------------
     # overridden single-path pieces
     # ------------------------------------------------------------------
+    def _replace_frontier(self, frontier, **updates):
+        return replace(frontier, **updates)
+
+    def _run_leaf_during(self, frontier, state):
+        """Run the ``during`` chain of a leaf with aspects counted per scope.
+
+        Every scope that declares ``>> during before`` runs it ahead of the
+        first ``during`` work below it in the cycle, however many leaves work
+        below it; the ``>> during after`` actions are only marked as owed here
+        and run when the scope's work is over.
+        """
+        if not self._aspect_scopes:
+            return super()._run_leaf_during(frontier, state)
+        scopes = []
+        scope = state.parent
+        while scope is not None:
+            scopes.append(scope)
+            scope = scope.parent
+        scopes.reverse()
+        current = frontier
+        if not state.is_pseudo:
+            for scope in scopes:
+                path = ".".join(scope.path)
+                if path in current.before_done:
+                    continue
+                befores = scope.list_on_during_aspects(aspect="before")
+                if not befores:
+                    continue
+                current = replace(current, before_done=current.before_done | {path})
+                for func in befores:
+                    current = self._record_func(
+                        current,
+                        scope,
+                        func,
+                        "aspect_action",
+                        "aspect_during_before",
+                        execution_state_path=".".join(state.path),
+                    )
+        for func in state.list_on_durings(aspect=None):
+            current = self._record_func(
+                current, state, func, "state_action", "leaf_during"
+            )
+        if not state.is_pseudo:
+            owed = {
+                ".".join(scope.path)
+                for scope in scopes
+                if scope.list_on_during_aspects(aspect="after")
+            }
+            current = replace(current, owed=current.owed | owed)
+        return current
+
+    def _remember_ledger(self, outcome, frontier):
+        self._ledger_by_label[outcome.label] = (
+            getattr(frontier, "before_done", frozenset()),
+            getattr(frontier, "owed", frozenset()),
+        )
+        return outcome
+
+    def _stable_outcome(self, frontier, state):
+        return self._remember_ledger(super()._stable_outcome(frontier, state), frontier)
+
+    def _terminate_outcome(self, frontier):
+        return self._remember_ledger(super()._terminate_outcome(frontier), frontier)
+
     def _state_id(self, path: str) -> int:
         owner_path = self._owner_by_region_path.get(path)
         if owner_path is not None:
@@ -353,6 +445,9 @@ class _RegionExpander(_MacroExpander):
     # outcomes
     # ------------------------------------------------------------------
     def _done_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
+        return self._remember_ledger(self._build_done_outcome(frontier), frontier)
+
+    def _build_done_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
         return _MacroOutcome(
             self._allocate_case_label(frontier.case_kind, REGION_DONE_CASE_PATH),
             REGION_DONE_ID,
@@ -367,6 +462,13 @@ class _RegionExpander(_MacroExpander):
         )
 
     def _owner_outcome(self, frontier: _MacroFrontier, owner: State) -> _MacroOutcome:
+        return self._remember_ledger(
+            self._build_owner_outcome(frontier, owner), frontier
+        )
+
+    def _build_owner_outcome(
+        self, frontier: _MacroFrontier, owner: State
+    ) -> _MacroOutcome:
         path = ".".join(owner.path)
         return _MacroOutcome(
             self._allocate_case_label(frontier.case_kind, path),
@@ -413,14 +515,17 @@ class _RegionExpander(_MacroExpander):
                 outcome.priority_exclusions,
                 outcome.consumed_events,
                 outcome.failed_conditions,
+                *self._ledger_by_label.get(outcome.label, (frozenset(), frozenset())),
             )
             for outcome in expansion.outcomes
         )
         return RegionUnitFormal(unit_id, unit_kind, cases, expansion.failed)
 
 
-def _base_frontier(case_kind: str) -> _MacroFrontier:
-    return _MacroFrontier(
+def _base_frontier(
+    case_kind: str, before_done: FrozenSet[str] = frozenset()
+) -> _RegionFrontier:
+    return _RegionFrontier(
         (),
         BoolTemplate.true(),
         (),
@@ -428,7 +533,15 @@ def _base_frontier(case_kind: str) -> _MacroFrontier:
         (),
         (),
         case_kind,
+        before_done=before_done,
     )
+
+
+def _variant_id(unit_id: str, before_done: FrozenSet[str]) -> str:
+    """Return the unit id extended by the aspects that had already run."""
+    if not before_done:
+        return unit_id
+    return "%s|%s" % (unit_id, ",".join(sorted(before_done)))
 
 
 def _make_expander(
@@ -466,6 +579,7 @@ def expand_leaf_unit(
     domain: BmcDomain,
     leaf_path: str,
     options: Optional[MacroExpansionOptions] = None,
+    before_done: Iterable[str] = (),
 ) -> RegionUnitFormal:
     """Expand every path one cycle can take from a stable leaf.
 
@@ -479,6 +593,9 @@ def expand_leaf_unit(
     :type leaf_path: str
     :param options: Expansion safety options, defaults to ``None``.
     :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have already run in this cycle, defaults to ``()``.
+    :type before_done: Iterable[str], optional
     :return: The paths of the unit.
     :rtype: RegionUnitFormal
     :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If ``leaf_path`` is not a
@@ -500,13 +617,21 @@ def expand_leaf_unit(
         ['done', 'leaf']
     """
     leaf = _leaf_state(domain, leaf_path)
-    unit_id = "work:%s" % leaf_path
+    done = frozenset(before_done)
+    unit_id = _variant_id("work:%s" % leaf_path, done)
     expander = _make_expander(
         domain, unit_id, "work", options, domain.state_path_to_id(leaf_path)
     )
     frames = expander.namespace_frames(leaf)
-    frontier = _MacroFrontier(
-        frames, BoolTemplate.true(), (), (), (), (), _CASE_KIND_TRANSITION
+    frontier = _RegionFrontier(
+        frames,
+        BoolTemplate.true(),
+        (),
+        (),
+        (),
+        (),
+        _CASE_KIND_TRANSITION,
+        before_done=done,
     )
     return expander.expand_unit(unit_id, "work", (frontier,))
 
@@ -515,6 +640,7 @@ def expand_init_unit(
     domain: BmcDomain,
     region_path: str,
     options: Optional[MacroExpansionOptions] = None,
+    before_done: Iterable[str] = (),
 ) -> RegionUnitFormal:
     """Expand the initialization of one region.
 
@@ -524,6 +650,9 @@ def expand_init_unit(
     :type region_path: str
     :param options: Expansion safety options, defaults to ``None``.
     :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have already run in this cycle, defaults to ``()``.
+    :type before_done: Iterable[str], optional
     :return: The initialization paths of the region.
     :rtype: RegionUnitFormal
     :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If ``region_path`` is not a
@@ -549,12 +678,13 @@ def expand_init_unit(
     entries = {region.path: region for region in domain.regions}
     if region_path not in entries:
         raise InvalidBmcEncoding("region %r is not in the domain." % region_path)
-    unit_id = "init:%s" % region_path
+    done = frozenset(before_done)
+    unit_id = _variant_id("init:%s" % region_path, done)
     expander = _make_expander(
         domain, unit_id, "init", options, entries[region_path].owner_id
     )
     region = expander.region_of(region_path)
-    frontier = _MacroFrontier(
+    frontier = _RegionFrontier(
         (_FormalStackFrame(region, "init_wait"),),
         BoolTemplate.true(),
         (),
@@ -562,6 +692,7 @@ def expand_init_unit(
         (),
         (),
         _CASE_KIND_INITIAL,
+        before_done=done,
     )
     return expander.expand_unit(unit_id, "init", (frontier,))
 
@@ -570,6 +701,7 @@ def expand_continue_unit(
     domain: BmcDomain,
     owner_path: str,
     options: Optional[MacroExpansionOptions] = None,
+    before_done: Iterable[str] = (),
 ) -> RegionUnitFormal:
     """Expand the continuation of a state whose regions all finished.
 
@@ -583,6 +715,9 @@ def expand_continue_unit(
     :type owner_path: str
     :param options: Expansion safety options, defaults to ``None``.
     :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have already run in this cycle, defaults to ``()``.
+    :type before_done: Iterable[str], optional
     :return: The continuation paths of the owner.
     :rtype: RegionUnitFormal
     :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If ``owner_path`` is not a
@@ -617,10 +752,11 @@ def expand_continue_unit(
         raise InvalidBmcEncoding(str(err)) from err
     if not entry.owns_regions:
         raise InvalidBmcEncoding("state %r does not own regions." % owner_path)
-    unit_id = "cont:%s" % owner_path
+    done = frozenset(before_done)
+    unit_id = _variant_id("cont:%s" % owner_path, done)
     expander = _make_expander(domain, unit_id, "cont", options, entry.id)
     owner = expander.states_by_path[owner_path]
-    frontier = _MacroFrontier(
+    frontier = _RegionFrontier(
         expander.owner_frames(owner),
         BoolTemplate.true(),
         (),
@@ -628,6 +764,7 @@ def expand_continue_unit(
         (),
         (),
         _CASE_KIND_TRANSITION,
+        before_done=done,
     )
     for on_during_after in owner.list_on_durings(aspect="after"):
         frontier = expander._record_func(
@@ -639,6 +776,7 @@ def expand_continue_unit(
 def expand_cold_unit(
     domain: BmcDomain,
     options: Optional[MacroExpansionOptions] = None,
+    before_done: Iterable[str] = (),
 ) -> RegionUnitFormal:
     """Expand the cold start of the whole machine.
 
@@ -646,6 +784,9 @@ def expand_cold_unit(
     :type domain: pyfcstm.bmc.domain.BmcDomain
     :param options: Expansion safety options, defaults to ``None``.
     :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have already run in this cycle, defaults to ``()``.
+    :type before_done: Iterable[str], optional
     :return: The paths of the first cycle.
     :rtype: RegionUnitFormal
     :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If the domain has no model.
@@ -660,12 +801,99 @@ def expand_cold_unit(
         >>> [(case.kind, case.target_state_path) for case in unit.cases]
         [('initial', 'Root.A')]
     """
-    unit_id = INIT_CASE_PATH
+    done = frozenset(before_done)
+    unit_id = _variant_id(INIT_CASE_PATH, done)
     expander = _make_expander(domain, unit_id, "cold", options, STATE_INIT_ID)
     frontiers = expander._enter_state(
-        _base_frontier(_CASE_KIND_INITIAL), expander.model.root_state
+        _base_frontier(_CASE_KIND_INITIAL, done), expander.model.root_state
     )
     return expander.expand_unit(unit_id, "cold", frontiers)
+
+
+def expand_flush_unit(
+    domain: BmcDomain,
+    owed: Iterable[str],
+    options: Optional[MacroExpansionOptions] = None,
+) -> RegionUnitFormal:
+    """Expand the ``>> during after`` actions that scopes owe at a flush.
+
+    A flush runs at the end of a region's branch and at the end of the cycle.
+    The scopes that owe an action run it innermost first, so this unit has one
+    path, whatever the conditions of the cycle were.
+
+    :param domain: Region-aware domain of the model.
+    :type domain: pyfcstm.bmc.domain.BmcDomain
+    :param owed: Dot-separated paths of the scopes that owe their after
+        actions; each must declare ``>> during after``.
+    :type owed: Iterable[str]
+    :param options: Expansion safety options, defaults to ``None``.
+    :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :return: A unit with a single ``"flush"`` path.
+    :rtype: RegionUnitFormal
+    :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If a path names no scope of
+        the model that declares an after action.
+
+    Example::
+
+        >>> from pyfcstm.bmc.domain import build_bmc_domain
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... def int x = 0;
+        ... state Root {
+        ...     >> during after { x = x + 1; }
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> unit = expand_flush_unit(build_bmc_domain(model, 1), ['Root'])
+        >>> [len(case.action_blocks) for case in unit.cases]
+        [1]
+    """
+    scopes = frozenset(owed)
+    unit_id = "flush:%s" % ",".join(sorted(scopes))
+    expander = _make_expander(domain, unit_id, "flush", options, STATE_INIT_ID)
+    frontier = _base_frontier(_CASE_KIND_TRANSITION)
+    for path in sorted(scopes, key=lambda item: (-len(item), item)):
+        scope = expander._aspect_scopes.get(path)
+        if scope is None or not scope.list_on_during_aspects(aspect="after"):
+            raise InvalidBmcEncoding(
+                "scope %r declares no >> during after action." % path
+            )
+        for func in scope.list_on_during_aspects(aspect="after"):
+            frontier = expander._record_func(
+                frontier,
+                scope,
+                func,
+                "aspect_action",
+                "aspect_during_after",
+                execution_state_path=path,
+            )
+    outcome = _MacroOutcome(
+        expander._allocate_case_label(_CASE_KIND_TRANSITION, FLUSH_CASE_PATH),
+        STATE_INIT_ID,
+        FLUSH_CASE_PATH,
+        frontier.condition,
+        frontier.used_events,
+        frontier.action_blocks,
+        frontier.guard_requirements,
+        frontier.priority_exclusions,
+        frontier.case_kind,
+    )
+    case = RegionCase(
+        outcome.case_kind,
+        outcome.label,
+        unit_id,
+        "flush",
+        outcome.target_state_id,
+        outcome.target_state_path,
+        outcome.condition,
+        outcome.action_blocks,
+        (),
+        (),
+        (),
+        (),
+    )
+    return RegionUnitFormal(unit_id, "flush", (case,))
 
 
 __all__ = [
@@ -678,4 +906,6 @@ __all__ = [
     "expand_init_unit",
     "expand_continue_unit",
     "expand_cold_unit",
+    "expand_flush_unit",
+    "FLUSH_CASE_PATH",
 ]

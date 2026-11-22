@@ -547,19 +547,6 @@ class TestScopeOfTheRelation:
             solver.add(core.core, relation.selector, z3.Not(relation.antecedent))
             assert solver.check() == z3.unsat
 
-    def test_aspects_are_refused_with_a_controlled_error(self):
-        text = """
-        state Root {
-            >> during before { }
-            region A { [*] -> P; state P; }
-            region B { [*] -> Q; state Q; }
-        }
-        """
-        with pytest.raises(
-            UnsupportedBmcQuery, match="aspects in a model with regions"
-        ):
-            core_of(text, 1)
-
     def test_a_plain_during_before_of_an_owner_is_refused(self):
         text = """
         def int x = 0;

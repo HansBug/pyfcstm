@@ -1758,8 +1758,10 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
 
     The domain contains all model states, all resolved model events, all
     persistent variable declarations, fixed sentinel states, frame references,
-    step references, and independent step/event input slots.  It does not bind
-    a query, build macro-step cases, or allocate solver symbols.
+    step references, and independent step/event input slots.  A model that
+    declares regions also gets one :class:`RegionDomainEntry` per region, and
+    the states inside a region name it.  The domain does not bind a query,
+    build macro-step cases, or allocate solver symbols.
 
     :param model: State machine to number.
     :type model: StateMachine

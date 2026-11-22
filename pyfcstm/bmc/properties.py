@@ -817,7 +817,8 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         property shape is invalid for property compilation.
     :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If the property uses a
         parsed but unsupported expression shape or unsupported arithmetic
-        operation.
+        operation, or if ``core`` belongs to a model with regions, whose
+        properties are not supported yet.
 
     Example::
 
@@ -827,6 +828,18 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: active("Root");'))
         >>> compile_bmc_property(core).solve_formula.sort().name()
         'Bool'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();'))
+        >>> compile_bmc_property(core)
+        Traceback (most recent call last):
+            ...
+        pyfcstm.bmc.errors.UnsupportedBmcQuery: a property over a model with regions is not supported yet; the core trace relation is available from build_bmc_core_formula.
     """
     checked_core = _require_core(core)
     if checked_core.region_steps:

@@ -246,6 +246,8 @@ def check_runtime_safety(
     :rtype: BmcRuntimeSafetyResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If ``core`` is not a core
         formula, or the timeout or profile is invalid.
+    :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If ``core`` belongs to a
+        model with regions, whose runtime errors are not located yet.
 
     Example::
 
@@ -261,6 +263,17 @@ def check_runtime_safety(
         ... )
         >>> check_runtime_safety(build_bmc_core_formula(context)).status
         'safe'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> check_runtime_safety(build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();')))
+        Traceback (most recent call last):
+            ...
+        pyfcstm.bmc.errors.UnsupportedBmcQuery: the runtime-safety check of a model with regions is not supported yet.
     """
     if not isinstance(core, BmcCoreFormula):
         raise BmcBuildError("core must be BmcCoreFormula.")

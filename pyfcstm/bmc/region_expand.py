@@ -209,6 +209,11 @@ class _RegionExpander(_MacroExpander):
     """Single-path expander extended with regions as stack frames."""
 
     def __init__(self, source: _UnitSource, options: MacroExpansionOptions) -> None:
+        """Collect the regions of the domain and the scopes that declare aspects.
+
+        :param source: Duck-typed unit source read by the base class.
+        :param options: Expansion safety options.
+        """
         super().__init__(source, options)  # type: ignore[arg-type]
         self._region_paths = {region.path: region for region in self.domain.regions}
         self._owner_by_region_path = {
@@ -261,6 +266,11 @@ class _RegionExpander(_MacroExpander):
     # overridden single-path pieces
     # ------------------------------------------------------------------
     def _replace_frontier(self, frontier, **updates):
+        """Return ``frontier`` with ``updates`` applied.
+
+        A copy through :func:`dataclasses.replace` keeps the aspect ledger fields that
+        the base class does not know.
+        """
         return replace(frontier, **updates)
 
     def _run_leaf_during(self, frontier, state):
@@ -314,6 +324,12 @@ class _RegionExpander(_MacroExpander):
     def _clear_parent_plain_before_pending_after_pseudo_exit(
         self, frontier, current_state
     ):
+        """Keep the pending plain during-before of a region that exits through pseudo states.
+
+        A region that leaves without entering a real state does not use up the plain
+        during-before of its owner, so the next region of the group still gets it. A
+        state frame follows the single-path rule of the base class.
+        """
         if frontier.stack and isinstance(frontier.stack[-1].state, Region):
             # A region that leaves through pseudo states without entering a real
             # one does not use up the plain during-before of its owner: the next
@@ -324,6 +340,11 @@ class _RegionExpander(_MacroExpander):
         )
 
     def _consume_plain_before_if_pending(self, frontier):
+        """Run the plain during-before of the owner when the region frame still holds it.
+
+        The actions belong to the state that owns the region and run once for the
+        whole group; the frame then stops holding them.
+        """
         frame = frontier.stack[-1]
         if not frame.plain_before_pending or not isinstance(frame.state, Region):
             return super()._consume_plain_before_if_pending(frontier)
@@ -342,6 +363,12 @@ class _RegionExpander(_MacroExpander):
         )
 
     def _remember_ledger(self, outcome, frontier):
+        """Remember the ledger a path ends with under the label of its outcome.
+
+        The label survives the copies the base class makes of an outcome, so the case
+        built from it can carry the before actions that ran, the scopes that owe an
+        after action and whether the plain during-before of the owner is pending.
+        """
         bottom = frontier.stack[0] if frontier.stack else None
         self._ledger_by_label[outcome.label] = (
             getattr(frontier, "before_done", frozenset()),
@@ -355,12 +382,15 @@ class _RegionExpander(_MacroExpander):
         return outcome
 
     def _stable_outcome(self, frontier, state):
+        """Build the outcome of a path that ends on a stable leaf and remember its ledger."""
         return self._remember_ledger(super()._stable_outcome(frontier, state), frontier)
 
     def _terminate_outcome(self, frontier):
+        """Build the outcome of a path that ends the machine and remember its ledger."""
         return self._remember_ledger(super()._terminate_outcome(frontier), frontier)
 
     def _state_id(self, path: str) -> int:
+        """Return the domain id of a state path; a region path stands for the state that owns it."""
         owner_path = self._owner_by_region_path.get(path)
         if owner_path is not None:
             # A region has no state id; blocks that belong to a region name its
@@ -370,6 +400,10 @@ class _RegionExpander(_MacroExpander):
 
     @staticmethod
     def _transition_index(owner, transition: Transition) -> int:
+        """Return the index of ``transition`` among the initial and outgoing transitions of ``owner``.
+
+        ``owner`` may be a region, which has initial transitions only.
+        """
         candidates = [owner.init_transitions]
         if hasattr(owner, "transitions_from"):
             candidates.append(owner.transitions_from)
@@ -384,6 +418,10 @@ class _RegionExpander(_MacroExpander):
     def _active_leaf_path(
         self, frontier: _MacroFrontier, runtime_state_path: str
     ) -> str:
+        """Return the path of the deepest non-pseudo leaf on the stack, or ``runtime_state_path``.
+
+        Region frames are skipped: they are not states.
+        """
         for frame in reversed(frontier.stack):
             state = frame.state
             if (
@@ -395,6 +433,11 @@ class _RegionExpander(_MacroExpander):
         return runtime_state_path
 
     def _finalize_exit_to_parent(self, frontier: _MacroFrontier) -> _MacroFrontier:
+        """Finish an ``[*]`` exit once the leaving state has been popped.
+
+        Under a region frame the region is done and keeps its pending flag; every other
+        frame follows the single-path rule.
+        """
         if frontier.stack and isinstance(frontier.stack[-1].state, Region):
             # The child left through ``[*]`` directly under a region: the region
             # is done, and it has no ``during after`` action to run.
@@ -412,6 +455,11 @@ class _RegionExpander(_MacroExpander):
     def _enter_state(
         self, frontier: _MacroFrontier, state: State
     ) -> Tuple[_MacroFrontier, ...]:
+        """Enter a state and expand what entering it runs.
+
+        A state that owns regions stops the path at the owner after its ``enter``
+        actions, because the regions are started by init units.
+        """
         if not state.regions:
             return super()._enter_state(frontier, state)
         current = self._replace_frontier(
@@ -431,6 +479,12 @@ class _RegionExpander(_MacroExpander):
         # The head repeats the single-path expander's safety and loop checks,
         # because a region frame has to be dispatched before the leaf test the
         # base class applies to every top frame.
+        """Expand one frontier.
+
+        The head repeats the safety and loop checks of the single-path expander, then a
+        region frame or an owner that was just entered is dispatched before the
+        single-path rules, which test every top frame for being a leaf.
+        """
         if frontier.depth >= self.options.max_micro_steps:
             raise BmcBuildError(
                 "macro-step expansion exceeded the micro-step safety limit."
@@ -492,9 +546,11 @@ class _RegionExpander(_MacroExpander):
     # outcomes
     # ------------------------------------------------------------------
     def _done_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
+        """Build the outcome of a region that finished and remember its ledger."""
         return self._remember_ledger(self._build_done_outcome(frontier), frontier)
 
     def _build_done_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
+        """Build the outcome of a region that finished; its condition carries the region-done atom."""
         return _MacroOutcome(
             self._allocate_case_label(frontier.case_kind, REGION_DONE_CASE_PATH),
             REGION_DONE_ID,
@@ -509,6 +565,7 @@ class _RegionExpander(_MacroExpander):
         )
 
     def _owner_outcome(self, frontier: _MacroFrontier, owner: State) -> _MacroOutcome:
+        """Build the outcome of a path that entered a state with regions and remember its ledger."""
         return self._remember_ledger(
             self._build_owner_outcome(frontier, owner), frontier
         )
@@ -516,6 +573,7 @@ class _RegionExpander(_MacroExpander):
     def _build_owner_outcome(
         self, frontier: _MacroFrontier, owner: State
     ) -> _MacroOutcome:
+        """Build the outcome of a path that entered ``owner``; its condition carries the region-enter atom."""
         path = ".".join(owner.path)
         return _MacroOutcome(
             self._allocate_case_label(frontier.case_kind, path),
@@ -574,6 +632,11 @@ class _RegionExpander(_MacroExpander):
 def _base_frontier(
     case_kind: str, before_done: FrozenSet[str] = frozenset()
 ) -> _RegionFrontier:
+    """Return an empty frontier of one case kind.
+
+    :param case_kind: Case kind of the paths that grow from it.
+    :param before_done: Scopes whose before actions already ran in the cycle.
+    """
     return _RegionFrontier(
         (),
         BoolTemplate.true(),
@@ -600,6 +663,13 @@ def _make_expander(
     options: Optional[MacroExpansionOptions],
     source_state_id: int,
 ) -> _RegionExpander:
+    """Return an expander for one unit.
+
+    :param unit_id: Identifier of the unit; case labels start with it.
+    :param kind: Unit kind such as ``"work"`` or ``"cold"``.
+    :param source_state_id: Only names the unit in diagnostics.
+    :raises InvalidBmcEncoding: If the domain is not a model-backed domain.
+    """
     if not isinstance(domain, BmcDomain):
         raise InvalidBmcEncoding("domain must be BmcDomain.")
     if domain.model is None:
@@ -610,6 +680,10 @@ def _make_expander(
 
 
 def _leaf_state(domain: BmcDomain, path: str) -> State:
+    """Return the model state of a stoppable leaf of the domain.
+
+    :raises InvalidBmcEncoding: If ``path`` is not a stoppable leaf of the model.
+    """
     try:
         entry = domain.state_by_path(path)
     except InvalidBmcDomain as err:

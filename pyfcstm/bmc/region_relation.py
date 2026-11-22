@@ -180,6 +180,14 @@ class _Namespace:
 
 @dataclass
 class _UnitResult:
+    """Outcome of lowering a unit.
+
+    :ivar ok: Condition under which one of the paths of the unit applies.
+    :ivar facts: Frame position assignments, each guarded by the path that makes it.
+    :ivar defs: Definedness requirements of the paths, each guarded by its path.
+    :ivar fallback: Condition under which the applying path only ran during actions.
+    """
+
     ok: z3.BoolRef
     facts: List[_Fact] = field(default_factory=list)
     defs: List[Tuple[z3.BoolRef, DomainConstraint]] = field(default_factory=list)
@@ -188,6 +196,15 @@ class _UnitResult:
 
 @dataclass
 class _Entry:
+    """Outcome of starting the regions of a state that owns regions.
+
+    :ivar ok: Whether the whole group can start, and continue if all regions finished.
+    :ivar out_pos: Position of the enclosing namespace after the start.
+    :ivar env_out: Values after the start.
+    :ivar facts: Frame position assignments of the started regions.
+    :ivar defs: Definedness requirements of the start paths.
+    """
+
     ok: z3.BoolRef
     out_pos: z3.ArithRef
     env_out: _Env
@@ -199,6 +216,7 @@ class _Units:
     """Lazily expanded units of one build, keyed by what they start from."""
 
     def __init__(self, domain: BmcDomain) -> None:
+        """Create an empty cache of unit expansions for one domain."""
         self._domain = domain
         self._cache: Dict[
             Tuple[str, Optional[str], FrozenSet[str], bool], RegionUnitFormal
@@ -239,6 +257,7 @@ class _Units:
 
 
 def _regions_of(domain: BmcDomain, owner_path: str) -> Tuple[RegionDomainEntry, ...]:
+    """Return the regions of ``owner_path`` in declaration order."""
     return tuple(
         sorted(
             (item for item in domain.regions if item.owner_path == owner_path),
@@ -267,6 +286,7 @@ def _owner_resting(
 
 
 def _in_region(domain: BmcDomain, path: str) -> bool:
+    """Return whether the state at ``path`` sits inside a region, at any depth."""
     current = domain.state_by_path(path)
     while current is not None:
         if current.region_path is not None:
@@ -366,6 +386,12 @@ class _StepBuilder:
         units: _Units,
         step_index: int,
     ) -> None:
+        """Collect what one step needs: symbols, units, aspect scopes and value slots.
+
+        The values that flow from unit to unit are the persistent variables plus, for
+        every scope that declares aspects, a flag for its before actions and a flag for
+        its after actions.
+        """
         self.prepared = prepared
         self.symbols = symbols
         self.units = units
@@ -406,10 +432,12 @@ class _StepBuilder:
     # symbols
     # ------------------------------------------------------------------
     def fresh_int(self, tag: str) -> z3.ArithRef:
+        """Return a fresh integer symbol named after the step and ``tag``."""
         self._counter += 1
         return z3.Int("R_%d_%d_%s" % (self.step, self._counter, tag))
 
     def fresh_env(self, tag: str) -> _Env:
+        """Return fresh symbols for every slot of the values that flow between units."""
         self._counter += 1
         frame_vars = self.symbols.frame_vars[self.step]
         env: _Env = {
@@ -434,32 +462,39 @@ class _StepBuilder:
     def env_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
     ) -> z3.BoolRef:
+        """Return the constraint that two sets of values agree in every slot, flags included."""
         return _and(left[name] == right[name] for name in self.slots)
 
     def vars_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
     ) -> z3.BoolRef:
+        """Return the constraint that two sets of values agree in the persistent variables."""
         return _and(left[name] == right[name] for name in self.persistent)
 
     def persistent_env(self, env: Mapping[str, object]) -> _Env:
+        """Return the persistent variables of ``env`` as arithmetic expressions."""
         return {
             name: _expect_arith(env[name], "variable %s" % name)
             for name in self.persistent
         }
 
     def pre_env(self, env: Mapping[str, z3.ArithRef]) -> Dict[str, object]:
+        """Return what the actions and guards of a path read: variables, inputs, parameters."""
         merged: Dict[str, object] = {name: env[name] for name in self.persistent}
         merged.update(self.symbols.step_inputs[self.step])
         merged.update(self.symbols.parameters)
         return merged
 
     def resting_next(self, owner_path: str) -> z3.BoolRef:
+        """Return whether ``owner_path`` rests in the next frame."""
         return _owner_resting(self.symbols, self.domain, self.step + 1, owner_path)
 
     def position_in(self, region: RegionDomainEntry) -> z3.ArithRef:
+        """Return the position symbol of a region in the frame the step starts from."""
         return self.symbols.region_position(self.step, region.path)
 
     def position_next(self, region: RegionDomainEntry) -> z3.ArithRef:
+        """Return the position symbol of a region in the frame the step leads to."""
         return self.symbols.region_position(self.step + 1, region.path)
 
     # ------------------------------------------------------------------
@@ -518,9 +553,7 @@ class _StepBuilder:
         fallbacks = []
         keys = ["$b:%s" % path for path in self.before_scopes]
         before_options = (
-            self.flags(env_in, keys)
-            if self.has_aspects
-            else [((), z3.BoolVal(True))]
+            self.flags(env_in, keys) if self.has_aspects else [((), z3.BoolVal(True))]
         )
         if pending_io is None:
             pending_options = [(False, z3.BoolVal(True))]
@@ -569,6 +602,7 @@ class _StepBuilder:
         record: bool,
         pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
     ) -> _UnitResult:
+        """Lower the paths of one expansion variant of a unit; see :meth:`lower_unit`."""
         pre_env = self.pre_env(env_in)
         prepared_cases = []
         for case in unit.cases:
@@ -737,14 +771,14 @@ class _StepBuilder:
             facts: List[_Fact] = []
             defs: List[Tuple[z3.BoolRef, DomainConstraint]] = []
             nested_facts: List[_Fact] = []
-            pending = (
-                z3.BoolVal(True) if owner_path in self.pending_owners else None
-            )
+            pending = z3.BoolVal(True) if owner_path in self.pending_owners else None
             for index, region in enumerate(regions):
                 position = self.fresh_int("%s_r%d" % (tag, index))
                 pending_io = None
                 if pending is not None:
-                    next_pending = z3.Bool("R_%d_%s_pending%d" % (self.step, _symbol(tag, ""), index))
+                    next_pending = z3.Bool(
+                        "R_%d_%s_pending%d" % (self.step, _symbol(tag, ""), index)
+                    )
                     pending_io = (pending, next_pending)
                     pending = next_pending
                 unit = self.units.get(("init", region.path))
@@ -1046,6 +1080,7 @@ class _StepBuilder:
         self.constraints.append(z3.Implies(live, self.vars_equal(next_vars, env_end)))
 
     def build_leaf_source(self, state_id: int) -> None:
+        """Lower the step of a frame that rests in a leaf outside every region."""
         entry = self.domain.state_by_id(state_id)
         gate = self.symbols.frame_state(self.step) == z3.IntVal(state_id)
         env_mid = self.next_env("m%d" % state_id)
@@ -1063,6 +1098,11 @@ class _StepBuilder:
         self.gamma_terms.append(z3.And(gate, result.fallback))
 
     def build_owner_source(self, state_id: int) -> None:
+        """Lower the step of a frame that rests in a state that owns regions.
+
+        The regions advance in order; if all finished the continuation of the owner
+        runs in the same step, otherwise the owner keeps resting.
+        """
         entry = self.domain.state_by_id(state_id)
         gate = self.symbols.frame_state(self.step) == z3.IntVal(state_id)
         tag = "g%d" % state_id
@@ -1127,6 +1167,7 @@ class _StepBuilder:
         return env
 
     def build_cold_source(self) -> None:
+        """Lower the step of the cold-start sentinel; a start that cannot complete is a Delta."""
         gate = self.symbols.frame_state(self.step) == z3.IntVal(STATE_INIT_ID)
         env_in = self.start_env(
             self.initial_env()
@@ -1161,6 +1202,7 @@ class _StepBuilder:
         )
 
     def build_absorb_source(self) -> None:
+        """Lower the step of a terminated frame: it stays terminated and takes no event."""
         gate = self.symbols.frame_state(self.step) == z3.IntVal(STATE_TERMINATE_ID)
         self.constraints.append(
             z3.Implies(
@@ -1181,11 +1223,13 @@ class _StepBuilder:
         )
 
     def _emit_facts(self, result: _UnitResult) -> None:
+        """Constrain the frame positions that the paths of a unit assign."""
         self.constraints.extend(
             z3.Implies(cond, sym == value) for cond, sym, value in result.facts
         )
 
     def finish(self) -> Tuple[z3.BoolRef, z3.BoolRef, z3.BoolRef]:
+        """Return the constraints that tie Delta and Gamma of the step to its paths."""
         delta_flag = self.symbols.delta_flag(self.step)
         gamma_flag = self.symbols.gamma_flag(self.step)
         delta_constraint = delta_flag == _or(self.delta_terms)
@@ -1261,12 +1305,17 @@ def _assigns_nothing(unit: RegionUnitFormal) -> bool:
 
 
 def _symbol(tag: str, label: str) -> str:
+    """Return a solver-safe symbol fragment for a tag and a case label."""
     from .relation import _safe_symbol_fragment
 
     return _safe_symbol_fragment("%s::%s" % (tag, label))
 
 
 def _check_supported(prepared: BmcPreparedContext) -> None:
+    """Refuse what the region relation does not support yet.
+
+    :raises UnsupportedBmcQuery: For a hot start of a model with regions.
+    """
     if prepared.bound_query.initial.mode == "state":
         raise UnsupportedBmcQuery(
             "a hot start of a model with regions is not supported by the BMC "

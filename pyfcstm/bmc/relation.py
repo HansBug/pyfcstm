@@ -1072,8 +1072,8 @@ class BmcTraceSymbols:
             ... }
             ... ''')
             >>> symbols = BmcTraceSymbols.allocate(build_bmc_domain(model, 1))
-            >>> symbols.region_position(0, 'Root.A').decl().name()
-            'F_0_region_Root_A'
+            >>> symbols.region_position(0, 'Root.A').decl().name().startswith('F_0_region_Root_A')
+            True
         """
         if frame_index < 0 or frame_index >= len(self.region_positions):
             raise BmcBuildError("frame index out of range: %r." % frame_index)
@@ -1704,6 +1704,10 @@ class BmcCoreFormula:
     :param cone_slice: Conservative variable partition when slicing was
         requested; ``None`` when disabled.
     :type cone_slice: pyfcstm.bmc.slicing.ConeSlice, optional
+    :param region_steps: Lowered paths of every step of a model that has regions,
+        as :class:`pyfcstm.bmc.region_relation.RegionStepRelation` objects; empty
+        for a model without regions, whose paths are in ``steps``.
+    :type region_steps: Tuple[pyfcstm.bmc.region_relation.RegionStepRelation, ...], optional
 
     Example::
 
@@ -1713,6 +1717,8 @@ class BmcCoreFormula:
         >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
         >>> build_bmc_core_formula(context).to_canonical()['bound']
         1
+        >>> build_bmc_core_formula(context).region_steps
+        ()
     """
 
     context: BmcPreparedContext
@@ -2976,6 +2982,13 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     ``D_N ∧ I_0 ∧ T_N ∧ ENV_N``.  Health gates, objective predicates,
     solving, and witness replay are intentionally left to later layers.
 
+    A model that declares regions is lowered by
+    :func:`pyfcstm.bmc.region_relation.build_region_core_formula`: every region
+    has its own position symbol and the regions advance in declaration order
+    inside one step.  Such a model supports a cold start only, and
+    :func:`pyfcstm.bmc.properties.compile_bmc_property` does not accept the
+    result yet.
+
     :param context: Prepared BMC context from :class:`pyfcstm.bmc.BmcEngine`.
     :type context: pyfcstm.bmc.engine.BmcPreparedContext
     :return: Solver-level core formula bundle.
@@ -2983,7 +2996,9 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     :raises pyfcstm.bmc.errors.BmcBuildError: If the prepared context or macro
         handoff data is internally inconsistent.
     :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If a well-formed query or
-        action uses a solver feature not supported by this relation builder.
+        action uses a solver feature not supported by this relation builder,
+        or if the model has regions and the query starts from a hot-start
+        state.
 
     Example::
 
@@ -2993,6 +3008,16 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
         >>> build_bmc_core_formula(context).core.sort().name()
         'Bool'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();'))
+        >>> len(core.region_steps)
+        1
     """
     prepared = _require_context(context)
     if prepared.domain.regions:

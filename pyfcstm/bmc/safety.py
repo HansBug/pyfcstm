@@ -189,6 +189,7 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
     :return: The reachability formula and the sites it covers, in evaluation
         order.  The formula is ``False`` when there are no sites.
     :rtype: Tuple[z3.BoolRef, Tuple[pyfcstm.bmc.relation.BmcRuntimeErrorSite, ...]]
+    :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If the model declares regions.
 
     Example::
 
@@ -200,6 +201,10 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
         >>> runtime_error_formula(core)
         (False, ())
     """
+    if core.region_steps:
+        raise UnsupportedBmcQuery(
+            "the runtime-safety check of a model with regions is not supported yet."
+        )
     stages = _stages(core)
     sites = _sites(core)
     if not stages:

@@ -23,6 +23,12 @@ the regions' paths:
 :class:`pyfcstm.bmc.relation.BmcCoreFormula` as the single-path builder.  The
 region facts of each step are available through ``region_steps``.
 
+.. note::
+   Every ``>> during before`` scope that a unit can run under adds one
+   variant of that unit, so the formula of a model with many such scopes grows
+   roughly by a factor of two to three per scope.  Models without
+   ``>> during`` aspects do not pay this cost.
+
 The module contains:
 
 * :class:`RegionCaseRelation` - One lowered path of a region unit.
@@ -784,7 +790,9 @@ class _StepBuilder:
                 # they keep their expressions and a loop stays recognizable.
                 env_next = (
                     env
-                    if not self.has_aspects and _assigns_nothing(unit)
+                    if not self.has_aspects
+                    and pending_io is None
+                    and _assigns_nothing(unit)
                     else self.fresh_env("%s_r%d" % (tag, index))
                 )
                 others_live = _or(

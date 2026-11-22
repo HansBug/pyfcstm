@@ -701,6 +701,30 @@ class TestScopeOfTheRelation:
             UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
         ):
             check_runtime_safety(core)
+        from pyfcstm.bmc.safety import runtime_error_formula
+
+        with pytest.raises(
+            UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
+        ):
+            runtime_error_formula(core)
+
+    def test_an_owner_before_action_over_empty_regions_keeps_the_formula_satisfiable(
+        self,
+    ):
+        text = """
+        def int y = 0;
+        state Root {
+            [*] -> Run;
+            state Run {
+                during before { y = y + 1; }
+                region A { [*] -> P; state P; }
+            }
+        }
+        """
+        for bound in (1, 2):
+            solver = z3.Solver()
+            solver.add(core_of(text, bound).core)
+            assert solver.check() == z3.sat
 
 
 @pytest.mark.unittest

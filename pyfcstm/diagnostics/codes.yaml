@@ -44,14 +44,15 @@ E_UNSUPPORTED_FEATURE:
     the operation rather than producing partial results. Python model building,
     cold-start simulation with SimulationRuntime, the diagram snapshot and
     exports, and the JavaScript frontend's model, semantic analysis and diagram
-    preview support regions and activity queries; hot start, the pyfcstm
-    simulate command, BMC, rendering and inspect/verify analysis consumers still
-    reject them.
+    preview support regions; hot start, the pyfcstm simulate command, BMC,
+    rendering and inspect/verify analysis consumers still reject a model that
+    has them. Activity queries are never refused: they are lowered into ordinary
+    variables.
   refs:
     feature:
       type: str
       required: true
-      enum: ['region', 'active']
+      enum: ['region']
       description: The unsupported language feature.
     source_path:
       type: str_or_null

@@ -537,7 +537,7 @@ JSON 中重点看：
    .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
       :language: text
 
-   深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。
+   深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。\ ``__forced_0``\ 是执行 ``!Program`` 这条强制转换用的隐藏变量，状态机停驻时它总是 0。
 4. **检查模型。**\ 检查按作者书写的模型进行判断，因此历史本身不会产生额外的诊断：
 
    .. code-block:: bash
@@ -575,7 +575,7 @@ JSON 中重点看：
       print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
       print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
 
-   ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。如果热启动给出的 ``__hist_goto`` 不是 ``0``\ ，或者记录不是所有者下某个可停留叶的编号，仿真器会拒绝，并在报错里按叶路径列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
+   ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。\ ``__hist_*`` 是模型的普通变量，热启动对它们和其他变量一视同仁：给什么值就按什么值运行，不做额外检查；从运行中的机器保存下来的检查点，其中的值天然合法。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
 
 常见错误与修复：
 

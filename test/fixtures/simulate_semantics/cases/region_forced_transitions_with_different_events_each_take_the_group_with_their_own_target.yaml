@@ -24,12 +24,12 @@ steps:
     configuration: Root.ToAlpha
     vars:
       x: 1
-      seq: 21
+      seq: 12
     delta: false
 - cycle: []
   expect:
     configuration: Root.ToAlpha
     vars:
       x: 1
-      seq: 21
+      seq: 12
     delta: false

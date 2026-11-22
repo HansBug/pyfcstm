@@ -130,7 +130,7 @@
 
 热启动直接根据 ``initial_state`` 和 ``initial_vars`` 构造活动栈。它表示边界已经进入：
 
-* 必须提供所有已声明的持久变量，包括历史展开生成的 ``__hist_*`` 变量；可用 ``StateMachine.history_variables()`` 从源码层面的记录换算，恢复目标不为 ``0``\ 、或记录不是所有者下某个可停留叶的编号时会被拒绝（见 :ref:`dsl-history-reference-zh`\ ）；
+* 必须提供所有已声明的持久变量，包括历史展开生成的 ``__hist_*`` 变量；可用 ``StateMachine.history_variables()`` 从源码层面的记录换算。这些变量和其他变量一样，给什么值就按什么值运行，热启动不会因为取值而拒绝（见 :ref:`dsl-history-reference-zh`\ ）；
 * 构造路径上的 enter 动作会被跳过；
 * 构造边界上的普通复合状态 ``during before`` 不会重放；
 * 后续周期运行正常的转换和 during 语义；

@@ -1,4 +1,4 @@
-title: Whole-group preemption wins over a child completion and exits in reverse order
+title: A forced transition of the owner wins over a child completion in the same cycle and the regions exit in declaration order
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
@@ -24,5 +24,5 @@ steps:
     vars:
       a: 1
       b: 1
-      order: 213
+      order: 123
     ended: false

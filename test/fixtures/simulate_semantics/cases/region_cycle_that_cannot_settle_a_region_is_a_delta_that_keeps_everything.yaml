@@ -7,6 +7,9 @@ origin:
   - The model came out of random testing. The values of the first two steps describe where it happens to be; the
     point of the case is the third step, which must repeat them exactly and report a Delta, and the fourth, which
     shows the machine still works.
+  - The path that cannot settle runs through the pseudo state S60. The random model built it with two forced
+    declarations, whose expansion used to put a transition on that pseudo state. A forced transition is no
+    longer taken from a pseudo state, so the same transitions are written out here in the same order.
 categories:
 - regions
 - runtime

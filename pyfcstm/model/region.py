@@ -16,7 +16,7 @@ The module contains:
 * :func:`ast_namespace_children` - The same listing for DSL AST nodes
 * :func:`namespace_actions` - Lifecycle and aspect actions owned by a namespace
 * :func:`walk_namespaces` - Depth-first walk over a namespace subtree
-* :func:`shown_namespace` - The state or region that exports in place of one
+* :func:`shown_namespace` - The state or region that is shown in place of one
   of a machine whose forced declarations were lowered
 * :func:`validate_region_structure` - Check region invariants on an AST
 * :class:`Region` - A named ordered namespace inside a parallel owner state
@@ -226,21 +226,23 @@ def namespace_actions(namespace):
 
 def shown_namespace(namespace):
     """
-    Return the state or region that exports in place of ``namespace``.
+    Return the state or region that is shown in place of ``namespace``.
 
-    A forced declaration that reaches regions is lowered into hidden variables
-    and transitions the language cannot write (see :mod:`pyfcstm.model.forced`),
-    so a machine that lowered one shows itself through the machine that keeps
-    the plain expansion
-    (:meth:`pyfcstm.model.model.StateMachine.to_ast_node`). A state or region
-    of the lowered machine does the same: the DSL export and the PlantUML text
-    of any level come from the counterpart with the same path in that machine.
-    Every other namespace, and every namespace of that machine itself, is its
-    own counterpart.
+    A machine that lowered a forced declaration (see
+    :mod:`pyfcstm.model.forced`) is drawn through the machine that keeps the
+    plain expansion, and so is any state or region of it: the PlantUML text of
+    every level comes from the counterpart with the same path in that machine.
+    The DSL export does not use it: a state or region exports itself, as the
+    machine does, and the text it writes loads to the machine that runs.
+
+    Every other namespace, and every namespace of the plain machine itself, is
+    its own counterpart. So is a gate that forced lowering added
+    (:attr:`pyfcstm.model.model.State.is_forced_gate`): it exists only in the
+    machine that runs and has nothing to stand in for it.
 
     :param namespace: A state or a region of a built machine.
     :type namespace: Union[pyfcstm.model.model.State, Region]
-    :return: The namespace to export.
+    :return: The namespace to show.
     :rtype: Union[pyfcstm.model.model.State, Region]
 
     Example::
@@ -260,20 +262,22 @@ def shown_namespace(namespace):
         >>> shown = shown_namespace(root)
         >>> shown is root, shown.path == root.path
         (False, True)
-        >>> '__forced' in str(root.to_ast_node()), 'Run -> Idle : Stop;' in str(root.to_ast_node())
-        (False, True)
+        >>> '__forced' in str(root.to_ast_node())
+        True
     """
-    root = namespace
-    while root.parent is not None:
-        root = root.parent
-    reference = getattr(root, "_machine_ref", None)
-    machine = None if reference is None else reference()
-    if machine is None:
+    view = getattr(namespace, "_plain_forced_view", None)
+    if view is None:
         return namespace
-    shown = machine._with_plain_forced().root_state
+    shown = view.machine().root_state
     for name in namespace.path[1:]:
         regions = getattr(shown, "regions", None)
-        shown = regions[name] if regions and name in regions else shown.substates[name]
+        if regions and name in regions:
+            shown = regions[name]
+        elif name in shown.substates:
+            shown = shown.substates[name]
+        else:
+            # A gate of forced lowering exists only in the machine that runs.
+            return namespace
     return shown
 
 
@@ -1049,9 +1053,6 @@ class Region(AstExportable):
         from .model import State
         from .imports import _mark_generated_combo_pseudo_node
 
-        shown = shown_namespace(self)
-        if shown is not self:
-            return shown.to_ast_node()
         children = [state.to_ast_node() for state in self.substates.values()]
         node = dsl_nodes.RegionDefinition(
             name=self.name,

@@ -1,0 +1,16 @@
+def int seen = 0;
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        exit { seen = seen * 10 + 3; }
+        [*] -> C;
+        state C {
+            exit { seen = seen * 10 + 2; }
+            [*] -> a;
+            state a { exit { seen = seen * 10 + 1; } }
+        }
+    }
+    state Q { enter { seen = seen * 10 + 4; } }
+    !P -> Q : /Stop;
+}

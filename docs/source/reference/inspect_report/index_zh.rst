@@ -217,7 +217,25 @@ Inspect 报告参考
 
 可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
 
-带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``；对只使用 ``active()`` 查询的模型，这些算法的 ``reason_code`` 为 ``active_query_unsupported``。求解器局部算法会在区域内运行；含 ``active()`` 查询的守卫报告为 ``undecidable_skip`` 而不做判断，区域内状态的生命周期检查也因同样的原因被跳过。
+带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``。求解器局部算法会在区域内运行，区域内状态的生命周期检查则被跳过。
+
+发现按哪台机器判断
+----------------------------------------
+
+报告本身，以及所有描述“写成了什么”的发现，都按书写的模型判断：状态、转换、历史入口、强制转换声明和 ``active()`` 查询都保持它们在文本里的样子。验证流水线的发现说的是机器怎样运行，所以按可执行的机器判断。历史、``active()`` 和强制转换声明会降级成带隐藏变量、中继转换和门状态的普通 FCSTM，而模型导出的文本就是这份普通 FCSTM，因此模型和它导出的文本给出相同的验证发现。\ ``active("...")`` 上的条件，与隐藏标志变量上没有任何约束的普通条件一样判断。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 判断的对象
+     - 诊断码
+   * - 可执行的机器
+     - ``I_NONTRIVIAL_SCC``、``W_TOPOLOGICAL_NOEXIT``、``I_TOPOLOGICAL_NON_TERMINATING``、``W_EVENT_UNREACHABLE_EMIT``、``W_DEAD_GUARD``、``W_GUARD_TAUTOLOGY``、``W_EFFECT_SMT_NO_OP``、``I_EFFECT_GUARD_CONTRADICT``、``W_TRANSITION_SHADOWED``、``I_ENTER_DURING_CONTRADICT``、``W_COMPOSITE_INIT_INCOMPLETE``
+   * - 书写的模型
+     - 其余所有诊断码，包括 ``W_FORCED_GUARD_UNSAT``\ ：它判断的是强制转换声明，而可执行的机器已经不再携带声明
+
+可执行的机器里有降级的产物，所以一条发现可能提到 ``__forced_0``、``__hist_goto`` 这样的隐藏变量、生成的门状态，或者文本从未写过的转换；写得完全正确的模型也可能因此得到发现：中继转换把自己守卫读取的隐藏变量降下来，会被报告为 ``I_EFFECT_GUARD_CONTRADICT``\ 。这样的发现指向它所降级自的那处构造。不带 ``--enable-verify`` 时，没有任何东西按可执行的机器判断。组合触发是另一种情形：它的中继守卫生成的发现，只会以触发项的身份，由该项对应的 ``W_COMBO_*`` 诊断码报告一次。
 
 验证执行元数据
 ----------------------------------------

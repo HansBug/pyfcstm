@@ -1,0 +1,12 @@
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        [*] -> j;
+        pseudo state j;
+        state A1;
+        j -> A1;
+    }
+    state Off;
+    !P -> Off : /Stop;
+}

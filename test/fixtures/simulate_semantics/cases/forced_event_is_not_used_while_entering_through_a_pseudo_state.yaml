@@ -1,0 +1,18 @@
+title: A forced transition with an event is not taken from a pseudo state the entry passes through
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The event is present in the entry cycle, but the entry only passes through j, which holds no forced transition; the machine rests in A1 and the same event takes it away in the next cycle. The plain expansion left P in the entry cycle and recorded the event twice.
+categories:
+- runtime
+- event_paths
+steps:
+- cycle:
+  - Root.Stop
+  expect:
+    state: Root.P.A1
+- cycle:
+  - Root.Stop
+  expect:
+    state: Root.Off

@@ -821,8 +821,12 @@ no docstring and no gate file.
   enter it with `Owner.[H]` / `Owner.[H*]` (normal, initial and forced forms).
   Model conversion lowers history into `__hist_*` variables, leaf exits and
   guarded initials, so the simulator, templates and BMC see plain FCSTM; it also
-  keeps the machine before lowering, which `pyfcstm inspect` (with or without
-  `--enable-verify`) and the jsfcstm editor judge instead. A blocked restore
+  keeps the machine before lowering, which `pyfcstm inspect`, the drawings and
+  the jsfcstm editor describe instead. The one exception is the findings of the
+  verify pipeline under `--enable-verify`: they say how a machine behaves, so
+  they are judged on the machine that runs, and a model and the text it exports
+  give the same ones. The hidden variables of history, `active()` and forced
+  declarations are ordinary variables in every stage. A blocked restore
   rejects the whole transition instead of falling back to ordinary entry.
 - Arithmetic (`num_expression`) and logical (`cond_expression`) expressions are
   separate. Assignments require arithmetic expressions; guards require boolean

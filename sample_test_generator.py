@@ -1,5 +1,6 @@
 import argparse
 import dataclasses
+import enum
 import os
 import pathlib
 import re
@@ -72,6 +73,9 @@ def _sample_repr(value):
         return f"({body}{',' if len(value) == 1 else ''})"
     if isinstance(value, set):
         return "{" + ", ".join(_sample_repr(item) for item in value) + "}"
+    if isinstance(value, enum.Enum):
+        # ``repr`` of a member, ``<Role.CONTROL: 'control'>``, is not an expression.
+        return f"{type(value).__name__}.{value.name}"
     return repr(value)
 
 
@@ -88,6 +92,8 @@ def _state_name_cap(state: State):
 
 
 def _to_ast_node(text: str):
+    # The ``repr`` of an enum member, ``<Role.CONTROL: 'control'>``, is not an expression.
+    text = re.sub(r"<(\w+)\.(\w+): [^>]*>", r"\1.\2", text)
     return re.sub(r'([A-Z][A-Za-z0-9]*|INIT_STATE|EXIT_STATE)\(', r'dsl_nodes.\1(', text)
 
 

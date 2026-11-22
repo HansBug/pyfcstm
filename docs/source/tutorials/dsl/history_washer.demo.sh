@@ -8,7 +8,7 @@ trap 'rm -rf "$workdir"' EXIT
 # Run one batch script and show the final ``current`` report.
 run() {
     pyfcstm simulate -i history_washer.fcstm -e "$1" --no-color > "$workdir/out.txt"
-    sed 's/[[:space:]]*$//' "$workdir/out.txt" | tail -n 12
+    sed 's/[[:space:]]*$//' "$workdir/out.txt" | tail -n 13
 }
 
 steps="cycle; cycle Washer.Paused.Fresh; cycle Washer.Program.Idle.Start"

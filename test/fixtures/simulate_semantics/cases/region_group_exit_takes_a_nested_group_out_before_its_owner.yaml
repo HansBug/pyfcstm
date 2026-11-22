@@ -1,4 +1,4 @@
-title: Leaving a group first takes the regions of a nested owner out, in reverse order, then that owner
+title: Leaving a group first takes the regions of a nested owner out, in declaration order, then that owner
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/248
@@ -18,4 +18,4 @@ steps:
   expect:
     configuration: Root.Off
     vars:
-      seq: 521349
+      seq: 123459

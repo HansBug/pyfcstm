@@ -1,0 +1,28 @@
+title: A forced transition leaves the source from the innermost state outwards and then enters the target
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - Every exit action and the enter action of the target append one digit, so the value 1234 is the order a, C, P, Q. The exit is decided once at a and carried up through C and P; each level runs its exit action exactly once.
+categories:
+- runtime
+- event_paths
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.P.C.a
+    vars:
+      seen: 0
+- cycle:
+  - Root.Stop
+  expect:
+    state: Root.Q
+    vars:
+      seen: 1234
+- cycle:
+  - Root.Stop
+  expect:
+    state: Root.Q
+    vars:
+      seen: 1234

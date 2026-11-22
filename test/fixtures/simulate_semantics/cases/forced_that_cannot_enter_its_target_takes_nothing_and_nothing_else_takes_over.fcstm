@@ -1,0 +1,12 @@
+def int seq = 0;
+state Root {
+    event Reset;
+    [*] -> P;
+    state P {
+        [*] -> A1 : if [seq < 2];
+        state A1 { during { seq = seq + 1; } }
+    }
+    state Done;
+    !P -> P : /Reset;
+    P -> Done;
+}

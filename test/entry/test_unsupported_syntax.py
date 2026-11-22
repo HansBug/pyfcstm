@@ -8,29 +8,43 @@ from pyfcstm.entry import pyfcstmcli
 pytestmark = pytest.mark.unittest
 
 
-@pytest.mark.parametrize('source', [
-    'state Root { region Motor { state A; [*] -> A; } }',
-    'state Root { during { if [active("Root")] {} } }',
-])
-@pytest.mark.parametrize('arguments', [
-    ['simulate'], ['generate'], ['bmc'],
-])
-def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
-    path = tmp_path / 'unsupported.fcstm'
-    path.write_text(source, encoding='utf-8')
+def _command_arguments(tmp_path, arguments):
     if arguments == ['generate']:
         arguments = arguments + ['--template', 'python', '-o', str(tmp_path / 'generated')]
     if arguments == ['bmc']:
         query = tmp_path / 'query.fbmcq'
         query.write_text('check reach <= 1: active("Root");', encoding='utf-8')
         arguments = arguments + ['-q', str(query)]
+    if arguments == ['simulate']:
+        arguments = arguments + ['-e', 'cycle; cycle']
+    return arguments
+
+
+@pytest.mark.parametrize('arguments', [
+    ['simulate'], ['generate'], ['bmc'],
+])
+def test_cli_refuses_a_model_with_regions(tmp_path, arguments):
+    path = tmp_path / 'unsupported.fcstm'
+    path.write_text('state Root { region Motor { state A; [*] -> A; } }', encoding='utf-8')
+    arguments = _command_arguments(tmp_path, arguments)
     result = simulate_entry(pyfcstmcli, ['pyfcstm', *arguments, '-i', str(path)])
     assert result.exitcode != 0
     output = result.stdout + result.stderr
-    expected = ('does not support region models yet' if 'region ' in source
-                else 'does not support active queries yet')
-    assert expected in output
+    assert 'does not support region models yet' in output
     assert 'Traceback' not in output
+
+
+@pytest.mark.parametrize('arguments', [
+    ['simulate'], ['generate'], ['bmc'],
+])
+def test_cli_runs_a_model_that_uses_active_queries(tmp_path, arguments):
+    """``active()`` is lowered into an ordinary variable, so no command refuses it."""
+    path = tmp_path / 'queried.fcstm'
+    path.write_text('state Root { during { if [active("Root")] {} } }', encoding='utf-8')
+    arguments = _command_arguments(tmp_path, arguments)
+    result = simulate_entry(pyfcstmcli, ['pyfcstm', *arguments, '-i', str(path)])
+    assert result.exitcode == 0, result.stdout + result.stderr
+    assert 'does not support' not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize('source,expected', [

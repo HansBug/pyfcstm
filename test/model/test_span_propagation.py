@@ -208,7 +208,7 @@ state Root {
         transition = next(
             transition
             for transition in machine.root_state.transitions
-            if transition.is_forced
+            if (transition.from_state, transition.to_state) == ("A", "B")
         )
 
         _assert_source_slice(source, transition, "!A -> B : if [x > 0];")

@@ -1,0 +1,51 @@
+title: A forced condition is judged before the during of the cycle, on what earlier cycles wrote
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The during of a1 counts up once per cycle, and the condition of a cycle is judged before that during runs.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 0
+      x: 1
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 0
+      x: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 1
+      x: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+      x: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 3
+      x: 2

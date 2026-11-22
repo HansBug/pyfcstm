@@ -478,12 +478,12 @@ E_UNSUPPORTED_FEATURE
 ^^^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta E_UNSUPPORTED_FEATURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
-.. diagnostics-ref E_UNSUPPORTED_FEATURE feature type=str required=true enum=region|active item_enum=- exact_values=-
+.. diagnostics-ref E_UNSUPPORTED_FEATURE feature type=str required=true enum=region item_enum=- exact_values=-
 .. diagnostics-ref E_UNSUPPORTED_FEATURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 
 .. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
 
-The chosen consumer cannot preserve a region model or activity query. Python model construction, cold-start simulation with ``SimulationRuntime``, diagrams and the JavaScript frontend (model, semantic analysis, diagram preview) support both; hot start, the ``pyfcstm simulate`` command, BMC, rendering and inspect/verify analysis consumers reject them until supported.
+The chosen consumer cannot preserve a region model. Python model construction, cold-start simulation with ``SimulationRuntime``, diagrams and the JavaScript frontend (model, semantic analysis, diagram preview) support regions; hot start, the ``pyfcstm simulate`` command, BMC, rendering and inspect/verify analysis consumers reject them until supported. Activity queries are never refused: they are lowered into ordinary variables.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -495,7 +495,7 @@ The chosen consumer cannot preserve a region model or activity query. Python mod
    * - ``feature``
      - ``str``
      - yes
-     - Unsupported feature. (``region``, ``active``)
+     - Unsupported feature. (``region``)
    * - ``source_path``
      - ``str_or_null``
      - no
@@ -515,7 +515,7 @@ Inspect Configuration values or model namespaces through supported model APIs. T
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
 
-Generation refuses the model before clearing or replacing existing output. An ordinary model without regions or activity queries is unaffected.
+Generation refuses the model before clearing or replacing existing output. An ordinary model without regions is unaffected.
 
 .. _diag-code-e-active-query-target:
 

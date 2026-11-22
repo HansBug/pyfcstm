@@ -78,7 +78,13 @@ class TestModelModelDLC3:
     def test_model_basic(self, demo_model_1):
         assert demo_model_1.defines == {
             "Event": VarDefine(name="Event", type="int", init=Integer(value=0)),
+            # ``!* -> ERROR :: E1`` applies to LX2, which has states inside it,
+            # so the declaration is carried out with one hidden variable.
+            "__forced_0": VarDefine(
+                name="__forced_0", type="int", init=Integer(value=0)
+            ),
         }
+        assert demo_model_1.forced_variables == ("__forced_0",)
 
         assert demo_model_1.root_state.name == "LX"
         assert demo_model_1.root_state.path == ("LX",)
@@ -89,47 +95,70 @@ class TestModelModelDLC3:
             dsl_nodes.DefAssignment(
                 name="Event", type="int", expr=dsl_nodes.Integer(raw="0")
             ),
+            dsl_nodes.DefAssignment(
+                name="__forced_0", type="int", expr=dsl_nodes.Integer(raw="0")
+            ),
         ]
         assert ast_node.root_state.name == "LX"
 
     def test_lx_transitions(self, lx):
         lst = lx.transitions
-        assert len(lst) == 4
+        assert len(lst) == 6
         assert lst[0].from_state == "LX2"
         assert lst[0].to_state == "ERROR"
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
-        assert lst[0].effects == []
+        assert lst[0].event is None
+        assert lst[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
+        )
+        assert lst[0].effects == [Operation(var_name="__forced_0", expr=Integer(value=0))]
         assert lst[0].parent is lx
 
-        assert lst[1].from_state == "ERROR"
-        assert lst[1].to_state == "ERROR"
+        assert lst[1].from_state == "LX2"
+        assert lst[1].to_state == "__forced_gate_0"
         assert lst[1].event == Event(name="E1", state_path=("LX",))
         assert lst[1].guard is None
         assert lst[1].effects == []
         assert lst[1].parent is lx
 
-        assert lst[2].from_state == dsl_nodes.INIT_STATE
-        assert lst[2].to_state == "LX2"
-        assert lst[2].event is None
+        assert lst[2].from_state == "ERROR"
+        assert lst[2].to_state == "ERROR"
+        assert lst[2].event == Event(name="E1", state_path=("LX",))
         assert lst[2].guard is None
         assert lst[2].effects == []
         assert lst[2].parent is lx
 
-        assert lst[3].from_state == "ERROR"
-        assert lst[3].to_state == dsl_nodes.EXIT_STATE
+        assert lst[3].from_state == dsl_nodes.INIT_STATE
+        assert lst[3].to_state == "LX2"
         assert lst[3].event is None
         assert lst[3].guard is None
         assert lst[3].effects == []
         assert lst[3].parent is lx
+
+        assert lst[4].from_state == "ERROR"
+        assert lst[4].to_state == dsl_nodes.EXIT_STATE
+        assert lst[4].event is None
+        assert lst[4].guard is None
+        assert lst[4].effects == []
+        assert lst[4].parent is lx
+
+        assert lst[5].from_state == "__forced_gate_0"
+        assert lst[5].to_state == "ERROR"
+        assert lst[5].event is None
+        assert lst[5].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=0)
+        )
+        assert lst[5].effects == []
+        assert lst[5].parent is lx
 
     def test_lx2_transitions(self, lx2):
         lst = lx2.transitions
         assert len(lst) == 2
         assert lst[0].from_state == "start"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].event is None
+        assert lst[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
+        )
         assert lst[0].effects == []
         assert lst[0].parent is lx2
 
@@ -145,8 +174,10 @@ class TestModelModelDLC3:
         assert len(lst) == 2
         assert lst[0].from_state == "LX4"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].event is None
+        assert lst[0].guard == BinaryOp(
+            x=Variable(name="__forced_0"), op="==", y=Integer(value=1)
+        )
         assert lst[0].effects == []
         assert lst[0].parent is start
 
@@ -164,7 +195,7 @@ class TestModelModelDLC3:
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
         assert lst[0].event == Event(name="E1", state_path=("LX",))
         assert lst[0].guard is None
-        assert lst[0].effects == []
+        assert lst[0].effects == [Operation(var_name="__forced_0", expr=Integer(value=1))]
         assert lst[0].parent is lx4
 
         assert lst[1].from_state == dsl_nodes.INIT_STATE

@@ -404,8 +404,8 @@ def test_handler_configuration_reflects_the_moment_of_the_call():
 
 
 @pytest.mark.unittest
-def test_trace_lists_regions_in_order_and_exits_in_reverse_order():
-    """Entering follows the declaration order and a group exit runs backwards."""
+def test_trace_lists_regions_in_order_and_exits_in_the_same_order():
+    """Entering and a forced group exit both follow the declaration order."""
     runtime = _controller()
     runtime.cycle(inputs={"fault": 0, "requested": 0})
     entered = runtime.cycle(
@@ -419,11 +419,11 @@ def test_trace_lists_regions_in_order_and_exits_in_reverse_order():
     )
     assert [
         entry.state_path[-1] for entry in left.trace if entry.kind == "state_exit"
-    ] == ["Off", "Watching", "Running"]
+    ] == ["Watching", "Off", "Running"]
 
 
 @pytest.mark.unittest
-def test_nested_group_exits_inside_out_when_the_outer_group_is_preempted():
+def test_nested_group_exits_inside_out_when_the_outer_group_is_forced_away():
     """The deepest states leave first and every owner exits once."""
     model = load_state_machine_from_text(
         """
@@ -462,8 +462,8 @@ def test_nested_group_exits_inside_out_when_the_outer_group_is_preempted():
     assert str(runtime.configuration) == "Root.P{A: Q{A1: L1, A2: L2}, B: N}"
     runtime.cycle("Root.Stop")
     assert str(runtime.configuration) == "Root.Idle"
-    # B first, then A: inside A, region A2 before A1, then Q, then P.
-    assert runtime.vars["order"] == 4 * 10 ** 4 + 2 * 10 ** 3 + 1 * 10 ** 2 + 3 * 10 + 5
+    # A first: inside A, region A1 before A2, then Q; then B, then P.
+    assert runtime.vars["order"] == 1 * 10 ** 4 + 2 * 10 ** 3 + 3 * 10 ** 2 + 4 * 10 + 5
 
 
 @pytest.mark.unittest
@@ -637,8 +637,8 @@ def test_brief_stack_refuses_models_with_regions_and_points_to_configuration():
 
 
 @pytest.mark.unittest
-def test_active_query_without_regions_runs_from_a_cold_start_only():
-    """A model that only uses active() simulates, but hot start stays refused."""
+def test_active_query_without_regions_runs_from_a_cold_start_and_a_hot_start():
+    """A model that only uses active() simulates, and hot start treats its flag like any variable."""
     source = """
     def int seen = 0;
     state Root {
@@ -651,12 +651,18 @@ def test_active_query_without_regions_runs_from_a_cold_start_only():
     runtime.cycle()
     runtime.cycle()
     assert runtime.vars["seen"] == 2
-    with pytest.raises(ModelValidationError, match="does not support active queries"):
-        SimulationRuntime(
+    # The flag is an ordinary variable: it comes with the checkpoint, and
+    # whatever is given is what the machine runs on.
+    for flag, expected in ((1, 1), (0, 0)):
+        hot = SimulationRuntime(
             model,
             initial_state="Root.A",
-            initial_vars={"seen": 0, "__active_Root_A": 1},
+            initial_vars={"seen": 0, "__active_Root_A": flag},
         )
+        hot.cycle()
+        assert hot.vars["seen"] == expected
+    with pytest.raises(ValueError, match="must provide all variables"):
+        SimulationRuntime(model, initial_state="Root.A", initial_vars={"seen": 0})
 
 
 @pytest.mark.unittest
@@ -867,9 +873,9 @@ def test_exit_handlers_during_a_group_exit_still_see_the_state_being_left():
     runtime.cycle("Root.Kill")
     assert str(runtime.configuration) == "Root.Off"
     assert seen == [
-        # Regions leave in reverse order, so B is already done when A leaves.
-        "Root.Run{A: Mid.L, B: [done]}",
-        "Root.Run{A: Mid, B: [done]}",
+        # Regions leave in declaration order, so B still rests in S when A leaves.
+        "Root.Run{A: Mid.L, B: S}",
+        "Root.Run{A: Mid, B: S}",
     ]
 
 
@@ -955,7 +961,10 @@ def test_handler_runs_while_a_region_initial_chain_starts_with_a_pseudo_state():
     assert seen == ["Root.Owner{R: [init]}"]
 
 
-FORCED_LOOP_MODEL = """def int x = 0;
+# The transitions of S60 and S62 and the first one of S59 are what two forced
+# declarations of a random model used to expand into. A forced transition is no
+# longer taken from the pseudo state S60, so they are written out here.
+UNSETTLED_REGION_MODEL = """def int x = 0;
 def int y = 0;
 state Root {
     event E2; event E3;
@@ -973,11 +982,14 @@ state Root {
                         [*] -> S60;
                         pseudo state S60;
                         state S62;
-                        !* -> S62 : /E2;
+                        S60 -> [*] : /E2;
+                        S60 -> S62 : /E2;
+                        S62 -> [*] : /E2;
+                        S62 -> S62 : /E2;
                     }
+                    S59 -> S59 : /E2;
                     S59 -> [*] : if [x % 4 == 1];
                     S59 -> S59 : if [y % 3 == 1] effect { x = x + 1; }
-                    !* -> S59 : /E2;
                 }
                 region R65 { [*] -> S66; state S66; }
             }
@@ -990,8 +1002,8 @@ state Root {
 
 @pytest.mark.unittest
 def test_cycle_without_a_stable_region_position_is_a_delta():
-    """A forced chain that cannot settle a region makes the whole cycle a Delta."""
-    runtime = SimulationRuntime(load_state_machine_from_text(FORCED_LOOP_MODEL))
+    """A chain that cannot settle a region makes the whole cycle a Delta."""
+    runtime = SimulationRuntime(load_state_machine_from_text(UNSETTLED_REGION_MODEL))
     runtime.cycle()
     runtime.cycle(["Root.E2", "Root.E3"])
     before = (str(runtime.configuration), dict(runtime.vars))
@@ -1448,13 +1460,13 @@ def test_forced_group_exit_uses_the_event_once_and_traces_the_exits_in_order():
         for entry in result.trace
         if entry.kind in ("state_exit", "state_enter")
     ] == [
-        ("state_exit", "B1"),
         ("state_exit", "A1"),
+        ("state_exit", "B1"),
         ("state_exit", "P"),
         ("state_enter", "ToBeta"),
     ]
     assert str(runtime.configuration) == "Root.ToBeta"
-    assert runtime.vars["seq"] == 218
+    assert runtime.vars["seq"] == 128
 
 
 @pytest.mark.unittest
@@ -1467,7 +1479,7 @@ def test_two_forced_events_in_one_cycle_take_the_earlier_declaration_only():
         assert str(runtime.configuration) == "Root.ToAlpha"
         assert result.consumed_events == ("Root.Alpha",)
         assert result.unconsumed_events == ("Root.Beta",)
-        assert runtime.vars["seq"] == 217
+        assert runtime.vars["seq"] == 127
 
 
 @pytest.mark.unittest

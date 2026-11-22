@@ -262,11 +262,42 @@ With ``--enable-verify`` the single-active-path topology algorithms
 ``strongly_connected_components``, ``topological_finite``,
 ``topological_inevitable_terminator`` and
 ``event_emission_to_consumer_reachable``) are reported as ``not_run`` with the
-``reason_code`` ``requires_single_active_path`` for a model with regions, and with ``active_query_unsupported`` for a model that uses ``active()`` queries. The
-solver-local algorithms run inside regions; a guard that contains an
-``active()`` query is reported as ``undecidable_skip`` instead of being
-judged, and the lifecycle check of a state inside a region is skipped for the
-same reason.
+``reason_code`` ``requires_single_active_path`` for a model with regions. The
+solver-local algorithms run inside regions, and the lifecycle check of a state
+inside a region is skipped.
+
+Which machine a finding is judged on
+------------------------------------
+The report and every finding that describes what was written are judged on the
+model as written: its states, transitions, history entries, forced declarations
+and ``active()`` queries as they stand in the text. The findings of the verify
+pipeline say how a machine behaves instead, and are judged on the machine that
+runs. History, ``active()`` and forced declarations are lowered into plain FCSTM
+with hidden variables, relay transitions and gate states, and the text a model
+exports is that plain FCSTM, so a model and its exported text give the same
+verify findings. A condition on ``active("...")`` is judged like any condition
+over the hidden flag variable that nothing constrains.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Judged on
+     - Codes
+   * - The machine that runs
+     - ``I_NONTRIVIAL_SCC``, ``W_TOPOLOGICAL_NOEXIT``, ``I_TOPOLOGICAL_NON_TERMINATING``, ``W_EVENT_UNREACHABLE_EMIT``, ``W_DEAD_GUARD``, ``W_GUARD_TAUTOLOGY``, ``W_EFFECT_SMT_NO_OP``, ``I_EFFECT_GUARD_CONTRADICT``, ``W_TRANSITION_SHADOWED``, ``I_ENTER_DURING_CONTRADICT``, ``W_COMPOSITE_INIT_INCOMPLETE``
+   * - The model as written
+     - every other code, including ``W_FORCED_GUARD_UNSAT``, which judges a forced declaration that the machine that runs no longer carries
+
+The machine that runs has the lowering in it, so a finding can name a hidden
+variable such as ``__forced_0`` or ``__hist_goto``, a generated gate state, or a
+transition that the text never wrote, and a model that is written correctly can
+get a finding about them: a relay that lowers the hidden variable of its own
+guard is reported as ``I_EFFECT_GUARD_CONTRADICT``. Such a finding points at the
+construct it was lowered from. Without ``--enable-verify`` nothing is judged on
+the machine that runs. A combo trigger is a different case: the generated guard
+of its relay is reported once, as the term of the trigger it came from, by the
+``W_COMBO_*`` code of that term.
 
 Verification execution metadata
 -------------------------------

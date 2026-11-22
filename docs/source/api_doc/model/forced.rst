@@ -12,7 +12,15 @@ pyfcstm.model.forced
 .. autodata:: __all__
 
 
-lower\_forced
+ForcedInheritance
 -----------------------------------------------------
 
-.. autofunction:: lower_forced
+.. autoclass:: ForcedInheritance
+    :members: for_region,per_substate,resolved
+
+
+ForcedExpansion
+-----------------------------------------------------
+
+.. autoclass:: ForcedExpansion
+    :members: __init__,expand,lower

@@ -1,10 +1,13 @@
 """Inspect reports on history models describe the model as written.
 
 History lowering adds variables, gate states, route initials, exit actions and
-restore conditions.  None of them may reach an inspect report: its findings,
-statistics and metrics -- with or without the verify run -- must be those of
-the same model written without history, and only the defaults a history entry
-reaches may change reachability.
+restore conditions.  None of them may reach the report itself or the findings
+about what was written: those, and the statistics and metrics, must be those
+of the same model written without history, and only the defaults a history
+entry reaches may change reachability.  The findings of the verify pipeline
+are the exception: they say how a machine behaves, so they are judged on the
+machine that runs and are the ones of the plain text the model exports, hidden
+names included.
 """
 
 import dataclasses
@@ -16,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import pyfcstm.diagnostics
-from pyfcstm.diagnostics.inspect import inspect_model
+from pyfcstm.diagnostics.inspect import BEHAVIOR_DIAGNOSTIC_CODES, inspect_model
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.verify.topology import strongly_connected_components, unreachable_states
@@ -70,7 +73,7 @@ def _report(text, **options):
 def _findings(report):
     out = []
     for item in report.diagnostics:
-        if "HISTORY" in item.code:
+        if "HISTORY" in item.code or item.code in BEHAVIOR_DIAGNOSTIC_CODES:
             continue
         refs = dict(item.refs)
         if isinstance(refs.get("forced_origin"), str):
@@ -310,13 +313,48 @@ def test_random_history_models_report_what_their_plain_twins_report(options):
     for text in _random_models(120 if not options else 40, seed=20260930):
         report = _report(text, **options)
         assert _summary(report) == _summary(_report(_without_history(text), **options)), text
-        assert "__hist" not in json.dumps(report.to_json()), text
+        payload = report.to_json()
+        payload["diagnostics"] = [
+            item for item in payload["diagnostics"] if item["code"] not in BEHAVIOR_DIAGNOSTIC_CODES
+        ]
+        assert "__hist" not in json.dumps(payload), text
+
+
+def _behavior_findings(report):
+    """The findings of the verify pipeline, without where they sit in the text."""
+    out = []
+    for item in report.diagnostics:
+        if item.code not in BEHAVIOR_DIAGNOSTIC_CODES:
+            continue
+        refs = {
+            key: value for key, value in item.refs.items()
+            if key != "source_path" and "span" not in key
+        }
+        out.append((item.code, item.message, json.dumps(refs, sort_keys=True, default=str)))
+    return sorted(out)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("options", [VERIFY_STRUCTURAL, VERIFY_SMT], ids=["verify", "verify-smt"])
+@pytest.mark.parametrize("name", sorted({**MODELS, **COUNTEREXAMPLES}))
+def test_behavior_findings_are_those_of_the_text_the_model_exports(name, options):
+    text = {**MODELS, **COUNTEREXAMPLES}[name]
+    exported = str(load_state_machine_from_text(text).to_ast_node())
+    assert _behavior_findings(_report(text, **options)) == _behavior_findings(
+        _report(exported, **options)
+    )
 
 
 @pytest.mark.unittest
 @pytest.mark.parametrize("name", sorted({**MODELS, **COUNTEREXAMPLES}))
 def test_reports_name_no_lowered_construct(name):
-    payload = _report({**MODELS, **COUNTEREXAMPLES}[name], **VERIFY_STRUCTURAL).to_json()
+    report = _report({**MODELS, **COUNTEREXAMPLES}[name], **VERIFY_STRUCTURAL)
+    payload = report.to_json()
+    # Findings of the verify pipeline judge the machine that runs and may name
+    # what history was lowered into; nothing else in the report does.
+    payload["diagnostics"] = [
+        item for item in payload["diagnostics"] if item["code"] not in BEHAVIOR_DIAGNOSTIC_CODES
+    ]
     assert "__hist" not in json.dumps(payload)
     kinds = {item["target_history"] for item in payload["transitions"]}
     assert kinds - {None} and kinds <= {None, "shallow", "deep"}

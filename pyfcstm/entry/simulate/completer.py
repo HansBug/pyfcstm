@@ -178,21 +178,13 @@ class SimulationCompleter(Completer):
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
                 prefix = words[1] if len(words) == 2 else ''
 
-                # Get all available state paths
-                state_paths = self._get_all_state_paths()
-                for state_path in state_paths:
+                # Every state, the ones inside regions included
+                for state_path, state in self._states_by_path().items():
                     if state_path.startswith(prefix):
-                        # Determine if it's a leaf or composite state
-                        state = self._find_state_by_path(state_path)
-                        if state:
-                            meta = 'leaf state' if state.is_leaf_state else 'composite state'
-                        else:
-                            meta = 'state'
-
                         yield Completion(
                             state_path,
                             start_position=-len(prefix),
-                            display_meta=meta
+                            display_meta='leaf state' if state.is_leaf_state else 'composite state'
                         )
 
             # Subsequent arguments - variable assignments
@@ -281,7 +273,7 @@ class SimulationCompleter(Completer):
                         )
 
             # Second argument - setting value
-            elif len(words) >= 2:
+            else:
                 setting_key = words[1]
                 prefix = words[2] if len(words) == 3 and not text.endswith(' ') else ''
 
@@ -474,66 +466,23 @@ class SimulationCompleter(Completer):
         }
         return help_map.get(key, '')
 
-    def _get_all_state_paths(self) -> list:
+    def _states_by_path(self) -> dict:
         """
-        Get all state paths in the state machine.
+        Map the dotted path of every state of the model to the state.
 
-        Returns a list of dot-separated state paths from root to each state.
+        The states inside regions are included, with the name of their region in
+        the path (``Root.Run.A.X``).
 
-        :return: List of state paths
-        :rtype: list
+        :return: Mapping from dotted state path to the state, in path order.
+        :rtype: dict
         """
-        paths = []
-
-        def collect_paths(state, current_path):
-            """Recursively collect all state paths."""
-            paths.append(current_path)
-            # Recursively collect substates, and the states of every region
-            for substate in state.substates.values():
-                subpath = f"{current_path}.{substate.name}"
-                collect_paths(substate, subpath)
-            for region in state.regions.values():
-                for substate in region.substates.values():
-                    subpath = f"{current_path}.{region.name}.{substate.name}"
-                    collect_paths(substate, subpath)
-
-        # Start from root state
-        if hasattr(self.runtime, 'state_machine') and self.runtime.state_machine:
-            root = self.runtime.state_machine.root_state
-            collect_paths(root, root.name)
-
-        return sorted(paths)
-
-    def _find_state_by_path(self, state_path: str):
-        """
-        Find a state by its dot-separated path.
-
-        :param state_path: Dot-separated state path (e.g., "Root.System.Active")
-        :type state_path: str
-        :return: State object or None
-        :rtype: State or None
-        """
-        if not hasattr(self.runtime, 'state_machine') or not self.runtime.state_machine:
-            return None
-
-        parts = state_path.split('.')
-        current = self.runtime.state_machine.root_state
-
-        # Verify root name matches
-        if parts[0] != current.name:
-            return None
-
-        # Traverse the path
-        for part in parts[1:]:
-            if part in current.substates:
-                current = current.substates[part]
-            elif part in current.regions:
-                # A region has no state of its own: the next name is one of its states.
-                current = current.regions[part]
-            else:
-                return None
-
-        return current
+        root = self.runtime.state_machine.root_state
+        return {
+            path: state
+            for path, state in sorted(
+                ('.'.join(state.path), state) for state in root.walk_states()
+            )
+        }
 
     def _get_all_variable_names(self) -> list:
         """

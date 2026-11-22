@@ -1,0 +1,22 @@
+title: A name that starts at the root means the same event wherever the machine rests
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+  vars:
+    trail: 0
+steps:
+- cycle:
+  - /Running.Stop
+  expect:
+    configuration: 'Controller.Running{Safety: Tripped, Motion: On}'
+    vars:
+      trail: 0

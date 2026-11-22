@@ -1,0 +1,26 @@
+title: A name that no active leaf can resolve is refused and nothing runs
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+  vars:
+    trail: 0
+steps:
+- cycle:
+  - Nope
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      trail: 0
+    raises:
+      type: SimulationRuntimeEventError
+      match: matches no event
+      match_kind: substring

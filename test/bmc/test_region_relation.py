@@ -750,3 +750,22 @@ class TestStartValuesAndFlushes:
         assert trace[1][1]["Root.Run.A"] == "done"
         # No leaf worked below A, so nothing is owed when its branch ends.
         assert trace[1][2] == {"x": 0}
+
+    def test_an_after_action_that_only_the_root_owes_runs_once_at_the_end_of_the_cycle(
+        self,
+    ):
+        text = """
+        def int x = 0;
+        state Root {
+            >> during after { x = x + 1; }
+            [*] -> Run;
+            state Run {
+                region A { [*] -> P; state P { during { x = x + 10; } } }
+                region B { [*] -> Q; state Q { during { x = x * 2; } } }
+            }
+        }
+        """
+        # No region owes anything when its branch ends; the root runs its action
+        # once, after both regions worked. Values come from the simulator.
+        trace = frames(core_of(text, 2), [{}, {}], names=("x",))
+        assert [item[2] for item in trace[1:]] == [{"x": 21}, {"x": 63}]

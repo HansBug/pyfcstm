@@ -169,6 +169,46 @@ diagram snapshot labels such a transition ``Owner.[H]`` or ``Owner.[H*]``.
 The hidden variables, gate states and route transitions that history is lowered
 into are not drawn, as is already the case for forced declarations.
 
+Simulating models with regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A model with regions can now be hot-started, driven with short event names and
+run with ``pyfcstm simulate``.
+
+**Hot start.** ``SimulationRuntime(initial_state=...)`` takes a configuration
+text such as ``"Controller.Running{Safety: Watching, Motion: On}"``, a
+:class:`~pyfcstm.model.configuration.Configuration`, a state path that may pass
+through regions, or a state. What is written is put in place without any
+``enter``. What is not written waits for initialization and runs its initial
+transitions in the first cycle, in writing order, while the rest works as usual:
+a plain composite state written without a child, a region that is left out (a
+path into a region leaves the other regions of its owners out), and an owner
+written as a bare path. A region written as ``[done]`` stays done. A position in
+which every region of an owner is done is rejected, at any depth. Hidden
+variables are ordinary variables and have to be given like any other; nothing is
+derived from the position.
+
+**Event names.** A full path and a name that starts at the root mean the same
+wherever the machine rests. A name that depends on the position, such as ``Go``
+or ``.Reset``, used to be refused as soon as several leaves were active. It is
+now resolved once for every active leaf: if no leaf finds an event the name is
+unknown, if the leaves that find one all find the same event it is used, and if
+they find different events the name is ambiguous and the error lists every
+candidate with the leaves that led to it.
+:meth:`pyfcstm.model.configuration.Configuration.resolve_event` follows the same
+rule.
+
+**Command line.** ``pyfcstm simulate`` no longer refuses a model with regions.
+The position is shown as its configuration text in the current-state display,
+the table of several cycles and the history; ``init`` takes a configuration text
+(``init Controller.Running{Safety: Watching, Motion: On} permit=1``); the event
+list and the completion cover every active leaf, and a short name that two leaves
+use for different events is not offered; ``init`` completes the states inside
+regions. A model without regions behaves exactly as before.
+
+Models without regions are not affected: their hot start, event names and
+command-line output are the same as in the previous release.
+
 v0.6.0
 ------
 

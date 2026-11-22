@@ -167,8 +167,26 @@ The rules that decide the corner cases are:
   report give the deepest state common to every branch, and
   ``configuration_before`` and ``configuration_after`` give the full position.
 
-Hot start, the ``pyfcstm simulate`` command line and position-dependent event
-names with several active leaves do not support regions yet.
+**Hot start of a model with regions.** The start position is a tree. A leaf that
+is written is put in place without any ``enter``. What is not written is left to
+the model and waits for initialization: a plain composite state written without
+a child, a region that is left out, and an owner written as a bare path (all of
+its regions). The first cycle runs the initial transitions of everything that
+waits, in writing order, while the parts that were put in place work as usual.
+``initial_state`` takes a configuration text such as
+``"Root.Run{A: X, B: [done]}"`` (``[done]`` is a finished region, ``[init]`` a
+waiting one), a
+:class:`~pyfcstm.model.configuration.Configuration`, a state path through
+regions, or a state. An owner whose regions are all done is rejected. Hidden
+variables (``__forced_*``, ``__hist_*``, ``__active_*``) are ordinary variables
+and have to be given like any other.
+
+**Event names with several active leaves.** A full path and a name that starts at
+the root mean the same wherever the machine rests. A name that depends on the
+position, such as ``Go`` or ``.Reset``, is resolved once for every active leaf:
+it is an error if no leaf finds an event, the event is used if the leaves that
+find one all find the same event, and the name is ambiguous, with every
+candidate listed, if they find different events.
 
 Basic usage::
 
@@ -1043,7 +1061,7 @@ class SimulationRuntime:
         state_machine: StateMachine,
         abstract_error_mode: Literal["raise", "log"] = "raise",
         history_size: Optional[int] = None,
-        initial_state: Optional[Union[str, Tuple[str, ...], State]] = None,
+        initial_state: Optional[Union[str, Tuple[str, ...], State, Configuration]] = None,
         initial_vars: Optional[Dict[str, Union[int, float]]] = None,
         parameters: Optional[Mapping[str, Union[int, float]]] = None,
         input_source: Optional[InputSourceSpec] = None,
@@ -1076,7 +1094,14 @@ class SimulationRuntime:
         by directly constructing the execution stack to the specified state
         without executing enter actions. This simulates having already entered
         and stabilized at that state. Hot start requires ``initial_vars`` to
-        provide every declared persistent variable.
+        provide every declared persistent variable, hidden ones included: nothing
+        is derived from the position and nothing is checked against it.
+
+        For a model with regions the position is a tree. What is written is put
+        in place; a plain composite state without a child, a region that is not
+        written and an owner written as a bare path wait for initialization and
+        run their initial transitions in the first cycle (see the module
+        documentation).
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
@@ -1090,9 +1115,13 @@ class SimulationRuntime:
         :param initial_state: Optional initial state for hot start. If provided,
             the runtime will start from this state without executing enter actions.
             Supports string path (``"System.Active"``), tuple path
-            (``('System', 'Active')``), or State object. Defaults to ``None``
-            (start from root state).
-        :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
+            (``('System', 'Active')``), or State object. For a model with regions
+            it also supports a configuration text
+            (``"Root.Run{A: X, B: [init]}"``) and a
+            :class:`~pyfcstm.model.configuration.Configuration` of this state
+            machine, and a path may pass through regions
+            (``"Root.Run.A.X"``). Defaults to ``None`` (start from root state).
+        :type initial_state: Optional[Union[str, Tuple[str, ...], State, Configuration]]
         :param parameters: Construction-time parameter overrides. Cold
             construction uses defaults for omitted parameters; hot start
             requires every parameter explicitly. The resulting mapping is
@@ -1115,10 +1144,10 @@ class SimulationRuntime:
             undefined variable, a default initializer fails, or a persistent
             value cannot be normalized to its declared ``int`` / ``float`` type.
         :raises ValueError: If ``initial_state`` cannot be resolved to a
-            state in this machine.
-        :raises pyfcstm.utils.validate.ModelValidationError: If hot start is
-            requested for a model that declares regions or ``active()`` queries,
-            which a cold start already supports.
+            state in this machine, is a configuration of another state machine,
+            names a region instead of a state, is a malformed configuration text,
+            or leaves every region of some owner done.
+        :raises TypeError: If ``initial_state`` is of an unsupported type.
 
         Example - Default initialization::
 
@@ -1180,6 +1209,34 @@ class SimulationRuntime:
            but state entry actions are deferred until the first :meth:`cycle`
            call. This allows inspection of initial variable values and the
            root state before execution begins.
+
+        Example - Hot start of a model with regions::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('''
+            ... def int n = 0;
+            ... state Root {
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region A { [*] -> X; state X { enter { n = n + 1; } } }
+            ...         region B { [*] -> Y; state Y { enter { n = n + 10; } } }
+            ...     }
+            ... }
+            ... ''')
+            >>> runtime = SimulationRuntime(
+            ...     sm, initial_state="Root.Run{B: Y}", initial_vars={"n": 0}
+            ... )
+            >>> str(runtime.configuration)  # region A has not been written: it waits
+            'Root.Run{A: [init], B: Y}'
+            >>> _ = runtime.cycle()  # A runs its initial transition, B just works
+            >>> str(runtime.configuration), runtime.vars['n']
+            ('Root.Run{A: X, B: Y}', 1)
+            >>> SimulationRuntime(
+            ...     sm, initial_state="Root.Run{A: [done], B: [done]}", initial_vars={"n": 0}
+            ... )
+            Traceback (most recent call last):
+            ...
+            ValueError: All regions are Done at 'Root.Run'; a finished owner cannot be hot-started.
 
         .. note::
            Hot start mode constructs the stack without executing entry boundary
@@ -3484,7 +3541,10 @@ class SimulationRuntime:
 
         A group that is still waiting is initialized. Otherwise every working
         region advances in declaration order until it stops on a stable leaf or
-        finishes. When the last region finishes the owner switches to
+        finishes. A region that has not been initialized yet, which only a hot
+        start can leave beside regions that already work, gets its turn in the
+        same order and runs its initial transitions first; a region that is done
+        is skipped. When the last region finishes the owner switches to
         ``post_child_exit``, so the loop continues through its outgoing
         transitions.
 
@@ -5719,6 +5779,11 @@ class SimulationRuntime:
     def _is_resting(stack: List[_Frame]) -> bool:
         """
         Tell whether every working part of a stack rests on a stoppable leaf.
+
+        An owner rests when it works, has at least one live region and every
+        region is either done or rests itself. A region that waits for
+        initialization, which only a hot start can leave inside a working
+        owner, does not rest.
 
         :param stack: Frame stack, possibly starting with a region frame.
         :type stack: List[_Frame]

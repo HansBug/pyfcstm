@@ -731,26 +731,46 @@ class _StepBuilder:
             for position_id in region.position_state_ids:
                 entry = self.domain.state_by_id(position_id)
                 unit_gate = z3.And(gate, position_in == z3.IntVal(position_id))
+                unit_tag = "%s_w%d_%d" % (tag, index, position_id)
                 if entry.owns_regions:
-                    raise UnsupportedBmcQuery(
-                        "a state that owns regions inside a region is not "
-                        "supported by the BMC relation yet."
+                    # The branch rests in a state that owns regions of its own:
+                    # its regions advance first, and once they all finished
+                    # the state continues inside this region.
+                    sub_env, sub_after, sub_done, sub_fallback = self.advance_group(
+                        entry.path, unit_gate, env, region_ns, unit_tag
                     )
-                result = self.lower_unit(
-                    self.units.leaf(entry.path),
-                    unit_gate,
-                    env,
-                    region_ns,
-                    "%s_w%d_%d" % (tag, index, position_id),
-                    (q, env_out),
-                    record=True,
-                )
-                self.constraints.extend(
-                    z3.Implies(cond, sym == value) for cond, sym, value in result.facts
-                )
-                self.constraints.extend(
-                    z3.Implies(cond, item.constraint) for cond, item in []
-                )
+                    keep = z3.And(unit_gate, z3.Not(sub_done))
+                    self.constraints.append(
+                        z3.Implies(
+                            keep,
+                            z3.And(
+                                q == z3.IntVal(position_id),
+                                self.env_equal(env_out, sub_env),
+                            ),
+                        )
+                    )
+                    self.assert_positions_next(entry.path, keep, sub_after)
+                    result = self.lower_unit(
+                        self.units.cont(entry.path),
+                        z3.And(unit_gate, sub_done),
+                        sub_env,
+                        region_ns,
+                        "%s_c" % unit_tag,
+                        (q, env_out),
+                        record=True,
+                    )
+                    result.fallback = z3.And(z3.Not(sub_done), sub_fallback)
+                else:
+                    result = self.lower_unit(
+                        self.units.leaf(entry.path),
+                        unit_gate,
+                        env,
+                        region_ns,
+                        unit_tag,
+                        (q, env_out),
+                        record=True,
+                    )
+                self._emit_facts(result)
                 region_fallback.append(result.fallback)
             fallback_terms.append(
                 z3.Or(z3.Not(z3.And(gate, live)), _or(region_fallback))
@@ -759,6 +779,19 @@ class _StepBuilder:
             env = env_out
         all_done = _and(after[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions)
         return env, after, all_done, _and(fallback_terms)
+
+    def assert_positions_next(
+        self, owner_path: str, keep: z3.BoolRef, after: Mapping[str, z3.ArithRef]
+    ) -> None:
+        """Carry the positions of a group that stays resting into the next frame."""
+        resting = self.resting_next(owner_path)
+        for region in _regions_of(self.domain, owner_path):
+            self.constraints.append(
+                z3.Implies(
+                    z3.And(keep, resting),
+                    self.position_next(region) == after[region.path],
+                )
+            )
 
     # ------------------------------------------------------------------
     # sources of a step
@@ -803,13 +836,7 @@ class _StepBuilder:
                 ),
             )
         )
-        for region in _regions_of(self.domain, entry.path):
-            self.constraints.append(
-                z3.Implies(
-                    z3.And(keep, self.resting_next(entry.path)),
-                    self.position_next(region) == after[region.path],
-                )
-            )
+        self.assert_positions_next(entry.path, keep, after)
         result = self.lower_unit(
             self.units.cont(entry.path),
             z3.And(gate, all_done),
@@ -955,9 +982,15 @@ def _statically_false(template, guard_terms: Mapping[str, z3.BoolRef]) -> bool:
 
 
 def _assigns_nothing(unit: RegionUnitFormal) -> bool:
-    """Return whether no path of the unit executes an operation."""
+    """Return whether no path of the unit can change a variable.
+
+    A path that enters a state owning regions starts those regions, and that
+    runs their actions, so such a unit is never taken to leave values alone.
+    """
     return not any(
-        block.operations for case in unit.cases for block in case.action_blocks
+        case.target_kind == "owner"
+        or any(block.operations for block in case.action_blocks)
+        for case in unit.cases
     )
 
 

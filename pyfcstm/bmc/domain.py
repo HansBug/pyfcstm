@@ -51,11 +51,17 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 from .errors import InvalidBmcDomain
 from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Event, State, StateMachine
+from pyfcstm.model.region import Region, walk_namespaces
 
 STATE_INIT_ID = -3
 # The retired -2 slot is intentionally never reused, so old diagnostic traces
 # cannot be confused with the cold-init sentinel.
 STATE_TERMINATE_ID = -1
+# Position values of a region symbol that are not model states. A region that
+# finished through ``[*]`` is done; a region whose owner is not resting in the
+# frame is inactive. Neither value is a state entry of the domain.
+REGION_DONE_ID = -4
+REGION_INACTIVE_ID = -5
 _STATE_INIT_PATH = "$STATE_INIT"
 _STATE_TERMINATE_PATH = "$STATE_TERMINATE"
 
@@ -70,12 +76,15 @@ _STATE_ENTRY_FIELDS = (
     "is_stoppable",
     "is_sentinel",
     "is_generated_combo_pseudo",
+    "region_path",
+    "owns_regions",
 )
 _STATE_ENTRY_BOOL_FIELDS = (
     "is_root",
     "is_stoppable",
     "is_sentinel",
     "is_generated_combo_pseudo",
+    "owns_regions",
 )
 _STATE_SENTINEL_IDS = {STATE_INIT_ID, STATE_TERMINATE_ID}
 _EVENT_ENTRY_FIELDS = (
@@ -85,6 +94,7 @@ _EVENT_ENTRY_FIELDS = (
     "owner_state_path",
     "owner_state_id",
     "owner_is_generated_combo_pseudo",
+    "owner_region_path",
 )
 
 
@@ -145,6 +155,11 @@ def _validate_state_entry(entry: object) -> None:
         values["is_generated_combo_pseudo"],
         "is_generated_combo_pseudo",
     )
+    owns_regions = _require_bool(values["owns_regions"], "owns_regions")
+    if values["region_path"] is None:
+        region_path = None
+    else:
+        region_path = _require_non_empty_string(values["region_path"], "region_path")
 
     is_sentinel_kind = kind == "sentinel"
     if is_sentinel != is_sentinel_kind:
@@ -175,6 +190,15 @@ def _validate_state_entry(entry: object) -> None:
                 raise InvalidBmcDomain(
                     "State path without parent must match state name."
                 )
+        elif region_path is not None:
+            # A state directly inside a region keeps its owner as parent and
+            # names the region it lives in; the region is a path segment.
+            if not region_path.startswith(parent_path + "."):
+                raise InvalidBmcDomain("Region path must extend the owner path.")
+            if state_path != "%s.%s" % (region_path, state_name):
+                raise InvalidBmcDomain(
+                    "State path does not match region path and name."
+                )
         else:
             expected_path = "%s.%s" % (parent_path, state_name)
             if state_path != expected_path:
@@ -182,6 +206,10 @@ def _validate_state_entry(entry: object) -> None:
                     "State path does not match parent path and name."
                 )
 
+    if is_sentinel and (owns_regions or region_path is not None):
+        raise InvalidBmcDomain("Sentinel states cannot own or sit in regions.")
+    if owns_regions and kind != "composite":
+        raise InvalidBmcDomain("Only composite states can own regions.")
     if is_stoppable and kind != "leaf":
         raise InvalidBmcDomain("Only non-sentinel leaf states can be stoppable.")
     if is_generated_combo_pseudo and kind != "pseudo":
@@ -259,11 +287,21 @@ class StateDomainEntry:
     :param is_generated_combo_pseudo: Whether the state is a trusted generated
         combo relay pseudo state, defaults to ``False``.
     :type is_generated_combo_pseudo: bool, optional
+    :param region_path: Dot-separated path of the region a state sits directly
+        in, defaults to ``None``.  Such a state keeps its owner as
+        ``parent_path`` because a region is a path segment, not a state.
+    :type region_path: str, optional
+    :param owns_regions: Whether the state owns regions instead of child
+        states, defaults to ``False``.
+    :type owns_regions: bool, optional
 
     Example::
 
         >>> StateDomainEntry(0, 'Root', 'Root', 'leaf').to_canonical()['path']
         'Root'
+        >>> entry = StateDomainEntry(1, 'Root.A.X', 'X', 'leaf', 'Root', region_path='Root.A')
+        >>> entry.to_canonical()['region_path']
+        'Root.A'
     """
 
     id: int
@@ -275,6 +313,8 @@ class StateDomainEntry:
     is_stoppable: bool = False
     is_sentinel: bool = False
     is_generated_combo_pseudo: bool = False
+    region_path: Optional[str] = None
+    owns_regions: bool = False
 
     def __post_init__(self) -> None:
         _validate_state_entry(self)
@@ -290,7 +330,7 @@ class StateDomainEntry:
             >>> StateDomainEntry(0, 'Root', 'Root', 'leaf').to_canonical()['node']
             'state_domain_entry'
         """
-        return {
+        canonical = {
             "node": "state_domain_entry",
             "id": self.id,
             "path": self.path,
@@ -302,6 +342,13 @@ class StateDomainEntry:
             "is_sentinel": self.is_sentinel,
             "is_generated_combo_pseudo": self.is_generated_combo_pseudo,
         }
+        # Region facts appear only for models that have regions, so the
+        # canonical form of every other model is unchanged.
+        if self.region_path is not None:
+            canonical["region_path"] = self.region_path
+        if self.owns_regions:
+            canonical["owns_regions"] = True
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -321,11 +368,18 @@ class EventDomainEntry:
     :param owner_is_generated_combo_pseudo: Whether the owner is a generated
         combo pseudo state, defaults to ``False``.
     :type owner_is_generated_combo_pseudo: bool, optional
+    :param owner_region_path: Dot-separated path of the declaring region for an
+        event that a region owns, defaults to ``None``.  Such an event keeps
+        the region's path as ``owner_state_path`` and the state that owns the
+        region as ``owner_state_id``.
+    :type owner_region_path: str, optional
 
     Example::
 
         >>> EventDomainEntry(0, 'Root.Go', 'Go', 'Root', 0).owner_state_path
         'Root'
+        >>> EventDomainEntry(1, 'Root.A.Tick', 'Tick', 'Root.A', 0, owner_region_path='Root.A').owner_region_path
+        'Root.A'
     """
 
     id: int
@@ -334,6 +388,7 @@ class EventDomainEntry:
     owner_state_path: str
     owner_state_id: int
     owner_is_generated_combo_pseudo: bool = False
+    owner_region_path: Optional[str] = None
 
     def __post_init__(self) -> None:
         _validate_event_entry(self)
@@ -349,7 +404,7 @@ class EventDomainEntry:
             >>> EventDomainEntry(0, 'Root.Go', 'Go', 'Root', 0).to_canonical()['node']
             'event_domain_entry'
         """
-        return {
+        canonical = {
             "node": "event_domain_entry",
             "id": self.id,
             "path": self.path,
@@ -358,6 +413,9 @@ class EventDomainEntry:
             "owner_state_id": self.owner_state_id,
             "owner_is_generated_combo_pseudo": self.owner_is_generated_combo_pseudo,
         }
+        if self.owner_region_path is not None:
+            canonical["owner_region_path"] = self.owner_region_path
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -427,6 +485,99 @@ class VarDomainEntry:
             "declared_type": self.declared_type,
             "role": self.role.value,
             "time_domain": self.time_domain,
+        }
+
+
+@dataclass(frozen=True)
+class RegionDomainEntry:
+    """Stable metadata for one region of a state that owns regions.
+
+    A region is a namespace, not a state, so it has no state id.  Its position
+    inside one frame is a single integer symbol that holds the id of the state
+    the region's branch rests in, or one of :data:`REGION_DONE_ID` and
+    :data:`REGION_INACTIVE_ID`.
+
+    :param id: Stable region identifier, numbered from ``0`` in path order.
+    :type id: int
+    :param path: Dot-separated full region path, for example ``"Root.Run.A"``.
+    :type path: str
+    :param name: Region name.
+    :type name: str
+    :param owner_path: Path of the state that owns the region.
+    :type owner_path: str
+    :param owner_id: State id of the owner.
+    :type owner_id: int
+    :param ordinal: Position of the region among the owner's regions in
+        declaration order; the owner advances its regions in this order.
+    :type ordinal: int
+    :param enclosing_region_path: Path of the region the owner sits in, or
+        ``None`` when the owner is outside every region.
+    :type enclosing_region_path: str, optional
+    :param position_state_ids: State ids the position symbol may take while the
+        region is live: the stoppable leaves and the region-owning states of
+        the region's own namespace, not those of nested owners' regions.
+    :type position_state_ids: Tuple[int, ...]
+
+    Example::
+
+        >>> entry = RegionDomainEntry(0, 'Root.A', 'A', 'Root', 0, 0, None, (1, 2))
+        >>> entry.to_canonical()['position_state_ids']
+        [1, 2]
+    """
+
+    id: int
+    path: str
+    name: str
+    owner_path: str
+    owner_id: int
+    ordinal: int
+    enclosing_region_path: Optional[str]
+    position_state_ids: Tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        _validate_index(self.id, "region id")
+        if self.id < 0:
+            raise InvalidBmcDomain("Region ids must be non-negative.")
+        _require_non_empty_string(self.path, "region path")
+        _require_non_empty_string(self.name, "region name")
+        _require_non_empty_string(self.owner_path, "region owner path")
+        _validate_index(self.owner_id, "region owner id")
+        _validate_index(self.ordinal, "region ordinal")
+        if self.ordinal < 0:
+            raise InvalidBmcDomain("Region ordinals must be non-negative.")
+        if self.path != "%s.%s" % (self.owner_path, self.name):
+            raise InvalidBmcDomain("Region path does not match owner path and name.")
+        if self.enclosing_region_path is not None:
+            _require_non_empty_string(
+                self.enclosing_region_path, "enclosing region path"
+            )
+        object.__setattr__(
+            self,
+            "position_state_ids",
+            tuple(_validate_index(item, "position state id") for item in self.position_state_ids),
+        )
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable region entry dictionary.
+
+        :return: Canonical region entry.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> RegionDomainEntry(0, 'Root.A', 'A', 'Root', 0, 0, None, ()).to_canonical()['node']
+            'region_domain_entry'
+        """
+        return {
+            "node": "region_domain_entry",
+            "id": self.id,
+            "path": self.path,
+            "name": self.name,
+            "owner_path": self.owner_path,
+            "owner_id": self.owner_id,
+            "ordinal": self.ordinal,
+            "enclosing_region_path": self.enclosing_region_path,
+            "position_state_ids": list(self.position_state_ids),
         }
 
 
@@ -684,6 +835,9 @@ class BmcDomain:
         layers, defaults to ``None``.  It is intentionally excluded from
         equality and canonical snapshots.
     :type model: StateMachine, optional
+    :param regions: Region entries of a model that has regions, in path order,
+        defaults to ``()``.
+    :type regions: Tuple[RegionDomainEntry, ...], optional
 
     Example::
 
@@ -691,6 +845,8 @@ class BmcDomain:
         >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
         >>> domain.to_canonical()['node']
         'bmc_domain'
+        >>> domain.regions
+        ()
     """
 
     bound: int
@@ -703,9 +859,11 @@ class BmcDomain:
     initial_state_ids: Tuple[int, ...]
     stable_state_ids: Tuple[int, ...]
     model: Optional[StateMachine] = field(default=None, repr=False, compare=False)
+    regions: Tuple[RegionDomainEntry, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_positive_bound(self.bound)
+        self._normalize_sequence("regions", self.regions, RegionDomainEntry)
         self._normalize_sequence("states", self.states, StateDomainEntry)
         self._normalize_sequence("events", self.events, EventDomainEntry)
         self._normalize_sequence("variables", self.variables, VarDomainEntry)
@@ -723,6 +881,7 @@ class BmcDomain:
         self._validate_event_owners()
         self._validate_event_inputs()
         self._validate_allowed_state_ids()
+        self._validate_regions()
         if self.model is not None and not isinstance(self.model, StateMachine):
             raise InvalidBmcDomain("model must be StateMachine when provided.")
 
@@ -842,6 +1001,7 @@ class BmcDomain:
             "frames": lambda item: item.index,
             "steps": lambda item: item.index,
             "event_inputs": lambda item: (item.step_index, item.event_id),
+            "regions": lambda item: (item.id, item.path),
         }[field_name]
         items = tuple(sorted(items, key=sort_key))
         object.__setattr__(self, field_name, items)
@@ -962,7 +1122,25 @@ class BmcDomain:
                     "Event %r has unknown owner state id: %r."
                     % (event.path, event.owner_state_id)
                 )
-            if owner.path != event.owner_state_path:
+            if event.owner_region_path is not None:
+                region = next(
+                    (
+                        item
+                        for item in self.regions
+                        if item.path == event.owner_region_path
+                    ),
+                    None,
+                )
+                if (
+                    region is None
+                    or region.owner_id != event.owner_state_id
+                    or event.owner_state_path != event.owner_region_path
+                ):
+                    raise InvalidBmcDomain(
+                        "Event %r owner region does not match its owner state."
+                        % (event.path,)
+                    )
+            elif owner.path != event.owner_state_path:
                 raise InvalidBmcDomain(
                     "Event %r owner path does not match owner state id." % (event.path,)
                 )
@@ -1042,7 +1220,8 @@ class BmcDomain:
                 [
                     entry.id
                     for entry in self.states
-                    if entry.kind == "leaf" and entry.is_stoppable
+                    if (entry.kind == "leaf" and entry.is_stoppable)
+                    or entry.owns_regions
                 ]
                 + [STATE_TERMINATE_ID]
             )
@@ -1051,6 +1230,37 @@ class BmcDomain:
             raise InvalidBmcDomain(
                 "stable_state_ids must contain stoppable model state ids plus "
                 "the terminate sentinel only."
+            )
+
+    def _validate_regions(self) -> None:
+        owners = {entry.id: entry for entry in self.states if entry.owns_regions}
+        region_paths = {region.path for region in self.regions}
+        if len(region_paths) != len(self.regions):
+            raise InvalidBmcDomain("Duplicate region path.")
+        if len({region.id for region in self.regions}) != len(self.regions):
+            raise InvalidBmcDomain("Duplicate region id.")
+        state_ids = {entry.id for entry in self.states if not entry.is_sentinel}
+        for region in self.regions:
+            owner = owners.get(region.owner_id)
+            if owner is None or owner.path != region.owner_path:
+                raise InvalidBmcDomain(
+                    "Region %r must have a region-owning state as owner." % (region.path,)
+                )
+            if (
+                region.enclosing_region_path is not None
+                and region.enclosing_region_path not in region_paths
+            ):
+                raise InvalidBmcDomain(
+                    "Region %r has an unknown enclosing region." % (region.path,)
+                )
+            if any(item not in state_ids for item in region.position_state_ids):
+                raise InvalidBmcDomain(
+                    "Region %r has an unknown position state id." % (region.path,)
+                )
+        owner_ids_with_regions = {region.owner_id for region in self.regions}
+        if owner_ids_with_regions != set(owners):
+            raise InvalidBmcDomain(
+                "Every region-owning state needs regions and every region an owner."
             )
 
     @staticmethod
@@ -1350,7 +1560,7 @@ class BmcDomain:
             >>> domain.to_canonical()['sentinels']['terminate']
             -1
         """
-        return {
+        canonical = {
             "node": "bmc_domain",
             "bound": self.bound,
             "states": [entry.to_canonical() for entry in self.states],
@@ -1368,6 +1578,9 @@ class BmcDomain:
                 "terminate": STATE_TERMINATE_ID,
             },
         }
+        if self.regions:
+            canonical["regions"] = [entry.to_canonical() for entry in self.regions]
+        return canonical
 
 
 def _sentinel_entries() -> Tuple[StateDomainEntry, StateDomainEntry]:
@@ -1389,24 +1602,91 @@ def _sentinel_entries() -> Tuple[StateDomainEntry, StateDomainEntry]:
     )
 
 
+def _state_parent_and_region(state: State) -> Tuple[Optional[str], Optional[str]]:
+    parent = state.parent
+    if parent is None:
+        return None, None
+    if isinstance(parent, Region):
+        # A region is a path segment, not a state: the owner is the parent.
+        return _path_name(parent.parent.path), _path_name(parent.path)
+    return _path_name(parent.path), None
+
+
 def _model_state_entries(model: StateMachine) -> Tuple[StateDomainEntry, ...]:
     states = sorted(model.walk_states(), key=lambda state: _path_name(state.path))
-    return tuple(
-        StateDomainEntry(
-            id=index,
-            path=_path_name(state.path),
-            name=state.name,
-            kind=_state_kind(state),
-            parent_path=_path_name(state.parent.path)
-            if state.parent is not None
-            else None,
-            is_root=state.is_root_state,
-            is_stoppable=state.is_stoppable,
-            is_sentinel=False,
-            is_generated_combo_pseudo=bool(state.is_combo_relay),
+    entries = []
+    for index, state in enumerate(states):
+        parent_path, region_path = _state_parent_and_region(state)
+        entries.append(
+            StateDomainEntry(
+                id=index,
+                path=_path_name(state.path),
+                name=state.name,
+                kind=_state_kind(state),
+                parent_path=parent_path,
+                is_root=state.is_root_state,
+                is_stoppable=state.is_stoppable,
+                is_sentinel=False,
+                is_generated_combo_pseudo=bool(state.is_combo_relay),
+                region_path=region_path,
+                owns_regions=bool(state.regions),
+            )
         )
-        for index, state in enumerate(states)
-    )
+    return tuple(entries)
+
+
+def _region_position_state_ids(
+    region: Region, ids_by_path: Dict[str, int]
+) -> Tuple[int, ...]:
+    ids = []
+    pending = list(region.substates.values())
+    while pending:
+        state = pending.pop()
+        if state.regions:
+            # A region-owning state is a resting position of its enclosing
+            # branch; its own regions have positions of their own.
+            ids.append(ids_by_path[_path_name(state.path)])
+        elif state.is_leaf_state:
+            if state.is_stoppable:
+                ids.append(ids_by_path[_path_name(state.path)])
+        else:
+            pending.extend(state.substates.values())
+    return tuple(sorted(ids))
+
+
+def _region_entries(
+    model: StateMachine, states_by_path: Dict[str, StateDomainEntry]
+) -> Tuple[RegionDomainEntry, ...]:
+    ids_by_path = {path: entry.id for path, entry in states_by_path.items()}
+    regions = [
+        item
+        for item in walk_namespaces(model.root_state)
+        if isinstance(item, Region)
+    ]
+    regions.sort(key=lambda item: _path_name(item.path))
+    entries = []
+    for index, region in enumerate(regions):
+        owner = region.parent
+        enclosing = None
+        scope = owner.parent
+        while scope is not None:
+            if isinstance(scope, Region):
+                enclosing = _path_name(scope.path)
+                break
+            scope = scope.parent
+        entries.append(
+            RegionDomainEntry(
+                id=index,
+                path=_path_name(region.path),
+                name=region.name,
+                owner_path=_path_name(owner.path),
+                owner_id=ids_by_path[_path_name(owner.path)],
+                ordinal=list(owner.regions).index(region.name),
+                enclosing_region_path=enclosing,
+                position_state_ids=_region_position_state_ids(region, ids_by_path),
+            )
+        )
+    return tuple(entries)
 
 
 def _collect_events(model: StateMachine) -> Tuple[Event, ...]:
@@ -1417,16 +1697,36 @@ def _collect_events(model: StateMachine) -> Tuple[Event, ...]:
         for transition in state.transitions:
             if transition.event is not None:
                 events_by_path[transition.event.path_name] = transition.event
+    for namespace in walk_namespaces(model.root_state):
+        if isinstance(namespace, Region):
+            for event in namespace.events.values():
+                events_by_path[event.path_name] = event
+            for transition in namespace.init_transitions:
+                if transition.event is not None:
+                    events_by_path[transition.event.path_name] = transition.event
+        else:
+            for transition in namespace.transitions_from:
+                if transition.event is not None:
+                    events_by_path[transition.event.path_name] = transition.event
     return tuple(events_by_path[path] for path in sorted(events_by_path))
 
 
 def _event_entries(
-    events: Sequence[Event], states_by_path: Dict[str, StateDomainEntry]
+    events: Sequence[Event],
+    states_by_path: Dict[str, StateDomainEntry],
+    region_owner_paths: Optional[Dict[str, str]] = None,
 ) -> Tuple[EventDomainEntry, ...]:
+    region_owner_paths = region_owner_paths or {}
     entries = []
     for index, event in enumerate(events):
         owner_state_path = _path_name(event.state_path)
         owner_entry = states_by_path.get(owner_state_path)
+        owner_region_path = None
+        if owner_entry is None and owner_state_path in region_owner_paths:
+            # A region owns the event: keep the region path and point at the
+            # state that owns the region.
+            owner_region_path = owner_state_path
+            owner_entry = states_by_path.get(region_owner_paths[owner_state_path])
         if owner_entry is None:
             raise InvalidBmcDomain(
                 "Event %r has unknown owner state %r."
@@ -1440,6 +1740,7 @@ def _event_entries(
                 owner_state_path=owner_state_path,
                 owner_state_id=owner_entry.id,
                 owner_is_generated_combo_pseudo=owner_entry.is_generated_combo_pseudo,
+                owner_region_path=owner_region_path,
             )
         )
     return tuple(entries)
@@ -1479,8 +1780,6 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
     """
     if not isinstance(model, StateMachine):
         raise InvalidBmcDomain("model must be StateMachine.")
-    from ..model.support import require_supported_model
-    require_supported_model(model, "bmc")
     bound = _validate_positive_bound(bound)
 
     model_state_entries = _model_state_entries(model)
@@ -1488,7 +1787,12 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
     states = tuple(
         sorted(_sentinel_entries() + model_state_entries, key=lambda e: e.id)
     )
-    events = _event_entries(_collect_events(model), states_by_path)
+    region_owner_paths = {
+        _path_name(item.path): _path_name(item.parent.path)
+        for item in walk_namespaces(model.root_state)
+        if isinstance(item, Region)
+    }
+    events = _event_entries(_collect_events(model), states_by_path, region_owner_paths)
     variables = _variable_entries(model)
     frames = tuple(FrameRef(index, bound) for index in range(bound + 1))
     steps = tuple(StepRef(index, bound) for index in range(bound))
@@ -1498,13 +1802,18 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
         for event in events
     )
 
+    regions = _region_entries(model, states_by_path)
     normal_state_ids = tuple(entry.id for entry in model_state_entries)
     initial_state_ids = tuple(
         sorted(normal_state_ids + (STATE_INIT_ID, STATE_TERMINATE_ID))
     )
     stable_state_ids = tuple(
         sorted(
-            tuple(entry.id for entry in model_state_entries if entry.is_stoppable)
+            tuple(
+                entry.id
+                for entry in model_state_entries
+                if entry.is_stoppable or entry.owns_regions
+            )
             + (STATE_TERMINATE_ID,)
         )
     )
@@ -1520,12 +1829,16 @@ def build_bmc_domain(model: StateMachine, bound: int) -> BmcDomain:
         initial_state_ids=initial_state_ids,
         stable_state_ids=stable_state_ids,
         model=model,
+        regions=regions,
     )
 
 
 __all__ = [
     "STATE_INIT_ID",
     "STATE_TERMINATE_ID",
+    "REGION_DONE_ID",
+    "REGION_INACTIVE_ID",
+    "RegionDomainEntry",
     "StateDomainEntry",
     "EventDomainEntry",
     "VarDomainEntry",

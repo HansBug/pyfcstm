@@ -65,7 +65,7 @@ from enum import Enum
 from reprlib import Repr
 from typing import Tuple, TYPE_CHECKING, Union
 
-from ..utils.validate import ModelValueError
+from ..utils.validate import ModelLookupError, ModelValueError
 from .region import Region, namespace_child
 
 if TYPE_CHECKING:
@@ -915,21 +915,28 @@ class Configuration:
     def resolve_event(self, event_ref: str):
         """Resolve an event name relative to this position.
 
-        With a single active leaf, or none yet before the first cycle (the root state
-        then stands in), the name resolves exactly as
-        :meth:`pyfcstm.model.model.State.resolve_event` does for that leaf, so
-        ``Go``, ``.Reset`` and ``/Reset`` all work. With several active leaves a
-        name that depends on the position would have to be resolved once per
-        leaf; that is not supported yet, and only root-based names starting with
-        ``/`` are accepted.
+        A name that starts at the root (``/Reset``) or is a full path means the
+        same wherever the machine rests. A name that depends on the position, a
+        short name such as ``Go`` or one that counts levels up with leading dots
+        such as ``.Reset``, is resolved once for every active leaf, or for the
+        root state when no leaf is active yet, exactly as
+        :meth:`pyfcstm.model.model.State.resolve_event` does for that leaf. The
+        leaves that find no event are ignored. If no leaf finds one, the name is
+        unknown; if the leaves that find one all find the same event, that event
+        is used; if they find different events, the name is ambiguous and the
+        error lists every candidate with the leaves that led to it. Events that
+        share a name but belong to different states are different events and are
+        never taken together.
 
         :param event_ref: Event name or path as accepted by ``State.resolve_event``.
         :type event_ref: str
         :return: The event the name refers to.
         :rtype: pyfcstm.model.model.Event
-        :raises pyfcstm.utils.validate.ModelValueError: If the name depends on
-            the position and several leaves are active.
-        :raises pyfcstm.utils.validate.ModelLookupError: If no such event exists.
+        :raises pyfcstm.utils.validate.ModelValueError: If the name is
+            syntactically invalid for every active leaf, or if it leads to
+            different events from different leaves.
+        :raises pyfcstm.utils.validate.ModelLookupError: If no active leaf finds
+            an event for the name.
 
         Example::
 
@@ -942,14 +949,63 @@ class Configuration:
             'Root.A.Go'
             >>> config.resolve_event('/Reset').path_name
             'Root.Reset'
+
+        Several active leaves each get their say::
+
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     [*] -> P;
+            ...     state P {
+            ...         region L { [*] -> X; state X { event Go; event Ping; } }
+            ...         region R { [*] -> Y; state Y { event Ping; } }
+            ...     }
+            ... }
+            ... ''')
+            >>> config = Configuration.parse(model, 'Root.P{L: X, R: Y}')
+            >>> config.resolve_event('Go').path_name
+            'Root.P.L.X.Go'
+            >>> config.resolve_event('Ping')
+            Traceback (most recent call last):
+            ...
+            pyfcstm.utils.validate.ModelValueError: ...ambiguous...
         """
         leaves = self.leaves or (self._model.root_state,)
         if len(leaves) == 1:
             return leaves[0].resolve_event(event_ref)
         if event_ref.startswith('/'):
             return self._model.root_state.resolve_event(event_ref)
-        raise ModelValueError(
-            message='Position-dependent event name %s needs a single active leaf; '
-            'use the full event path or a root-based "/path".' % _ERROR_REPR.repr(event_ref)
-        )
+        found = {}
+        errors = []
+        for leaf in leaves:
+            try:
+                event = leaf.resolve_event(event_ref)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError / ModelLookupError: the name leads nowhere from
+                # this leaf; another leaf may still find it.
+                errors.append(err)
+                continue
+            found.setdefault(event.path_name, (event, []))[1].append('.'.join(leaf.path))
+        if not found:
+            if all(isinstance(err, ModelValueError) for err in errors):
+                # The name is malformed from every leaf, so there is nothing to
+                # look up and the first complaint says why.
+                raise errors[0]
+            where = ', '.join('.'.join(leaf.path) for leaf in leaves)
+            raise ModelLookupError(
+                message='Position-dependent event name %s matches no event from any '
+                'active leaf (%s); use the full event path or a root-based "/path". '
+                'Last error: %s'
+                % (_ERROR_REPR.repr(event_ref), where, errors[0])
+            )
+        if len(found) > 1:
+            candidates = '; '.join(
+                '%s (from %s)' % (name, ', '.join(origins))
+                for name, (_, origins) in found.items()
+            )
+            raise ModelValueError(
+                message='Position-dependent event name %s is ambiguous: %s; use the '
+                'full event path or a root-based "/path".'
+                % (_ERROR_REPR.repr(event_ref), candidates)
+            )
+        return next(iter(found.values()))[0]
 

@@ -303,16 +303,16 @@ def test_hot_start_of_a_model_with_regions_runs_from_the_given_position():
 
 
 @pytest.mark.unittest
-def test_position_dependent_event_names_need_a_single_active_leaf():
-    """Short names resolve from one leaf; several leaves accept only root-based names."""
+def test_position_dependent_event_names_are_resolved_for_every_active_leaf():
+    """A short name is tried from each leaf; the full event path and ``/path`` never depend on it."""
     runtime = _controller()
     inputs = {"fault": 0, "requested": 0}
     runtime.cycle(inputs=inputs)
     # One active leaf: the parent-relative name resolves like it does without regions.
     runtime.cycle(".Start", inputs=inputs)
     assert str(runtime.configuration).startswith("Controller.Running")
-    # Two active leaves: a position-dependent name would be ambiguous.
-    with pytest.raises(SimulationRuntimeEventError, match="single active leaf"):
+    # Two active leaves: no leaf finds ``Controller.Running.Stop`` one level up.
+    with pytest.raises(SimulationRuntimeEventError, match="matches no event"):
         runtime.cycle(".Stop", inputs=inputs)
     runtime.cycle("/Stop", inputs=inputs)
     assert str(runtime.configuration) == "Controller.Idle"

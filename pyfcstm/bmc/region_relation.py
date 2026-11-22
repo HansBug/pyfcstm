@@ -201,22 +201,28 @@ class _Units:
     def __init__(self, domain: BmcDomain) -> None:
         self._domain = domain
         self._cache: Dict[
-            Tuple[str, Optional[str], FrozenSet[str]], RegionUnitFormal
+            Tuple[str, Optional[str], FrozenSet[str], bool], RegionUnitFormal
         ] = {}
 
     def get(
         self,
         spec: Tuple[str, Optional[str]],
         before_done: FrozenSet[str] = frozenset(),
+        plain_pending: bool = False,
     ) -> RegionUnitFormal:
         """Return the unit of ``spec`` for the scopes whose before actions ran."""
-        key = (spec[0], spec[1], before_done)
+        key = (spec[0], spec[1], before_done, plain_pending)
         if key not in self._cache:
             kind, path = spec
             if kind == "leaf":
                 unit = expand_leaf_unit(self._domain, path, before_done=before_done)
             elif kind == "init":
-                unit = expand_init_unit(self._domain, path, before_done=before_done)
+                unit = expand_init_unit(
+                    self._domain,
+                    path,
+                    before_done=before_done,
+                    plain_pending=plain_pending,
+                )
             elif kind == "cont":
                 unit = expand_continue_unit(self._domain, path, before_done=before_done)
             else:
@@ -226,7 +232,7 @@ class _Units:
 
     def flush(self, owed: FrozenSet[str]) -> RegionUnitFormal:
         """Return the unit that runs the after actions of the owing scopes."""
-        key = ("flush", None, owed)
+        key = ("flush", None, owed, False)
         if key not in self._cache:
             self._cache[key] = expand_flush_unit(self._domain, owed)
         return self._cache[key]
@@ -375,6 +381,12 @@ class _StepBuilder:
         # already ran in this cycle, and whether it owes its after actions.
         self.before_scopes, self.after_scopes = _aspect_scopes(prepared.model)
         self.has_aspects = bool(self.before_scopes or self.after_scopes)
+        # Owners whose plain ``during before`` waits for the first real child.
+        self.pending_owners = frozenset(
+            ".".join(state.path)
+            for state in prepared.model.walk_states()
+            if state.regions and state.list_on_durings(aspect="before")
+        )
         self.ledger_keys = tuple(
             ["$b:%s" % path for path in self.before_scopes]
             + ["$o:%s" % path for path in self.after_scopes]
@@ -484,6 +496,7 @@ class _StepBuilder:
         tag: str,
         outputs: Optional[Tuple[z3.ArithRef, _Env]],
         record: bool,
+        pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
     ) -> _UnitResult:
         """Lower the paths of a unit that starts under ``gate`` on ``env_in``.
 
@@ -491,32 +504,56 @@ class _StepBuilder:
         path writes; with ``None`` the unit is only asked whether it can
         succeed.  ``record`` keeps the lowered paths for inspection, which only
         the paths that really run in the step want.  A unit whose paths depend
-        on which before actions already ran is lowered once for every
-        combination the flags can take.
+        on which before actions already ran, or on whether the plain
+        during-before of the owner is still pending, is lowered once for every
+        combination those flags can take.  ``pending_io`` holds the pending
+        flag a start unit reads and the symbol it writes.
         """
-        if not self.has_aspects:
+        if not self.has_aspects and pending_io is None:
             return self._lower_variant(
-                self.units.get(spec), gate, env_in, ns, tag, outputs, record
+                self.units.get(spec), gate, env_in, ns, tag, outputs, record, None
             )
         merged = _UnitResult(z3.BoolVal(False))
         oks = []
         fallbacks = []
         keys = ["$b:%s" % path for path in self.before_scopes]
-        for index, (on, condition) in enumerate(self.flags(env_in, keys)):
+        before_options = (
+            self.flags(env_in, keys)
+            if self.has_aspects
+            else [((), z3.BoolVal(True))]
+        )
+        if pending_io is None:
+            pending_options = [(False, z3.BoolVal(True))]
+        else:
+            flag = z3.simplify(pending_io[0])
+            if z3.is_true(flag):
+                pending_options = [(True, z3.BoolVal(True))]
+            elif z3.is_false(flag):
+                pending_options = [(False, z3.BoolVal(True))]
+            else:
+                pending_options = [
+                    (True, pending_io[0]),
+                    (False, z3.Not(pending_io[0])),
+                ]
+        for index, (on, condition) in enumerate(before_options):
             done = frozenset(key[len("$b:") :] for key in on)
-            part = self._lower_variant(
-                self.units.get(spec, done),
-                z3.And(gate, condition),
-                env_in,
-                ns,
-                "%s_v%d" % (tag, index),
-                outputs,
-                record,
-            )
-            oks.append(part.ok)
-            fallbacks.append(part.fallback)
-            merged.facts.extend(part.facts)
-            merged.defs.extend(part.defs)
+            for pending_index, (pending, pending_condition) in enumerate(
+                pending_options
+            ):
+                part = self._lower_variant(
+                    self.units.get(spec, done, pending),
+                    z3.And(gate, condition, pending_condition),
+                    env_in,
+                    ns,
+                    "%s_v%d_%d" % (tag, index, pending_index),
+                    outputs,
+                    record,
+                    pending_io,
+                )
+                oks.append(part.ok)
+                fallbacks.append(part.fallback)
+                merged.facts.extend(part.facts)
+                merged.defs.extend(part.defs)
         merged.ok = _or(oks)
         merged.fallback = _or(fallbacks)
         return merged
@@ -530,6 +567,7 @@ class _StepBuilder:
         tag: str,
         outputs: Optional[Tuple[z3.ArithRef, _Env]],
         record: bool,
+        pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
     ) -> _UnitResult:
         pre_env = self.pre_env(env_in)
         prepared_cases = []
@@ -630,6 +668,8 @@ class _StepBuilder:
                 parts.append(out_pos == entry.out_pos)
             source_env = entry.env_out if entry is not None else final_env
             parts.append(self.env_equal(env_out, source_env))
+            if pending_io is not None:
+                parts.append(pending_io[1] == z3.BoolVal(case.plain_pending_after))
             result.defs.extend((antecedent, item) for item in definedness)
             if entry is not None:
                 result.defs.extend(
@@ -697,8 +737,16 @@ class _StepBuilder:
             facts: List[_Fact] = []
             defs: List[Tuple[z3.BoolRef, DomainConstraint]] = []
             nested_facts: List[_Fact] = []
+            pending = (
+                z3.BoolVal(True) if owner_path in self.pending_owners else None
+            )
             for index, region in enumerate(regions):
                 position = self.fresh_int("%s_r%d" % (tag, index))
+                pending_io = None
+                if pending is not None:
+                    next_pending = z3.Bool("R_%d_%s_pending%d" % (self.step, _symbol(tag, ""), index))
+                    pending_io = (pending, next_pending)
+                    pending = next_pending
                 unit = self.units.get(("init", region.path))
                 # A unit that assigns nothing leaves the values as they are, so
                 # they keep their expressions and a loop stays recognizable.
@@ -723,6 +771,7 @@ class _StepBuilder:
                     "%s_r%d" % (tag, index),
                     (position, env_next),
                     record=False,
+                    pending_io=pending_io,
                 )
                 ok_terms.append(result.ok)
                 nested_facts.extend(result.facts)
@@ -1218,13 +1267,6 @@ def _symbol(tag: str, label: str) -> str:
 
 
 def _check_supported(prepared: BmcPreparedContext) -> None:
-    model = prepared.model
-    for state in model.walk_states():
-        if state.regions and state.list_on_durings(aspect="before"):
-            raise UnsupportedBmcQuery(
-                "a plain 'during before' on a state that owns regions is not "
-                "supported by the BMC relation yet."
-            )
     if prepared.bound_query.initial.mode == "state":
         raise UnsupportedBmcQuery(
             "a hot start of a model with regions is not supported by the BMC "

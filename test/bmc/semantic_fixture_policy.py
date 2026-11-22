@@ -165,10 +165,6 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
 # that names why; the YAML ``exclude_runners`` of exactly these cases still
 # lists ``bmc_core``.
 REGION_CORE_EXCLUDE_CASES = {
-    # A plain "during before" on a state that owns regions is not encoded by the region relation yet.
-    "region_owner_plain_before_follows_the_initial_effect_and_runs_once_for_the_group": "owner_plain_before",
-    "region_that_finishes_through_pseudo_states_leaves_the_owner_plain_before_to_the_next_region": "owner_plain_before",
-    "region_transient_configuration_texts_during_group_entry_and_completion": "owner_plain_before",
     # The call-time configuration of a handler call is reported by the witness layer, not by the region relation.
     "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": "handler_calls",
     "region_choice_in_a_composite_is_decided_alike_when_tried_and_taken": "handler_calls",
@@ -178,6 +174,7 @@ REGION_CORE_EXCLUDE_CASES = {
     "region_pseudo_state_enter_handler_sees_the_pseudo_state_in_the_configuration": "handler_calls",
     "region_root_group_that_cannot_start_leaves_nothing_behind": "handler_calls",
     "region_single_region_owner_aspect_handler_reports_the_leaf": "handler_calls",
+    "region_transient_configuration_texts_during_group_entry_and_completion": "handler_calls",
     # The runtime raises a search-limit error here, which a bounded relation cannot express.
     "region_group_that_could_always_stop_one_round_later_is_reported_as_a_loop": "search_limit",
     "region_loop_is_reported_at_the_owner_when_the_last_region_has_no_other_way": "search_limit",
@@ -192,7 +189,6 @@ REGION_CORE_EXCLUDE_CASES = {
 }
 
 REGION_CORE_EXCLUDE_REASONS = {
-    "owner_plain_before": "A plain \"during before\" on a state that owns regions is not encoded by the region relation yet.",
     "handler_calls": "The call-time configuration of a handler call is reported by the witness layer, not by the region relation.",
     "search_limit": "The runtime raises a search-limit error here, which a bounded relation cannot express.",
     "action_dependent_loop": "The macro expander refuses a path that returns to a state while running actions.",

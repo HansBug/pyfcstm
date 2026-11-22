@@ -127,6 +127,10 @@ class RegionCase:
         because a leaf below them did during work on this path, defaults to
         ``frozenset()``.
     :type owed: FrozenSet[str], optional
+    :param plain_pending_after: Whether the plain ``during before`` of the state
+        that owns the region is still waiting for a real child to be entered
+        once the path ends; only an init unit starts with it pending.
+    :type plain_pending_after: bool, optional
 
     Example::
 
@@ -152,6 +156,7 @@ class RegionCase:
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     before_done: FrozenSet[str] = frozenset()
     owed: FrozenSet[str] = frozenset()
+    plain_pending_after: bool = False
 
 
 @dataclass(frozen=True)
@@ -306,10 +311,46 @@ class _RegionExpander(_MacroExpander):
             current = replace(current, owed=current.owed | owed)
         return current
 
+    def _clear_parent_plain_before_pending_after_pseudo_exit(
+        self, frontier, current_state
+    ):
+        if frontier.stack and isinstance(frontier.stack[-1].state, Region):
+            # A region that leaves through pseudo states without entering a real
+            # one does not use up the plain during-before of its owner: the next
+            # region of the group still gets it.
+            return frontier
+        return super()._clear_parent_plain_before_pending_after_pseudo_exit(
+            frontier, current_state
+        )
+
+    def _consume_plain_before_if_pending(self, frontier):
+        frame = frontier.stack[-1]
+        if not frame.plain_before_pending or not isinstance(frame.state, Region):
+            return super()._consume_plain_before_if_pending(frontier)
+        # The plain during-before of the state that owns the region binds the
+        # whole group: it runs once, ahead of the first real child any region
+        # of the group enters.
+        owner = frame.state.parent
+        current = frontier
+        for func in owner.list_on_durings(aspect="before"):
+            current = self._record_func(
+                current, owner, func, "state_action", "plain_during_before"
+            )
+        return self._replace_top(
+            current,
+            _FormalStackFrame(frame.state, frame.mode, plain_before_pending=False),
+        )
+
     def _remember_ledger(self, outcome, frontier):
+        bottom = frontier.stack[0] if frontier.stack else None
         self._ledger_by_label[outcome.label] = (
             getattr(frontier, "before_done", frozenset()),
             getattr(frontier, "owed", frozenset()),
+            bool(
+                bottom is not None
+                and isinstance(bottom.state, Region)
+                and bottom.plain_before_pending
+            ),
         )
         return outcome
 
@@ -357,8 +398,14 @@ class _RegionExpander(_MacroExpander):
         if frontier.stack and isinstance(frontier.stack[-1].state, Region):
             # The child left through ``[*]`` directly under a region: the region
             # is done, and it has no ``during after`` action to run.
+            top = frontier.stack[-1]
             return self._replace_top(
-                frontier, _FormalStackFrame(frontier.stack[-1].state, "post_child_exit")
+                frontier,
+                _FormalStackFrame(
+                    top.state,
+                    "post_child_exit",
+                    plain_before_pending=top.plain_before_pending,
+                ),
             )
         return super()._finalize_exit_to_parent(frontier)
 
@@ -515,7 +562,9 @@ class _RegionExpander(_MacroExpander):
                 outcome.priority_exclusions,
                 outcome.consumed_events,
                 outcome.failed_conditions,
-                *self._ledger_by_label.get(outcome.label, (frozenset(), frozenset())),
+                *self._ledger_by_label.get(
+                    outcome.label, (frozenset(), frozenset(), False)
+                ),
             )
             for outcome in expansion.outcomes
         )
@@ -641,6 +690,7 @@ def expand_init_unit(
     region_path: str,
     options: Optional[MacroExpansionOptions] = None,
     before_done: Iterable[str] = (),
+    plain_pending: bool = False,
 ) -> RegionUnitFormal:
     """Expand the initialization of one region.
 
@@ -653,6 +703,10 @@ def expand_init_unit(
     :param before_done: Paths of the scopes whose ``>> during before`` actions
         have already run in this cycle, defaults to ``()``.
     :type before_done: Iterable[str], optional
+    :param plain_pending: Whether the plain ``during before`` of the owner is
+        still waiting for the first real child of the group, defaults to
+        ``False``.
+    :type plain_pending: bool, optional
     :return: The initialization paths of the region.
     :rtype: RegionUnitFormal
     :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If ``region_path`` is not a
@@ -680,12 +734,14 @@ def expand_init_unit(
         raise InvalidBmcEncoding("region %r is not in the domain." % region_path)
     done = frozenset(before_done)
     unit_id = _variant_id("init:%s" % region_path, done)
+    if plain_pending:
+        unit_id += "|pending"
     expander = _make_expander(
         domain, unit_id, "init", options, entries[region_path].owner_id
     )
     region = expander.region_of(region_path)
     frontier = _RegionFrontier(
-        (_FormalStackFrame(region, "init_wait"),),
+        (_FormalStackFrame(region, "init_wait", plain_before_pending=plain_pending),),
         BoolTemplate.true(),
         (),
         (),

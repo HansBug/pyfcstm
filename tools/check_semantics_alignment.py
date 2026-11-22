@@ -360,6 +360,11 @@ def _region_model(rng):
         "    state Run {",
     ]
     lines.extend("        " + line for line in _aspect_lines(rng, 0.25))
+    for when in ("before", "after"):
+        if rng.random() < 0.2:
+            lines.append(
+                "        during %s { %s }" % (when, rng.choice(_REGION_ACTIONS))
+            )
     lines += [
         regions,
         "    }",

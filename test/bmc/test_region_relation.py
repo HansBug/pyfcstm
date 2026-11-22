@@ -517,6 +517,140 @@ class TestNestedAndRepeatedGroups:
 
 
 @pytest.mark.unittest
+class TestAspectsAndPlainBefore:
+    """Values below were obtained from the simulator on the same machines."""
+
+    def values(self, text, cycles, names):
+        core = core_of(text, cycles)
+        return [item[2] for item in frames(core, [{}] * cycles, names=names)[1:]]
+
+    def test_an_after_aspect_runs_when_its_branch_ends_so_the_next_region_sees_it(self):
+        text = """
+        def int x = 0;
+        def int seen = 0;
+        def int tail = 0;
+        state Root {
+            [*] -> P;
+            state P {
+                >> during after { tail = x * 100 + seen; }
+                region R1 {
+                    >> during after { x = x + 1; }
+                    [*] -> A;
+                    state A { during { x = x + 10; } }
+                }
+                region R2 { [*] -> B; state B { during { seen = x; } } }
+            }
+        }
+        """
+        assert self.values(text, 2, ("x", "seen", "tail")) == [
+            {"x": 11, "seen": 11, "tail": 1111},
+            {"x": 22, "seen": 22, "tail": 2222},
+        ]
+
+    def test_after_aspects_of_several_scopes_run_innermost_first(self):
+        text = """
+        def int v = 0;
+        state Root {
+            [*] -> P;
+            state P {
+                >> during after { v = v * 5 + 1; }
+                region R {
+                    >> during after { v = v + 3; }
+                    [*] -> C;
+                    state C {
+                        >> during after { v = v * 2; }
+                        [*] -> L;
+                        state L { during { v = 1; } }
+                    }
+                }
+            }
+        }
+        """
+        assert self.values(text, 2, ("v",)) == [{"v": 26}, {"v": 26}]
+
+    def test_every_scope_runs_its_before_once_outside_in_and_its_after_inside_out(self):
+        text = """
+        def int seq = 0;
+        state Root {
+            [*] -> P;
+            state P {
+                >> during before { seq = seq * 10 + 1; }
+                >> during after { seq = seq * 10 + 9; }
+                region A {
+                    >> during before { seq = seq * 10 + 2; }
+                    >> during after { seq = seq * 10 + 8; }
+                    [*] -> Q;
+                    state Q {
+                        >> during before { seq = seq * 10 + 3; }
+                        >> during after { seq = seq * 10 + 7; }
+                        region X { [*] -> X1; state X1 { during { seq = seq * 10 + 4; } } }
+                        region Y { [*] -> Y1; state Y1 { during { seq = seq * 10 + 5; } } }
+                    }
+                }
+                region B { [*] -> B1; state B1 { during { seq = seq * 10 + 6; } } }
+            }
+        }
+        """
+        assert self.values(text, 1, ("seq",)) == [{"seq": 123457869}]
+
+    def test_a_leaf_without_a_during_action_still_triggers_the_aspects_above_it(self):
+        text = """
+        def int tick = 0;
+        def int r1 = 0;
+        def int r2 = 0;
+        state Root {
+            event End;
+            >> during before { tick = tick + 1; }
+            [*] -> P;
+            state P {
+                region R1 { >> during before { r1 = r1 + 1; } [*] -> A; state A; A -> [*] : /End; }
+                region R2 { >> during before { r2 = r2 + 1; } [*] -> B; state B; }
+            }
+        }
+        """
+        # The owner and the root run once per cycle, each region once for its own
+        # working leaf.
+        assert self.values(text, 2, ("tick", "r1", "r2")) == [
+            {"tick": 1, "r1": 1, "r2": 1},
+            {"tick": 2, "r1": 2, "r2": 2},
+        ]
+
+    def test_the_plain_before_of_an_owner_runs_once_for_the_whole_group(self):
+        text = """
+        def int seq = 0;
+        state Root {
+            [*] -> P;
+            state P {
+                during before { seq = seq * 10 + 1; }
+                region A { [*] -> A1 effect { seq = seq * 10 + 2; }; state A1 { enter { seq = seq * 10 + 3; } } }
+                region B { [*] -> B1 effect { seq = seq * 10 + 4; }; state B1 { enter { seq = seq * 10 + 5; } } }
+            }
+        }
+        """
+        # After the effect of the first initial transition that enters a real
+        # state, ahead of that state, and not again for the second region.
+        assert self.values(text, 1, ("seq",)) == [{"seq": 21345}]
+
+    def test_a_region_that_finishes_through_pseudo_states_leaves_the_plain_before_to_the_next(
+        self,
+    ):
+        text = """
+        def int seq = 0;
+        state Root {
+            [*] -> P;
+            state P {
+                during before { seq = seq * 10 + 1; }
+                region A { [*] -> j; pseudo state j; j -> [*]; }
+                region B { [*] -> B1; state B1 { enter { seq = seq * 10 + 2; } } }
+            }
+        }
+        """
+        trace = frames(core_of(text, 1), [{}], names=("seq",))
+        assert trace[1][1]["Root.P.A"] == "done"
+        assert trace[1][2] == {"seq": 12}
+
+
+@pytest.mark.unittest
 class TestScopeOfTheRelation:
     TEXT = (
         "state Root { region A { [*] -> P; state P; } region B { [*] -> Q; state Q; } }"
@@ -546,18 +680,6 @@ class TestScopeOfTheRelation:
             solver = z3.Solver()
             solver.add(core.core, relation.selector, z3.Not(relation.antecedent))
             assert solver.check() == z3.unsat
-
-    def test_a_plain_during_before_of_an_owner_is_refused(self):
-        text = """
-        def int x = 0;
-        state Root {
-            during before { x = x + 1; }
-            region A { [*] -> P; state P; }
-            region B { [*] -> Q; state Q; }
-        }
-        """
-        with pytest.raises(UnsupportedBmcQuery, match="plain 'during before'"):
-            core_of(text, 1)
 
     def test_a_hot_start_is_refused(self):
         with pytest.raises(

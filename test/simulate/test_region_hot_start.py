@@ -157,6 +157,16 @@ def test_a_partial_hot_start_reports_its_waiting_regions_before_the_first_cycle(
     assert runtime.configuration.mode == "stable"
 
 
+def test_the_root_state_written_alone_starts_like_a_cold_start(job):
+    """The root is a plain composite here: it waits, and the first cycle enters everything."""
+    runtime = _hot(job, "W")
+    assert str(runtime.configuration) == "W"
+    assert runtime.configuration.mode == "initialization"
+    runtime.cycle()
+    assert str(runtime.configuration) == RESTING
+    assert runtime.vars["seq"] == 912345
+
+
 def test_a_path_through_nested_regions_leaves_every_other_region_waiting(job):
     """``W.Job.A.Q.A1.W1`` sits in two regions: ``A2`` and ``B`` wait, ``A1`` is in place."""
     runtime = _hot(job, "W.Job.A.Q.A1.W1")

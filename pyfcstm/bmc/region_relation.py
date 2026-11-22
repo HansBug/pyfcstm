@@ -1035,8 +1035,6 @@ class _StepBuilder:
         if not keys:
             return env_in
         options = self.flags(env_in, keys)
-        if options == [((), options[0][1])] and z3.is_true(options[0][1]):
-            return env_in
         env_out = self.fresh_env(tag)
         for on, condition in options:
             owed = frozenset(key[len("$o:") :] for key in on)

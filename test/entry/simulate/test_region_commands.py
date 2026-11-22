@@ -468,3 +468,11 @@ def test_init_accepts_spaces_before_the_opening_brace(tmp_path):
     assert result.exitcode == 0, result.stdout
     assert "Current State: W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}" in output
     assert "n = 10101" in output
+
+
+def test_init_ends_the_position_at_the_closing_brace_even_without_a_space(tmp_path):
+    result, output = _session(
+        tmp_path, "init W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}n=0 seq=0; cycle"
+    )
+    assert result.exitcode == 0, result.stdout
+    assert "n = 10101" in output

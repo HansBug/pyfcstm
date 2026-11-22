@@ -2001,16 +2001,13 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
-    if "regions" in categories and (
-        "generated_python_alignment" in runners
-        or "bmc_core" not in (data.get("exclude_runners") or [])
-    ):
+    if "regions" in categories and "generated_python_alignment" in runners:
         # Region fixtures may only run on runners that already execute regions;
         # every other shared consumer must opt out explicitly.
         raise _case_error(
             case_id,
             yaml_path,
-            "regions cases must exclude generated_python_alignment and bmc_core",
+            "regions cases must exclude generated_python_alignment",
         )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")

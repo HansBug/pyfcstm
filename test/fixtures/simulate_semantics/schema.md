@@ -276,10 +276,13 @@ Rules:
 
 A case in the `regions` category exercises a model that declares regions. Until
 every shared runner supports regions, such a case must set
-`exclude_runners: [generated_python_alignment, bmc_core]`; the loader rejects a
-`regions` case that leaves either runner selected. Cold-start region cases rely
-on the simulator only; hot start of a region model is not part of the corpus
-yet, so a region case cannot declare `initial`.
+`exclude_runners: [generated_python_alignment]`; the loader rejects a `regions`
+case that leaves that runner selected. The `bmc_core` runner takes a region case
+once its relation reports the configuration, the variables and the Delta
+classification of every cycle and the call fields of every handler call; a case
+that asserts handler calls keeps `bmc_core` excluded until it can. Cold-start
+region cases rely on the simulator only; hot start of a region model is not part
+of the corpus yet, so a region case cannot declare `initial`.
 
 ### Position
 

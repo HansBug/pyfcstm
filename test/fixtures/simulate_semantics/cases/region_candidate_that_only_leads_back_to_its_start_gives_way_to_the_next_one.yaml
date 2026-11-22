@@ -12,7 +12,6 @@ categories:
 - runtime
 exclude_runners:
 - generated_python_alignment
-- bmc_core
 steps:
 - cycle: []
   expect:

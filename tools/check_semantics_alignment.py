@@ -299,10 +299,21 @@ _REGION_ACTIONS = (
 )
 
 
+def _aspect_lines(rng, probability):
+    """Return ``>> during`` aspect declarations of one scope, possibly none."""
+    lines = []
+    for when in ("before", "after"):
+        if rng.random() < probability:
+            lines.append(">> during %s { %s }" % (when, rng.choice(_REGION_ACTIONS)))
+    return lines
+
+
 def _region_body(rng, name, depth):
     """Return the source of one region with one to three states."""
     names = ["%s_S%d" % (name, index) for index in range(rng.randint(1, 3))]
-    lines = ["region %s {" % name, "    [*] -> %s;" % names[0]]
+    lines = ["region %s {" % name]
+    lines.extend("    " + line for line in _aspect_lines(rng, 0.2))
+    lines.append("    [*] -> %s;" % names[0])
     nested = depth == 0 and rng.random() < 0.25
     for index, state in enumerate(names):
         if nested and index == len(names) - 1:
@@ -341,9 +352,15 @@ def _region_model(rng):
         "def int y = 0;",
         "state Root {",
         "    event Go;",
+    ]
+    lines.extend("    " + line for line in _aspect_lines(rng, 0.25))
+    lines += [
         "    [*] -> %s;" % rng.choice(["Run", "Idle"]),
         "    state Idle;",
         "    state Run {",
+    ]
+    lines.extend("        " + line for line in _aspect_lines(rng, 0.25))
+    lines += [
         regions,
         "    }",
         "    state Done { during { x = x + 1; } }",

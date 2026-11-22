@@ -165,46 +165,33 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
 # that names why; the YAML ``exclude_runners`` of exactly these cases still
 # lists ``bmc_core``.
 REGION_CORE_EXCLUDE_CASES = {
-    # ">> during" aspects of a model with regions are not encoded by the region relation yet.
-    "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": "aspects",
-    "region_after_aspect_runs_at_branch_end_so_the_next_region_sees_it": "aspects",
-    "region_after_aspects_of_nested_scopes_run_innermost_first": "aspects",
-    "region_ancestor_aspects_run_for_working_leaves_without_during_actions": "aspects",
-    "region_ancestor_aspects_run_once_and_sit_after_branch_conditions": "aspects",
-    "region_aspect_applies_only_to_its_region_and_only_with_during_work": "aspects",
-    "region_aspects_of_three_nested_scopes_run_once_each_outside_in_then_inside_out": "aspects",
-    "region_dead_way_through_a_pseudo_state_leaves_the_aspect_to_the_way_that_works": "aspects",
-    "region_entry_tried_on_a_copy_leaves_the_aspect_to_the_real_entry": "aspects",
-    "region_pseudo_states_on_the_way_do_not_trigger_aspects": "aspects",
-    "region_rejected_candidate_leaves_no_aspect_ledger_behind": "aspects",
-    "region_rejected_initial_candidate_leaves_no_aspect_record_behind": "aspects",
-    "region_single_region_owner_aspect_handler_reports_the_leaf": "aspects",
-    "region_start_with_groups_tried_repeatedly_stays_a_delta": "aspects",
     # A plain "during before" on a state that owns regions is not encoded by the region relation yet.
     "region_owner_plain_before_follows_the_initial_effect_and_runs_once_for_the_group": "owner_plain_before",
     "region_that_finishes_through_pseudo_states_leaves_the_owner_plain_before_to_the_next_region": "owner_plain_before",
     "region_transient_configuration_texts_during_group_entry_and_completion": "owner_plain_before",
     # The call-time configuration of a handler call is reported by the witness layer, not by the region relation.
+    "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": "handler_calls",
     "region_choice_in_a_composite_is_decided_alike_when_tried_and_taken": "handler_calls",
     "region_cold_start_delta_calls_no_handlers_even_for_regions_entered_before_the_failure": "handler_calls",
     "region_leaf_abstract_during_reports_the_leaf_and_the_moment_of_the_call": "handler_calls",
     "region_owner_enter_exit_handlers_see_group_entry_and_declaration_order_exit": "handler_calls",
     "region_pseudo_state_enter_handler_sees_the_pseudo_state_in_the_configuration": "handler_calls",
     "region_root_group_that_cannot_start_leaves_nothing_behind": "handler_calls",
+    "region_single_region_owner_aspect_handler_reports_the_leaf": "handler_calls",
     # The runtime raises a search-limit error here, which a bounded relation cannot express.
     "region_group_that_could_always_stop_one_round_later_is_reported_as_a_loop": "search_limit",
     "region_loop_is_reported_at_the_owner_when_the_last_region_has_no_other_way": "search_limit",
     "region_loop_with_nothing_else_to_try_is_reported_and_leaves_the_source_state": "search_limit",
     "region_unbounded_group_reentry_is_reported_as_a_safety_limit_error": "search_limit",
     # The macro expander refuses a path that returns to a state while running actions.
+    "region_cycle_that_cannot_settle_a_region_is_a_delta_that_keeps_everything": "action_dependent_loop",
     "region_forced_transition_back_into_its_own_state_is_not_reported_as_a_loop_when_it_cannot_happen": "action_dependent_loop",
     "region_forced_transition_back_into_its_own_state_takes_nothing_when_the_state_cannot_be_entered_again": "action_dependent_loop",
     # The group re-enters itself on changing values past the depth the relation unrolls.
-    "region_cycle_that_cannot_settle_a_region_is_a_delta_that_keeps_everything": "group_reentry_limit",
+    "region_start_with_groups_tried_repeatedly_stays_a_delta": "group_reentry_limit",
 }
 
 REGION_CORE_EXCLUDE_REASONS = {
-    "aspects": "\">> during\" aspects of a model with regions are not encoded by the region relation yet.",
     "owner_plain_before": "A plain \"during before\" on a state that owns regions is not encoded by the region relation yet.",
     "handler_calls": "The call-time configuration of a handler call is reported by the witness layer, not by the region relation.",
     "search_limit": "The runtime raises a search-limit error here, which a bounded relation cannot express.",

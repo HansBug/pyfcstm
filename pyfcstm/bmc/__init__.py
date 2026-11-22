@@ -164,7 +164,7 @@ Public module structure:
      - :class:`RegionUnitFormal`, :class:`RegionCase`,
        :func:`expand_leaf_unit`, :func:`expand_init_unit`,
        :func:`expand_continue_unit`, :func:`expand_cold_unit`,
-       :class:`RegionCaseRelation`, :class:`RegionStepRelation`,
+       :func:`expand_flush_unit`, :class:`RegionCaseRelation`, :class:`RegionStepRelation`,
        :func:`region_frame_constraints`
      - Expand a model with regions one region at a time and lower the units
        into one step relation in which every region has its own position
@@ -367,6 +367,7 @@ _REGION_EXPAND_EXPORTS = {
     "expand_init_unit",
     "expand_continue_unit",
     "expand_cold_unit",
+    "expand_flush_unit",
 }
 
 _REGION_RELATION_EXPORTS = {
@@ -670,6 +671,7 @@ __all__ = [
     "expand_init_unit",
     "expand_continue_unit",
     "expand_cold_unit",
+    "expand_flush_unit",
     "RegionCaseRelation",
     "RegionStepRelation",
     "region_frame_constraints",

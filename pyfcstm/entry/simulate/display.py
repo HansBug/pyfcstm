@@ -60,8 +60,21 @@ class StateDisplay:
 
     :ivar use_color: Whether to use ANSI color codes
     :vartype use_color: bool
+
     :ivar logger: Logger instance for log messages
     :vartype logger: logging.Logger
+
+    Example::
+
+        >>> from pyfcstm.entry.simulate.display import StateDisplay
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> runtime = SimulationRuntime(
+        ...     load_state_machine_from_text('state Root { [*] -> A; state A; }')
+        ... )
+        >>> _ = runtime.cycle()
+        >>> StateDisplay(use_color=False).format_current_state(runtime).splitlines()[:2]
+        ['Cycle: 1', 'Current State: Root.A']
     """
 
     # ANSI color codes - compatible with both light and dark themes
@@ -120,10 +133,27 @@ class StateDisplay:
         """
         Format current state and variable information.
 
+        The position is the dotted path of the state, or the configuration text
+        for a model with regions; ``(terminated)`` once the runtime has ended.
+
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
         :return: Formatted state and variables display
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.entry.simulate.display import StateDisplay
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { [*] -> Run; state Run {'
+            ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+            ... )
+            >>> runtime = SimulationRuntime(model)
+            >>> _ = runtime.cycle()
+            >>> StateDisplay(use_color=False).format_current_state(runtime).splitlines()[:2]
+            ['Cycle: 1', 'Current State: Root.Run{A: X, B: Y}']
         """
         lines = []
 

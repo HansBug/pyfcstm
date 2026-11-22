@@ -92,15 +92,15 @@ def _active_states(runtime) -> list:
     :param runtime: Simulation runtime to inspect.
     :type runtime: SimulationRuntime
     :return: One state for a model without regions; for a model with regions
-        every active leaf in writing order, or the root state before the first
-        cycle.
+        every active leaf in writing order, none before the first cycle (the
+        root state has no outgoing transitions to offer anyway).
     :rtype: list
     :raises IndexError: If the runtime has no active stack, for example after
         termination.
     """
     current = runtime.current_state
     if isinstance(current, Configuration):
-        return list(current.leaves) or [runtime.state_machine.root_state]
+        return list(current.leaves)
     return [current] if current else []
 
 

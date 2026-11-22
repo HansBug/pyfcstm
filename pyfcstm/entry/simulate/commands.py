@@ -314,10 +314,28 @@ class CommandProcessor:
         """
         Process a user command.
 
+        ``init`` receives the text after the command with its configuration text
+        kept in one piece; every other command is split on whitespace.
+
         :param user_input: The raw user input string
         :type user_input: str
         :return: Command execution result
         :rtype: CommandResult
+
+        Example::
+
+            >>> from pyfcstm.entry.simulate.commands import CommandProcessor
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'def int n = 0; state Root { [*] -> Run; state Run {'
+            ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+            ... )
+            >>> processor = CommandProcessor(SimulationRuntime(model))
+            >>> print(processor.process('init Root.Run{A: X, B: [init]} n=0').output.splitlines()[1])
+            Cycle: 0
+            >>> processor.process('init Root.Run{A: [done], B: [done]} n=0').exit_code
+            1
         """
         parts = user_input.strip().split()
         if not parts:

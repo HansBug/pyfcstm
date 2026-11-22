@@ -26,12 +26,31 @@ class SimulationCompleter(Completer):
     - Setting keys and values for setting command
     - Log levels for log_level setting
 
+    For ``init`` it offers the states of the model, the states inside regions
+    included, and the variable names after the position; nothing is offered
+    inside the braces of a configuration text.
+
     :param runtime: The simulation runtime instance
     :type runtime: SimulationRuntime
     :ivar COMMANDS: List of available commands
     :vartype COMMANDS: list
     :ivar LOG_LEVELS: List of available log levels
     :vartype LOG_LEVELS: list
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { [*] -> Run; state Run {'
+        ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+        ... )
+        >>> runtime = SimulationRuntime(model)
+        >>> _ = runtime.cycle()
+        >>> from prompt_toolkit.document import Document
+        >>> completer = SimulationCompleter(runtime)
+        >>> sorted(c.text for c in completer.get_completions(Document('init Root.Run.A'), None))
+        ['Root.Run.A.X']
     """
 
     COMMANDS = [
@@ -58,9 +77,28 @@ class SimulationCompleter(Completer):
 
         :param document: The current document
         :type document: Document
-        :param complete_event: The completion event
+        :param complete_event: The completion event; it is not consulted, so
+            ``None`` is fine
+        :type complete_event: Optional[prompt_toolkit.completion.CompleteEvent]
         :return: Iterator of completion suggestions
         :rtype: Iterable[Completion]
+
+        Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { [*] -> Run; state Run {'
+        ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+        ... )
+        >>> runtime = SimulationRuntime(model)
+        >>> _ = runtime.cycle()
+        >>> from prompt_toolkit.document import Document
+        >>> completer = SimulationCompleter(runtime)
+        >>> [c.text for c in completer.get_completions(Document('init Root.Run.B.'), None)]
+        ['Root.Run.B.Y']
+        >>> list(completer.get_completions(Document('init Root.Run{A: X'), None))
+        []
         """
         text = document.text_before_cursor
         words = text.split()
@@ -495,7 +533,7 @@ class SimulationCompleter(Completer):
             else:
                 return None
 
-        return current if hasattr(current, 'is_leaf_state') else None
+        return current
 
     def _get_all_variable_names(self) -> list:
         """

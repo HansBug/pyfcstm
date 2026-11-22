@@ -157,3 +157,29 @@ def test_the_name_depends_on_where_the_hot_start_put_the_machine(model):
         runtime.cycle(["Go"])
     runtime.cycle(["Ping"])
     assert runtime.vars["trail"] == 1
+
+
+UNEVEN = """
+state Root {
+    event Stop;
+    [*] -> Run;
+    state Run {
+        region Shallow { [*] -> X; state X; X -> X : /Stop; }
+        region Deep {
+            [*] -> Mid;
+            state Mid { [*] -> Y; state Y; }
+        }
+    }
+}
+"""
+
+
+def test_a_name_that_is_malformed_from_one_leaf_is_still_found_from_another():
+    """Four dots go above the root from the shallow leaf but reach ``Root.Stop`` from the deep one."""
+    model = load_state_machine_from_text(UNEVEN)
+    config = Configuration.parse(model, "Root.Run{Shallow: X, Deep: Mid.Y}")
+    assert config.resolve_event("....Stop").path_name == "Root.Stop"
+    # Seen from the shallow leaf alone it is malformed.
+    shallow = Configuration.parse(model, "Root.Run{Shallow: X, Deep: [done]}")
+    with pytest.raises(ModelValueError):
+        shallow.resolve_event("....Stop")

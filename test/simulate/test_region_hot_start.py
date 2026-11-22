@@ -235,6 +235,57 @@ def test_a_configuration_of_another_model_is_rejected(job):
         _hot(job, foreign)
 
 
+def test_a_state_of_another_model_is_rejected(job):
+    other = load_state_machine_from_text(JOB)
+    foreign = other.root_state.substates["Job"]
+    with pytest.raises(ValueError, match="does not belong"):
+        _hot(job, foreign)
+
+
+@pytest.mark.parametrize(
+    ["start", "error", "message"],
+    [
+        pytest.param("", ValueError, "cannot be empty", id="empty-text"),
+        pytest.param(42, TypeError, "got int", id="unsupported-type"),
+        pytest.param("W.Job.A", ValueError, "names a region", id="a-region-is-no-state"),
+    ],
+)
+def test_a_reference_that_is_no_state_is_rejected(job, start, error, message):
+    with pytest.raises(error, match=message):
+        _hot(job, start)
+
+
+WAITING_CANNOT_START = """
+def int x = 0;
+state Root {
+    [*] -> Run;
+    state Run {
+        region A { [*] -> A1; state A1 { during { x = x + 1; } } }
+        region B { [*] -> B1 : if [x > 100]; state B1; }
+    }
+}
+"""
+
+
+def test_a_waiting_region_that_cannot_start_makes_the_first_cycle_a_delta():
+    """Nothing changes in a cycle that cannot be completed, hot-started or not."""
+    model = load_state_machine_from_text(WAITING_CANNOT_START)
+    runtime = SimulationRuntime(
+        model, initial_state="Root.Run{A: A1}", initial_vars={"x": 0}
+    )
+    result = runtime.cycle()
+    assert result.delta
+    assert str(runtime.configuration) == "Root.Run{A: A1, B: [init]}"
+    assert runtime.vars["x"] == 0
+    assert runtime.cycle_count == 1
+    # Once the guard can hold, the same machine starts the region and goes on.
+    runtime = SimulationRuntime(
+        model, initial_state="Root.Run{A: A1}", initial_vars={"x": 101}
+    )
+    assert not runtime.cycle().delta
+    assert str(runtime.configuration) == "Root.Run{A: A1, B: B1}"
+
+
 def test_every_variable_has_to_be_given(job):
     with pytest.raises(ValueError, match="initial_vars must provide all variables"):
         SimulationRuntime(job, initial_state=RESTING, initial_vars={"seq": 0})

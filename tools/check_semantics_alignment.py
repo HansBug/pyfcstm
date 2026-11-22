@@ -313,7 +313,13 @@ def _region_body(rng, name, depth):
     names = ["%s_S%d" % (name, index) for index in range(rng.randint(1, 3))]
     lines = ["region %s {" % name]
     lines.extend("    " + line for line in _aspect_lines(rng, 0.2))
-    lines.append("    [*] -> %s;" % names[0])
+    if rng.random() < 0.3:
+        # A guarded start: the region may fail to start, or start somewhere else.
+        lines.append("    [*] -> %s : if [%s];" % (names[0], rng.choice(_REGION_GUARDS)))
+        if rng.random() < 0.6:
+            lines.append("    [*] -> %s;" % names[-1])
+    else:
+        lines.append("    [*] -> %s;" % names[0])
     nested = depth == 0 and rng.random() < 0.25
     for index, state in enumerate(names):
         if nested and index == len(names) - 1:
@@ -329,7 +335,7 @@ def _region_body(rng, name, depth):
             parts.append("during { %s }" % rng.choice(_REGION_ACTIONS))
         lines.append("    state %s { %s }" % (state, " ".join(parts)))
     for source in names:
-        for target in names + ["[*]"]:
+        for target in names + ["[*]", "[*]"]:
             if source == target or rng.random() > 0.35:
                 continue
             trigger = rng.choice(
@@ -405,7 +411,7 @@ def _region_observation(core, runtime, result, frame, cycle):
         position = symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
     else:
         tree = runtime.configuration.to_dict()
-        if tree["mode"] == "transient":
+        if tree["mode"] != "stable":
             # Entered but not started: the cold start stayed a Delta.
             position = symbols.frame_state(frame) == z3.IntVal(STATE_INIT_ID)
         else:

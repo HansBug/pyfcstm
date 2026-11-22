@@ -631,8 +631,24 @@ class _StepBuilder:
                 # A region cannot start on these values, so the whole entry
                 # fails and what follows an entry is never reached.
                 return _Entry(z3.BoolVal(False), out_pos, env_out, [], [])
-            all_done = _and(
-                positions[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions
+            # The regions can only all be done right after starting when each of
+            # them has a start path that ends in a finished region or in a nested
+            # group; otherwise the owner certainly rests and what would follow a
+            # finished group is never reached.
+            may_finish = all(
+                any(
+                    case.target_kind in ("done", "owner")
+                    for case in self.units.init(region.path).cases
+                )
+                for region in regions
+            )
+            all_done = (
+                _and(
+                    positions[item.path] == z3.IntVal(REGION_DONE_ID)
+                    for item in regions
+                )
+                if may_finish
+                else z3.BoolVal(False)
             )
             self.constraints.append(
                 z3.Implies(
@@ -642,15 +658,18 @@ class _StepBuilder:
                     ),
                 )
             )
-            cont = self.lower_unit(
-                self.units.cont(owner_path),
-                all_done,
-                env,
-                ns,
-                "%s_c" % tag,
-                (out_pos, env_out),
-                record=False,
-            )
+            if may_finish:
+                cont = self.lower_unit(
+                    self.units.cont(owner_path),
+                    all_done,
+                    env,
+                    ns,
+                    "%s_c" % tag,
+                    (out_pos, env_out),
+                    record=False,
+                )
+            else:
+                cont = _UnitResult(z3.BoolVal(False))
             resting = out_pos == z3.IntVal(owner.id)
             for region in regions:
                 facts.append(

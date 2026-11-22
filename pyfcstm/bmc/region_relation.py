@@ -327,9 +327,7 @@ def region_frame_constraints(
             )
             constraints.append(z3.Implies(resting, allowed))
             constraints.append(
-                z3.Implies(
-                    z3.Not(resting), position == z3.IntVal(REGION_INACTIVE_ID)
-                )
+                z3.Implies(z3.Not(resting), position == z3.IntVal(REGION_INACTIVE_ID))
             )
         constraints.append(
             z3.Implies(
@@ -391,7 +389,9 @@ class _StepBuilder:
             for name in self.persistent
         }
 
-    def env_equal(self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]) -> z3.BoolRef:
+    def env_equal(
+        self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
+    ) -> z3.BoolRef:
         return _and(left[name] == right[name] for name in self.persistent)
 
     def persistent_env(self, env: Mapping[str, object]) -> _Env:
@@ -528,17 +528,14 @@ class _StepBuilder:
                 parts.append(out_pos == entry.out_pos)
             source_env = entry.env_out if entry is not None else final_env
             parts.append(self.env_equal(env_out, source_env))
-            result.defs.extend(
-                (antecedent, item) for item in definedness
-            )
+            result.defs.extend((antecedent, item) for item in definedness)
             if entry is not None:
                 result.defs.extend(
                     (z3.And(antecedent, cond), item) for cond, item in entry.defs
                 )
             if record:
                 parts.extend(
-                    z3.Implies(antecedent, item.constraint)
-                    for item in definedness
+                    z3.Implies(antecedent, item.constraint) for item in definedness
                 )
                 if entry is not None:
                     parts.extend(
@@ -604,7 +601,9 @@ class _StepBuilder:
                 # A unit that assigns nothing leaves the values as they are, so
                 # they keep their expressions and a loop stays recognizable.
                 env_next = (
-                    env if _assigns_nothing(unit) else self.fresh_env("%s_r%d" % (tag, index))
+                    env
+                    if _assigns_nothing(unit)
+                    else self.fresh_env("%s_r%d" % (tag, index))
                 )
                 others_live = _or(
                     [z3.BoolVal(index < len(regions) - 1)]
@@ -654,7 +653,9 @@ class _StepBuilder:
             )
             resting = out_pos == z3.IntVal(owner.id)
             for region in regions:
-                facts.append((resting, self.position_next(region), positions[region.path]))
+                facts.append(
+                    (resting, self.position_next(region), positions[region.path])
+                )
             facts.extend(
                 (z3.And(resting, cond), sym, value) for cond, sym, value in nested_facts
             )
@@ -665,9 +666,7 @@ class _StepBuilder:
         finally:
             self._entering.pop()
 
-    def done_viable(
-        self, ns: Optional[_Namespace], env: _Env, tag: str
-    ) -> z3.BoolRef:
+    def done_viable(self, ns: Optional[_Namespace], env: _Env, tag: str) -> z3.BoolRef:
         """Return whether a region that just finished may stay finished."""
         if ns is None or ns.region is None:
             raise _internal_bmc_error("a region finished outside every region.")
@@ -777,7 +776,9 @@ class _StepBuilder:
             )
             after[region.path] = q
             env = env_out
-        all_done = _and(after[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions)
+        all_done = _and(
+            after[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions
+        )
         return env, after, all_done, _and(fallback_terms)
 
     def assert_positions_next(
@@ -1089,8 +1090,7 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
                 builder.build_leaf_source(state_id)
         delta_constraint, gamma_constraint, mutex = builder.finish()
         formula = _and(
-            tuple(builder.constraints)
-            + (delta_constraint, gamma_constraint, mutex)
+            tuple(builder.constraints) + (delta_constraint, gamma_constraint, mutex)
         )
         steps.append(
             BmcStepRelation(

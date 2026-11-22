@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import z3
 
-from .errors import BmcBuildError
+from .errors import BmcBuildError, UnsupportedBmcQuery
 from .relation import BmcCoreFormula, BmcRuntimeErrorSite
 from .solver import _check_with_budget, _solver_for_profile, _SolveBudget
 
@@ -264,6 +264,10 @@ def check_runtime_safety(
     """
     if not isinstance(core, BmcCoreFormula):
         raise BmcBuildError("core must be BmcCoreFormula.")
+    if core.region_steps:
+        raise UnsupportedBmcQuery(
+            "the runtime-safety check of a model with regions is not supported yet."
+        )
     return _check_runtime_safety(core, timeout_ms, solver_profile)[0]
 
 

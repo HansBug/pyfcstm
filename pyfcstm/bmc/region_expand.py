@@ -180,14 +180,9 @@ class _UnitSource:
 class _RegionExpander(_MacroExpander):
     """Single-path expander extended with regions as stack frames."""
 
-    def __init__(
-        self, source: _UnitSource, options: MacroExpansionOptions
-    ) -> None:
+    def __init__(self, source: _UnitSource, options: MacroExpansionOptions) -> None:
         super().__init__(source, options)  # type: ignore[arg-type]
-        self._region_paths = {
-            region.path: region
-            for region in self.domain.regions
-        }
+        self._region_paths = {region.path: region for region in self.domain.regions}
         self._owner_by_region_path = {
             region.path: region.owner_path for region in self.domain.regions
         }
@@ -253,7 +248,9 @@ class _RegionExpander(_MacroExpander):
             "transition object was not found on its owner state or region."
         )
 
-    def _active_leaf_path(self, frontier: _MacroFrontier, runtime_state_path: str) -> str:
+    def _active_leaf_path(
+        self, frontier: _MacroFrontier, runtime_state_path: str
+    ) -> str:
         for frame in reversed(frontier.stack):
             state = frame.state
             if (
@@ -287,7 +284,9 @@ class _RegionExpander(_MacroExpander):
                 current, state, on_enter, "state_action", "state_enter"
             )
         # The regions are started by init units, so the path stops here.
-        return (self._replace_top(current, _FormalStackFrame(state, _OWNER_ENTERED_MODE)),)
+        return (
+            self._replace_top(current, _FormalStackFrame(state, _OWNER_ENTERED_MODE)),
+        )
 
     def _expand_frontier(self, frontier: _MacroFrontier) -> _Expansion:
         # The head repeats the single-path expander's safety and loop checks,
@@ -326,9 +325,7 @@ class _RegionExpander(_MacroExpander):
                     return _Expansion((self._done_outcome(frontier),), (), ())
                 return self._expand_initial_transitions(frontier)
             if top.mode == _OWNER_ENTERED_MODE:
-                return _Expansion(
-                    (self._owner_outcome(frontier, top.state),), (), ()
-                )
+                return _Expansion((self._owner_outcome(frontier, top.state),), (), ())
         return self._dispatch_frontier(frontier)
 
     def _dispatch_frontier(self, frontier: _MacroFrontier) -> _Expansion:
@@ -375,9 +372,7 @@ class _RegionExpander(_MacroExpander):
             self._allocate_case_label(frontier.case_kind, path),
             self._state_id(path),
             path,
-            BoolTemplate.and_(
-                frontier.condition, BoolTemplate.atom(ATOM_REGION_ENTER)
-            ),
+            BoolTemplate.and_(frontier.condition, BoolTemplate.atom(ATOM_REGION_ENTER)),
             frontier.used_events,
             frontier.action_blocks,
             frontier.guard_requirements,
@@ -506,7 +501,9 @@ def expand_leaf_unit(
     """
     leaf = _leaf_state(domain, leaf_path)
     unit_id = "work:%s" % leaf_path
-    expander = _make_expander(domain, unit_id, "work", options, domain.state_path_to_id(leaf_path))
+    expander = _make_expander(
+        domain, unit_id, "work", options, domain.state_path_to_id(leaf_path)
+    )
     frames = expander.namespace_frames(leaf)
     frontier = _MacroFrontier(
         frames, BoolTemplate.true(), (), (), (), (), _CASE_KIND_TRANSITION
@@ -553,7 +550,9 @@ def expand_init_unit(
     if region_path not in entries:
         raise InvalidBmcEncoding("region %r is not in the domain." % region_path)
     unit_id = "init:%s" % region_path
-    expander = _make_expander(domain, unit_id, "init", options, entries[region_path].owner_id)
+    expander = _make_expander(
+        domain, unit_id, "init", options, entries[region_path].owner_id
+    )
     region = expander.region_of(region_path)
     frontier = _MacroFrontier(
         (_FormalStackFrame(region, "init_wait"),),

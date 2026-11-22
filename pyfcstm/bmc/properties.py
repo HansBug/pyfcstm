@@ -829,6 +829,11 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         'Bool'
     """
     checked_core = _require_core(core)
+    if checked_core.region_steps:
+        raise UnsupportedBmcQuery(
+            "a property over a model with regions is not supported yet; the "
+            "core trace relation is available from build_bmc_core_formula."
+        )
     prop = _property_source(checked_core)
     kind = prop.kind
     case_label = None

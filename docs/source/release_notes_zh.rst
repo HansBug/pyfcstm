@@ -36,6 +36,18 @@ PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展
 
 如果代码把含强制转换的模型的 ``StateMachine.defines``\ 、\ ``walk_states()``\ 或导出的 DSL 文本与保存的期望值比较，需要更新期望值。从 ``runtime.vars`` 取得的热启动快照要连同其中的 ``__forced_*`` 项一起保存和提供，与其他变量一样。
 
+区域的有界模型检查
+~~~~~~~~~~~~~~~~~~
+
+:func:`pyfcstm.bmc.build_bmc_core_formula`\ 现在可以描述含区域（region）的模型。拥有区域的状态在一个周期里按书写顺序依次推进各个区域，每个区域接着前一个区域留下的值继续，公式的规模随区域个数相加，不随各区域路径个数相乘：
+
+- 每个区域在每一帧里有一个位置符号，取值是它的分支停驻的状态，或者区域结束后的 ``REGION_DONE_ID``\ ，或者拥有者没有停驻时的 ``REGION_INACTIVE_ID``\ ；\ ``BmcTraceSymbols.region_position``\ 给出它；
+- 启动拥有区域的状态会按顺序启动每个区域，任何一个区域起不来，整个进入就失败，冷启动时报告为 Delta；
+- 最后一个区域只有在拥有者能在同一周期继续时才可以结束；
+- ``>> during`` 切面和拥有区域的状态上的普通 ``during before``\ ，按仿真器运行它们的方式编码。
+
+这类模型目前只支持冷启动。热启动、\ :func:`pyfcstm.bmc.compile_bmc_property`\ 和 :func:`pyfcstm.bmc.check_runtime_safety`\ 对它抛出 :class:`pyfcstm.bmc.UnsupportedBmcQuery`\ ，\ ``pyfcstm bmc`` 仍然拒绝这样的模型。在变化的取值上重入自身的组会被展开到固定深度，需要更深时抛出 :class:`pyfcstm.bmc.BmcBuildError`\ ，而不是被近似。不含区域的模型生成的公式与以前相同。
+
 历史与 ``active()``
 ~~~~~~~~~~~~~~~~~~~~
 

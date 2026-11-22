@@ -110,6 +110,34 @@ text of a model with forced transitions against stored values needs new
 expected values. A hot-start snapshot taken from ``runtime.vars`` keeps its
 ``__forced_*`` entries and supplies them with the other variables.
 
+Bounded Model Checking of Regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:func:`pyfcstm.bmc.build_bmc_core_formula` now describes models that declare
+regions. A state that owns regions advances them one after another in a single
+cycle, each on the values the previous one left behind, and the formula grows
+with the sum of the regions instead of the product of their paths:
+
+- every region has a position symbol per frame, which holds the state its
+  branch rests in, or ``REGION_DONE_ID`` once it finished, or
+  ``REGION_INACTIVE_ID`` while its owner is not resting;
+  ``BmcTraceSymbols.region_position`` returns it;
+- starting a state that owns regions starts every region in order, and a region
+  that cannot start makes the whole entry fail, which a cold start reports as a
+  Delta;
+- the last region may only finish if its owner can continue in the same cycle;
+- ``>> during`` aspects and the plain ``during before`` of a state that owns
+  regions are encoded the way the simulator runs them.
+
+Only a cold start is supported for such a model. A hot start,
+:func:`pyfcstm.bmc.compile_bmc_property` and
+:func:`pyfcstm.bmc.check_runtime_safety` raise
+:class:`pyfcstm.bmc.UnsupportedBmcQuery` for it, and ``pyfcstm bmc`` still
+refuses such a model.
+A group that re-enters itself on changing values is unrolled to a fixed depth;
+a model that needs more raises :class:`pyfcstm.bmc.BmcBuildError` instead of
+being approximated. Models without regions produce the same formulas as before.
+
 History and ``active()``
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

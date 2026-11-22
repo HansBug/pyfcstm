@@ -2358,7 +2358,7 @@ def _lower_bool_template(
         if atom.startswith(_REGION_ATOM_PREFIX):
             try:
                 return _LoweredBoolTemplate(lowering.region_terms[atom])
-            except KeyError as err:
+            except KeyError as err:  # pragma: no cover - the region builder supplies every term.
                 # KeyError: a region atom needs a term that the region relation
                 # builder supplies for every case that carries one.
                 raise _internal_bmc_error("missing region term %r." % atom) from err

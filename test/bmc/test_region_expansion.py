@@ -7,6 +7,7 @@ from pyfcstm.bmc import (
     build_bmc_domain,
     expand_cold_unit,
     expand_continue_unit,
+    expand_flush_unit,
     expand_init_unit,
     expand_leaf_unit,
 )
@@ -198,3 +199,22 @@ class TestOtherUnits:
         )
         labels.extend(case.label for case in expand_cold_unit(domain).cases)
         assert len(labels) == len(set(labels))
+
+    def test_a_flush_unit_names_scopes_that_declare_an_after_action(self):
+        text = """
+        def int x = 0;
+        state Root {
+            >> during after { x = x + 1; }
+            region A { [*] -> P; state P; }
+            region B { [*] -> Q; state Q; }
+        }
+        """
+        domain = domain_of(text)
+        unit = expand_flush_unit(domain, ["Root"])
+        assert unit.kind == "flush"
+        assert [case.target_kind for case in unit.cases] == ["flush"]
+        assert len(expand_flush_unit(domain, []).cases[0].action_blocks) == 0
+        with pytest.raises(InvalidBmcEncoding, match="declares no >> during after"):
+            expand_flush_unit(domain, ["Root.A"])
+        with pytest.raises(InvalidBmcEncoding, match="declares no >> during after"):
+            expand_flush_unit(domain, ["Root.Nowhere"])

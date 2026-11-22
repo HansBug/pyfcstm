@@ -55,7 +55,7 @@ from dataclasses import dataclass, replace
 from typing import FrozenSet, Iterable, Optional, Tuple
 
 from .domain import REGION_DONE_ID, STATE_INIT_ID, BmcDomain
-from .errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
+from .errors import InvalidBmcDomain, InvalidBmcEncoding
 from .expand import (
     _CASE_KIND_INITIAL,
     _CASE_KIND_TRANSITION,
@@ -404,15 +404,14 @@ class _RegionExpander(_MacroExpander):
 
         ``owner`` may be a region, which has initial transitions only.
         """
-        candidates = [owner.init_transitions]
+        lists = [owner.init_transitions]
         if hasattr(owner, "transitions_from"):
-            candidates.append(owner.transitions_from)
-        for transitions in candidates:
-            for index, item in enumerate(transitions):
-                if item is transition:
-                    return index
-        raise BmcBuildError(
-            "transition object was not found on its owner state or region."
+            lists.append(owner.transitions_from)
+        return next(
+            index
+            for items in lists
+            for index, item in enumerate(items)
+            if item is transition
         )
 
     def _active_leaf_path(
@@ -476,41 +475,15 @@ class _RegionExpander(_MacroExpander):
         )
 
     def _expand_frontier(self, frontier: _MacroFrontier) -> _Expansion:
-        # The head repeats the single-path expander's safety and loop checks,
-        # because a region frame has to be dispatched before the leaf test the
-        # base class applies to every top frame.
         """Expand one frontier.
 
-        The head repeats the safety and loop checks of the single-path expander, then a
-        region frame or an owner that was just entered is dispatched before the
-        single-path rules, which test every top frame for being a leaf.
+        A region frame or an owner that was just entered is dispatched before
+        the single-path rules, which test every top frame for being a leaf.
         """
-        if frontier.depth >= self.options.max_micro_steps:
-            raise BmcBuildError(
-                "macro-step expansion exceeded the micro-step safety limit."
-            )
-        if len(frontier.stack) > self.options.max_stack_depth:
-            raise BmcBuildError(
-                "macro-step expansion exceeded the stack-depth safety limit."
-            )
-        if frontier.condition.kind == "false":
-            return _Expansion((), (), ())
-        signature = self._frontier_signature(frontier)
-        for previous_signature, previous_action_count in frontier.path_signatures:
-            if previous_signature != signature:
-                continue
-            if len(frontier.action_blocks) > previous_action_count:
-                raise BmcBuildError(
-                    "macro-step expansion encountered an action-dependent pseudo loop."
-                )
-            self._remember_failed_guard_requirements(frontier)
-            return _Expansion((), (frontier.condition,), ())
-        frontier = self._replace_frontier(
-            frontier,
-            path_signatures=frontier.path_signatures
-            + ((signature, len(frontier.action_blocks)),),
-            depth=frontier.depth + 1,
-        )
+        prepared = self._prepare_frontier(frontier)
+        if isinstance(prepared, _Expansion):
+            return prepared
+        frontier = prepared
         if frontier.stack:
             top = frontier.stack[-1]
             if isinstance(top.state, Region):
@@ -520,27 +493,6 @@ class _RegionExpander(_MacroExpander):
             if top.mode == _OWNER_ENTERED_MODE:
                 return _Expansion((self._owner_outcome(frontier, top.state),), (), ())
         return self._dispatch_frontier(frontier)
-
-    def _dispatch_frontier(self, frontier: _MacroFrontier) -> _Expansion:
-        """Dispatch a frontier on its top frame the way the base class does."""
-        if not frontier.stack:
-            return _Expansion((self._terminate_outcome(frontier),), (), ())
-        top = frontier.stack[-1]
-        state = top.state
-        if state.is_leaf_state and top.mode == "after_entry":
-            active = self._replace_top(frontier, _FormalStackFrame(state, "active"))
-            if state.is_stoppable:
-                return _Expansion((self._stable_outcome(active, state),), (), ())
-            return self._expand_frontier(active)
-        if state.is_leaf_state:
-            return self._expand_leaf_active(frontier)
-        if top.mode == "init_wait":
-            return self._expand_initial_transitions(frontier)
-        if top.mode == "post_child_exit":
-            return self._expand_parent_continuation(frontier)
-        raise BmcBuildError(
-            "unsupported macro frontier stack frame mode: %r." % top.mode
-        )
 
     # ------------------------------------------------------------------
     # outcomes
@@ -691,11 +643,7 @@ def _leaf_state(domain: BmcDomain, path: str) -> State:
         raise InvalidBmcEncoding(str(err)) from err
     if not entry.is_stoppable:
         raise InvalidBmcEncoding("a work unit starts at a stoppable leaf.")
-    model = domain.model
-    for state in model.walk_states():
-        if ".".join(state.path) == path:
-            return state
-    raise InvalidBmcEncoding("state %r is not in the model." % path)
+    return {".".join(state.path): state for state in domain.model.walk_states()}[path]
 
 
 def expand_leaf_unit(

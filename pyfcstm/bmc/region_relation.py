@@ -561,8 +561,6 @@ class _StepBuilder:
             flag = z3.simplify(pending_io[0])
             if z3.is_true(flag):
                 pending_options = [(True, z3.BoolVal(True))]
-            elif z3.is_false(flag):
-                pending_options = [(False, z3.BoolVal(True))]
             else:
                 pending_options = [
                     (True, pending_io[0]),
@@ -878,10 +876,8 @@ class _StepBuilder:
         finally:
             self._entering.pop()
 
-    def done_viable(self, ns: Optional[_Namespace], env: _Env, tag: str) -> z3.BoolRef:
+    def done_viable(self, ns: _Namespace, env: _Env, tag: str) -> z3.BoolRef:
         """Return whether a region that just finished may stay finished."""
-        if ns is None or ns.region is None:
-            raise _internal_bmc_error("a region finished outside every region.")
         region = ns.region
         cont = self.lower_unit(
             ("cont", region.owner_path),
@@ -1248,8 +1244,6 @@ def _statically_false(template, guard_terms: Mapping[str, z3.BoolRef]) -> bool:
     def truth(node) -> Optional[bool]:
         if node.kind == "true":
             return True
-        if node.kind == "false":
-            return False
         if node.kind == "atom":
             name = node.name
             if name.startswith("guard:") and name[len("guard:") :] in guard_terms:
@@ -1266,9 +1260,9 @@ def _statically_false(template, guard_terms: Mapping[str, z3.BoolRef]) -> bool:
             if any(item is False for item in values):
                 return False
             return True if all(item is True for item in values) else None
-        if any(item is True for item in values):
-            return True
-        return False if all(item is False for item in values) else None
+        # An "or" is as good as unknown unless one operand is certainly true:
+        # the conditions seen here only or together atoms that are unknown.
+        return True if any(item is True for item in values) else None
 
     return truth(template) is False
 

@@ -16,6 +16,7 @@ from pyfcstm.bmc import (
     compile_bmc_query,
     region_frame_constraints,
 )
+from pyfcstm.bmc.region_relation import build_region_core_formula
 from pyfcstm.model import load_state_machine_from_text
 
 INTERLOCK = """
@@ -700,3 +701,52 @@ class TestScopeOfTheRelation:
             UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
         ):
             check_runtime_safety(core)
+
+
+@pytest.mark.unittest
+class TestStartValuesAndFlushes:
+    def test_the_relation_builder_needs_a_model_with_regions(self):
+        model = load_state_machine_from_text("state Root { [*] -> A; state A; }")
+        context = BmcEngine(model).prepare("check reach <= 1: terminated();")
+        with pytest.raises(BmcBuildError, match="needs a model with regions"):
+            build_region_core_formula(context)
+
+    def test_parameters_and_float_variables_keep_their_start_values(self):
+        text = """
+        param int gain = 2;
+        def int x = 3;
+        def float ratio = 1;
+        state Root {
+            region A { [*] -> P; state P { during { x = x + 1; } } }
+            region B { [*] -> Q; state Q; }
+        }
+        """
+        core = core_of(text, 1)
+        symbols = core.symbols
+        solver = z3.Solver()
+        solver.add(core.core, z3.Not(symbols.frame_var(1, "x") == 4))
+        assert solver.check() == z3.unsat
+        solver = z3.Solver()
+        solver.add(core.core, symbols.frame_var(1, "ratio") == 1)
+        assert solver.check() == z3.sat
+
+    def test_a_region_that_finishes_through_pseudo_states_owes_no_after_action(self):
+        text = """
+        def int x = 0;
+        state Root {
+            [*] -> Run;
+            state Run {
+                region A {
+                    >> during after { x = x + 1; }
+                    [*] -> j;
+                    pseudo state j;
+                    j -> [*];
+                }
+                region B { [*] -> Q; state Q; }
+            }
+        }
+        """
+        trace = frames(core_of(text, 1), [{}], names=("x",))
+        assert trace[1][1]["Root.Run.A"] == "done"
+        # No leaf worked below A, so nothing is owed when its branch ends.
+        assert trace[1][2] == {"x": 0}

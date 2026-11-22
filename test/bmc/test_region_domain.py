@@ -280,3 +280,51 @@ class TestRegionDomainContracts:
                 domain.stable_state_ids,
                 regions=domain.regions + (lonely,),
             )
+
+    def test_an_event_named_by_an_initial_transition_of_a_region_is_collected(self):
+        text = """
+        state Root {
+            region A { event Start; [*] -> P : Start; state P; }
+            region B { [*] -> Q; state Q; }
+        }
+        """
+        assert [event.path for event in domain_of(text).events] == ["Root.A.Start"]
+
+    def test_region_entries_are_checked_against_each_other_and_the_states(self):
+        domain = domain_of(NESTED)
+        outer = domain.state_path_to_id("Root.Outer")
+
+        def with_region(extra):
+            return BmcDomain(
+                domain.bound,
+                domain.states,
+                domain.events,
+                domain.variables,
+                domain.frames,
+                domain.steps,
+                domain.event_inputs,
+                domain.initial_state_ids,
+                domain.stable_state_ids,
+                regions=domain.regions + (extra,),
+            )
+
+        same_path = RegionDomainEntry(
+            9, "Root.Outer.A", "A", "Root.Outer", outer, 5, None, ()
+        )
+        with pytest.raises(InvalidBmcDomain, match="Duplicate region path"):
+            with_region(same_path)
+        same_id = RegionDomainEntry(
+            0, "Root.Outer.Z", "Z", "Root.Outer", outer, 5, None, ()
+        )
+        with pytest.raises(InvalidBmcDomain, match="Duplicate region id"):
+            with_region(same_id)
+        lost = RegionDomainEntry(
+            9, "Root.Outer.Y", "Y", "Root.Outer", outer, 5, "Nowhere", ()
+        )
+        with pytest.raises(InvalidBmcDomain, match="unknown enclosing region"):
+            with_region(lost)
+        unknown = RegionDomainEntry(
+            9, "Root.Outer.X", "X", "Root.Outer", outer, 5, None, (999,)
+        )
+        with pytest.raises(InvalidBmcDomain, match="unknown position state id"):
+            with_region(unknown)

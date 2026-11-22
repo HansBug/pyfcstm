@@ -366,6 +366,20 @@ class _MacroExpander:
         return state
 
     def _expand_frontier(self, frontier: _MacroFrontier) -> _Expansion:
+        prepared = self._prepare_frontier(frontier)
+        if isinstance(prepared, _Expansion):
+            return prepared
+        return self._dispatch_frontier(prepared)
+
+    def _prepare_frontier(
+        self, frontier: _MacroFrontier
+    ) -> Union[_Expansion, _MacroFrontier]:
+        """Check the limits and loops of a frontier before it is expanded.
+
+        Returns an :class:`_Expansion` when the frontier needs no further
+        expansion (an impossible condition, or a loop back to a position already
+        seen on the path); otherwise the frontier with this position recorded.
+        """
         if frontier.depth >= self.options.max_micro_steps:
             raise BmcBuildError(
                 "macro-step expansion exceeded the micro-step safety limit."
@@ -386,13 +400,15 @@ class _MacroExpander:
                 )
             self._remember_failed_guard_requirements(frontier)
             return _Expansion((), (frontier.condition,), ())
-        frontier = self._replace_frontier(
+        return self._replace_frontier(
             frontier,
             path_signatures=frontier.path_signatures
             + ((signature, len(frontier.action_blocks)),),
             depth=frontier.depth + 1,
         )
 
+    def _dispatch_frontier(self, frontier: _MacroFrontier) -> _Expansion:
+        """Expand a prepared frontier according to its top stack frame."""
         if not frontier.stack:
             return _Expansion((self._terminate_outcome(frontier),), (), ())
 

@@ -993,9 +993,8 @@ class Configuration:
             where = ', '.join('.'.join(leaf.path) for leaf in leaves)
             raise ModelLookupError(
                 message='Position-dependent event name %s matches no event from any '
-                'active leaf (%s); use the full event path or a root-based "/path". '
-                'Last error: %s'
-                % (_ERROR_REPR.repr(event_ref), where, errors[0])
+                'active leaf (%s); use the full event path or a root-based "/path".'
+                % (_ERROR_REPR.repr(event_ref), where)
             )
         if len(found) > 1:
             candidates = '; '.join(

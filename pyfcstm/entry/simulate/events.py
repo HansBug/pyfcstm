@@ -10,6 +10,8 @@ presentation layer: final event applicability is still decided by
 from typing import List, Optional, Tuple
 
 from ...dsl import EXIT_STATE
+from ...model.configuration import Configuration
+from ...model.region import Region
 
 
 POST_EXIT_CONTINUATION_LABEL = "post-exit continuation"
@@ -73,15 +75,38 @@ def _iter_post_exit_continuation_states(state):
     current = state
     while _has_exit_transition(current):
         parent = current.parent
+        if isinstance(parent, Region):
+            # A region is not a state of its own: the continuation belongs to
+            # the state that owns the regions.
+            parent = parent.parent
         if parent is None or parent.is_root_state:
             return
         yield parent
         current = parent
 
 
+def _active_states(runtime) -> list:
+    """
+    Return the states the runtime currently rests in.
+
+    :param runtime: Simulation runtime to inspect.
+    :type runtime: SimulationRuntime
+    :return: One state for a model without regions; for a model with regions
+        every active leaf in writing order, or the root state before the first
+        cycle.
+    :rtype: list
+    :raises IndexError: If the runtime has no active stack, for example after
+        termination.
+    """
+    current = runtime.current_state
+    if isinstance(current, Configuration):
+        return list(current.leaves) or [runtime.state_machine.root_state]
+    return [current] if current else []
+
+
 def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
     """
-    Return event display rows for the runtime's current state.
+    Return event display rows for the runtime's current position.
 
     The result preserves the legacy ``(full_path, short_name)`` shape used by
     :class:`pyfcstm.entry.simulate.display.StateDisplay`. Direct leaf events use
@@ -89,49 +114,73 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
     ``post-exit continuation`` as the display label and keep the full event path
     in the second column.
 
+    A model with regions rests in several leaves. The rows of every leaf are
+    listed once per event, in the order of the leaves. A short name is only shown
+    for an event when it leads to that event from every leaf that offers the
+    name, so a name that two leaves use for different events is shown for
+    neither: it would be refused as ambiguous, and only the full path works.
+
     :param runtime: Simulation runtime to inspect.
     :type runtime: SimulationRuntime
     :return: Event display rows.
     :rtype: List[Tuple[str, Optional[str]]]
+
+    Example::
+
+        >>> from pyfcstm.entry.simulate.events import get_current_event_display_items
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     [*] -> P;
+        ...     state P {
+        ...         region L { [*] -> X; state X { event Go; event Ping; }
+        ...                    X -> X :: Go; X -> X :: Ping; }
+        ...         region R { [*] -> Y; state Y { event Ping; } Y -> Y :: Ping; }
+        ...     }
+        ... }
+        ... ''')
+        >>> runtime = SimulationRuntime(model)
+        >>> _ = runtime.cycle()
+        >>> get_current_event_display_items(runtime)
+        [('Root.P.L.X.Go', 'Go'), ('Root.P.L.X.Ping', None), ('Root.P.R.Y.Ping', None)]
     """
     if runtime.is_ended:
         return []
-
     try:
-        current_state = runtime.current_state
+        active_states = _active_states(runtime)
     except IndexError:
         # IndexError: SimulationRuntime.current_state raises when the runtime
         # has no active stack, for example after termination.
         return []
-
-    if not current_state:
-        return []
-
     events: List[Tuple[str, Optional[str]]] = []
     seen_events = set()
-
-    for transition in current_state.transitions_from:
-        if not transition.event:
-            continue
-        event_path = _event_path(transition.event)
-        if event_path in seen_events:
-            continue
-        seen_events.add(event_path)
-        short_name = transition.event.name
-        events.append((event_path, short_name if short_name != event_path else None))
-
-    for state in _iter_post_exit_continuation_states(current_state):
-        for transition in state.transitions_from:
+    short_names = {}
+    for current_state in active_states:
+        for transition in current_state.transitions_from:
             if not transition.event:
                 continue
-            _add_event_display_item(
-                events,
-                seen_events,
-                transition.event,
-                POST_EXIT_CONTINUATION_LABEL,
-            )
-
-    return events
+            event_path = _event_path(transition.event)
+            if event_path in seen_events:
+                continue
+            seen_events.add(event_path)
+            short_name = transition.event.name
+            short_names.setdefault(short_name, []).append(event_path)
+            events.append((event_path, short_name if short_name != event_path else None))
+        for state in _iter_post_exit_continuation_states(current_state):
+            for transition in state.transitions_from:
+                if not transition.event:
+                    continue
+                _add_event_display_item(
+                    events,
+                    seen_events,
+                    transition.event,
+                    POST_EXIT_CONTINUATION_LABEL,
+                )
+    ambiguous = {name for name, paths in short_names.items() if len(paths) > 1}
+    return [
+        (path, None if label in ambiguous else label) for path, label in events
+    ]
 
 
 def get_current_event_completion_items(runtime) -> List[Tuple[str, str]]:

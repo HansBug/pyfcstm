@@ -146,6 +146,17 @@ def test_a_done_region_does_no_work_and_does_not_enter_again(job):
     assert runtime.vars["n"] == 3 * 10100
 
 
+def test_a_partial_hot_start_reports_its_waiting_regions_before_the_first_cycle(job):
+    """Until its first cycle the machine is not resting: waiting regions show as ``[init]``."""
+    runtime = _hot(job, "W.Job{B: Comp.In1}")
+    config = runtime.configuration
+    assert str(config) == "W.Job{A: [init], B: Comp.In1}"
+    assert config.mode == "transient"
+    assert runtime.current_state == config
+    runtime.cycle()
+    assert runtime.configuration.mode == "stable"
+
+
 def test_a_state_path_into_a_region_leaves_the_other_regions_waiting(job):
     by_text = _hot(job, "W.Job{B: Comp.In1}")
     by_path = _hot(job, "W.Job.B.Comp.In1")

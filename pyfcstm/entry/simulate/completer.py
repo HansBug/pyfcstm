@@ -12,6 +12,7 @@ from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
 from .events import get_current_event_completion_items
+from .inputs import split_init_arguments
 
 
 class SimulationCompleter(Completer):
@@ -130,6 +131,11 @@ class SimulationCompleter(Completer):
 
         # init command - complete with state paths and variable assignments
         elif command == 'init':
+            if text.count('{') > text.count('}'):
+                # Inside the braces of a configuration text nothing is completed.
+                return
+            # A configuration text keeps its spaces inside one argument.
+            words = ['init', *split_init_arguments(text[len(command):])]
             # First argument - state path
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
                 prefix = words[1] if len(words) == 2 else ''
@@ -444,10 +450,14 @@ class SimulationCompleter(Completer):
         def collect_paths(state, current_path):
             """Recursively collect all state paths."""
             paths.append(current_path)
-            # Recursively collect substates
+            # Recursively collect substates, and the states of every region
             for substate in state.substates.values():
                 subpath = f"{current_path}.{substate.name}"
                 collect_paths(substate, subpath)
+            for region in state.regions.values():
+                for substate in region.substates.values():
+                    subpath = f"{current_path}.{region.name}.{substate.name}"
+                    collect_paths(substate, subpath)
 
         # Start from root state
         if hasattr(self.runtime, 'state_machine') and self.runtime.state_machine:
@@ -479,10 +489,13 @@ class SimulationCompleter(Completer):
         for part in parts[1:]:
             if part in current.substates:
                 current = current.substates[part]
+            elif part in current.regions:
+                # A region has no state of its own: the next name is one of its states.
+                current = current.regions[part]
             else:
                 return None
 
-        return current
+        return current if hasattr(current, 'is_leaf_state') else None
 
     def _get_all_variable_names(self) -> list:
         """

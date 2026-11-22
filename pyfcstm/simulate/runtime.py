@@ -5732,7 +5732,11 @@ class SimulationRuntime:
             top.mode in ("active", "after_entry")
             and any(branch.status == "live" for branch in top.branches)
             and all(
-                branch.status == "done" or SimulationRuntime._is_resting(branch.stack)
+                branch.status == "done"
+                or (
+                    branch.status == "live"
+                    and SimulationRuntime._is_resting(branch.stack)
+                )
                 for branch in top.branches
             )
         )

@@ -22,7 +22,6 @@ from pyfcstm.simulate import (
     SimulationRuntimeRegionQueryError,
     SimulationRuntimeTerminalStateError,
 )
-from pyfcstm.utils.validate import ModelValidationError
 
 CONTROLLER = """
 input int fault;
@@ -288,16 +287,19 @@ def test_owner_with_one_region_runs_like_a_plain_composite_state():
 
 
 @pytest.mark.unittest
-def test_hot_start_stays_a_controlled_rejection_for_region_models():
-    """Hot start of a model with regions is refused with a structured error."""
+def test_hot_start_of_a_model_with_regions_runs_from_the_given_position():
+    """Hot start puts the whole position in place; inputs are read as in a cold run."""
     model = load_state_machine_from_text(CONTROLLER)
-    with pytest.raises(ModelValidationError, match="simulate hot start"):
-        SimulationRuntime(
-            model,
-            initial_state="Controller.Idle",
-            initial_vars={"permit": 0, "motor": 0},
-            input_source={"fault": 0, "requested": 0},
-        )
+    runtime = SimulationRuntime(
+        model,
+        initial_state="Controller.Running{Safety: Watching, Motion: On}",
+        initial_vars={"permit": 1, "motor": 1, "__forced_0": 0},
+        input_source={"fault": 0, "requested": 1},
+    )
+    assert runtime.cycle_count == 0
+    runtime.cycle()
+    assert str(runtime.configuration) == "Controller.Running{Safety: Watching, Motion: On}"
+    assert runtime.vars["motor"] == 1
 
 
 @pytest.mark.unittest

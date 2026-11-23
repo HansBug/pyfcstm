@@ -179,13 +179,20 @@ def pytest_generate_tests(metafunc):
     # valid profile. This avoids a false-green collection that silently runs no
     # native profile.
     resolve_selected_profile(metafunc.config)
-    from test.testings.simulate_semantics import iter_semantic_cases
+    from test.testings.native_semantic_alignment import (
+        NATIVE_TEMPLATE_NAMES,
+        iter_native_semantic_cases,
+    )
 
     # Native compilers exercise the same generated-runtime contract as the
-    # ordinary template alignment suites, including its declared exclusions.
-    case_ids = [
-        case.id for case in iter_semantic_cases(runners=["generated_python_alignment"])
+    # ordinary template alignment suites. One matrix covers every native
+    # template, so a case is collected when each of them selects it: region
+    # cases join once all of the templates declare the ``region`` feature.
+    selected = [
+        {case.id for case in iter_native_semantic_cases(name)}
+        for name in NATIVE_TEMPLATE_NAMES
     ]
+    case_ids = sorted(set.intersection(*selected))
     metafunc.parametrize("native_semantic_case_id", case_ids, ids=case_ids)
 
 

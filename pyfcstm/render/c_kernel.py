@@ -160,7 +160,14 @@ def event_paths(model) -> List[str]:
 
 
 def _resolve(item):
-    """Follow ``ref`` links from an action item to the action that does the work."""
+    """
+    Follow ``ref`` links from an action item to the action that does the work.
+
+    :param item: Action item of a state or region.
+    :type item: pyfcstm.model.model.OnStage
+    :return: The item itself, or the action it refers to through ``ref``.
+    :rtype: pyfcstm.model.model.OnStage
+    """
     hops = 0
     while item.ref is not None and hops < _SENTINEL_NAME_LIMIT * _SENTINEL_NAME_LIMIT:
         item = item.ref
@@ -251,7 +258,16 @@ def hook_rows(model) -> List[Dict[str, str]]:
 
 
 def _round_up(value: int, align: int) -> int:
-    """Round ``value`` up to a multiple of ``align``."""
+    """
+    Round ``value`` up to a multiple of ``align``.
+
+    :param value: Number to round.
+    :type value: int
+    :param align: Alignment, a positive integer.
+    :type align: int
+    :return: The smallest multiple of ``align`` that is at least ``value``.
+    :rtype: int
+    """
     return (value + align - 1) // align * align
 
 
@@ -265,7 +281,14 @@ class _Field:
 
 
 def _layout(fields: List[_Field]) -> int:
-    """Return the size of a structure made of ``fields`` under natural alignment."""
+    """
+    Return the size of a structure made of ``fields`` under natural alignment.
+
+    :param fields: Members in declaration order.
+    :type fields: List[_Field]
+    :return: Size in bytes, rounded up to the strictest member alignment.
+    :rtype: int
+    """
     offset = 0
     biggest = 1
     for field in fields:
@@ -287,6 +310,14 @@ class _Plan:
     """
 
     def __init__(self, model) -> None:
+        """
+        Plan the kernel of one model.
+
+        :param model: State machine to plan for.
+        :type model: pyfcstm.model.model.StateMachine
+        :return: ``None``.
+        :rtype: None
+        """
         self.model = model
         self.states = list(model.walk_states())
         # Region ids follow the configuration type: owner by owner in state order,
@@ -306,9 +337,22 @@ class _Plan:
     # -- capacities -----------------------------------------------------
 
     def _plan_stacks(self) -> None:
-        """Derive the depth of the main stack and of every region stack."""
+        """
+        Derive the depth of the main stack and of every region stack.
+
+        :return: ``None``.
+        :rtype: None
+        """
 
         def chain_depth(state) -> int:
+            """
+            Count the frames a branch below ``state`` can stack.
+
+            :param state: State to start from; a state with regions ends the chain.
+            :type state: pyfcstm.model.model.State
+            :return: Longest chain of nested plain composites, ``state`` included.
+            :rtype: int
+            """
             if state.regions or not state.substates:
                 return 1
             return 1 + max(chain_depth(child) for child in state.substates.values())
@@ -320,7 +364,12 @@ class _Plan:
         )
 
     def _plan_capacity(self) -> None:
-        """Choose how many configurations and nested checks a machine can hold."""
+        """
+        Choose how many configurations and nested checks a machine can hold.
+
+        :return: ``None``.
+        :rtype: None
+        """
         scopes = len(self.states) + len(self.regions)
         simple = (
             not self.regions
@@ -333,11 +382,23 @@ class _Plan:
     # -- sizes ----------------------------------------------------------
 
     def variable_struct_size(self, count: int) -> int:
-        """Size of a structure of ``count`` 8-byte numbers (or a 4-byte placeholder)."""
+        """
+        Size of a structure of ``count`` 8-byte numbers (or a 4-byte placeholder).
+
+        :param count: Number of persistent variables.
+        :type count: int
+        :return: Size in bytes.
+        :rtype: int
+        """
         return count * 8 if count else 4
 
     def context_size(self) -> int:
-        """Size of one configuration tree, matching the generated ``Ctx``."""
+        """
+        Size of one configuration tree, matching the generated ``Ctx``.
+
+        :return: Size in bytes.
+        :rtype: int
+        """
         scopes = len(self.states) + len(self.regions)
         regions = max(1, len(self.regions))
         fields = [
@@ -351,7 +412,12 @@ class _Plan:
         return _layout(fields)
 
     def node_size(self) -> int:
-        """Size of one search arena node."""
+        """
+        Size of one search arena node.
+
+        :return: Size in bytes.
+        :rtype: int
+        """
         return _layout(
             [_Field("ctx", self.context_size(), 8), _Field("hash", 8, 8), _Field("parent", 4, 4), _Field("flags", 4, 2)]
         )
@@ -359,28 +425,63 @@ class _Plan:
     # -- ids ------------------------------------------------------------
 
     def event_id(self, event) -> int:
-        """Return the id of ``event``, or ``-1`` for a transition without one."""
+        """
+        Return the id of ``event``, or ``-1`` for a transition without one.
+
+        :param event: Event of a transition, or ``None``.
+        :type event: Optional[pyfcstm.model.model.Event]
+        :return: Position in the event table, ``-1`` for ``None``.
+        :rtype: int
+        """
         if event is None:
             return -1
         return self.events.index(event.path_name)
 
     def action_id(self, func_name: str) -> int:
-        """Return the action id of a dotted action name."""
+        """
+        Return the action id of a dotted action name.
+
+        :param func_name: Dotted action name.
+        :type func_name: str
+        :return: Position in the action table.
+        :rtype: int
+        """
         return self.actions.index(func_name)
 
     def hook_id(self, func_name: str) -> int:
-        """Return the hook id of a dotted abstract action name."""
+        """
+        Return the hook id of a dotted abstract action name.
+
+        :param func_name: Dotted abstract action name.
+        :type func_name: str
+        :return: Position in the hook table.
+        :rtype: int
+        """
         return self.hooks.index(func_name)
 
     def scope_index(self, scope) -> int:
-        """Return the scope number of a state (its id) or a region (states + its id)."""
+        """
+        Return the scope number of a state (its id) or a region (states + its id).
+
+        :param scope: State or region.
+        :type scope: Union[pyfcstm.model.model.State, pyfcstm.model.region.Region]
+        :return: Scope number used by the flag tables.
+        :rtype: int
+        """
         if isinstance(scope, Region):
             return len(self.states) + self.region_index[scope.path]
         return self.state_index[scope.path]
 
 
 def _identifier_list(values: List[int]) -> str:
-    """Format a non-empty C initializer list; an empty table gets one zero."""
+    """
+    Format a non-empty C initializer list; an empty table gets one zero.
+
+    :param values: Table entries.
+    :type values: List[int]
+    :return: Comma-separated decimal numbers.
+    :rtype: str
+    """
     return ", ".join(str(value) for value in (values or [0]))
 
 
@@ -541,7 +642,18 @@ def render_c_kernel_types(
 
 
 def _fill_values(plan: _Plan, machine_class_name: str, machine_macro_name: str) -> Dict[str, str]:
-    """Collect the placeholder values shared by every emitted block."""
+    """
+    Collect the placeholder values shared by every emitted block.
+
+    :param plan: Plan of the model.
+    :type plan: _Plan
+    :param machine_class_name: Public class prefix.
+    :type machine_class_name: str
+    :param machine_macro_name: Public macro prefix.
+    :type machine_macro_name: str
+    :return: Replacement text for each ``@NAME@`` placeholder.
+    :rtype: Dict[str, str]
+    """
     return {
         "M": machine_class_name,
         "MM": machine_macro_name,
@@ -923,6 +1035,18 @@ class _Emitter:
     """
 
     def __init__(self, plan: _Plan, machine_class_name: str, machine_macro_name: str) -> None:
+        """
+        Start an emitter with nothing written yet.
+
+        :param plan: Plan of the model.
+        :type plan: _Plan
+        :param machine_class_name: Public class prefix.
+        :type machine_class_name: str
+        :param machine_macro_name: Public macro prefix.
+        :type machine_macro_name: str
+        :return: ``None``.
+        :rtype: None
+        """
         self.plan = plan
         self.model = plan.model
         self.cls = machine_class_name
@@ -931,13 +1055,29 @@ class _Emitter:
         self.constant_lists: List[str] = []
 
     def write(self, text: str) -> None:
-        """Append one block of C source."""
+        """
+        Append one block of C source.
+
+        :param text: C source text.
+        :type text: str
+        :return: ``None``.
+        :rtype: None
+        """
         self.lines.append(text)
 
     # -- actions --------------------------------------------------------
 
     def _action_function(self, name: str, operations) -> str:
-        """Emit one concrete action and return its name."""
+        """
+        Emit one concrete action and return its name.
+
+        :param name: Name of the C function to emit.
+        :type name: str
+        :param operations: Operation statements of the action.
+        :type operations: list
+        :return: ``name``.
+        :rtype: str
+        """
         body = render_c_action_body(operations, self.model.defines, self.cls, self.macro)
         self.write("static int %s(%s *machine, %sVars *scope)\n{\n%s\n}\n" % (name, self.cls, self.cls, body))
         return name
@@ -1029,7 +1169,16 @@ class _Emitter:
         return tid
 
     def _constant_list(self, name: str, values: List[int]) -> str:
-        """Emit a constant int array and return its name."""
+        """
+        Emit a constant int array and return its name.
+
+        :param name: Name of the C array.
+        :type name: str
+        :param values: Array entries.
+        :type values: List[int]
+        :return: ``name``.
+        :rtype: str
+        """
         self.write("static const int %s[%d] = {%s};\n" % (name, max(1, len(values)), _identifier_list(values)))
         return name
 
@@ -1173,7 +1322,14 @@ class _Emitter:
         return "".join(self.lines)
 
     def _emit_vars(self, plan: _Plan) -> None:
-        """Emit the hash and the equality of the persistent variables."""
+        """
+        Emit the hash and the equality of the persistent variables.
+
+        :param plan: Plan of the model.
+        :type plan: _Plan
+        :return: ``None``.
+        :rtype: None
+        """
         names = plan.var_names
         defines = self.model.defines
         hashing = ["    PYFCSTM_GENERATED_UINT64 h = @MM@_K_FNV_BASIS, x;", "    double d;", "    (void)d;", "    (void)x;", "    (void)v;"]

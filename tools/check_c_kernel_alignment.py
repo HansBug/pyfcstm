@@ -19,6 +19,11 @@ Usage::
     python tools/check_c_kernel_alignment.py --models 500 --cycles 40 --jobs 4
     python tools/check_c_kernel_alignment.py --models 200 --template c_poll --first-seed 9000
 
+Example::
+
+    $ python tools/check_c_kernel_alignment.py --models 1 --cycles 3 --template c
+    checked 1 model runs: ok=1, refused=0, invalid=0, mismatch=0
+
 The exit status is ``0`` when every model aligned and ``1`` otherwise; each
 mismatch prints its seed and the DSL source, so ``--first-seed N --models 1``
 replays it.
@@ -56,14 +61,46 @@ class ModelGenerator:
     """
 
     def __init__(self, rng: random.Random):
+        """
+        Keep the random source every method draws from.
+
+        :param rng: Seeded random source.
+        :type rng: random.Random
+        :return: ``None``.
+        :rtype: None
+        """
         self.r = rng
 
     def atom(self) -> str:
+        """
+        Pick a number or a variable or input name.
+
+        :return: One operand of an expression.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).atom()
+            '0'
+        """
         if self.r.random() < 0.3:
             return str(self.r.randint(0, 4))
         return self.r.choice(VARS + INPUTS)
 
     def expr(self) -> str:
+        """
+        Build an arithmetic expression of up to three operands.
+
+        :return: Expression text.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).expr()
+            '0 + i'
+        """
         text = self.atom()
         for _ in range(self.r.randint(0, 2)):
             op = self.r.choice(["+", "-", "*"])
@@ -75,12 +112,36 @@ class ModelGenerator:
         return text
 
     def block(self) -> str:
+        """
+        Build one or two assignments to the persistent variables.
+
+        :return: Statements for an action or effect block.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).block()
+            'c = a + i;'
+        """
         return " ".join(
             "%s = %s;" % (self.r.choice(VARS), self.expr())
             for _ in range(self.r.randint(1, 2))
         )
 
     def guard(self) -> str:
+        """
+        Build a comparison usable as a guard.
+
+        :return: Condition text.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).guard()
+            '0 + i <= b'
+        """
         return "%s %s %s" % (
             self.expr(),
             self.r.choice([">", "<", ">=", "<=", "==", "!="]),
@@ -88,9 +149,35 @@ class ModelGenerator:
         )
 
     def eff(self, p: float = 0.4) -> str:
+        """
+        Maybe build a transition effect block.
+
+        :param p: Probability of producing an effect.
+        :type p: float
+        :return: ``' effect { ... }'`` with probability ``p``, otherwise an empty string.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).eff(1.0)
+            ' effect { b = 3 * 3; }'
+        """
         return (" effect { %s }" % self.block()) if self.r.random() < p else ""
 
     def trig(self) -> str:
+        """
+        Pick how a transition is triggered.
+
+        :return: `` : /E`` for an event, `` : if [...]`` for a guard, or an empty string for none.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).trig()
+            ' : if [a + i <= b]'
+        """
         kind = self.r.choice(["event", "guard", "guard", "none"])
         if kind == "event":
             return " : /%s" % self.r.choice(EVENTS)
@@ -99,6 +186,18 @@ class ModelGenerator:
         return ""
 
     def actions(self) -> str:
+        """
+        Build the lifecycle actions of a leaf state.
+
+        :return: Zero to three of ``enter``, ``during`` and ``exit`` blocks.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).actions()
+            'enter { b = 3 * 3; } during { b = 3 * 0; }'
+        """
         parts = []
         if self.r.random() < 0.35:
             parts.append("enter { %s }" % self.block())
@@ -109,6 +208,20 @@ class ModelGenerator:
         return " ".join(parts)
 
     def aspects(self, p: float) -> str:
+        """
+        Maybe build ``>> during before`` and ``>> during after`` aspect actions.
+
+        :param p: Probability of each aspect.
+        :type p: float
+        :return: Aspect declarations, one per line.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).aspects(0.0)
+            ''
+        """
         out = []
         if self.r.random() < p:
             out.append(">> during before { %s }" % self.block())
@@ -117,6 +230,20 @@ class ModelGenerator:
         return "\n".join(out)
 
     def plain(self, p: float) -> str:
+        """
+        Maybe build plain ``during before`` and ``during after`` actions of a composite.
+
+        :param p: Probability of each action.
+        :type p: float
+        :return: Action declarations, one per line.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).plain(0.0)
+            ''
+        """
         out = []
         if self.r.random() < p:
             out.append("during before { %s }" % self.block())
@@ -125,6 +252,20 @@ class ModelGenerator:
         return "\n".join(out)
 
     def composite(self, name: str) -> str:
+        """
+        Build a plain composite state with two children inside a region.
+
+        :param name: State name.
+        :type name: str
+        :return: State declaration.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).composite('X').startswith('state X {')
+            True
+        """
         kids = ["%s_a" % name, "%s_b" % name]
         lines = ["state %s {" % name]
         if self.r.random() < 0.4:
@@ -150,6 +291,22 @@ class ModelGenerator:
         return "\n".join(lines)
 
     def region(self, name: str, allow_nested: bool) -> str:
+        """
+        Build a region with leaves, composites, optional nested owners and optional pseudo routing.
+
+        :param name: Region name.
+        :type name: str
+        :param allow_nested: Whether a state of the region may itself own regions.
+        :type allow_nested: bool
+        :return: Region declaration.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).region('R', False).startswith('region R {')
+            True
+        """
         count = self.r.randint(2, 3)
         names = ["%s%d" % (name, index) for index in range(count)]
         lines = ["region %s {" % name]
@@ -224,6 +381,22 @@ class ModelGenerator:
         return "\n".join(lines)
 
     def owner(self, name: str, allow_nested: bool = True) -> str:
+        """
+        Build a state that owns one to three regions.
+
+        :param name: State name.
+        :type name: str
+        :param allow_nested: Whether its regions may contain further owners.
+        :type allow_nested: bool
+        :return: State declaration.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).owner('P').startswith('state P {')
+            True
+        """
         lines = ["state %s {" % name]
         if self.r.random() < 0.4:
             lines.append("enter { %s }" % self.block())
@@ -241,6 +414,18 @@ class ModelGenerator:
         return "\n".join(lines)
 
     def model(self) -> str:
+        """
+        Build a complete model: inputs, variables and a root with two owners and forced transitions.
+
+        :return: FCSTM source text.
+        :rtype: str
+
+        Example::
+
+            >>> import random
+            >>> ModelGenerator(random.Random(1)).model().count('state Root') == 1
+            True
+        """
         lines = [
             "input int i;",
             "input int j;",
@@ -282,18 +467,45 @@ class _InputSource:
     """Input snapshot shared by the simulator and the generated runtime."""
 
     def __init__(self, names: Sequence[str]):
+        """
+        Start with an empty snapshot.
+
+        :param names: Names of the model inputs.
+        :type names: Sequence[str]
+        :return: ``None``.
+        :rtype: None
+        """
         self.input_names = tuple(names)
         self.snapshot = {}
 
     def get(self):
+        """
+        Return the inputs of the current cycle.
+
+        :return: Copy of the snapshot.
+        :rtype: dict
+        """
         return dict(self.snapshot)
 
     def cycle(self):
+        """
+        Accept the end of a cycle; the snapshot is replaced by the caller.
+
+        :return: ``None``.
+        :rtype: None
+        """
         return None
 
 
 def _error_family(err: BaseException) -> str:
-    """Name an error the way two runtimes can agree on it."""
+    """
+    Name an error the way two runtimes can agree on it.
+
+    :param err: Error raised by the simulator or by a generated runtime.
+    :type err: BaseException
+    :return: ``loop`` or ``limit`` for a search failure, else the class name.
+    :rtype: str
+    """
     if "SimulationRuntimeDfsError" in [cls.__name__ for cls in type(err).__mro__]:
         return "loop" if "suspected loop" in str(err) else "limit"
     return type(err).__name__
@@ -310,6 +522,11 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
         ``refused`` (counts of cycles both sides refused are in ``detail``) or
         ``mismatch``.
     :rtype: Tuple[int, str, str, str, str]
+
+    Example::
+
+        >>> run_model((1, 'c', 3, 0))[:4]
+        (1, 'c', 'ok', '')
     """
     from pyfcstm.model import load_state_machine_from_text
     from pyfcstm.simulate import SimulationRuntime
@@ -334,6 +551,17 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
     native_utils = aligned._native_utils_for_runner(runner)
 
     def build_pair(configuration=None, values=None):
+        """
+        Build the simulator and the generated runtime side by side.
+
+        :param configuration: Configuration text to hot start from, defaults to
+            a cold start.
+        :type configuration: Optional[str]
+        :param values: Persistent variable snapshot for the hot start.
+        :type values: Optional[Dict[str, Union[int, float]]]
+        :return: The aligned pair and the input snapshot both sides read.
+        :rtype: Tuple[object, _InputSource]
+        """
         source_of_inputs = _InputSource(model.inputs)
         kwargs = {}
         if configuration is not None:
@@ -378,6 +606,14 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
 
 
 def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
+    """
+    Read the command-line options.
+
+    :param argv: Command-line arguments without the program name.
+    :type argv: Optional[Sequence[str]]
+    :return: Parsed options.
+    :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--models", type=int, default=100, help="random models to check")
     parser.add_argument("--cycles", type=int, default=30, help="cycles driven per model")
@@ -411,6 +647,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     :type argv: Optional[Sequence[str]]
     :return: ``0`` when every model aligned, otherwise ``1``.
     :rtype: int
+
+    Example::
+
+        >>> main(['--models', '1', '--cycles', '3', '--template', 'c'])
+        checked 1 model runs: ok=1, refused=0, invalid=0, mismatch=0
+        0
     """
     args = _parse_args(argv)
     if args.check:
@@ -425,6 +667,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     failures = []
 
     def record(result):
+        """
+        Count one result and keep it when the two sides disagreed.
+
+        :param result: Result tuple of :func:`run_model`.
+        :type result: Tuple[int, str, str, str, str]
+        :return: ``None``.
+        :rtype: None
+        """
         seed, template, verdict, detail, source = result
         counts[verdict] += 1
         if verdict == "mismatch":

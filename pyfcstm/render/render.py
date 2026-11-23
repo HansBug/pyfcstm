@@ -281,12 +281,16 @@ class StateMachineCodeRenderer:
 
         This method reads the configuration file, sets up expression and
         statement rendering styles, and registers globals, filters, and tests
-        in the Jinja2 environment.
+        in the Jinja2 environment. It also records the features the template
+        declares, see :attr:`features`.
 
+        :return: ``None``.
+        :rtype: None
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
-        :raises ValueError: If the configuration root is not a mapping or
-            contains unknown top-level keys.
+        :raises ValueError: If the configuration root is not a mapping,
+            contains unknown top-level keys, or declares a malformed, unknown or
+            duplicated ``features`` entry.
         """
         with open(self.config_file, "r") as f:
             config_info = yaml.safe_load(f)

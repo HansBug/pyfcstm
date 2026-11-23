@@ -4,6 +4,9 @@ import ctypes
 from types import SimpleNamespace
 
 from pyfcstm.dsl.role import VariableRole
+from pyfcstm.model.configuration import Configuration
+from pyfcstm.model.model import ModelLookupError, ModelValueError
+from pyfcstm.model.region import Region, walk_namespaces
 from pyfcstm.render.c_runtime import readonly_value_identifier
 from pyfcstm.utils import to_c_identifier
 
@@ -39,6 +42,51 @@ def _values(struct_type, definitions, values, complete=False):
             value = int(value)
         setattr(result, readonly_value_identifier(name), value)
     return result
+
+
+class SimulationRuntimeEventError(ValueError):
+    """Event input of a cycle that names no event, or more than one."""
+
+
+def namespace_action_groups(scope):
+    """
+    Group the lifecycle actions a state or a region declares, in id order.
+
+    :param scope: A state or a region of the model.
+    :type scope: Union[pyfcstm.model.model.State, pyfcstm.model.region.Region]
+    :return: Lists of ``(id, item)`` pairs; a region declares only aspect actions.
+    :rtype: list
+    """
+    if isinstance(scope, Region):
+        return [
+            scope.list_on_during_aspects(aspect="before", with_ids=True),
+            scope.list_on_during_aspects(aspect="after", with_ids=True),
+        ]
+    return [
+        scope.list_on_enters(with_ids=True),
+        scope.list_on_durings(aspect=None, with_ids=True),
+        scope.list_on_exits(with_ids=True),
+        scope.list_on_durings(aspect="before", with_ids=True),
+        scope.list_on_durings(aspect="after", with_ids=True),
+        scope.list_on_during_aspects(aspect="before", with_ids=True),
+        scope.list_on_during_aspects(aspect="after", with_ids=True),
+    ]
+
+
+def event_paths_in_id_order(model):
+    """
+    List the events of a model in the order the generated runtime numbers them.
+
+    :param model: State machine under test.
+    :type model: pyfcstm.model.model.StateMachine
+    :return: Dotted event paths; the position is the event id.
+    :rtype: list
+    """
+    return [
+        event.path_name
+        for scope in walk_namespaces(model.root_state)
+        for event in scope.events.values()
+    ]
 
 
 # Byte size of the message buffer in ``..._ConfigurationError``; the generated
@@ -300,3 +348,45 @@ class NativeRoleSupport:
             ctypes.byref(parameter_values),
         ):
             self._raise_last_error()
+
+    def _resolve_event_id_by_configuration(self, event_ref):
+        """
+        Resolve an event name for a model with regions the way the simulator does.
+
+        The generated runtime numbers events but does not resolve names, so the
+        test adapter does: a name that depends on the position is resolved once
+        for every active leaf of the current configuration, any other name is
+        tried as a full path first.
+
+        :param event_ref: Event path string given to ``cycle``.
+        :type event_ref: str
+        :return: The id of the event the name resolves to.
+        :rtype: int
+        :raises SimulationRuntimeEventError: If the name resolves to no event or
+            to several.
+        """
+        from pyfcstm.simulate.utils import is_state_resolve_event_path
+
+        configuration = Configuration.parse(
+            self._model, self.configuration, mode="transient"
+        )
+        if is_state_resolve_event_path(event_ref):
+            try:
+                event = configuration.resolve_event(event_ref)
+            except (ModelValueError, ModelLookupError) as err:
+                raise SimulationRuntimeEventError(str(err)) from err
+        else:
+            try:
+                event = self._model.resolve_event(event_ref)
+            except (ModelValueError, ModelLookupError):
+                try:
+                    event = configuration.resolve_event(event_ref)
+                except (ModelValueError, ModelLookupError) as err:
+                    if len(configuration.leaves) > 1:
+                        raise SimulationRuntimeEventError(str(err)) from err
+                    raise SimulationRuntimeEventError(
+                        "Cannot resolve event path %r: failed with both "
+                        "StateMachine.resolve_event and State.resolve_event. "
+                        "Last error: %s" % (event_ref, err)
+                    ) from err
+        return self._event_ids[event.path_name]

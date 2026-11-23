@@ -250,3 +250,68 @@ def test_guides_of_a_region_model_are_structurally_equivalent():
             paragraph = paragraph.strip()
             if paragraph and paragraph[0] not in "|-*<#{":
                 assert "\n" not in paragraph, paragraph[:80]
+
+
+HOT_START_COMPOSITE_MODEL = """
+state Root {
+    event Top;
+    [*] -> A;
+    state A {
+        event AE;
+        state A1;
+        state A2 { event X; }
+        [*] -> A1;
+        A1 -> A2 : AE;
+        A2 -> A1 :: Go;
+    }
+    state B {
+        [*] -> B1;
+        state B1;
+        state B2;
+        B1 -> B2 : /Top;
+        B2 -> B1 :: Go;
+    }
+    A -> B : /Top;
+    B -> A :: Back;
+}
+"""
+
+
+@pytest.mark.parametrize(
+    "initial_state, event",
+    [
+        ("Root.B", "Back"),
+        ("Root.B", "B2.Go"),
+        ("Root.B", "Top"),
+        ("Root.B", ".Go"),
+        ("Root.B", "..Top"),
+        ("Root.A", "AE"),
+        ("Root.A", "A2.Go"),
+        ("Root.A", "Top"),
+    ],
+)
+def test_hot_start_on_a_composite_resolves_names_from_that_composite(initial_state, event):
+    """A machine hot-started on a composite state has no active leaf yet: a name that depends on the
+    position is looked up from the composite itself, as the simulator does."""
+    from pyfcstm.model import load_state_machine_from_text
+    from pyfcstm.simulate import SimulationRuntime
+
+    model = load_state_machine_from_text(HOT_START_COMPOSITE_MODEL)
+
+    def outcome(factory):
+        try:
+            runtime = factory()
+            runtime.cycle([event])
+        except Exception as err:  # the class name and the text are compared
+            return type(err).__name__, str(err)
+        path = getattr(runtime, "current_state_path", None)
+        return path if path is not None else runtime.current_state.path
+
+    with _render_python_module(HOT_START_COMPOSITE_MODEL) as module:
+        generated = outcome(
+            lambda: module.RootMachine(initial_state=initial_state, initial_vars={})
+        )
+    simulated = outcome(
+        lambda: SimulationRuntime(model, initial_state=initial_state, initial_vars={})
+    )
+    assert generated == simulated

@@ -839,6 +839,7 @@ _STATE_COUNT = {{ state_count }}
 # Without a pseudo state every state the machine enters rests at once, so one
 # advance can never come back to a position it has left.
 _LOOP_FREE = {{ (state_items | selectattr('is_pseudo') | list | length == 0) | repr }}
+_HAS_REGIONS = {{ model.has_regions | repr }}
 _PATH = (
 {% for scope in scope_items %}{{ path_entry(scope.path) }}
 {% endfor %})
@@ -1731,7 +1732,12 @@ class {{ machine_class_name(model) }}:
 
     def _position_resolve_event(self, event_ref):
         """Resolve an event name from every active leaf of the current position."""
-        leaves = [self._lookup(path) for path in self.leaves] or [0]
+        # With no active leaf yet the name is looked up from the state the machine
+        # rests on: the composite of a hot start in a model without regions, and
+        # the root when regions that still wait leave nothing active.
+        leaves = [self._lookup(path) for path in self.leaves] or [
+            0 if _HAS_REGIONS else self._stack[-1].state
+        ]
         if len(leaves) == 1:
             return self._scope_resolve_event(leaves[0], event_ref)
         if event_ref.startswith("/"):

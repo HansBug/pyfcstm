@@ -6,7 +6,6 @@ categories:
 - regions
 - runtime
 exclude_runners:
-- generated_python_alignment
 - bmc_core
 handlers:
 - action: Root.P.R1.Q.QOn

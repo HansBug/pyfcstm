@@ -15,7 +15,8 @@ Three seeded comparisons, all through public APIs:
 * Region models: random state machines whose states own regions are run by
   exhaustive simulation over a small input domain, and the trace relation of
   ``build_bmc_core_formula`` must force exactly the simulator's cycle-by-cycle
-  configuration, variables and Delta classification.  A model that the
+  configuration, variables, Delta classification and fallback-only
+  classification.  A model that the
   simulator or the relation rejects with an error is counted and skipped, never
   compared.
 
@@ -421,6 +422,13 @@ def _region_observation(core, runtime, result, frame, cycle):
         symbols.frame_var(frame, "x") == runtime.vars["x"],
         symbols.frame_var(frame, "y") == runtime.vars["y"],
         symbols.delta_flag(cycle) == bool(result.delta),
+        # A cycle is one of fallbacks only when it is not a Delta and no
+        # transition, initial ones included, fired in any region.
+        symbols.gamma_flag(cycle)
+        == (
+            not result.delta
+            and not any(item.kind == "transition" for item in result.trace)
+        ),
     )
 
 
@@ -429,7 +437,8 @@ def check_region_models(count, seed, steps=3):
 
     Every cycle of every sequence over the input domain is compared: the
     relation, pinned to the sequence, must have a solution and no solution that
-    differs from the simulator's configuration, variables or Delta.
+    differs from the simulator's configuration, variables, Delta or whether the
+    cycle was one of fallbacks only.
     """
     rng = random.Random(seed)
     checked = skipped_sim = skipped_bmc = 0
@@ -456,7 +465,9 @@ def check_region_models(count, seed, steps=3):
                 pins = []
                 expected = []
                 for cycle, (d, go) in enumerate(sequence):
-                    result = runtime.cycle(["Root.Go"] if go else [], inputs={"d": d})
+                    result = runtime.cycle(
+                        ["Root.Go"] if go else [], inputs={"d": d}, trace=True
+                    )
                     pins.append(core.symbols.step_inputs[cycle]["d"] == d)
                     literal = core.symbols.event_input(cycle, "Root.Go")
                     pins.append(literal if go else z3.Not(literal))

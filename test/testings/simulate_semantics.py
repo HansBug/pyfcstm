@@ -1363,9 +1363,10 @@ def _build_generated_runtime(
                         ctx,
                         items=tuple(handler_items),
                         calls=generated_calls,
+                        with_configuration="regions" in case.data["categories"],
                     ):
                         for item in items:
-                            _run_fixture_handler(item, ctx, calls)
+                            _run_fixture_handler(item, ctx, calls, with_configuration)
 
                     attrs[hook_name] = fixture_hook
                 machine_cls = type(

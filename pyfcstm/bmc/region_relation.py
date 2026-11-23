@@ -824,7 +824,7 @@ class _StepBuilder:
                     z3.BoolVal(True),
                     env_next,
                     "%s_f%d" % (tag, index),
-                    real=False,
+                    defs,
                 )
             if z3.is_false(z3.simplify(_and(ok_terms))):
                 # A region cannot start on these values, so the whole entry
@@ -993,9 +993,7 @@ class _StepBuilder:
             after[region.path] = q
             # The branch of the region is over: the scopes below it that owe an
             # after action run it now.
-            env = self.flush(
-                region.path, gate, env_out, "%s_f%d" % (tag, index), real=True
-            )
+            env = self.flush(region.path, gate, env_out, "%s_f%d" % (tag, index))
         all_done = _and(
             after[item.path] == z3.IntVal(REGION_DONE_ID) for item in regions
         )
@@ -1023,13 +1021,18 @@ class _StepBuilder:
         gate: z3.BoolRef,
         env_in: _Env,
         tag: str,
-        real: bool,
+        defs: Optional[List[Tuple[z3.BoolRef, DomainConstraint]]] = None,
     ) -> _Env:
         """Run the after actions that the scopes under ``prefix`` owe.
 
         The scopes run innermost first and stop owing. Which scopes owe is
         read from the flags in ``env_in``; a flag that is not known is branched
-        on. With ``real`` the definedness of the actions becomes a requirement.
+        on.
+
+        The definedness of the actions is a requirement of the step, unless
+        ``defs`` is given: a flush that belongs to entering a group only counts
+        when the path that enters is taken, so its requirements are appended to
+        ``defs`` and that path carries them.
         """
         keys = ["$o:%s" % path for path in self.after_scopes if _under(path, prefix)]
         if not keys:
@@ -1049,9 +1052,13 @@ class _StepBuilder:
             for key in keys:
                 final[key] = z3.BoolVal(False)
             parts = [self.env_equal(env_out, final)]
-            if real:
+            if defs is None:
                 parts.extend(
                     item.constraint for item in lowering.definedness_constraints
+                )
+            else:
+                defs.extend(
+                    (condition, item) for item in lowering.definedness_constraints
                 )
             self.constraints.append(z3.Implies(antecedent, _and(parts)))
         return env_out
@@ -1078,7 +1085,7 @@ class _StepBuilder:
             z3.Implies(z3.And(gate, ended), self.vars_equal(next_vars, env_mid))
         )
         live = z3.And(gate, z3.Not(ended))
-        env_end = self.flush("", live, env_mid, "end", real=True)
+        env_end = self.flush("", live, env_mid, "end")
         self.constraints.append(z3.Implies(live, self.vars_equal(next_vars, env_end)))
 
     def build_leaf_source(self, state_id: int) -> None:

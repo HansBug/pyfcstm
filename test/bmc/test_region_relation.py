@@ -754,6 +754,37 @@ class TestStartValuesAndFlushes:
         solver.add(core.core, symbols.frame_var(1, "ratio") == 1)
         assert solver.check() == z3.sat
 
+    def test_an_after_action_that_fails_while_the_group_is_entered_is_undefined(self):
+        text = """
+        input int u;
+        def int x = 0;
+        state Root {
+            region A {
+                [*] -> S;
+                state S {
+                    >> during after { x = x + 100 % u; }
+                    [*] -> L;
+                    state L { during { x = x + 1; } }
+                }
+            }
+            region B { [*] -> Q; state Q; }
+        }
+        """
+        core = core_of(text, 2)
+
+        def run(first, second):
+            cycles = [{"inputs": {"u": first}}, {"inputs": {"u": second}}]
+            return holds(core, cycles, z3.BoolVal(True))
+
+        # The first cycle enters the group, and the after action of S runs when
+        # the branch of region A ends: a zero divisor makes that cycle
+        # undefined exactly as it does in any later cycle.
+        assert run(0, 3) == z3.unsat
+        assert run(3, 0) == z3.unsat
+        assert run(3, 3) == z3.sat
+        cycles = [{"inputs": {"u": 3}}, {"inputs": {"u": 3}}]
+        assert [item[2]["x"] for item in frames(core, cycles, ["x"])] == [0, 2, 4]
+
     def test_a_region_that_finishes_through_pseudo_states_owes_no_after_action(self):
         text = """
         def int x = 0;

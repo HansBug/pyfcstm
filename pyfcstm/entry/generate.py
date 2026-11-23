@@ -40,6 +40,38 @@ from ..utils import auto_decode
 from ..utils.validate import ModelValidationError
 
 
+def _require_template_features(model, renderer, template_label: str) -> None:
+    """
+    Stop the command when the template cannot render the model.
+
+    The renderer refuses such a model itself; checking here first lets the
+    command name the template the way the user selected it (a built-in name
+    instead of the temporary directory it was extracted to) and turn the
+    refusal into a Click error before anything is written.
+
+    :param model: Model that is about to be rendered.
+    :type model: pyfcstm.model.model.StateMachine
+    :param renderer: Renderer built for the selected template.
+    :type renderer: pyfcstm.render.render.StateMachineCodeRenderer
+    :param template_label: How the message names the template, for example
+        ``"built-in template 'python'"``.
+    :type template_label: str
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.entry.base.ClickErrorException: If the model declares
+        regions and the template does not declare the ``region`` feature.
+    """
+    if "region" in renderer.features:
+        return
+    from pyfcstm.model.support import require_supported_model
+
+    try:
+        require_supported_model(model, "generate with %s" % template_label)
+    except ModelValidationError as err:
+        # The template lacks the feature the model needs.
+        raise ClickErrorException(str(err)) from err
+
+
 def _add_generate_subcommand(cli: click.Group) -> click.Group:
     """
     Add the ``generate`` subcommand to a Click command group.
@@ -143,8 +175,10 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         :raises click.UsageError: If neither or both of ``--template-dir`` and
             ``--template`` are given; nothing is read or written in that case.
         :raises pyfcstm.entry.base.ClickErrorException: If building the model
-            raises :class:`pyfcstm.utils.validate.ModelValidationError`; the
-            message is the validation error text.
+            raises :class:`pyfcstm.utils.validate.ModelValidationError`, or if
+            the model declares regions and the selected template does not
+            declare the ``region`` feature; the message is the validation error
+            text and nothing is written in the second case.
         :raises UnicodeDecodeError: If the input file cannot be decoded.
         :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
         :raises OSError: If reading the input file or writing output files fails.
@@ -162,6 +196,13 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
         With ``--template python`` the output directory receives ``machine.py``
         together with the generated ``README.md`` and ``README_zh.md``.
+
+        A template renders models that declare regions only when its
+        ``config.yaml`` lists ``region`` under ``features``. For any other
+        template the command stops before it writes anything::
+
+            $ pyfcstm generate -i ./regions.fcstm -t ./old_template -o ./out
+            Error: generate with template directory '/abs/old_template' does not support region models yet.
         """
         if bool(template_dir) == bool(template_name):
             raise click.UsageError(
@@ -171,11 +212,9 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name="state_machine_dsl")
         try:
-            from pyfcstm.model.support import require_supported_model
             model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
-            require_supported_model(model, 'generate')
         except ModelValidationError as err:
-            # Model construction or the renderer support check rejects the model.
+            # Model construction rejects the model.
             raise ClickErrorException(str(err)) from err
 
         if template_name:
@@ -185,6 +224,9 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
                     td,
                 )
                 renderer = StateMachineCodeRenderer(template_dir=extracted_template_dir)
+                _require_template_features(
+                    model, renderer, "built-in template '%s'" % template_name
+                )
                 renderer.render(
                     model,
                     output_dir=output_dir,
@@ -192,6 +234,9 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
                 )
         else:
             renderer = StateMachineCodeRenderer(template_dir=template_dir)
+            _require_template_features(
+                model, renderer, "template directory '%s'" % renderer.template_dir
+            )
             renderer.render(
                 model,
                 output_dir=output_dir,

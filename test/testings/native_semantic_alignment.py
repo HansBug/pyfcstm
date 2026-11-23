@@ -24,13 +24,15 @@ Example::
 """
 
 import argparse
+import functools
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.simulate import (
     SimulationRuntimeActionReferenceError,
@@ -39,6 +41,8 @@ from pyfcstm.simulate import (
     SimulationRuntimeExpressionError,
     SimulationRuntimeTerminalStateError,
 )
+from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
 from test.testings.simulate_semantics import (
     SemanticCase,
@@ -52,6 +56,7 @@ _MISSING_DELTA = object()
 GENERATED_C_ALIGNMENT = "generated_c_alignment"
 GENERATED_C_POLL_ALIGNMENT = "generated_c_poll_alignment"
 NATIVE_ALIGNMENT_RUNNERS = (GENERATED_C_ALIGNMENT, GENERATED_C_POLL_ALIGNMENT)
+NATIVE_TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll")
 
 # Worker failures must surface as hard failures rather than being masked by
 # any external allow-list data.
@@ -202,6 +207,65 @@ class NativeAlignmentReport:
             "summary": self.summary(),
             "results": [result.to_dict() for result in self.results],
         }
+
+
+@functools.lru_cache(maxsize=None)
+def _packaged_template_features(template_name: str) -> FrozenSet[str]:
+    """
+    Read the ``features`` a packaged built-in template declares.
+
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :return: Declared feature names.
+    :rtype: FrozenSet[str]
+    """
+    with tempfile.TemporaryDirectory() as work:
+        return StateMachineCodeRenderer(extract_template(template_name, work)).features
+
+
+def iter_native_semantic_cases(
+    template_name: str, features: Optional[FrozenSet[str]] = None
+) -> List[SemanticCase]:
+    """
+    Select the shared fixtures one native C-family template must align on.
+
+    Every template runs the cases of the generated-runtime subset that do not
+    exercise regions. A template that declares the ``region`` feature also runs
+    every case of the ``regions`` category, whatever ``exclude_runners`` says
+    for the generated Python runner, so declaring the feature in a template's
+    ``config.yaml`` is what puts the region corpus under that template, and a
+    template that does not declare it never sees a region case.
+
+    :param template_name: One of ``c``, ``c_poll``, ``cpp`` and ``cpp_poll``.
+    :type template_name: str
+    :param features: Declared features to select for, defaults to the features
+        the packaged template declares.
+    :type features: typing.Optional[typing.FrozenSet[str]], optional
+    :return: Selected fixtures, sorted by case id.
+    :rtype: typing.List[test.testings.simulate_semantics.SemanticCase]
+    :raises ValueError: If ``template_name`` is not a native template.
+
+    Example::
+
+        >>> without = iter_native_semantic_cases("c", features=frozenset())
+        >>> with_regions = iter_native_semantic_cases("c", features=frozenset({"region"}))
+        >>> len(with_regions) > len(without)
+        True
+    """
+    if template_name not in NATIVE_TEMPLATE_NAMES:
+        raise ValueError("unknown native template: %r" % template_name)
+    if features is None:
+        features = _packaged_template_features(template_name)
+    selected = {
+        case.id: case
+        for case in iter_semantic_cases(runners=["generated_python_alignment"])
+        if "regions" not in case.data["categories"]
+    }
+    if "region" in features:
+        selected.update(
+            (case.id, case) for case in iter_semantic_cases(categories=["regions"])
+        )
+    return [selected[case_id] for case_id in sorted(selected)]
 
 
 def _validate_runner_name(runner: str) -> None:
@@ -784,12 +848,10 @@ def run_native_alignment_report(
         'generated_c_alignment'
     """
     _validate_runner_name(runner)
+    template_name = "c" if runner == GENERATED_C_ALIGNMENT else "c_poll"
     selected_ids = list(
         case_ids
-        or [
-            case.id
-            for case in iter_semantic_cases(runners=["generated_python_alignment"])
-        ]
+        or [case.id for case in iter_native_semantic_cases(template_name)]
     )
     results = []
     for case_id in selected_ids:

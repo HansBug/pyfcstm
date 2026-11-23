@@ -93,12 +93,19 @@ The core rendering call currently renders templates as `tp.render(model=model)`.
 | `filters` | Adds Jinja2 filters through declarative config items. | Generation-time only. |
 | `tests` | Adds Jinja2 tests through declarative config items. | Generation-time only. |
 | `ignores` | Git-style patterns excluded from rendering/copying. | Generation-time only. |
+| `features` | List of model features the template can render. The only member is `region`. | Generation-time only. |
 
 Most keys are optional and default to an empty configuration. Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer helpers, and imported filters are allowed because they run inside `pyfcstm` during generation. They must not leak into generated runtime dependencies unless the generated target language explicitly owns that dependency and it is approved by the runtime policy below.
 
 Target-language-specific helpers should be loaded by the owning template through `type: import`. C-family helpers such as `to_c_identifier`, `to_c_path_identifier`, `render_c_action_body`, and `render_c_condition_body` belong to `c` / `c_poll` / `cpp` / `cpp_poll` configs rather than the default renderer environment.
 
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
+
+### Declaring model features
+
+A template is written for one execution model. `features: [region]` states that the template renders models that declare regions (ordered parallel regions inside a state). A template that does not declare it is refused for such a model before anything is written: `pyfcstm generate` fails with `generate with built-in template '<name>' does not support region models yet.` for a built-in template, or names the template directory for `-t`, with diagnostic code `E_UNSUPPORTED_FEATURE`. A model without regions is rendered whatever the declaration, so a template that does not declare `region` keeps its current behaviour and its generated output does not change.
+
+`features` must be a list of strings; an unknown or duplicated member fails when the renderer is constructed. `StateMachineCodeRenderer.features` exposes the declared set. A template that declares `region` takes over the whole region semantics of its target language and is expected to align with `SimulationRuntime` on every shared `regions` fixture; the native C-family runners pick those fixtures up from the declaration.
 
 ### Strict config keys and declarative item forms
 

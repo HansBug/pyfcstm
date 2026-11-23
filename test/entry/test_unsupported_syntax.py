@@ -8,9 +8,18 @@ from pyfcstm.entry import pyfcstmcli
 pytestmark = pytest.mark.unittest
 
 
+def _undeclared_template(tmp_path):
+    """A custom template directory that does not declare any ``features``."""
+    templates = tmp_path / 'undeclared_template'
+    templates.mkdir(exist_ok=True)
+    (templates / 'config.yaml').write_text('{}', encoding='utf-8')
+    (templates / 'machine.txt.j2').write_text('{{ model.root_state.name }}', encoding='utf-8')
+    return templates
+
+
 def _command_arguments(tmp_path, arguments):
     if arguments == ['generate']:
-        arguments = arguments + ['--template', 'python', '-o', str(tmp_path / 'generated')]
+        arguments = arguments + ['-t', str(_undeclared_template(tmp_path)), '-o', str(tmp_path / 'generated')]
     if arguments == ['bmc']:
         query = tmp_path / 'query.fbmcq'
         query.write_text('check reach <= 1: active("Root");', encoding='utf-8')

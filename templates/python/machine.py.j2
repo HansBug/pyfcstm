@@ -2655,14 +2655,12 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
 {% endif -%}
 {%- endmacro %}
 {%- macro render_guard_lambda(guard) -%}
-{#- The lambda argument of a guard method. In a model with forced transitions,
-    which lengthen guards, it is laid out the way ``ruff format`` leaves it: the
+{#- The lambda argument of a guard method, laid out the way ``ruff format`` leaves it: the
     line starts at column 16 of the generated file, a guard that fits stays on
     one line, one that fits inside parentheses is wrapped once, and a longer one
-    is split in front of every ``and`` / ``or`` that is not inside brackets. Every
-    other model keeps the guard on the lambda line, so its output is unchanged. -#}
+    is split in front of every ``and`` / ``or`` that is not inside brackets. -#}
 {%- set expr = guard.to_ast_node() | expr_render(style='python_scope_expr') -%}
-{%- if not model.forced_variables or (expr | length) <= 51 -%}
+{%- if (expr | length) <= 51 -%}
 {{ '            ' }}lambda scope=scope: {{ expr }},
 {%- elif (expr | length) <= 68 -%}
 {{ '            ' }}lambda scope=scope: (

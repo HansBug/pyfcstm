@@ -11,7 +11,6 @@ categories:
 - runtime
 exclude_runners:
 - generated_python_alignment
-- bmc_core
 handlers:
 - action: Root.A.A1.Tick
   behavior: record_call

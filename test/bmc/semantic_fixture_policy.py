@@ -165,16 +165,6 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
 # that names why; the YAML ``exclude_runners`` of exactly these cases still
 # lists ``bmc_core``.
 REGION_CORE_EXCLUDE_CASES = {
-    # The call-time configuration of a handler call is reported by the witness layer, not by the region relation.
-    "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": "handler_calls",
-    "region_choice_in_a_composite_is_decided_alike_when_tried_and_taken": "handler_calls",
-    "region_cold_start_delta_calls_no_handlers_even_for_regions_entered_before_the_failure": "handler_calls",
-    "region_leaf_abstract_during_reports_the_leaf_and_the_moment_of_the_call": "handler_calls",
-    "region_owner_enter_exit_handlers_see_group_entry_and_declaration_order_exit": "handler_calls",
-    "region_pseudo_state_enter_handler_sees_the_pseudo_state_in_the_configuration": "handler_calls",
-    "region_root_group_that_cannot_start_leaves_nothing_behind": "handler_calls",
-    "region_single_region_owner_aspect_handler_reports_the_leaf": "handler_calls",
-    "region_transient_configuration_texts_during_group_entry_and_completion": "handler_calls",
     # The runtime raises a search-limit error here, which a bounded relation cannot express.
     "region_group_that_could_always_stop_one_round_later_is_reported_as_a_loop": "search_limit",
     "region_loop_is_reported_at_the_owner_when_the_last_region_has_no_other_way": "search_limit",
@@ -213,8 +203,38 @@ REGION_CORE_EXCLUDE_CASES = {
     "region_hot_start_waiting_and_done_regions_together": "hot_start",
 }
 
+# Region fixtures that the relation runner takes with one kind of observation
+# left unchecked.  The relation does not report the abstract calls of a region
+# model with the configuration at the moment of each call, so everything else
+# the case asserts -- configuration, variables, Delta, end of the run -- is
+# checked and the handler calls are not.
+REGION_CORE_PARTIAL_CASES = {
+    "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": (
+        "handler_calls",
+    ),
+    "region_choice_in_a_composite_is_decided_alike_when_tried_and_taken": (
+        "handler_calls",
+    ),
+    "region_cold_start_delta_calls_no_handlers_even_for_regions_entered_before_the_failure": (
+        "handler_calls",
+    ),
+    "region_leaf_abstract_during_reports_the_leaf_and_the_moment_of_the_call": (
+        "handler_calls",
+    ),
+    "region_owner_enter_exit_handlers_see_group_entry_and_declaration_order_exit": (
+        "handler_calls",
+    ),
+    "region_pseudo_state_enter_handler_sees_the_pseudo_state_in_the_configuration": (
+        "handler_calls",
+    ),
+    "region_root_group_that_cannot_start_leaves_nothing_behind": ("handler_calls",),
+    "region_single_region_owner_aspect_handler_reports_the_leaf": ("handler_calls",),
+    "region_transient_configuration_texts_during_group_entry_and_completion": (
+        "handler_calls",
+    ),
+}
+
 REGION_CORE_EXCLUDE_REASONS = {
-    "handler_calls": "The call-time configuration of a handler call is reported by the witness layer, not by the region relation.",
     "search_limit": "The runtime raises a search-limit error here, which a bounded relation cannot express.",
     "action_dependent_loop": "The macro expander refuses a path that returns to a state while running actions.",
     "group_reentry_limit": "The group re-enters itself on changing values past the depth the relation unrolls.",
@@ -259,6 +279,15 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
                 mode="temporary_exclude",
                 bucket="regions_" + bucket,
                 reason=REGION_CORE_EXCLUDE_REASONS[bucket],
+            )
+        if case_id in REGION_CORE_PARTIAL_CASES:
+            return BmcSemanticFixturePolicy(
+                mode="region_core",
+                bucket="regions_handler_calls_unchecked",
+                reason="Region cases are checked against the per-region trace relation; "
+                "the relation does not report the configuration at the moment of an abstract call, "
+                "so the handler calls the case asserts are not compared.",
+                ignored_expect_fields=REGION_CORE_PARTIAL_CASES[case_id],
             )
         return BmcSemanticFixturePolicy(
             mode="region_core",

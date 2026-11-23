@@ -280,9 +280,12 @@ every shared runner supports regions, such a case must set
 `exclude_runners: [generated_python_alignment]`; the loader rejects a `regions`
 case that leaves that runner selected. The `bmc_core` runner takes a region case
 once its relation reports the configuration, the variables and the Delta
-classification of every cycle and the call fields of every handler call; a case
-that asserts handler calls keeps `bmc_core` excluded until it can, and so does a
-case that hot-starts, because the relation only starts cold. A region case that
+classification of every cycle. It does not report the call fields of a handler
+call, so it checks such a case without its `handler_calls` and says so in
+`test/bmc/semantic_fixture_policy.py`; every other field must be one it checks.
+A case that hot-starts keeps `bmc_core` excluded, because the relation only
+starts cold, and so does a case whose cycle the runtime refuses with an error,
+because a bounded relation has no run to compare. A region case that
 hot-starts names the start position with `initial.configuration` (see below)
 instead of `initial.state`.
 
@@ -354,7 +357,10 @@ owner for an aspect that wraps several regions.
 A runner can drop itself from `exclude_runners` once it can report, after every
 cycle, the canonical configuration text or termination, the variables, whether
 the cycle was a Delta, and for every handler call the fields above. It needs no
-trace, event accounting or single-path state for these cases.
+trace, event accounting or single-path state for these cases. A runner that does
+not report the handler calls may still take a case, provided it lists the
+observation it leaves out in its own policy instead of passing over it
+silently.
 
 ### Rules the region cases pin
 

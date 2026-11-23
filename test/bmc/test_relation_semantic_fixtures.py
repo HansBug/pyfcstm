@@ -686,13 +686,28 @@ def _region_configuration_predicate(core, frame_index, node, region_path=None):
     return z3.And(*parts)
 
 
-def _assert_region_fixture_matches_bmc_core(case) -> None:
+_REGION_OBSERVED_FIELDS = {"configuration", "vars", "outputs", "delta", "ended"}
+
+
+def _assert_region_fixture_matches_bmc_core(case, ignored_fields=()) -> None:
     """Check the region relation against the observations of a region fixture.
 
     Every cycle of the fixture is pinned (events, inputs), and the observations
     after each step (configuration, variables, Delta, end of the run) must be
-    reachable and forced: the pinned trace has no other outcome.
+    reachable and forced: the pinned trace has no other outcome.  A fixture
+    field the relation does not report has to be named in ``ignored_fields``;
+    any other field, a step that expects an error and a hot start are refused
+    instead of being passed over.
     """
+    assert "initial" not in case.data, "%s: the relation starts cold" % case.id
+    for index, step in enumerate(case.data["steps"]):
+        expect = step.get("expect") or {}
+        stray = set(expect) - _REGION_OBSERVED_FIELDS - set(ignored_fields)
+        assert not stray, "%s steps[%d] expects %r, which nothing checks" % (
+            case.id,
+            index,
+            sorted(stray),
+        )
     model = build_state_machine_from_case(case)
     cycles = []
     for step in case.data["steps"]:
@@ -831,7 +846,7 @@ def test_bmc_core_matches_semantic_fixture_public_observations(case) -> None:
         _assert_semantic_fixture_raises_in_bmc(case)
         return
     if policy.mode == "region_core":
-        _assert_region_fixture_matches_bmc_core(case)
+        _assert_region_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
         return
     _assert_semantic_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
 

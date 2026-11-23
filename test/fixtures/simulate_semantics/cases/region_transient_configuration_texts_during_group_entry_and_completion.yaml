@@ -8,7 +8,6 @@ categories:
 - runtime
 exclude_runners:
 - generated_python_alignment
-- bmc_core
 handlers:
 - action: Root.Owner.Pre
   behavior: record_call

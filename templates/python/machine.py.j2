@@ -836,6 +836,9 @@ def _find_frame_in(stack, scope):
 # Tables of the generated model: one entry per state (numbered in declaration
 # order) followed by one entry per region.
 _STATE_COUNT = {{ state_count }}
+# Without a pseudo state every state the machine enters rests at once, so one
+# advance can never come back to a position it has left.
+_LOOP_FREE = {{ (state_items | selectattr('is_pseudo') | list | length == 0) | repr }}
 _PATH = (
 {% for scope in scope_items %}{{ path_entry(scope.path) }}
 {% endfor %})
@@ -2400,10 +2403,11 @@ class {{ machine_class_name(model) }}:
         is_validation_mode = run.is_validation_mode
         validate_post_child_exit = run.validate_post_child_exit
         while True:
-            signature = _create_execution_signature(stack, vars_)
-            if signature in run.seen_signatures:
-                return _FAILED
-            run.seen_signatures.add(signature)
+            if not _LOOP_FREE:
+                signature = _create_execution_signature(stack, vars_)
+                if signature in run.seen_signatures:
+                    return _FAILED
+                run.seen_signatures.add(signature)
             self._check_structural_limit(stack)
             self._check_step_limit(run.steps_taken)
             frame = stack[-1]

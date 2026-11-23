@@ -433,6 +433,13 @@ def _completer(model_text=MODEL, start_events=("W.Idle.Start",)):
     ]
 
 
+@pytest.mark.parametrize("lead", ["", "  ", "\t"])
+def test_init_completion_ignores_whitespace_before_the_command(lead):
+    complete = _completer()
+    assert "W.Job.B.Comp.In1" in [text for text, _ in complete(lead + "init W.Job.B.Comp")]
+    assert "seq=" in [text for text, _ in complete(lead + "init W.Job{A: [init], B: Comp.In1} ")]
+
+
 def test_init_completes_the_states_inside_regions():
     complete = _completer()
     texts = [text for text, _ in complete("init W.Job.B")]

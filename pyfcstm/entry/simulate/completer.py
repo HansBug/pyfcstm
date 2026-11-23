@@ -173,7 +173,7 @@ class SimulationCompleter(Completer):
                 # Inside the braces of a configuration text nothing is completed.
                 return
             # A configuration text keeps its spaces inside one argument.
-            words = ['init', *split_init_arguments(text[len(command):])]
+            words = ['init', *split_init_arguments(text.lstrip()[len(command):])]
             # First argument - state path
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
                 prefix = words[1] if len(words) == 2 else ''

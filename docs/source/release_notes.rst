@@ -217,7 +217,7 @@ line apply to every model:
 - ``init`` refuses a variable that is assigned twice (``init S n=0 n=5``) instead
   of silently keeping the last value, like ``cycle --input`` already did.
 
-An error that names a path now writes it as ``'W.Nowhere'`` instead of a tuple,
+An ``init`` whose braces are not balanced is reported as such for every model. An error that names a path now writes it as ``'W.Nowhere'`` instead of a tuple,
 and an event name that is ambiguous between several leaves is reported as such,
 with its candidates, instead of after a generic "cannot resolve" sentence.
 

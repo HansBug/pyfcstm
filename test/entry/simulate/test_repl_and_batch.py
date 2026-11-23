@@ -505,6 +505,19 @@ state Root {
 }
 """
 
+_SAME_NAME_MODEL = """
+state Root {
+    [*] -> Parent;
+    state Parent {
+        [*] -> A;
+        state A { event Go; }
+        state B;
+        A -> B :: Go;
+        A -> B : Go;
+    }
+}
+"""
+
 _CONTINUATION_MODEL = """
 state Root {
     [*] -> Parent;
@@ -554,6 +567,14 @@ class TestEventDisplayItems:
         # What the list says is what works: the short name is accepted, the other is not.
         runtime.cycle(['Go'])
         assert runtime.current_state.path == ('Root', 'Parent', 'B')
+
+    def test_display_items_hide_a_short_name_that_reaches_another_event(self):
+        """Two events called ``Go`` leave the leaf; typing ``Go`` triggers the leaf's own."""
+        runtime = _resting_runtime(_SAME_NAME_MODEL)
+        assert get_current_event_display_items(runtime) == [
+            ('Root.Parent.A.Go', 'Go'),
+            ('Root.Parent.Go', None),
+        ]
 
     def test_display_items_omit_root_boundary_continuation(self):
         assert get_current_event_display_items(_resting_runtime(_BOUNDARY_MODEL)) == []

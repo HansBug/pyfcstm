@@ -171,12 +171,9 @@ def _usable_short_name(current, event_path: str, short_name: str) -> Optional[st
     :type event_path: str
     :param short_name: The event's own name, which is what a user would type.
     :type short_name: str
-    :return: ``short_name`` if it resolves to the event, otherwise ``None`` (also
-        when it is the full path itself, which needs no short name).
+    :return: ``short_name`` if it resolves to the event, otherwise ``None``.
     :rtype: Optional[str]
     """
-    if short_name == event_path:
-        return None
     try:
         reached = current.resolve_event(short_name)
     except (ModelValueError, ModelLookupError):

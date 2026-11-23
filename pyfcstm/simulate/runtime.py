@@ -1946,15 +1946,8 @@ class SimulationRuntime:
         """
         from .utils import is_state_resolve_event_path
 
-        has_current_state = len(self.stack) > 0
-        if not has_current_state:
-            try:
-                return self.state_machine.resolve_event(event)
-            except (ModelValueError, ModelLookupError) as err:
-                # ModelValueError/ModelLookupError: the user-supplied event
-                # path is malformed or absent from the model.
-                raise self._event_input_error(str(err)) from err
-
+        # ``cycle`` returns before it resolves any name once the runtime has
+        # ended, so the stack is never empty here.
         if is_state_resolve_event_path(event):
             try:
                 return self.current_state.resolve_event(event)

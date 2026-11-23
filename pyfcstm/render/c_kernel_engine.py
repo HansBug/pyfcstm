@@ -67,16 +67,15 @@ enum {
 enum { @MM@_K_V_NONE = 0, @MM@_K_V_TRANSITION = 1, @MM@_K_V_INITIAL = 2 };
 enum { @MM@_K_ORIGIN = 1, @MM@_K_CONT = 2 };
 
-/* Search budgets. A search stops with an error after @MM@_K_STEP_LIMIT steps. */
+/* 64-bit FNV constants written without a long long literal, so the file also builds as C++98. */
+#define @MM@_K_FNV_PRIME ((((PYFCSTM_GENERATED_UINT64)0x100u) << 32) | (PYFCSTM_GENERATED_UINT64)0x000001B3u)
+#define @MM@_K_FNV_BASIS ((((PYFCSTM_GENERATED_UINT64)0xCBF29CE4u) << 32) | (PYFCSTM_GENERATED_UINT64)0x84222325u)
+
+/* Search budgets. A search stops with an error after @MM@_K_STEP_LIMIT steps. The capacities of the
+ * arena and of the trail are public macros of machine.h, because the size of a machine depends on them. */
 #define @MM@_K_STEP_LIMIT 1000
 #define @MM@_K_GROUP_DEPTH_LIMIT 64
 #define @MM@_K_DEPTH_LIMIT 64
-#ifndef @MM@_ARENA_CAPACITY
-#define @MM@_ARENA_CAPACITY @ARENA_CAP@
-#endif
-#ifndef @MM@_TRAIL_CAPACITY
-#define @MM@_TRAIL_CAPACITY @TRAIL_CAP@
-#endif
 
 typedef struct @T@Frame {
     short state;
@@ -117,7 +116,7 @@ typedef struct @T@Outer {
 /* A copy of a context: a search worklist item or an entry of the seen set of a run. */
 typedef struct @T@Node {
     @T@Ctx ctx;
-    unsigned long long hash;
+    PYFCSTM_GENERATED_UINT64 hash;
     int parent;
     short stack;
     unsigned char visited;
@@ -150,7 +149,7 @@ ENGINE_CODE = r'''
  * Execution engine. Each function names the simulator method it follows.
  * ------------------------------------------------------------------------- */
 
-#define @MM@_K_MIX(h, v) ((h) = (((h) ^ (unsigned long long)(v)) * 1099511628211ULL) ^ ((h) >> 31))
+#define @MM@_K_MIX(h, v) ((h) = (((h) ^ (PYFCSTM_GENERATED_UINT64)(v)) * @MM@_K_FNV_PRIME) ^ ((h) >> 31))
 
 static @T@Stack @P@stack_of(@T@Ctx *c, int stack)
 {
@@ -305,9 +304,9 @@ static int @P@stack_equal(const @T@Ctx *a, const @T@Ctx *b, int stack, int skip)
     }
 }
 
-static unsigned long long @P@frames_hash(const @T@Ctx *c, const @T@Frame *f, int n, unsigned long long h);
+static PYFCSTM_GENERATED_UINT64 @P@frames_hash(const @T@Ctx *c, const @T@Frame *f, int n, PYFCSTM_GENERATED_UINT64 h);
 
-static unsigned long long @P@region_hash(const @T@Ctx *c, int region, unsigned long long h)
+static PYFCSTM_GENERATED_UINT64 @P@region_hash(const @T@Ctx *c, int region, PYFCSTM_GENERATED_UINT64 h)
 {
     const @T@RegionStack *x = &c->regions[region];
     @MM@_K_MIX(h, 0x100 + x->region_mode);
@@ -319,7 +318,7 @@ static unsigned long long @P@region_hash(const @T@Ctx *c, int region, unsigned l
     return @P@frames_hash(c, x->frames, x->size, h);
 }
 
-static unsigned long long @P@frames_hash(const @T@Ctx *c, const @T@Frame *f, int n, unsigned long long h)
+static PYFCSTM_GENERATED_UINT64 @P@frames_hash(const @T@Ctx *c, const @T@Frame *f, int n, PYFCSTM_GENERATED_UINT64 h)
 {
     int i, k;
     for (i = 0; i < n; ++i) {
@@ -335,9 +334,9 @@ static unsigned long long @P@frames_hash(const @T@Ctx *c, const @T@Frame *f, int
     return h;
 }
 
-static unsigned long long @P@signature_hash(const @T@Ctx *c, int stack)
+static PYFCSTM_GENERATED_UINT64 @P@signature_hash(const @T@Ctx *c, int stack)
 {
-    unsigned long long h = @P@vars_hash(&c->vars);
+    PYFCSTM_GENERATED_UINT64 h = @P@vars_hash(&c->vars);
     @MM@_K_MIX(h, stack + 7);
     if (stack < 0) {
         @MM@_K_MIX(h, c->main.size);
@@ -763,7 +762,7 @@ static int @P@continuation_viable(@T@Priv *m, const @T@Ctx *c, const @T@Outer *o
     return r;
 }
 
-static int @P@on_search_path(const @T@Priv *m, int node, unsigned long long h, int stack, const @T@Ctx *trail0, unsigned long long h0)
+static int @P@on_search_path(const @T@Priv *m, int node, PYFCSTM_GENERATED_UINT64 h, int stack, const @T@Ctx *trail0, PYFCSTM_GENERATED_UINT64 h0)
 {
     int p;
     for (p = m->arena[node].parent; p >= 0; p = m->arena[p].parent) {
@@ -794,7 +793,7 @@ static int @P@search(@T@Priv *m, const @T@Ctx *start, int stack, const @T@Outer 
 {
     int mark = m->arena_top, wmark = m->work_size, root, loop = 0, result = @MM@_K_B_FALSE;
     long steps = 0;
-    unsigned long long h0 = trail0 != NULL ? @P@signature_hash(trail0, stack) : 0;
+    PYFCSTM_GENERATED_UINT64 h0 = trail0 != NULL ? @P@signature_hash(trail0, stack) : 0;
     root = @P@arena_alloc(m, start, stack);
     if (root < 0) {
         return @MM@_K_B_ERR;
@@ -805,7 +804,7 @@ static int @P@search(@T@Priv *m, const @T@Ctx *start, int stack, const @T@Outer 
     }
     while (m->work_size > wmark) {
         int k = m->work[--m->work_size], j, i, count, index, s, mode;
-        unsigned long long h;
+        PYFCSTM_GENERATED_UINT64 h;
         const int *ids;
         @T@Ctx *cur;
         @T@Stack st;
@@ -1089,7 +1088,7 @@ static int @P@advance_owner(@T@Priv *m, @T@Ctx *c, int stack, @T@Run *run)
 /* The seen set of a _Run: 1 when this stack and these values were met before in this run. */
 static int @P@run_seen(@T@Priv *m, @T@Run *run, const @T@Ctx *c, int stack)
 {
-    unsigned long long h = @P@signature_hash(c, stack);
+    PYFCSTM_GENERATED_UINT64 h = @P@signature_hash(c, stack);
     int j, k;
     for (j = run->base; j < m->arena_top; ++j) {
         if (m->arena[j].stack == stack && m->arena[j].hash == h

@@ -1,10 +1,10 @@
 """
 Generated C configuration code: compiled behaviour and agreement with the simulator.
 
-Every model below is rendered through a throwaway template built from the
-packaged ``c`` template, so the generated code is checked against the real
-``machine.h`` state id macros. A small C driver exposes the generated
-functions over a line protocol on stdin/stdout, and the simulator's
+Every model below is rendered through the packaged ``c`` template, so the
+generated code is checked inside the real ``machine.h`` and ``machine.c``. A
+small C driver exposes the generated functions over a line protocol on
+stdin/stdout, and the simulator's
 :class:`pyfcstm.model.Configuration` is the oracle for every answer.
 """
 
@@ -17,7 +17,6 @@ import shutil
 import subprocess
 
 import pytest
-import yaml
 
 from pyfcstm.model import Configuration, load_state_machine_from_text
 from pyfcstm.render import StateMachineCodeRenderer
@@ -323,7 +322,7 @@ int main(void)
 """
 
 NAMES_TEMPLATE = """\
-#include "configuration.h"
+#include "machine.h"
 #define CFG_T {{ machine_class_name(model) }}Configuration
 #define CFG_E {{ machine_class_name(model) }}ConfigurationError
 #define CFG_STATE {{ machine_class_name(model) }}StateId
@@ -331,19 +330,6 @@ NAMES_TEMPLATE = """\
 #define CFG_STATE_COUNT {{ machine_macro_name(model) }}_STATE_COUNT
 #define CFG_REGION_COUNT {{ machine_macro_name(model) }}_REGION_COUNT
 #define CFG_SUCCESS {{ machine_macro_name(model) }}_SUCCESS{{ '\\n' }}
-"""
-
-HEADER_TEMPLATE = """\
-#ifndef CONFIGURATION_CHECK_H
-#define CONFIGURATION_CHECK_H
-#include "machine.h"
-{{ render_c_configuration_header(model, machine_class_name(model), machine_macro_name(model)) }}
-#endif{{ '\\n' }}
-"""
-
-SOURCE_TEMPLATE = """\
-#include "configuration.h"
-{{ render_c_configuration_source(model, machine_class_name(model), machine_macro_name(model)) }}
 """
 
 ERROR_KINDS = {
@@ -403,25 +389,9 @@ def _cmake_build(cmake, source_dir, build_dir):
 
 
 def _render_template(tmp_dir):
-    """Packaged C template reduced to machine.h, plus the configuration files."""
+    """Packaged C template plus the files of the protocol driver."""
     template_dir = extract_template("c", os.path.join(tmp_dir, "template"))
-    for name in os.listdir(template_dir):
-        if name not in ("config.yaml", "machine.h.j2"):
-            os.remove(os.path.join(template_dir, name))
-    config_path = os.path.join(template_dir, "config.yaml")
-    with open(config_path, encoding="utf-8") as stream:
-        config = yaml.safe_load(stream)
-    config["features"] = ["region"]
-    for name in ("render_c_configuration_header", "render_c_configuration_source"):
-        config["globals"][name] = {
-            "type": "import",
-            "from": "pyfcstm.render.c_configuration." + name,
-        }
-    with open(config_path, "w", encoding="utf-8") as stream:
-        yaml.safe_dump(config, stream)
     for name, content in (
-        ("configuration.h.j2", HEADER_TEMPLATE),
-        ("configuration.c.j2", SOURCE_TEMPLATE),
         ("driver_names.h.j2", NAMES_TEMPLATE),
         ("driver.c", DRIVER_SOURCE),
     ):
@@ -576,6 +546,7 @@ def drivers(tmp_path_factory):
         'if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")',
         "    set(STRICT_FLAGS -std=c99 -pedantic -Wall -Wextra -Werror)",
         "endif()",
+        "link_libraries(m)",
     ]
     for name, text in MODELS.items():
         model = load_state_machine_from_text(text)
@@ -586,7 +557,7 @@ def drivers(tmp_path_factory):
             (name + "_notext", "PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT"),
         ):
             lines.append(
-                "add_executable(%s %s/driver.c %s/configuration.c)"
+                "add_executable(%s %s/driver.c %s/machine.c)"
                 % (target, name, name)
             )
             lines.append(

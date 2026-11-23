@@ -26,9 +26,9 @@ globals:
   hook_rows:
     type: import
     from: pyfcstm.render.c_kernel.hook_rows
-  private_storage_bytes:
+  render_c_storage_macros:
     type: import
-    from: pyfcstm.render.c_kernel.private_storage_bytes
+    from: pyfcstm.render.c_kernel.render_c_storage_macros
   render_c_kernel_types:
     type: import
     from: pyfcstm.render.c_kernel.render_c_kernel_types

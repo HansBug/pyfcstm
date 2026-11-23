@@ -74,9 +74,15 @@ typedef unsigned long long PYFCSTM_GENERATED_UINT64;
 /*
  * Bytes a machine reserves for its private state. The structure behind them
  * is not part of this header: read a machine only through the functions below.
+ *
+ * The size grows with two capacities: how many configurations one decision of
+ * a cycle may examine, and how many checks may be nested. The defaults suit the
+ * model. A cycle that exceeds one of them fails with a message naming the macro;
+ * to raise it, define the macro to the same value in every translation unit that
+ * includes this header (for example with a compiler flag), because the size of a
+ * machine depends on it.
  */
-#define {{ machine_macro_name(model) }}_STORAGE_BYTES {{ private_storage_bytes(model, ((([1, ((event_paths(model) | length) + 31) // 32] | max) * 8) + (([1, event_paths(model) | length] | max) * 4) + 24)) }}
-
+{{ render_c_storage_macros(model, machine_macro_name(model), ((([1, ((event_paths(model) | length) + 31) // 32] | max) * 8) + (([1, event_paths(model) | length] | max) * 4) + 24)) }}
 typedef struct {{ machine_class_name(model) }} {{ machine_class_name(model) }};
 typedef struct {{ machine_class_name(model) }}ExecutionContext {{ machine_class_name(model) }}ExecutionContext;
 typedef int {{ machine_class_name(model) }}StateId;

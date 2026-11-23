@@ -29,6 +29,7 @@ The module contains:
 * :func:`action_rows` - The action id space of a model
 * :func:`hook_rows` - The abstract actions of a model, one row per hook
 * :func:`private_storage_bytes` - Upper bound of the private structure's size
+* :func:`render_c_storage_macros` - Capacity macros and storage size for the header
 * :func:`render_c_kernel_types` - Engine types and the private structure
 * :func:`render_c_kernel_code` - Tables, action functions, engine and glue
 
@@ -60,6 +61,7 @@ from .c_kernel_engine import ENGINE_CODE, ENGINE_TYPES
 from .c_runtime import render_c_action_body, render_c_condition_body
 
 __all__ = [
+    "render_c_storage_macros",
     "iter_action_items",
     "event_paths",
     "action_rows",
@@ -382,7 +384,9 @@ def _identifier_list(values: List[int]) -> str:
     return ", ".join(str(value) for value in (values or [0]))
 
 
-def private_storage_bytes(model, extra_bytes: int = 0) -> int:
+def private_storage_bytes(
+    model, extra_bytes: int = 0, arena_capacity: Optional[int] = None, trail_capacity: Optional[int] = None
+) -> int:
     """
     Compute the byte size reserved for the private structure of a machine.
 
@@ -397,6 +401,12 @@ def private_storage_bytes(model, extra_bytes: int = 0) -> int:
     :param extra_bytes: Size of the members a template adds on top of the shared
         ones (for example its event bookkeeping), defaults to ``0``.
     :type extra_bytes: int, optional
+    :param arena_capacity: Number of search configurations to reserve room for,
+        defaults to the capacity the model needs.
+    :type arena_capacity: Optional[int], optional
+    :param trail_capacity: Number of nested checks to reserve room for, defaults
+        to the capacity the model needs.
+    :type trail_capacity: Optional[int], optional
     :return: Number of bytes to reserve.
     :rtype: int
 
@@ -413,6 +423,8 @@ def private_storage_bytes(model, extra_bytes: int = 0) -> int:
         0
     """
     plan = _Plan(model)
+    arena = plan.arena_capacity if arena_capacity is None else arena_capacity
+    trail = plan.trail_capacity if trail_capacity is None else trail_capacity
     ctx = plan.context_size()
     parameters = plan.variable_struct_size(len(model.parameters))
     inputs = plan.variable_struct_size(len(model.inputs))
@@ -426,12 +438,65 @@ def private_storage_bytes(model, extra_bytes: int = 0) -> int:
         _Field("pointers", 8 * 8, 8),
         _Field("ints", 16 * 4, 4),
         _Field("last_error", 512, 1),
-        _Field("arena", plan.arena_capacity * plan.node_size(), 8),
-        _Field("work", plan.arena_capacity * 4, 4),
-        _Field("trail", plan.trail_capacity * 32, 8),
+        _Field("arena", arena * plan.node_size(), 8),
+        _Field("work", arena * 4, 4),
+        _Field("trail", trail * 32, 8),
         _Field("extra", extra_bytes, 8),
     ]
     return _round_up(_layout(fields) + 64, 16)
+
+
+def render_c_storage_macros(model, machine_macro_name: str, extra_bytes: int = 0) -> str:
+    """
+    Emit the capacity macros and the storage size of a machine for ``machine.h``.
+
+    The size of a machine depends on how many configurations its search may hold,
+    so the capacities are public macros with the defaults the model needs, and
+    the storage size is an expression of them. A program that raises a capacity
+    must do it for every translation unit that includes the header, for example
+    with a compiler flag, so that all of them see the same size of a machine.
+
+    :param model: State machine the runtime is generated for.
+    :type model: pyfcstm.model.model.StateMachine
+    :param machine_macro_name: Public macro prefix, for example ``ROOT_MACHINE``.
+    :type machine_macro_name: str
+    :param extra_bytes: Size of the members a template adds on top of the shared
+        ones, defaults to ``0``.
+    :type extra_bytes: int, optional
+    :return: ``#define`` lines for the two capacities and ``..._STORAGE_BYTES``.
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     [*] -> A;
+        ...     state A;
+        ... }
+        ... ''')
+        >>> text = render_c_storage_macros(model, 'ROOT_MACHINE')
+        >>> text.count('#define')
+        3
+    """
+    plan = _Plan(model)
+    fixed = private_storage_bytes(model, extra_bytes, arena_capacity=0, trail_capacity=0)
+    return (
+        "#ifndef {m}_ARENA_CAPACITY\n"
+        "#define {m}_ARENA_CAPACITY {arena}\n"
+        "#endif\n"
+        "#ifndef {m}_TRAIL_CAPACITY\n"
+        "#define {m}_TRAIL_CAPACITY {trail}\n"
+        "#endif\n"
+        "#define {m}_STORAGE_BYTES ({fixed} + ({m}_ARENA_CAPACITY) * {per_arena} + ({m}_TRAIL_CAPACITY) * {per_trail})\n"
+    ).format(
+        m=machine_macro_name,
+        arena=plan.arena_capacity,
+        trail=plan.trail_capacity,
+        fixed=fixed,
+        per_arena=plan.node_size() + 4,
+        per_trail=32,
+    )
 
 
 def render_c_kernel_types(
@@ -492,7 +557,6 @@ def _fill_values(plan: _Plan, machine_class_name: str, machine_macro_name: str) 
         "TRAIL_CAP": str(plan.trail_capacity),
         "ROOT_ID": str(plan.state_index[plan.model.root_state.path]),
         "HAS_HOOKS": "1" if plan.hooks else "0",
-        "STORAGE": str(private_storage_bytes(plan.model)),
     }
 
 
@@ -546,9 +610,9 @@ typedef struct @T@Priv {
     int work_size;
     int trail_size;
     char last_error[512];
-    @T@Node arena[@ARENA_CAP@];
-    int work[@ARENA_CAP@];
-    @T@TrailEntry trail[@TRAIL_CAP@];
+    @T@Node arena[@MM@_ARENA_CAPACITY];
+    int work[@MM@_ARENA_CAPACITY];
+    @T@TrailEntry trail[@MM@_TRAIL_CAPACITY];
 @PRIVATE_MEMBERS@
 } @T@Priv;
 
@@ -1124,18 +1188,18 @@ class _Emitter:
         """Emit the hash and the equality of the persistent variables."""
         names = plan.var_names
         defines = self.model.defines
-        hashing = ["    unsigned long long h = 1469598103934665603ULL, x;", "    double d;", "    (void)d;", "    (void)x;", "    (void)v;"]
+        hashing = ["    PYFCSTM_GENERATED_UINT64 h = @MM@_K_FNV_BASIS, x;", "    double d;", "    (void)d;", "    (void)x;", "    (void)v;"]
         for name in names:
             field = to_c_identifier(name)
             if defines[name].type == "int":
-                hashing.append("    x = (unsigned long long)v->%s;\n    h = (h ^ x) * 1099511628211ULL;\n    h ^= h >> 29;" % field)
+                hashing.append("    x = (PYFCSTM_GENERATED_UINT64)v->%s;\n    h = (h ^ x) * @MM@_K_FNV_PRIME;\n    h ^= h >> 29;" % field)
             else:
                 hashing.append(
                     "    d = v->%s;\n    if (d == 0.0) {\n        d = 0.0;\n    }\n    memcpy(&x, &d, sizeof(x));\n"
-                    "    h = (h ^ x) * 1099511628211ULL;\n    h ^= h >> 29;" % field
+                    "    h = (h ^ x) * @MM@_K_FNV_PRIME;\n    h ^= h >> 29;" % field
                 )
         self.write(
-            "static unsigned long long _%s_vars_hash(const %sVars *v)\n{\n%s\n    return h;\n}\n"
+            "static PYFCSTM_GENERATED_UINT64 _%s_vars_hash(const %sVars *v)\n{\n%s\n    return h;\n}\n"
             % (self.cls, self.cls, "\n".join(hashing))
         )
         compares = "".join(
@@ -1192,4 +1256,4 @@ def render_c_kernel_code(model, machine_class_name: str, machine_macro_name: str
             % (plan.hook_id(row["func_name"]), field, field, machine_class_name)
         )
     glue = _HOOK_AND_GLUE.replace("@HOOK_CASES@", "\n".join(hook_cases))
-    return _fill(_TABLE_TYPES, values) + tables + _fill(ENGINE_CODE, values) + _fill(glue, values)
+    return _fill(_TABLE_TYPES, values) + _fill(tables, values) + _fill(ENGINE_CODE, values) + _fill(glue, values)

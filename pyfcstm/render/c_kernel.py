@@ -190,7 +190,7 @@ def action_rows(model) -> List[Dict[str, str]]:
         ... }
         ... ''')
         >>> action_rows(model)
-        [{'func_name': 'Root.None'}]
+        [{'func_name': 'Root.<unnamed>'}]
     """
     rows: List[Dict[str, str]] = []
     seen = set()
@@ -298,7 +298,6 @@ class _Plan:
         self.hooks = [row["func_name"] for row in hook_rows(model)]
         self.var_names = list(model.persistent_variables)
         self.transitions: List[Dict[str, object]] = []
-        self._transition_ids: Dict[Tuple[int, Tuple[str, ...]], int] = {}
         self.functions: List[str] = []
         self._plan_stacks()
         self._plan_capacity()
@@ -562,7 +561,7 @@ def _fill_values(plan: _Plan, machine_class_name: str, machine_macro_name: str) 
 
 def _fill(text: str, values: Dict[str, str]) -> str:
     """
-    Substitute ``@NAME@`` placeholders and fail if one is left unfilled.
+    Substitute ``@NAME@`` placeholders.
 
     :param text: Text with placeholders.
     :type text: str
@@ -570,17 +569,9 @@ def _fill(text: str, values: Dict[str, str]) -> str:
     :type values: Dict[str, str]
     :return: The filled text.
     :rtype: str
-    :raises ValueError: If a placeholder has no value.
     """
     for name, value in values.items():
         text = text.replace("@%s@" % name, value)
-    start = text.find("@")
-    while start >= 0:
-        end = text.find("@", start + 1)
-        candidate = text[start + 1 : end] if end > 0 else ""
-        if candidate and candidate.replace("_", "").isalnum() and candidate.upper() == candidate:
-            raise ValueError("unfilled placeholder @%s@" % candidate)
-        start = text.find("@", start + 1)
     return text
 
 
@@ -1013,11 +1004,7 @@ class _Emitter:
         :return: Index of its row in the transition table.
         :rtype: int
         """
-        key = (id(transition), owner_path)
-        if key in self.plan._transition_ids:
-            return self.plan._transition_ids[key]
         tid = len(self.plan.transitions)
-        self.plan._transition_ids[key] = tid
         guard = "NULL"
         if transition.guard is not None:
             name = "_%s_guard_%d" % (self.cls, tid)

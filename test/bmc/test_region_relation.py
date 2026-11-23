@@ -18,6 +18,7 @@ from pyfcstm.bmc import (
 )
 from pyfcstm.bmc.region_relation import build_region_core_formula
 from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.simulate import SimulationRuntime
 
 INTERLOCK = """
 input int fault;
@@ -649,6 +650,189 @@ class TestAspectsAndPlainBefore:
         trace = frames(core_of(text, 1), [{}], names=("seq",))
         assert trace[1][1]["Root.P.A"] == "done"
         assert trace[1][2] == {"seq": 12}
+
+
+def scattered(count, aspects):
+    """``count`` regions that each start in a composite of their own."""
+    aspect = ">> during before { x = x + 1; }" if aspects else ""
+    regions = "".join(
+        """
+        region R%d {
+            [*] -> S;
+            state S { %s [*] -> L; state L { during { x = x + 1; } } }
+        }"""
+        % (index, aspect)
+        for index in range(count)
+    )
+    return "def int x = 0;\nstate Root {%s\n}" % regions
+
+
+def shared(layers):
+    """Two regions below ``layers`` nested composites that each declare a before action."""
+    opening = "".join(
+        "[*] -> W%d; state W%d { >> during before { x = x + 1; } " % (level, level)
+        for level in range(layers)
+    )
+    return """
+    def int x = 0;
+    state Root {
+        %s
+        [*] -> Run;
+        state Run {
+            region A { [*] -> P; state P { during { x = x + 1; } } }
+            region B { [*] -> Q; state Q { during { x = x + 1; } } }
+        }
+        %s
+    }
+    """ % (opening, "} " * layers)
+
+
+def siblings(width):
+    """Two regions whose first one holds ``width`` sibling composites with an after action."""
+    states = "".join(
+        """
+            state S%d {
+                >> during after { x = x + %d; }
+                [*] -> L;
+                state L { during { x = x + 1; } }
+                L -> [*] : if [u > %d];
+            }
+            S%d -> S%d : if [u > %d];"""
+        % (index, index + 2, index, index, (index + 1) % width, index)
+        for index in range(width)
+    )
+    return (
+        """
+    input int u;
+    def int x = 0;
+    state Root {
+        region A {
+            [*] -> S0;%s
+        }
+        region B { [*] -> Q; state Q { during { x = x + 1; } } }
+    }
+    """
+        % states
+    )
+
+
+MIXED_ASPECTS = """
+input int u;
+def int x = 0;
+def int y = 0;
+state Root {
+    >> during before { x = x * 2 + 1; }
+    >> during after { y = y + x; }
+    [*] -> Wrap;
+    state Wrap {
+        >> during before { x = x * 2 + 2; }
+        [*] -> Run;
+        state Run {
+            >> during after { y = y * 2 + 3; }
+            region A {
+                [*] -> P;
+                state P {
+                    >> during after { y = y + 5; }
+                    [*] -> L;
+                    state L { during { x = x + 7; } }
+                    L -> [*] : if [u > 0];
+                }
+                state Q {
+                    >> during after { y = y * 3 + 1; }
+                    [*] -> L;
+                    state L { during { x = x + 11; } }
+                    L -> [*] : if [u > 2];
+                }
+                P -> Q : if [u > 0];
+                Q -> [*] : if [u > 2];
+            }
+            region B {
+                [*] -> M;
+                state M {
+                    >> during before { x = x + 13; }
+                    [*] -> L;
+                    state L { during { y = y + x; } }
+                }
+            }
+        }
+    }
+}
+"""
+
+
+def simulated(text, inputs, names):
+    """Return the variables after every cycle of a run in the simulator."""
+    runtime = SimulationRuntime(
+        load_state_machine_from_text(text), input_source={"u": 0}
+    )
+    trace = []
+    for value in inputs:
+        runtime.cycle(inputs={"u": value})
+        values = dict(runtime.vars)
+        trace.append({name: values[name] for name in names})
+    return trace
+
+
+@pytest.mark.unittest
+class TestAspectScopes:
+    # Each scope that declares aspects carries a flag from region to region.
+    # How many times a path is lowered may only depend on the flags that path
+    # can read and that are not known where it starts.
+
+    def paths(self, text, bound=2):
+        return len(core_of(text, bound).region_steps[1].cases)
+
+    def test_a_before_action_inside_another_region_does_not_multiply_the_paths(self):
+        for count in (2, 3, 4):
+            assert self.paths(scattered(count, True)) == self.paths(
+                scattered(count, False)
+            )
+
+    def test_every_shared_before_scope_adds_the_same_number_of_paths(self):
+        counts = [self.paths(shared(layers)) for layers in range(5)]
+        steps = [after - before for before, after in zip(counts, counts[1:])]
+        # The first region always finds the shared flags clear; the second one
+        # is lowered once more for every scope that may already have run.
+        assert steps[0] > 0
+        assert len(set(steps)) == 1
+
+    def test_sibling_after_scopes_are_settled_one_at_a_time(self):
+        sizes = [
+            len(core_of(siblings(width), 2).region_steps[1].constraints)
+            for width in (2, 3, 4, 5, 6)
+        ]
+        steps = [after - before for before, after in zip(sizes, sizes[1:])]
+        assert steps[0] > 0
+        assert len(set(steps)) == 1
+
+    @pytest.mark.parametrize(
+        "inputs",
+        [[0, 0, 0, 0], [1, 1, 1, 1], [1, 3, 3, 3], [3, 3, 0, 1], [0, 1, 0, 3]],
+    )
+    def test_shared_inner_and_sibling_scopes_together_match_the_runtime(self, inputs):
+        core = core_of(MIXED_ASPECTS, len(inputs))
+        cycles = [{"inputs": {"u": value}} for value in inputs]
+        trace = frames(core, cycles, ["x", "y"])
+        assert [item[2] for item in trace[1:]] == simulated(
+            MIXED_ASPECTS, inputs, ["x", "y"]
+        )
+        # With the inputs pinned there is no second trace.
+        last = len(inputs)
+        seen = trace[last][2]
+        other = z3.Or(
+            core.symbols.frame_var(last, "x") != seen["x"],
+            core.symbols.frame_var(last, "y") != seen["y"],
+        )
+        assert holds(core, cycles, other) == z3.unsat
+
+    @pytest.mark.parametrize("width", [2, 3])
+    @pytest.mark.parametrize("inputs", [[0, 0, 0], [1, 1, 1], [1, 2, 3], [3, 0, 2]])
+    def test_sibling_after_actions_match_the_runtime(self, width, inputs):
+        text = siblings(width)
+        core = core_of(text, len(inputs))
+        cycles = [{"inputs": {"u": value}} for value in inputs]
+        trace = frames(core, cycles, ["x"])
+        assert [item[2] for item in trace[1:]] == simulated(text, inputs, ["x"])
 
 
 @pytest.mark.unittest

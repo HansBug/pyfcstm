@@ -17,17 +17,18 @@ the regions' paths:
   still continue -- both are decided from the values the path left behind, the
   way the runtime validates a candidate before it commits to it;
 * frame constraints tie every region position to the state that owns it, so no
-  frame can hold a region at a position its owner does not allow.
+  frame can hold a region at a position its owner does not allow;
+* every scope that declares ``>> during`` aspects carries two **flags** in the
+  values that flow from unit to unit: whether its before actions already ran in
+  this cycle, and whether it owes its after actions.  A unit is lowered once
+  per combination of the before flags it can read and does not know, which are
+  only those of scopes it shares with a region that worked earlier, and the
+  owed after actions are settled one scope at a time -- so the formula grows
+  with the number of such scopes, not with the number of their subsets.
 
 :func:`build_region_core_formula` returns the same
 :class:`pyfcstm.bmc.relation.BmcCoreFormula` as the single-path builder.  The
 region facts of each step are available through ``region_steps``.
-
-.. note::
-   Every ``>> during before`` scope that a unit can run under adds one
-   variant of that unit, so the formula of a model with many such scopes grows
-   roughly by a factor of two to three per scope.  Models without
-   ``>> during`` aspects do not pay this cost.
 
 The module contains:
 
@@ -224,6 +225,7 @@ class _Units:
     def __init__(self, domain: BmcDomain) -> None:
         """Create an empty cache of unit expansions for one domain."""
         self._domain = domain
+        self.relevant: Dict[Tuple[str, Optional[str]], Tuple[str, ...]] = {}
         self._cache: Dict[
             Tuple[str, Optional[str], FrozenSet[str], bool], RegionUnitFormal
         ] = {}
@@ -424,6 +426,14 @@ class _StepBuilder:
             + ["$o:%s" % path for path in self.after_scopes]
         )
         self.slots = self.persistent + self.ledger_keys
+        region_paths = [region.path for region in self.domain.regions]
+        # After flags of scopes inside a region are cleared when the branch of
+        # that region ends, so they are never set when a cycle ends.
+        self.region_owed_keys = frozenset(
+            "$o:%s" % scope
+            for scope in self.after_scopes
+            if any(_under(scope, item) for item in region_paths)
+        )
         self.constraints: List[z3.BoolRef] = []
         self.cases: List[RegionCaseRelation] = []
         self.delta_terms: List[z3.BoolRef] = []
@@ -442,8 +452,18 @@ class _StepBuilder:
         self._counter += 1
         return z3.Int("R_%d_%d_%s" % (self.step, self._counter, tag))
 
-    def fresh_env(self, tag: str) -> _Env:
-        """Return fresh symbols for every slot of the values that flow between units."""
+    def fresh_env(
+        self,
+        tag: str,
+        base: Optional[_Env] = None,
+        touch: Optional[FrozenSet[str]] = None,
+    ) -> _Env:
+        """Return fresh symbols for the slots of the values that flow between units.
+
+        With ``base`` and ``touch`` only the flags named in ``touch`` get a fresh
+        symbol; every other flag keeps the expression it has in ``base``, so a
+        flag nothing can change stays known.
+        """
         self._counter += 1
         frame_vars = self.symbols.frame_vars[self.step]
         env: _Env = {
@@ -453,10 +473,28 @@ class _StepBuilder:
             for name in self.persistent
         }
         for key in self.ledger_keys:
+            if touch is not None and key not in touch:
+                env[key] = base[key]
+                continue
             env[key] = z3.Bool(
                 "R_%d_%d_%s_%s" % (self.step, self._counter, tag, _symbol("", key))
             )
         return env
+
+    def region_env(self, tag: str, base: _Env, region_path: str) -> _Env:
+        """Return the symbols one region writes its values into.
+
+        The variables are fresh.  A flag is fresh only when the region can
+        change it, which is the case for the scopes inside the region and for
+        the scopes the region sits in; the flag of any other scope keeps the
+        expression it has in ``base``.
+        """
+        touch = set()
+        for prefix, scopes in (("$b:", self.before_scopes), ("$o:", self.after_scopes)):
+            for scope in scopes:
+                if _under(scope, region_path) or region_path.startswith(scope + "."):
+                    touch.add(prefix + scope)
+        return self.fresh_env(tag, base, frozenset(touch))
 
     def start_env(self, frame_vars: Mapping[str, z3.ArithRef]) -> _Env:
         """Return the values at the start of a cycle: no aspect has run yet."""
@@ -468,8 +506,16 @@ class _StepBuilder:
     def env_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
     ) -> z3.BoolRef:
-        """Return the constraint that two sets of values agree in every slot, flags included."""
-        return _and(left[name] == right[name] for name in self.slots)
+        """Return the constraint that two sets of values agree in every slot, flags included.
+
+        A slot that holds the very same expression on both sides needs no
+        constraint, which is what a flag that was handed on unchanged looks like.
+        """
+        return _and(
+            left[name] == right[name]
+            for name in self.slots
+            if not left[name].eq(right[name])
+        )
 
     def vars_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
@@ -509,23 +555,33 @@ class _StepBuilder:
     def flags(
         self, env: Mapping[str, object], keys: Iterable[str]
     ) -> List[Tuple[Tuple[str, ...], z3.BoolRef]]:
-        """Enumerate the values the flags ``keys`` can take on ``env``.
+        """Enumerate the values the before flags ``keys`` can take on ``env``.
 
-        A flag that is already known is not branched on; every other flag
-        takes both values, and each combination comes with the condition that
-        selects it.
+        A flag that is known to be clear is not branched on.  The before actions
+        of the scopes around a leaf run outside-in ahead of its first work, so
+        a scope's flag is only set once the flags of the scopes around it are:
+        an unknown flag is only taken as set where those are set as well, which
+        leaves one combination more than there are unknown flags on a chain of
+        scopes instead of every subset of them.  Each combination comes with
+        the condition that selects it.
         """
         options: List[Tuple[Tuple[str, ...], z3.BoolRef]] = [((), z3.BoolVal(True))]
-        for key in keys:
+        keys = list(keys)
+        for key in sorted(keys, key=lambda item: (item.count("."), item)):
+            around = [
+                other
+                for other in keys
+                if other != key and key[3:].startswith(other[3:] + ".")
+            ]
             flag = z3.simplify(env[key])
-            if z3.is_true(flag):
-                options = [(on + (key,), cond) for on, cond in options]
-            elif z3.is_false(flag):
+            if z3.is_false(flag):
                 continue
-            else:
-                options = [
-                    (on + (key,), z3.And(cond, flag)) for on, cond in options
-                ] + [(on, z3.And(cond, z3.Not(flag))) for on, cond in options]
+            updated = []
+            for on, cond in options:
+                if all(other in on for other in around):
+                    updated.append((on + (key,), z3.And(cond, flag)))
+                updated.append((on, z3.And(cond, z3.Not(flag))))
+            options = updated
         return options
 
     def lower_unit(
@@ -547,8 +603,9 @@ class _StepBuilder:
         the paths that really run in the step want.  A unit whose paths depend
         on which before actions already ran, or on whether the plain
         during-before of the owner is still pending, is lowered once for every
-        combination those flags can take.  ``pending_io`` holds the pending
-        flag a start unit reads and the symbol it writes.
+        combination those flags can take; see :meth:`flags` for which
+        combinations that is.  ``pending_io`` holds the pending flag a start
+        unit reads and the symbol it writes.
         """
         if not self.has_aspects and pending_io is None:
             return self._lower_variant(
@@ -557,10 +614,10 @@ class _StepBuilder:
         merged = _UnitResult(z3.BoolVal(False))
         oks = []
         fallbacks = []
-        keys = ["$b:%s" % path for path in self.before_scopes]
-        before_options = (
-            self.flags(env_in, keys) if self.has_aspects else [((), z3.BoolVal(True))]
-        )
+        # Only the scopes a path of this unit can pass matter to it; the flag
+        # of any other scope is handed on as it is.
+        scopes = self.relevant_before(spec) if self.has_aspects else ()
+        before_options = self.flags(env_in, ["$b:%s" % path for path in scopes])
         if pending_io is None:
             pending_options = [(False, z3.BoolVal(True))]
         else:
@@ -586,6 +643,7 @@ class _StepBuilder:
                     outputs,
                     record,
                     pending_io,
+                    frozenset(scopes),
                 )
                 oks.append(part.ok)
                 fallbacks.append(part.fallback)
@@ -594,6 +652,22 @@ class _StepBuilder:
         merged.ok = _or(oks)
         merged.fallback = _or(fallbacks)
         return merged
+
+    def relevant_before(self, spec: Tuple[str, Optional[str]]) -> Tuple[str, ...]:
+        """Return the scopes whose before flag a path of the unit can read or set.
+
+        These are the scopes around the leaves whose ``during`` chain some path
+        of the unit runs: expanded with no flag set, every such scope ends up
+        marked on the path that passes it.
+        """
+        if spec not in self.units.relevant:
+            touched = set()
+            for case in self.units.get(spec).cases:
+                touched.update(case.before_done)
+            self.units.relevant[spec] = tuple(
+                path for path in self.before_scopes if path in touched
+            )
+        return self.units.relevant[spec]
 
     def _lower_variant(
         self,
@@ -605,8 +679,15 @@ class _StepBuilder:
         outputs: Optional[Tuple[z3.ArithRef, _Env]],
         record: bool,
         pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
+        variant_scopes: FrozenSet[str] = frozenset(),
     ) -> _UnitResult:
-        """Lower the paths of one expansion variant of a unit; see :meth:`lower_unit`."""
+        """Lower the paths of one expansion variant of a unit; see :meth:`lower_unit`.
+
+        ``variant_scopes`` are the scopes whose before flag this variant fixes:
+        such a flag is set after a path that ran or found the scope's before
+        actions and clear after any other path, while the flag of a scope the
+        unit cannot pass keeps the expression it came in with.
+        """
         pre_env = self.pre_env(env_in)
         prepared_cases = []
         for case in unit.cases:
@@ -615,11 +696,16 @@ class _StepBuilder:
             )
             final_env = self.persistent_env(lowering.final_env)
             for path in self.before_scopes:
-                final_env["$b:%s" % path] = z3.BoolVal(path in case.before_done)
+                key = "$b:%s" % path
+                if path in case.before_done:
+                    final_env[key] = z3.BoolVal(True)
+                elif path in variant_scopes:
+                    final_env[key] = z3.BoolVal(False)
+                else:
+                    final_env[key] = env_in[key]
             for path in self.after_scopes:
-                final_env["$o:%s" % path] = z3.Or(
-                    env_in["$o:%s" % path], z3.BoolVal(path in case.owed)
-                )
+                key = "$o:%s" % path
+                final_env[key] = z3.BoolVal(True) if path in case.owed else env_in[key]
             entry = None
             terms: Dict[str, z3.BoolRef] = {}
             case_tag = "%s_%s" % (tag, len(prepared_cases))
@@ -705,6 +791,15 @@ class _StepBuilder:
             else:
                 parts.append(out_pos == entry.out_pos)
             source_env = entry.env_out if entry is not None else final_env
+            if entry is None:
+                for key in self.ledger_keys:
+                    if env_out[key].eq(env_in[key]) and not final_env[key].eq(
+                        env_in[key]
+                    ):  # pragma: no cover - a unit only changes flags it can pass.
+                        raise _internal_bmc_error(
+                            "flag %s is changed by a unit that was taken not to "
+                            "touch it (%s)." % (key, case.label)
+                        )
             parts.append(self.env_equal(env_out, source_env))
             if pending_io is not None:
                 parts.append(pending_io[1] == z3.BoolVal(case.plain_pending_after))
@@ -793,7 +888,7 @@ class _StepBuilder:
                     if not self.has_aspects
                     and pending_io is None
                     and _assigns_nothing(unit)
-                    else self.fresh_env("%s_r%d" % (tag, index))
+                    else self.region_env("%s_r%d" % (tag, index), env, region.path)
                 )
                 others_live = _or(
                     [z3.BoolVal(index < len(regions) - 1)]
@@ -921,7 +1016,7 @@ class _StepBuilder:
                 position_in != z3.IntVal(REGION_INACTIVE_ID),
             )
             q = self.fresh_int("%s_q%d" % (tag, index))
-            env_out = self.fresh_env("%s_e%d" % (tag, index))
+            env_out = self.region_env("%s_e%d" % (tag, index), env, region.path)
             others_live = _or(
                 [
                     after[item.path] != z3.IntVal(REGION_DONE_ID)
@@ -1025,9 +1120,13 @@ class _StepBuilder:
     ) -> _Env:
         """Run the after actions that the scopes under ``prefix`` owe.
 
-        The scopes run innermost first and stop owing. Which scopes owe is
-        read from the flags in ``env_in``; a flag that is not known is branched
-        on.
+        The scopes are settled one at a time, innermost first, in the order a
+        flush runs them: a scope that owes runs its after actions on the values
+        the scope before it left, and a scope that does not owe leaves them
+        alone.  That is two branches per scope, so the settlement grows with
+        the number of scopes and not with the number of their subsets.  The
+        settled flags become ``False`` and every other flag keeps its
+        expression.
 
         The definedness of the actions is a requirement of the step, unless
         ``defs`` is given: a flush that belongs to entering a group only counts
@@ -1035,33 +1134,39 @@ class _StepBuilder:
         ``defs`` and that path carries them.
         """
         keys = ["$o:%s" % path for path in self.after_scopes if _under(path, prefix)]
-        if not keys:
+        if not prefix:
+            # The flags of scopes inside a region were settled when the branch
+            # of that region ended.
+            keys = [key for key in keys if key not in self.region_owed_keys]
+        live = [key for key in keys if not z3.is_false(z3.simplify(env_in[key]))]
+        if not live:
             return env_in
-        options = self.flags(env_in, keys)
-        env_out = self.fresh_env(tag)
-        for on, condition in options:
-            owed = frozenset(key[len("$o:") :] for key in on)
-            antecedent = z3.And(gate, condition)
-            case = self.units.flush(owed).cases[0]
+        env = env_in
+        order = sorted(
+            (key[len("$o:") :] for key in live), key=lambda item: (-len(item), item)
+        )
+        for index, scope in enumerate(order):
+            owes = env_in["$o:%s" % scope]
+            case = self.units.flush(frozenset({scope})).cases[0]
             lowering = _prepare_case_lowering(
-                case, self.pre_env(env_in), self.persistent, None, self.int_names
+                case, self.pre_env(env), self.persistent, None, self.int_names
             )
-            final = self.persistent_env(lowering.final_env)
-            for key in self.ledger_keys:
-                final[key] = env_in[key]
-            for key in keys:
-                final[key] = z3.BoolVal(False)
-            parts = [self.env_equal(env_out, final)]
+            out = self.fresh_env("%s_s%d" % (tag, index), env, frozenset())
+            parts = [self.vars_equal(out, self.persistent_env(lowering.final_env))]
             if defs is None:
                 parts.extend(
                     item.constraint for item in lowering.definedness_constraints
                 )
             else:
-                defs.extend(
-                    (condition, item) for item in lowering.definedness_constraints
-                )
-            self.constraints.append(z3.Implies(antecedent, _and(parts)))
-        return env_out
+                defs.extend((owes, item) for item in lowering.definedness_constraints)
+            self.constraints.append(z3.Implies(z3.And(gate, owes), _and(parts)))
+            self.constraints.append(
+                z3.Implies(z3.And(gate, z3.Not(owes)), self.vars_equal(out, env))
+            )
+            env = out
+        for key in keys:
+            env[key] = z3.BoolVal(False)
+        return env
 
     def next_env(self, tag: str) -> _Env:
         """Return where a source writes the values it leaves behind.
@@ -1071,7 +1176,12 @@ class _StepBuilder:
         values and :meth:`finish_step` carries them into the next frame.
         """
         if self.has_aspects:
-            return self.fresh_env(tag)
+            env = self.fresh_env(tag)
+            # Nothing inside a region still owes an after action when a cycle
+            # ends, so those flags are known here.
+            for key in self.region_owed_keys:
+                env[key] = z3.BoolVal(False)
+            return env
         return dict(self.symbols.frame_vars[self.step + 1])
 
     def finish_step(self, gate: z3.BoolRef, env_mid: _Env) -> None:

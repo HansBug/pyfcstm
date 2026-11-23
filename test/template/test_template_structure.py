@@ -35,6 +35,7 @@ _CONFIG_TOP_LEVEL_KEYS = {
     "filters",
     "tests",
     "ignores",
+    "features",
 }
 _REQUIRED_TEMPLATE_FILES = {
     "c": {

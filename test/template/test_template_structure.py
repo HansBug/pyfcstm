@@ -99,7 +99,7 @@ _RUNTIME_TEMPLATES = {
     "cpp_poll": ("machine.h.j2", "machine.c.j2", "machine.hpp.j2", "machine.cpp.j2"),
     "python": ("machine.py.j2",),
 }
-_ALLOWED_PYTHON_RUNTIME_IMPORTS = {"dataclasses", "math", "types", "typing"}
+_ALLOWED_PYTHON_RUNTIME_IMPORTS = {"dataclasses", "math", "re", "reprlib", "types", "typing"}
 _ALLOWED_C_RUNTIME_INCLUDES = {
     "machine.h",
     "math.h",

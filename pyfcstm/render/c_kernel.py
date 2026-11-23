@@ -205,8 +205,8 @@ def hook_rows(model) -> List[Dict[str, str]]:
     """
     List the abstract actions of a model, one row per generated hook.
 
-    Actions that reach the same abstract definition through ``ref`` share a
-    hook, so the rows are keyed by the resolved action's name.
+    A ``ref`` to an abstract action shares the hook of that action, so the rows
+    are keyed by the abstract action's name.
 
     :param model: State machine to scan.
     :type model: pyfcstm.model.model.StateMachine
@@ -232,18 +232,19 @@ def hook_rows(model) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
     seen = set()
     for _, _, item in iter_action_items(model):
-        resolved = _resolve(item)
-        if not resolved.is_abstract or resolved.func_name in seen:
+        # A ``ref`` item is never abstract itself; the abstract action it names
+        # is visited in its own place, so each hook appears once.
+        if not item.is_abstract or item.func_name in seen:
             continue
-        seen.add(resolved.func_name)
+        seen.add(item.func_name)
         rows.append(
             {
-                "func_name": resolved.func_name,
-                "hook_field": "on_" + to_c_path_identifier(resolved.func_name.split(".")),
-                "owner_path": ".".join(resolved.parent.path),
-                "stage": resolved.stage,
-                "aspect": resolved.aspect,
-                "dsl_fragment": str(resolved.to_ast_node()),
+                "func_name": item.func_name,
+                "hook_field": "on_" + to_c_path_identifier(item.func_name.split(".")),
+                "owner_path": ".".join(item.parent.path),
+                "stage": item.stage,
+                "aspect": item.aspect,
+                "dsl_fragment": str(item.to_ast_node()),
             }
         )
     return rows

@@ -96,7 +96,7 @@ _ALLOWED_EXPECT_FIELDS = {
     "raises",
     "handler_calls",
 }
-_ALLOWED_INITIAL_FIELDS = {"state", "vars", "outputs", "expect"}
+_ALLOWED_INITIAL_FIELDS = {"state", "configuration", "vars", "outputs", "expect"}
 _ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS = {"raises"}
 _ALLOWED_RAISES_FIELDS = {
     "type",
@@ -1022,6 +1022,8 @@ def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     kwargs = {}
     if initial.get("state") is not None:
         kwargs["initial_state"] = initial["state"]
+    if initial.get("configuration") is not None:
+        kwargs["initial_state"] = initial["configuration"]
     if initial.get("vars") is not None or initial.get("outputs") is not None:
         values = dict(initial.get("vars") or {})
         values.update(initial.get("outputs") or {})
@@ -1733,7 +1735,11 @@ def _validate_origin(origin: Any, case_id: str, yaml_path: str) -> None:
 
 
 def _validate_initial(
-    initial: Any, case_id: str, yaml_path: str, runners: Sequence[str]
+    initial: Any,
+    case_id: str,
+    yaml_path: str,
+    runners: Sequence[str],
+    categories: Sequence[str],
 ) -> None:
     if initial is None:
         return
@@ -1746,6 +1752,28 @@ def _validate_initial(
             yaml_path,
             "initial has unknown fields: %r" % sorted(unknown_initial),
         )
+    is_region_case = "regions" in categories
+    if is_region_case and "state" in initial:
+        raise _case_error(
+            case_id,
+            yaml_path,
+            "regions cases name the start position with initial.configuration, "
+            "not initial.state",
+        )
+    if "configuration" in initial:
+        if not is_region_case:
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "initial.configuration is only available to regions cases",
+            )
+        configuration = initial["configuration"]
+        if not isinstance(configuration, str) or not configuration.strip():
+            raise _case_error(
+                case_id,
+                yaml_path,
+                "initial.configuration must be a non-empty string",
+            )
     if initial.get("state") is not None:
         _validate_dot_state_path(
             initial.get("state"), case_id, yaml_path, "initial.state"
@@ -1756,11 +1784,11 @@ def _validate_initial(
         _validate_vars_mapping(initial["outputs"], case_id, yaml_path, "initial.outputs")
     if "expect" not in initial:
         return
-    if "state" not in initial:
+    if "state" not in initial and "configuration" not in initial:
         raise _case_error(
             case_id,
             yaml_path,
-            "initial.expect requires initial.state",
+            "initial.expect requires initial.state or initial.configuration",
         )
     if "vars" not in initial and "outputs" not in initial:
         raise _case_error(
@@ -2011,7 +2039,7 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
         )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
-    _validate_initial(data.get("initial"), case_id, yaml_path, runners)
+    _validate_initial(data.get("initial"), case_id, yaml_path, runners, categories)
     _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)
     has_steps = "steps" in data
     if not has_steps:
@@ -2093,17 +2121,9 @@ def _validate_position_assertions(
     :rtype: None
     :raises SemanticCaseError: If a ``regions`` case uses ``state``, leaves the
         position of a step unasserted, combines a configuration with
-        ``ended: true`` or declares ``initial``, or if another case uses
-        ``configuration``.
+        ``ended: true``, or if another case uses ``configuration``.
     """
     is_region_case = "regions" in data["categories"]
-    if is_region_case and data.get("initial") is not None:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "regions cases cannot declare initial: hot start of a model with "
-            "regions is not supported yet",
-        )
     for index, step in enumerate(data["steps"]):
         expect = step["expect"]
         field_path = "steps[%d].expect" % index

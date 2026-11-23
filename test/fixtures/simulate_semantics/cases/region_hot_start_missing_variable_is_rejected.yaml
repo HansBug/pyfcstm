@@ -1,0 +1,21 @@
+title: Every variable has to be given in a hot start
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}'
+  vars:
+    seq: 0
+  expect:
+    raises:
+      type: ValueError
+      match: initial_vars must provide all variables
+      match_kind: substring
+steps: []

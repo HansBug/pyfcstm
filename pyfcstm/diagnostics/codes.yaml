@@ -42,11 +42,11 @@ E_UNSUPPORTED_FEATURE:
   description: >-
     The selected consumer cannot preserve this language feature and refuses
     the operation rather than producing partial results. Python model building,
-    cold-start simulation with SimulationRuntime, the diagram snapshot and
-    exports, and the JavaScript frontend's model, semantic analysis and diagram
-    preview support regions; hot start, the pyfcstm simulate command, BMC,
-    rendering and inspect/verify analysis consumers still reject a model that
-    has them. Activity queries are never refused: they are lowered into ordinary
+    simulation with SimulationRuntime (cold start and hot start), the
+    pyfcstm simulate command, the diagram snapshot and exports, and the
+    JavaScript frontend's model, semantic analysis and diagram preview support
+    regions; BMC, rendering and inspect/verify analysis consumers still reject
+    a model that has them. Activity queries are never refused: they are lowered into ordinary
     variables.
   refs:
     feature:

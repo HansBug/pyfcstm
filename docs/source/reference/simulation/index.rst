@@ -64,9 +64,9 @@ Batch mode and the interactive REPL use the same command processor.
      - Optional positive integer row count or ``all``.  Default is 10.
      - Prints retained history.  Empty history reports ``No execution history
        available.``.
-   * - ``init <state_path> [var=value...]``
-     - Target state plus numeric variable assignments.
-     - Rebuilds the runtime as a hot start.  Every persistent control/output variable must be provided; inputs belong to each cycle and parameters remain fixed.  Values accept decimal, hexadecimal, binary, float, and
+   * - ``init <position> [var=value...]``
+     - Target state, or for a model with regions a configuration text such as ``Root.Run{A: X, B: [done]}``, plus numeric variable assignments.
+     - Rebuilds the runtime as a hot start.  Every persistent control/output variable must be provided, hidden ones included; inputs belong to each cycle and parameters remain fixed.  A configuration text keeps its spaces inside the braces; what it leaves out waits for initialization in the first cycle.  Values accept decimal, hexadecimal, binary, float, and
        scientific notation.
    * - ``setting [key] [value]``
      - No arguments, one key, or key/value pair.

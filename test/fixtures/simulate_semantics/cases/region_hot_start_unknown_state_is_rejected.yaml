@@ -1,0 +1,22 @@
+title: A hot start at a state the model does not have is refused
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: W.Nowhere
+  vars:
+    seq: 0
+    n: 0
+  expect:
+    raises:
+      type: ValueError
+      match: Nowhere
+      match_kind: substring
+steps: []

@@ -10,6 +10,45 @@ import os
 import sys
 from typing import List, Tuple, Optional
 
+from ...model.configuration import Configuration
+
+
+def format_position(current) -> str:
+    """
+    Write the current position of a runtime the way the commands show it.
+
+    A model without regions rests in one state, shown as its dotted path. A
+    model with regions rests in a tree, shown as its configuration text, which
+    for a model without regions is the same dotted path.
+
+    :param current: What :attr:`pyfcstm.simulate.SimulationRuntime.current_state`
+        returned: a state, or a configuration for a model with regions.
+    :type current: Union[pyfcstm.model.model.State, pyfcstm.model.configuration.Configuration]
+    :return: The position text, for example ``System.Active`` or
+        ``Controller.Running{Safety: Watching, Motion: On}``.
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.entry.simulate.display import format_position
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { [*] -> Run; state Run { region A { [*] -> X; state X; } } }'
+        ... )
+        >>> runtime = SimulationRuntime(model)
+        >>> _ = runtime.cycle()
+        >>> format_position(runtime.current_state)
+        'Root.Run{A: X}'
+        >>> plain = SimulationRuntime(load_state_machine_from_text('state Root { [*] -> A; state A; }'))
+        >>> _ = plain.cycle()
+        >>> format_position(plain.current_state)
+        'Root.A'
+    """
+    if isinstance(current, Configuration):
+        return str(current)
+    return '.'.join(current.path)
+
 
 class StateDisplay:
     """
@@ -21,8 +60,21 @@ class StateDisplay:
 
     :ivar use_color: Whether to use ANSI color codes
     :vartype use_color: bool
+
     :ivar logger: Logger instance for log messages
     :vartype logger: logging.Logger
+
+    Example::
+
+        >>> from pyfcstm.entry.simulate.display import StateDisplay
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> runtime = SimulationRuntime(
+        ...     load_state_machine_from_text('state Root { [*] -> A; state A; }')
+        ... )
+        >>> _ = runtime.cycle()
+        >>> StateDisplay(use_color=False).format_current_state(runtime).splitlines()[:2]
+        ['Cycle: 1', 'Current State: Root.A']
     """
 
     # ANSI color codes - compatible with both light and dark themes
@@ -81,10 +133,27 @@ class StateDisplay:
         """
         Format current state and variable information.
 
+        The position is the dotted path of the state, or the configuration text
+        for a model with regions; ``(terminated)`` once the runtime has ended.
+
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
         :return: Formatted state and variables display
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.entry.simulate.display import StateDisplay
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { [*] -> Run; state Run {'
+            ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+            ... )
+            >>> runtime = SimulationRuntime(model)
+            >>> _ = runtime.cycle()
+            >>> StateDisplay(use_color=False).format_current_state(runtime).splitlines()[:2]
+            ['Cycle: 1', 'Current State: Root.Run{A: X, B: Y}']
         """
         lines = []
 
@@ -96,7 +165,7 @@ class StateDisplay:
         # Current state
         try:
             if runtime.current_state:
-                state_text = '.'.join(runtime.current_state.path)
+                state_text = format_position(runtime.current_state)
                 state_label = self._colorize("Current State:", 'blue')
                 state_value = self._colorize(state_text, 'green')
                 lines.append(f"{state_label} {state_value}")

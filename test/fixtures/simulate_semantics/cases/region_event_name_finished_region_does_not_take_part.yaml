@@ -1,0 +1,23 @@
+title: A region that is done has no active leaf, so a name is resolved from the leaves that remain and
+  Ping is no longer ambiguous
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'Controller.Running{Safety: [done], Motion: Off}'
+  vars:
+    trail: 0
+steps:
+- cycle:
+  - Ping
+  expect:
+    configuration: 'Controller.Running{Safety: [done], Motion: Off}'
+    vars:
+      trail: 2

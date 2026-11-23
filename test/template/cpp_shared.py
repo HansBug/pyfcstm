@@ -38,7 +38,10 @@ from jinja2 import Environment, StrictUndefined
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
-from test.testings.native_toolchain_alignment.harness import build_harness_context
+from test.testings.native_toolchain_alignment.harness import (
+    INVALID_START_ERROR_PREFIX,
+    build_harness_context,
+)
 from test.testings.native_toolchain_alignment.report import read_observations_jsonl
 from test.testings.native_toolchain_alignment.runner import (
     assert_observations_match_case,
@@ -91,7 +94,8 @@ struct HandlerCall {
     int call_stage_id;
     int abstract_target_id;
     int named_ref_id;
-{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
+{% if context.has_regions %}    char configuration[1024];
+{% endif %}{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
     double {{ variable.field }}_is_float;
 {% endfor %}};
 
@@ -205,7 +209,9 @@ static void write_handler_calls(FILE *out)
         json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->abstract_target_id));
         fputs(",\"named_ref\":", out);
         json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->named_ref_id));
-        fputc('}', out);
+{% if context.has_regions %}        fputs(",\"configuration\":", out);
+        json_string(out, call->configuration);
+{% endif %}        fputc('}', out);
     }
     fputc(']', out);
 }
@@ -227,7 +233,15 @@ static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionC
     call->call_stage_id = ctx->call_stage_id;
     call->abstract_target_id = ctx->abstract_target_id;
     call->named_ref_id = ctx->named_ref_id;
-{% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
+{% if context.has_regions %}    call->configuration[0] = '\0';
+    {
+        Wrapper *owner = static_cast<Wrapper *>(user_data);
+        Wrapper::Configuration configuration;
+        if (owner->get_configuration(&configuration)) {
+            Wrapper::format_configuration(configuration, call->configuration, sizeof(call->configuration));
+        }
+    }
+{% endif %}{% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
 {% else %}    call->{{ variable.field }}_is_float = ctx->vars->{{ variable.field }};
 {% endif %}{% endfor %}}
 }
@@ -235,7 +249,7 @@ static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionC
 static void install_hooks(Wrapper *wrapper)
 {
 {% for hook in context.hooks %}    hooks.{{ hook.field }} = record_hook;
-{% endfor %}    wrapper->set_hooks(&hooks, NULL);
+{% endfor %}    wrapper->set_hooks(&hooks, wrapper);
 }
 
 static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count, const Wrapper::Inputs *inputs)
@@ -246,8 +260,15 @@ static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t ev
 static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
 {
     size_t i;
-    const char *state_path = wrapper->current_state_path();
-    const Wrapper::Vars *vars = wrapper->vars();
+{% if context.has_regions %}    char state_path_buffer[2048];
+    const char *state_path = NULL;
+    Wrapper::Configuration configuration;
+    if (!wrapper->is_ended() && wrapper->get_configuration(&configuration)) {
+        Wrapper::format_configuration(configuration, state_path_buffer, sizeof(state_path_buffer));
+        state_path = state_path_buffer;
+    }
+{% else %}    const char *state_path = wrapper->current_state_path();
+{% endif %}    const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
     fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
@@ -335,8 +356,23 @@ int main(int argc, char **argv)
         Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
-{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
-{% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
+{% endfor %}{% if context.initial.configuration is not none %}        Wrapper::Configuration start_configuration;
+        Wrapper::ConfigurationError start_error;
+        if (!Wrapper::parse_configuration({{ context.initial.configuration | tojson }}, &start_configuration, &start_error)) {
+{% if context.initial_expect %}            {
+                char start_message[256];
+                strcpy(start_message, {{ invalid_start_prefix | tojson }});
+                strncat(start_message, start_error.message, sizeof(start_message) - strlen(start_message) - 1u);
+                write_initial_error(out, start_message);
+            }
+            fclose(out);
+            return 0;
+{% else %}            fclose(out);
+            return 6;
+{% endif %}        }
+        if (!wrapper.hot_start_at(start_configuration, initial_vars, options.parameters)) {
+{% else %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
+{% endif %}{% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
             fclose(out);
             return 0;
 {% else %}            fclose(out);
@@ -423,7 +459,8 @@ struct HandlerCall {
     int call_stage_id;
     int abstract_target_id;
     int named_ref_id;
-{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
+{% if context.has_regions %}    char configuration[1024];
+{% endif %}{% for variable in context.variables %}    Wrapper::Int {{ variable.field }}_is_int;
     double {{ variable.field }}_is_float;
 {% endfor %}};
 
@@ -537,7 +574,9 @@ static void write_handler_calls(FILE *out)
         json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->abstract_target_id));
         fputs(",\"named_ref\":", out);
         json_string(out, lookup_string(action_paths, {{ context.actions | length }}u, call->named_ref_id));
-        fputc('}', out);
+{% if context.has_regions %}        fputs(",\"configuration\":", out);
+        json_string(out, call->configuration);
+{% endif %}        fputc('}', out);
     }
     fputc(']', out);
 }
@@ -559,7 +598,15 @@ static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionC
     call->call_stage_id = ctx->call_stage_id;
     call->abstract_target_id = ctx->abstract_target_id;
     call->named_ref_id = ctx->named_ref_id;
-{% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
+{% if context.has_regions %}    call->configuration[0] = '\0';
+    {
+        Wrapper *owner = static_cast<Wrapper *>(user_data);
+        Wrapper::Configuration configuration;
+        if (owner->get_configuration(&configuration)) {
+            Wrapper::format_configuration(configuration, call->configuration, sizeof(call->configuration));
+        }
+    }
+{% endif %}{% for variable in context.variables %}{% if variable.type == 'int' %}    call->{{ variable.field }}_is_int = ctx->vars->{{ variable.field }};
 {% else %}    call->{{ variable.field }}_is_float = ctx->vars->{{ variable.field }};
 {% endif %}{% endfor %}}
 }
@@ -567,7 +614,7 @@ static void record_hook(Wrapper::Machine *machine_ptr, const Wrapper::ExecutionC
 static void install_hooks(Wrapper *wrapper)
 {
 {% for hook in context.hooks %}    hooks.{{ hook.field }} = record_hook;
-{% endfor %}    wrapper->set_hooks(&hooks, NULL);
+{% endfor %}    wrapper->set_hooks(&hooks, wrapper);
 }
 
 extern "C" {
@@ -607,8 +654,15 @@ static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t ev
 static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
 {
     size_t i;
-    const char *state_path = wrapper->current_state_path();
-    const Wrapper::Vars *vars = wrapper->vars();
+{% if context.has_regions %}    char state_path_buffer[2048];
+    const char *state_path = NULL;
+    Wrapper::Configuration configuration;
+    if (!wrapper->is_ended() && wrapper->get_configuration(&configuration)) {
+        Wrapper::format_configuration(configuration, state_path_buffer, sizeof(state_path_buffer));
+        state_path = state_path_buffer;
+    }
+{% else %}    const char *state_path = wrapper->current_state_path();
+{% endif %}    const Wrapper::Vars *vars = wrapper->vars();
     fputc('{', out);
     fputs("\"case_id\":", out);
     json_string(out, {{ context.case_id | tojson }});
@@ -697,8 +751,23 @@ int main(int argc, char **argv)
         Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
-{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
-{% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
+{% endfor %}{% if context.initial.configuration is not none %}        Wrapper::Configuration start_configuration;
+        Wrapper::ConfigurationError start_error;
+        if (!Wrapper::parse_configuration({{ context.initial.configuration | tojson }}, &start_configuration, &start_error)) {
+{% if context.initial_expect %}            {
+                char start_message[256];
+                strcpy(start_message, {{ invalid_start_prefix | tojson }});
+                strncat(start_message, start_error.message, sizeof(start_message) - strlen(start_message) - 1u);
+                write_initial_error(out, start_message);
+            }
+            fclose(out);
+            return 0;
+{% else %}            fclose(out);
+            return 6;
+{% endif %}        }
+        if (!wrapper.hot_start_at(start_configuration, initial_vars, options.parameters)) {
+{% else %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
+{% endif %}{% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
             fclose(out);
             return 0;
 {% else %}            fclose(out);
@@ -963,7 +1032,9 @@ def _render_harness(template_name: str, case: SemanticCase, harness_path: str) -
     base_context = build_harness_context(context_template_name, case)
     context = replace(base_context, template_name=template_name)
     template_text = _TEMPLATE_TEXT_MAP[template_name]
-    rendered = _environment().from_string(template_text).render(context=context)
+    rendered = _environment().from_string(template_text).render(
+        context=context, invalid_start_prefix=INVALID_START_ERROR_PREFIX
+    )
     _assert_wrapper_only_harness(rendered)
     os.makedirs(os.path.dirname(harness_path), exist_ok=True)
     with open(harness_path, "w", encoding="utf-8") as f:

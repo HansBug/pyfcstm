@@ -29,7 +29,7 @@ import math
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -100,6 +100,9 @@ class HarnessContext:
     :param wrapper_namespace_suffix: Generated C++ wrapper namespace suffix,
         if the harness uses a C++ wrapper.
     :type wrapper_namespace_suffix: str, optional
+    :param has_regions: Whether the model declares regions, so positions are
+        configuration texts instead of single state paths.
+    :type has_regions: bool, optional
 
     Example::
 
@@ -125,6 +128,7 @@ class HarnessContext:
     machine_source_names: Sequence[str] = ("machine.c",)
     wrapper_namespace_suffix: Optional[str] = None
     configuration: Mapping[str, Any] = field(default_factory=dict)
+    has_regions: bool = False
 
     @property
     def uses_cpp_wrapper(self) -> bool:
@@ -141,6 +145,13 @@ class HarnessContext:
         """
         return self.wrapper_namespace_suffix is not None
 
+
+# Marks a refusal that comes from resolving an event name, which the generated
+# runtime does not do: it only numbers events.
+EVENT_RESOLUTION_ERROR_PREFIX = "event name resolution: "
+# Marks a refusal of the start position or the variable snapshot of a hot start,
+# which the harness reports as a value error the way the simulator does.
+INVALID_START_ERROR_PREFIX = "invalid start: "
 
 _CONTEXT_TEMPLATE_NAMES = {
     "c": "c",
@@ -184,10 +195,13 @@ def _state_rows(model) -> List[Dict[str, Any]]:
 
 
 def _event_rows(model) -> List[Dict[str, Any]]:
+    from pyfcstm.model.region import walk_namespaces
+
     rows = []
     seen = set()
-    for state in model.walk_states():
-        for event in state.events.values():
+    # Events declared on a region count as well as those of a state.
+    for scope in walk_namespaces(model.root_state):
+        for event in scope.events.values():
             if event.path_name in seen:
                 continue
             seen.add(event.path_name)
@@ -204,63 +218,44 @@ def _event_rows(model) -> List[Dict[str, Any]]:
 
 
 def _action_rows(model) -> List[Dict[str, Any]]:
+    from pyfcstm.render.c_kernel import iter_action_items
+
     rows = []
     seen = set()
-    for state in model.walk_states():
-        groups = [
-            state.list_on_enters(with_ids=True),
-            state.list_on_durings(aspect=None, with_ids=True),
-            state.list_on_exits(with_ids=True),
-            state.list_on_durings(aspect="before", with_ids=True),
-            state.list_on_durings(aspect="after", with_ids=True),
-            state.list_on_during_aspects(aspect="before", with_ids=True),
-            state.list_on_during_aspects(aspect="after", with_ids=True),
-        ]
-        for group in groups:
-            for _, item in group:
-                if item.func_name in seen:
-                    continue
-                seen.add(item.func_name)
-                rows.append(
-                    {
-                        "path": item.func_name,
-                        "macro": "ACTION_%s"
-                        % to_c_path_identifier(item.func_name.split(".")),
-                    }
-                )
+    # Actions of a region (its aspect actions) count as well as those of a state.
+    for _, _, item in iter_action_items(model):
+        if item.func_name in seen:
+            continue
+        seen.add(item.func_name)
+        rows.append(
+            {
+                "path": item.func_name,
+                "macro": "ACTION_%s" % to_c_path_identifier(item.func_name.split(".")),
+            }
+        )
     return rows
 
 
 def _hook_rows(model) -> List[Dict[str, Any]]:
+    from pyfcstm.render.c_kernel import iter_action_items
+
     rows = []
     seen = set()
-    for state in model.walk_states():
-        groups = [
-            state.list_on_enters(with_ids=True),
-            state.list_on_durings(aspect=None, with_ids=True),
-            state.list_on_exits(with_ids=True),
-            state.list_on_durings(aspect="before", with_ids=True),
-            state.list_on_durings(aspect="after", with_ids=True),
-            state.list_on_during_aspects(aspect="before", with_ids=True),
-            state.list_on_during_aspects(aspect="after", with_ids=True),
-        ]
-        for group in groups:
-            for _, item in group:
-                resolved = item
-                seen_refs = set()
-                while resolved.ref is not None and id(resolved) not in seen_refs:
-                    seen_refs.add(id(resolved))
-                    resolved = resolved.ref
-                if not resolved.is_abstract or resolved.func_name in seen:
-                    continue
-                seen.add(resolved.func_name)
-                rows.append(
-                    {
-                        "action": resolved.func_name,
-                        "field": "on_%s"
-                        % to_c_path_identifier(resolved.func_name.split(".")),
-                    }
-                )
+    for _, _, item in iter_action_items(model):
+        resolved = item
+        seen_refs = set()
+        while resolved.ref is not None and id(resolved) not in seen_refs:
+            seen_refs.add(id(resolved))
+            resolved = resolved.ref
+        if not resolved.is_abstract or resolved.func_name in seen:
+            continue
+        seen.add(resolved.func_name)
+        rows.append(
+            {
+                "action": resolved.func_name,
+                "field": "on_%s" % to_c_path_identifier(resolved.func_name.split(".")),
+            }
+        )
     return rows
 
 
@@ -306,17 +301,79 @@ def _normalize_current_path_for_event(
     return current_state + "." + event_ref if current_state else event_ref
 
 
+def _resolve_event_in_configuration(
+    model, configuration_text: Optional[str], event_ref: str
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Resolve an event name of a model with regions the way the simulator does.
+
+    The generated runtime numbers events but does not resolve names, so the
+    harness does it from the position the previous step left behind: a name that
+    depends on the position is resolved once for every active leaf of that
+    configuration, any other name is tried as a full path first.
+
+    :param model: Parsed state machine with regions.
+    :type model: pyfcstm.model.StateMachine
+    :param configuration_text: Configuration text the machine is in before the
+        step, or ``None`` when it is not known.
+    :type configuration_text: typing.Optional[str]
+    :param event_ref: Event name as written in the fixture.
+    :type event_ref: str
+    :return: Full event path and ``None``, or ``None`` and the reason the name
+        resolves to no event or to several.
+    :rtype: typing.Tuple[typing.Optional[str], typing.Optional[str]]
+    """
+    from pyfcstm.model.configuration import Configuration
+    from pyfcstm.model.model import ModelLookupError, ModelValueError
+    from pyfcstm.simulate.utils import is_state_resolve_event_path
+
+    configuration = (
+        None
+        if configuration_text is None
+        else Configuration.parse(model, configuration_text, mode="transient")
+    )
+    try:
+        if is_state_resolve_event_path(event_ref):
+            if configuration is None:
+                return None, "Unknown event path: %r" % event_ref
+            return configuration.resolve_event(event_ref).path_name, None
+        try:
+            return model.resolve_event(event_ref).path_name, None
+        except (ModelValueError, ModelLookupError):
+            if configuration is None:
+                return None, "Unknown event path: %r" % event_ref
+            return configuration.resolve_event(event_ref).path_name, None
+    except (ModelValueError, ModelLookupError) as err:
+        # The name resolves to no event, or to several from the active leaves.
+        return None, str(err)
+
+
 def _event_macros_for_steps(
     steps: Sequence[Mapping[str, Any]],
     case: SemanticCase,
     event_macros: Mapping[str, str],
     root_path: str,
+    model=None,
+    initial_configuration: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     current_state = None
+    configuration_text = initial_configuration
     result = []
     for index, step in enumerate(steps):
         events = []
         for event_ref in _cycle_inputs(step, case, index):
+            if model is not None and model.has_regions:
+                resolved, reason = _resolve_event_in_configuration(
+                    model, configuration_text, event_ref
+                )
+                events.append(
+                    {
+                        "path": event_ref if resolved is None else resolved,
+                        "macro": event_macros.get(resolved),
+                        "error": reason,
+                    }
+                )
+                continue
             resolved = event_ref
             if resolved not in event_macros:
                 resolved = _normalize_current_path_for_event(
@@ -327,6 +384,10 @@ def _event_macros_for_steps(
         expect = step.get("expect") or {}
         if "state" in expect:
             current_state = expect["state"]
+        if "configuration" in expect:
+            configuration_text = expect["configuration"]
+        elif expect.get("ended"):
+            configuration_text = None
     return result
 
 
@@ -335,25 +396,39 @@ def _initial_context(
     state_macros: Mapping[str, str],
     variables: Sequence[Mapping[str, Any]],
     initial_expect: Optional[Mapping[str, Any]],
+    has_regions: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    def synthetic_error() -> Dict[str, Any]:
+    def synthetic_error(reason: Optional[str] = None) -> Dict[str, Any]:
         raises = (initial_expect or {}).get("raises") or {}
+        message = str(raises.get("match", "Invalid initial variable value"))
+        if has_regions:
+            message = INVALID_START_ERROR_PREFIX + (reason or message)
         return {
             "state_macro": state_macros.get(state_path),
             "state_path": state_path,
+            "configuration": None,
             "assignments": [],
             "synthetic_error": True,
-            "error_message": str(raises.get("match", "Invalid initial variable value")),
+            "error_message": message,
         }
 
     if not initial:
         return None
     state_path = initial.get("state")
     vars_data = {**(initial.get("vars") or {}), **(initial.get("outputs") or {})}
-    if state_path is None:
+    configuration_text = initial.get("configuration")
+    if configuration_text is not None and "{" not in configuration_text:
+        # A text without a region block names one state, which is started
+        # through its id; only a tree needs the configuration parser.
+        state_path, configuration_text = configuration_text, None
+    if state_path is None and configuration_text is None:
         return None
-    if state_macros.get(state_path) is None:
-        return synthetic_error()
+    if has_regions and {item["name"] for item in variables} != set(vars_data):
+        return synthetic_error(
+            "initial_vars must provide all variables exactly once."
+        )
+    if configuration_text is None and state_macros.get(state_path) is None:
+        return synthetic_error("Unknown state path: %r" % state_path)
     assignments = []
     for variable in variables:
         value = (vars_data or {}).get(variable["name"], 0)
@@ -369,6 +444,7 @@ def _initial_context(
     return {
         "state_macro": state_macros.get(state_path),
         "state_path": state_path,
+        "configuration": configuration_text,
         "assignments": assignments,
         "synthetic_error": False,
     }
@@ -404,6 +480,12 @@ def _step_contexts(
             else:
                 raises = expect.get("raises") or {}
                 pre_error_message = str(raises.get("match", "Unknown event path"))
+                reasons = [item["error"] for item in events if item.get("error")]
+                if reasons:
+                    # A name of a model with regions that resolves to no event
+                    # or to several is refused by the adapter that resolves
+                    # names, with the simulator's own reason.
+                    pre_error_message = EVENT_RESOLUTION_ERROR_PREFIX + reasons[0]
         steps.append(
             {
                 "inputs": [
@@ -454,7 +536,12 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
     event_macros = _macro_lookup(events, "macro")
     root_path = ".".join(model.root_state.path)
     event_steps = _event_macros_for_steps(
-        case.data.get("steps") or [], case, event_macros, root_path
+        case.data.get("steps") or [],
+        case,
+        event_macros,
+        root_path,
+        model=model,
+        initial_configuration=(case.data.get("initial") or {}).get("configuration"),
     )
     initial_expect = simulate_semantics._initial_constructor_expect(case)
     initial = case.data.get("initial") or {}
@@ -470,7 +557,10 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
                 {"field": readonly_value_identifier(name), "value": repr(value).lower()}
                 for name, value in (case.data.get("parameters") or {}).items()
             ],
-            "vars": [] if initial.get("state") is not None else [
+            "vars": [] if (
+                initial.get("state") is not None
+                or initial.get("configuration") is not None
+            ) else [
                 {"field": to_c_identifier(name), "value": repr(value).lower()}
                 for name, value in {
                     **((case.data.get("initial") or {}).get("vars") or {}),
@@ -485,12 +575,17 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
         hooks=hooks,
         steps=_step_contexts(case, state_macros, event_steps),
         initial=_initial_context(
-            case.data.get("initial") or {}, state_macros, variables, initial_expect
+            case.data.get("initial") or {},
+            state_macros,
+            variables,
+            initial_expect,
+            has_regions=model.has_regions,
         ),
         initial_expect=initial_expect,
         harness_source_name=_HARNESS_SOURCE_NAMES[template_name],
         machine_source_names=_MACHINE_SOURCE_NAMES[template_name],
         wrapper_namespace_suffix=_WRAPPER_NAMESPACE_SUFFIX.get(template_name),
+        has_regions=model.has_regions,
     )
 
 

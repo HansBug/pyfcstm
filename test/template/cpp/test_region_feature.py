@@ -4,24 +4,35 @@ import pytest
 from hbutils.testing import simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
+from test.testings.native_semantic_alignment import iter_native_semantic_cases
+from test.testings.simulate_semantics import iter_semantic_cases
 
 pytestmark = pytest.mark.unittest
 
 REGION_SOURCE = 'state Root { region Worker { state Idle; [*] -> Idle; } }'
 
 
-def test_generate_refuses_a_region_model_until_the_template_declares_it(tmp_path):
+def test_generate_writes_a_runtime_for_a_region_model(tmp_path):
     source = tmp_path / 'regions.fcstm'
     source.write_text(REGION_SOURCE, encoding='utf-8')
     output = tmp_path / 'generated'
-    output.mkdir()
-    (output / 'keep.txt').write_text('existing output', encoding='utf-8')
     result = simulate_entry(
         pyfcstmcli,
         ['pyfcstm', 'generate', '-i', str(source), '--template', 'cpp', '-o', str(output)],
     )
     text = result.stdout + result.stderr
-    assert result.exitcode != 0
-    assert "generate with built-in template 'cpp' does not support region models yet." in text
+    assert result.exitcode == 0, text
     assert 'Traceback' not in text
-    assert [item.name for item in output.iterdir()] == ['keep.txt']
+    assert {'machine.c', 'machine.h', 'machine.cpp', 'machine.hpp'} <= {item.name for item in output.iterdir()}
+    header = (output / 'machine.hpp').read_text(encoding='utf-8')
+    # A model with regions has no single current state, so no query for one.
+    assert 'current_state_id' not in header
+    assert 'hot_start_at' in header
+    assert 'format_configuration' in header
+
+
+def test_the_whole_region_corpus_runs_on_the_cpp_template():
+    selected = {case.id for case in iter_native_semantic_cases('cpp')}
+    regions = {case.id for case in iter_semantic_cases(categories=['regions'])}
+    assert regions
+    assert regions <= selected

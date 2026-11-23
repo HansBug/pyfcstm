@@ -107,6 +107,16 @@ def test_hot_start_puts_what_is_written_in_place_and_initializes_the_rest(
         assert machine.vars == {"n": n}
 
 
+def test_a_region_that_waits_for_initialization_is_pending_until_the_first_cycle():
+    with _render_python_module(OWNER_MODEL) as module:
+        machine = module.RootMachine(initial_state="Root.Run{B: Y}", initial_vars={"n": 5})
+        assert machine.region_status("Root.Run.A") == "pending"
+        assert machine.region_status("Root.Run.B") == "live"
+        assert machine.leaves == (("Root", "Run", "B", "Y"),)
+        machine.cycle()
+        assert machine.region_status("Root.Run.A") == "live"
+
+
 def test_hot_start_refuses_an_owner_whose_regions_are_all_done():
     with _render_python_module(OWNER_MODEL) as module:
         with pytest.raises(ValueError, match="All regions are Done at 'Root.Run'"):

@@ -673,7 +673,7 @@ static int @P@check_candidate(@T@Priv *m, const @T@Ctx *c, int stack, int tid, i
 {
     const @T@Transition *t = &@P@transitions[tid];
     int ok = 1, r;
-    if (t->event >= 0 && !@P@event_active(m, t->event)) {
+    if (t->event >= 0 && !@P@event_active(m, c, t->event)) {
         return @MM@_K_B_FALSE;
     }
     if (t->guard != NULL && t->guard(@P@pub(m), &c->vars, &ok) != @MM@_SUCCESS) {

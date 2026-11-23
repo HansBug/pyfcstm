@@ -8,7 +8,7 @@ import pytest
 
 from test.template.readme_examples import example_code
 
-from ._utils import render_c_artifacts, render_c_runtime
+from ._utils import SimulationRuntimeDfsError, render_c_artifacts, render_c_runtime
 
 
 _CLANG_FORMAT_STYLE = "{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}"
@@ -634,7 +634,7 @@ class TestCBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
-    def test_generated_machine_classifies_unchanged_self_loop_as_delta(self):
+    def test_generated_machine_reports_a_pseudo_state_self_loop_as_a_loop(self):
         dsl_code = """
         state Root {
             state A;
@@ -658,7 +658,7 @@ class TestCBuiltinTemplate:
                 runtime.cycle()
             assert runtime.current_state_path == ('Root', 'P')
 
-    def test_generated_machine_detects_two_state_cycle_without_actions(self):
+    def test_generated_machine_reports_a_two_state_pseudo_cycle_as_a_loop(self):
         dsl_code = """
         state Root {
             pseudo state A;

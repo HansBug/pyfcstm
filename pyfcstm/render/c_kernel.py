@@ -1219,7 +1219,7 @@ def render_c_kernel_code(model, machine_class_name: str, machine_macro_name: str
     The block expects what a template defines before it: the public header, the
     private structure from :func:`render_c_kernel_types`, ``_<Class>GuardFn`` and
     ``_<Class>ActionFn``, ``_<Class>_set_error(machine, fmt, ...)`` and
-    ``_<Class>_event_active(priv, event_id)``.
+    ``_<Class>_event_active(priv, context, event_id)``.
 
     :param model: State machine the runtime is generated for.
     :type model: pyfcstm.model.model.StateMachine

@@ -341,8 +341,9 @@ static int _{{ M }}_normalize_events(
 }
 
 /* Whether the transition event `event_id` is among the events of this cycle. */
-static int _{{ M }}_event_active(_{{ M }}Priv *p, int event_id)
+static int _{{ M }}_event_active(_{{ M }}Priv *p, const _{{ M }}Ctx *context, int event_id)
 {
+    (void)context;
     return _{{ M }}_event_set_has(&p->events, event_id);
 }
 

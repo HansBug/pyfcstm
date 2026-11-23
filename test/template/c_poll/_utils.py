@@ -374,7 +374,8 @@ class _EventContextView:
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
         self.event_path = runtime._event_path_from_id(ctx_struct.event_id) or ''
-        self.current_state_path = runtime._state_path_from_id(ctx_struct.current_state_id) or ''
+        state_id = getattr(ctx_struct, 'current_state_id', None)
+        self.current_state_path = runtime._state_path_from_id(state_id) or '' if state_id is not None else ''
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -489,12 +490,15 @@ class _CPollRuntime(NativeRoleSupport):
                 ('named_ref_id', ctypes.c_int),
             ]
 
+        # A model with regions has no single current state, so its event
+        # context carries no state id.
+        event_context_fields = [('event_id', ctypes.c_int)]
+        if not model.has_regions:
+            event_context_fields.append(('current_state_id', ctypes.c_int))
+        event_context_fields.append(('vars', ctypes.c_void_p))
+
         class _EventContextStruct(ctypes.Structure):
-            _fields_ = [
-                ('event_id', ctypes.c_int),
-                ('current_state_id', ctypes.c_int),
-                ('vars', ctypes.c_void_p),
-            ]
+            _fields_ = event_context_fields
 
         self._context_struct = _ContextStruct
         self._event_context_struct = _EventContextStruct

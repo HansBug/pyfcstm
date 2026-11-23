@@ -217,7 +217,7 @@ The generated runtime accepts:
 
 If an event cannot be resolved, the runtime raises `LookupError` or `ValueError`.{% if model.has_regions %}
 
-This model declares regions, so several leaves can be active at once. A name that depends on the position, such as `Go` or `..Reset`, is resolved once for every active leaf: it is an error (`SimulationRuntimeEventError`) if no active leaf finds an event, the event is used if every leaf that finds one finds the same event, and the name is ambiguous, with every candidate listed, if they find different events. A full path and a `/`-rooted path mean the same wherever the machine rests, so use one of them when a short name is ambiguous. A region that is still `[init]` has no active leaf and does not take part in the first cycle after a hot start.{% endif %}
+This model declares regions, so several leaves can be active at once. A name that depends on the position, such as `Go` or `..Reset`, is resolved once for every active leaf: it is an error (`SimulationRuntimeEventError`) if no active leaf finds an event, the event is used if every leaf that finds one finds the same event, and the name is ambiguous, with every candidate listed, if they find different events. A full path and a `/`-rooted path mean the same wherever the machine rests, so use one of them when a short name is ambiguous. A region that is still `[init]` has no active leaf and does not take part until its initial transition has run.{% endif %}
 
 `cycle(...)` executes the requested step for its side effects and returns `None`. Observe the runtime through {% if model.has_regions %}`configuration`{% else %}`current_state_path`, `current_state_name`{% endif %}, `vars`, and `is_ended`. Use `list` or `tuple` inputs when event input order must be reproducible; `set` inputs follow the iteration order provided by Python.
 
@@ -234,7 +234,7 @@ This model declares regions. A state that owns regions (an owner) runs all of th
 | --- | --- |
 | `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}` | The owner `{{ owner_ns.owner.path | join('.') }}` rests with every region on the named state |
 | `[done]` in place of a state | The region has finished and stays done until its owner is entered again |
-| `[init]` in place of a state | The region waits for initialization; it only appears after a hot start and before the first cycle |
+| `[init]` in place of a state | The region waits for initialization; it appears after a hot start that leaves the region out, and stays until the initial transition of the region has run |
 
 <!-- example:regions -->
 

@@ -217,7 +217,7 @@ machine.cycle(inputs={{ example_values(model.inputs.values()) }})
 
 如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。{% if model.has_regions %}
 
-这个模型声明了 region，所以可能同时有多个叶状态处于活动。依赖当前位置的名称（例如 `Go` 或 `..Reset`）会对每个活动叶状态各解析一次：没有任何活动叶状态找到事件时报错（`SimulationRuntimeEventError`），找到的都是同一个事件时使用该事件，找到不同事件时视为有歧义并列出每个候选。完整路径与以 `/` 开头的路径无论状态机停在哪里含义都相同，短名称有歧义时请改用它们。热启动后仍为 `[init]` 的 region 还没有活动叶状态，不参与第一个周期的解析。{% endif %}
+这个模型声明了 region，所以可能同时有多个叶状态处于活动。依赖当前位置的名称（例如 `Go` 或 `..Reset`）会对每个活动叶状态各解析一次：没有任何活动叶状态找到事件时报错（`SimulationRuntimeEventError`），找到的都是同一个事件时使用该事件，找到不同事件时视为有歧义并列出每个候选。完整路径与以 `/` 开头的路径无论状态机停在哪里含义都相同，短名称有歧义时请改用它们。热启动后仍为 `[init]` 的 region 还没有活动叶状态，在它的初始转换执行之前不参与解析。{% endif %}
 
 `cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过 {% if model.has_regions %}`configuration`{% else %}`current_state_path`、`current_state_name`{% endif %}、`vars` 和 `is_ended` 观察运行时。如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循 Python 当次提供的迭代顺序。
 
@@ -234,7 +234,7 @@ machine.cycle(inputs={{ example_values(model.inputs.values()) }})
 | --- | --- |
 | `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}` | owner `{{ owner_ns.owner.path | join('.') }}` 的每个 region 都停在所写的状态上 |
 | 状态位置写 `[done]` | 该 region 已完成，在 owner 再次进入之前一直保持完成 |
-| 状态位置写 `[init]` | 该 region 等待初始化；只在热启动之后、第一个周期之前出现 |
+| 状态位置写 `[init]` | 该 region 等待初始化；热启动没有写出该 region 时出现，一直保持到该 region 的初始转换执行为止 |
 
 <!-- example:regions -->
 

@@ -67,7 +67,11 @@ def _runtime_exception_from_message(message):
     if (
         'structural stack-depth safety limit' in message
         or 'step safety limit' in message
+        or 'structural safety limit' in message
+        or 'suspected loop' in message
     ):
+        # The simulator's search failures: a closed loop, or a safety limit on
+        # the speculative steps, the stack depth or the nesting of group entries.
         return SimulationRuntimeDfsError(message), None
     if 'operation block writeback' in message:
         # A failed writeback is a runtime error of the cycle, reported without
@@ -369,6 +373,12 @@ class _ExecutionContextView:
     def get_full_state_path(self):
         return self.state_path
 
+    @property
+    def configuration(self):
+        # Read through the generated runtime while the hook runs: it reports the
+        # position of the cycle being executed, not the committed one.
+        return self._runtime.configuration
+
 
 class _CRuntime(NativeRoleSupport):
     def __init__(self, lib, model, temporary_directories=None, dll_directory_handle=None, initialize=True):
@@ -596,6 +606,11 @@ class _CRuntime(NativeRoleSupport):
         if set(initial_vars.keys()) != set(self._var_names):
             raise ValueError('initial_vars must provide all variables exactly once.')
         values = self._create_initial_vars(initial_vars)
+        if self._model.has_regions and isinstance(initial_state, str):
+            # The position of a model with regions is a tree, written as
+            # configuration text and parsed by the generated runtime itself.
+            self.hot_start_at(initial_state, values, parameters)
+            return
         state_id = self._resolve_state_id(initial_state)
         self._hot_start_with_parameters(state_id, values, parameters)
 

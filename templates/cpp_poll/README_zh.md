@@ -24,6 +24,7 @@
 | 角色接口或生命周期行为 | 运行时源码、生成指南/API 表、角色测试和语义对齐 |
 | 表达式/getter 生成 | `../../pyfcstm/render/c_runtime.py`、`config.yaml` 显式导入、C 与轮询内核及两套 C++ 封装 |
 | input/param 标识符 | `readonly_value_identifier`；同步声明、getter、输入提供器、README 示例和 ABI 测试 |
+| 执行内核、配置类型或容量宏 | `../../pyfcstm/render/c_kernel.py`、`c_kernel_engine.py`、`c_configuration.py`，两个 C 模板的 `machine.h.j2` / `machine.c.j2`，两套封装，生成指南，`test/render/test_c_kernel.py`、`test/render/test_c_configuration.py` 以及区域和对齐测试 |
 | 共享 C 内核 | 修改 `../c_poll/machine.c.j2` / `machine.h.j2`，本目录通过符号链接复用；同时运行内核和封装测试 |
 
 ## 运行时契约
@@ -47,6 +48,15 @@
 
 封装保持 C++98 兼容，不依赖异常、RTTI 或 STL 容器。它只转发公开 C 函数，不实现第二套执行引擎，也不读取私有字段。语义对齐必须通过 `machine.hpp`、`Wrapper::` 别名和封装方法进入。打包时将 C 内核符号链接解析为普通文件，解压后不依赖相邻模板目录。`experimental: true` 表示早期一等模板状态，不表示运行时尚未实现。
 
+## 共享内核
+
+执行核来自符号链接的 C 内核模板，由 `../../pyfcstm/render/c_kernel.py`、`c_kernel_engine.py` 和 `c_configuration.py` 按模型生成；其不变量见 `c_poll` 的维护手册。封装还要承担以下义务：
+
+- 封装转发到的每个公开 C 函数都必须保持签名不变。生成指南记录的新 C 函数需要在 `machine.hpp.j2` / `machine.cpp.j2` 中有对应的封装方法，并在两份生成指南中各有一行。
+- 配置查询函数是静态的封装方法；`operator==` 与 `operator!=` 位于封装的命名空间中，用户只有在写出 using 声明之后才能使用它们。
+- `current_state_id()` 和 `current_state_path()` 只在 `not model.has_regions` 时生成，与 C 头文件一致。
+- 指南从 `event_paths`、`hook_rows` 和 `action_rows` 取得事件、抽象动作和动作 id，它们包含声明在区域上的条目。
+
 ## 文档维护纪律
 
 以完整用户路径为单位维护。只保留一份完整快速开始，后续依次扩展同一实例、说明恢复、API 参考和高级集成。新增 API 应并入对应教程章节和参考表，同次修改替换过时示例并删除重复说明。不要通过追加第二份快速开始、末尾“完整示例”或补充声明来掩盖前面章节的问题。
@@ -65,7 +75,10 @@
 
 ```bash
 make tpl
-PYFCSTM_TEMPLATE_SUITES=c_poll,cpp_poll make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll,cpp,cpp_poll make template_unittest
+python -m pytest test/render/test_c_kernel.py test/render/test_c_configuration.py
+make doctest DOCTEST_SCOPE=pyfcstm/render
+make c_kernel_alignment_check
 make test_boundary_check resource_ownership_check
 make rst_auto
 ```

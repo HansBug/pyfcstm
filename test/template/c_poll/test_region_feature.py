@@ -1,9 +1,12 @@
 """Built-in template ``c_poll`` and models that declare regions."""
 
+import os
+
 import pytest
 from hbutils.testing import simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
+from test.template.c_poll._utils import render_c_artifacts
 from test.testings.native_semantic_alignment import iter_native_semantic_cases
 from test.testings.simulate_semantics import iter_semantic_cases
 
@@ -36,3 +39,28 @@ def test_the_whole_region_corpus_runs_on_the_c_poll_template():
     regions = {case.id for case in iter_semantic_cases(categories=['regions'])}
     assert regions
     assert regions <= selected
+
+
+def _controller_dsl():
+    path = os.path.join(
+        os.path.dirname(__file__), '..', '..', 'testfile', 'region_diagram', 'controller.fcstm'
+    )
+    with open(path, encoding='utf-8') as stream:
+        return stream.read()
+
+
+@pytest.mark.parametrize('readme_key', ['readme_file', 'readme_zh_file'])
+def test_region_readme_examples_run(readme_key):
+    from test.template.c_poll.test_runtime import _compile_and_run_c_harness as compile_harness
+    from test.template.readme_examples import example_code, extend_native_main
+
+    with render_c_artifacts(_controller_dsl()) as artifacts:
+        with open(artifacts[readme_key], encoding='utf-8') as stream:
+            readme = stream.read()
+        source = extend_native_main(
+            example_code(readme, 'quick-start'),
+            example_code(readme, 'hot-start') + '\n' + example_code(readme, 'configuration'),
+        )
+        run = compile_harness(artifacts, 'region_readme_' + readme_key, source)
+        assert run.returncode == 0, run.stderr
+        assert 'round trip equal = 1' in run.stdout, run.stdout

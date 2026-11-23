@@ -6,8 +6,8 @@
 
 | 模板源码 | 维护职责 | 生成产物 |
 | --- | --- | --- |
-| `machine.h.j2` | 公开 C 集成面模板 | `machine.h` |
-| `machine.c.j2` | 高性能运行时实现模板 | `machine.c` |
+| `machine.h.j2` | 公开 C 集成面模板；不透明状态机类型、容量宏、配置与热启动声明 | `machine.h` |
+| `machine.c.j2` | 变量角色胶水代码；嵌入由 `pyfcstm/render/c_kernel*.py` 和 `c_configuration.py` 按模型生成的内核 | `machine.c` |
 | `README.md.j2` | 英文生成物用户手册 | `README.md` |
 | `README_zh.md.j2` | 中文生成物用户手册 | `README_zh.md` |
 | `config.yaml` | 渲染器配置、C 语句渲染、辅助函数命名和忽略规则 | 不复制 |
@@ -22,6 +22,7 @@
 | 角色接口或生命周期行为 | 运行时源码、生成指南/API 表、角色测试和语义对齐 |
 | 表达式/getter 生成 | `../../pyfcstm/render/c_runtime.py`、`config.yaml` 显式导入、C 与轮询内核及两套 C++ 封装 |
 | input/param 标识符 | `readonly_value_identifier`；同步声明、getter、输入提供器、README 示例和 ABI 测试 |
+| 执行内核、配置类型或容量宏 | `../../pyfcstm/render/c_kernel.py`、`c_kernel_engine.py`、`c_configuration.py`，两个 C 模板的 `machine.h.j2` / `machine.c.j2`，两套封装，生成指南，`test/render/test_c_kernel.py`、`test/render/test_c_configuration.py` 以及区域和对齐测试 |
 | 原生共有行为 | 同步 `c` 与 `c_poll`；改动也影响 `cpp` 和 `cpp_poll` 封装 |
 
 ## 运行时契约
@@ -41,6 +42,25 @@
 
 `InputProvider` 会复制，但其 `user_data`、`Hooks` 及其数据均为借用。`last_inputs` 和 `vars` 指向实例存储，上下文指针只在回调期间有效。冷初始化清空注册，热启动保留注册。保持 C99、有符号 64 位 `Int` ABI、仅标准库依赖、调用方拥有对象和 `PYFCSTM_GENERATED_NO_HEAP` 可用。浮点转整数必须先检查再转换。同一实例不可重入，资源所有权必须明确。
 
+## 专用化内核
+
+`machine.c` 的执行核不写在模板里：它由 `../../pyfcstm/render/` 下的三个生成器按模型输出，并在 `config.yaml` 中按名字导入。`machine.c.j2` 只保留变量角色的胶水代码（初始化选项、输入采样、热启动入口），并调用 `render_c_kernel_types`、`render_c_configuration_source` 和 `render_c_kernel_code`；`machine.h.j2` 调用 `render_c_storage_macros` 和 `render_c_configuration_header`。
+
+| 生成器 | 负责内容 |
+| --- | --- |
+| `c_kernel.py` | 按模型生成的计划：状态、区域、动作和事件表，Hook 行，容量默认值与 `..._STORAGE_BYTES`，私有状态机类型和 Hook 胶水代码 |
+| `c_kernel_engine.py` | 与模型无关、带 `@...@` 占位符的引擎文本：周期执行，以及在固定竞技场上的推测搜索 |
+| `c_configuration.py` | `Configuration` 类型、区域查询、校验函数，以及文本格式化与解析 |
+
+必须保持的不变量：
+
+- **与仿真器对齐。** 引擎逐方法跟随 `SimulationRuntime`，包括它的限制（嵌套深度 64、组嵌套 64、1000 步），以及把伪状态闭环当作错误而不是 Delta 周期。仿真器语义变化时，引擎、共享用例和差分检查必须一并修改。
+- **文本形式。** 配置文本与仿真器自己的输出逐字节一致（`pyfcstm/model/configuration.py`）；两侧及其测试要在同一次修改里一起改。
+- **静态内存。** 全部搜索状态都在状态机内部；容量由公开宏 `..._ARENA_CAPACITY` 和 `..._TRAIL_CAPACITY` 决定。`machine.h.j2` 中传给 `render_c_storage_macros` 的 `extra_bytes` 表达式必须覆盖 `machine.c.j2` 传给 `render_c_kernel_types` 的模板私有成员；否则编译期的 `PrivFits` 断言会让构建失败。新增私有成员时两处都要改。
+- **不透明状态机。** 头文件只公开一个对齐成员和 `_private[...]`；不要对内部字段写文档或测试。
+- **区域模型。** `current_state_id`、`current_state_path` 和 `current_state_name` 只在 `not model.has_regions` 时生成；生成指南、封装和测试必须遵守该条件。
+- **指南中的表。** 指南从 `event_paths`、`hook_rows` 和 `action_rows` 取得事件、抽象动作和动作 id，它们包含声明在区域上的条目。不要通过扫描 `state.events` 或状态的动作列表重建这些列表：那样会漏掉声明在区域上的事件和动作。
+
 ## 文档维护纪律
 
 以完整用户路径为单位维护。只保留一份完整快速开始，后续依次扩展同一实例、说明恢复、API 参考和高级集成。新增 API 应并入对应教程章节和参考表，同次修改替换过时示例并删除重复说明。不要通过追加第二份快速开始、末尾“完整示例”或补充声明来掩盖前面章节的问题。
@@ -59,7 +79,10 @@
 
 ```bash
 make tpl
-PYFCSTM_TEMPLATE_SUITES=c,cpp make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll,cpp,cpp_poll make template_unittest
+python -m pytest test/render/test_c_kernel.py test/render/test_c_configuration.py
+make doctest DOCTEST_SCOPE=pyfcstm/render
+make c_kernel_alignment_check
 make test_boundary_check resource_ownership_check
 make rst_auto
 ```
@@ -91,4 +114,4 @@ PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 PYFCSTM_TEMPLATE_SUITES=c make template_unittest 
 | `mixed` | 4,000,000 | 6.42x | 7.25x |
 | `validation_heavy` | 8,000,000 | 9.59x | 9.75x |
 
-这些历史结果支持数值事件标识、专用状态分派和减少验证复制的设计；它们不代表目标设备的速度，也不能替代语义回归。优化不得削弱回滚、动作行为和正确性。
+这次测量早于静态内存内核，尚未对它重新测量。这些历史结果支持数值事件标识、专用状态分派和减少验证复制的设计；它们不代表目标设备的速度，也不能替代语义回归。优化不得削弱回滚、动作行为和正确性。

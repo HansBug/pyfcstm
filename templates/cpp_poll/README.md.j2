@@ -1,57 +1,7 @@
 {% set state_items = model.walk_states() | list -%}
-{% set event_ns = namespace(items=[]) -%}
-{% for state in state_items -%}
-{% for event in state.events.values() -%}
-{% set event_ns.items = event_ns.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor -%}
-{% set abstract_ns = namespace(rows=[]) -%}
-{% set action_scan = namespace(items=[]) -%}
-{% for scan_state in state_items -%}
-{% for scan_group in [
-    scan_state.list_on_enters(with_ids=True),
-    scan_state.list_on_durings(aspect=None, with_ids=True),
-    scan_state.list_on_exits(with_ids=True),
-    scan_state.list_on_durings(aspect='before', with_ids=True),
-    scan_state.list_on_durings(aspect='after', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, scan_item in scan_group -%}
-{% set action_scan.items = action_scan.items + [scan_item] -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor -%}
-{% set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
-{% for state in state_items -%}
-{% for group in [
-    state.list_on_enters(with_ids=True),
-    state.list_on_durings(aspect=None, with_ids=True),
-    state.list_on_exits(with_ids=True),
-    state.list_on_durings(aspect='before', with_ids=True),
-    state.list_on_durings(aspect='after', with_ids=True),
-    state.list_on_during_aspects(aspect='before', with_ids=True),
-    state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(action_ref_hop_limit) -%}
-{% if resolved.item.ref is not none -%}
-{% set resolved.item = resolved.item.ref -%}
-{% endif -%}
-{% endfor -%}
-{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
-{% set abstract_ns.rows = abstract_ns.rows + [{
-    'func_name': resolved.item.func_name,
-    'hook_name': hook_field_id_name(resolved.item),
-    'owner_path': action_owner_path(resolved.item),
-    'stage': resolved.item.stage,
-    'aspect': resolved.item.aspect,
-}] -%}
-{% endif -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor -%}
+{% set event_ns = namespace(items=event_paths(model)) -%}
+{% set abstract_ns = namespace(rows=hook_rows(model)) -%}
+{% set action_ns = namespace(rows=action_rows(model)) -%}
 {% set m = machine_class_name(model) -%}
 {% set a = machine_macro_name(model) -%}
 
@@ -59,7 +9,7 @@
 
 This directory contains a self-contained C++98 wrapper with a C99 execution core. Put your application in `app.cpp`; regenerate the machine files from the DSL when model behavior changes. The generated program has no Python or third-party runtime dependency.
 
-**Generated files:** Use `machine.hpp` and `MachineWrapper` for integration. `machine.c` and `machine.cpp` are generated implementation files. This guide and `README_zh.md` describe the same API. Follow [Quick Start](#quick-start), then [Integration](#integration), [Recovery](#recovery) and [Build](#build).
+**Generated files:** Use `machine.hpp` and `MachineWrapper` for integration. `machine.c` and `machine.cpp` are generated implementation files. This guide and `README_zh.md` describe the same API. The native machine type behind the wrapper is opaque statically sized storage: read it only through the wrapper. {% if model.has_regions %}This model declares regions, so it has no single current state; read its position as a configuration value.{% else %}This model declares no regions, so its position is always one current state.{% endif %} Follow [Quick Start](#quick-start), then [Integration](#integration), [Recovery](#recovery), [Configuration values](#configuration) and [Build](#build).
 
 <a id="quick-start"></a>
 
@@ -131,7 +81,7 @@ int main(void)
 {% endfor %}    machine.set_input_provider(&provider, &data);
 {% endif %}{% if abstract_ns.rows %}
     Wrapper::Hooks hooks = {{ m | upper }}_HOOKS_INIT;
-{% for row in abstract_ns.rows %}    hooks.{{ row['hook_name'] }} = app_action;
+{% for row in abstract_ns.rows %}    hooks.{{ row['hook_field'] }} = app_action;
 {% endfor %}    machine.set_hooks(&hooks, &data);
 {% endif %}{% if event_ns.items %}
     Wrapper::EventChecks event_checks = {{ m | upper }}_EVENT_CHECKS_INIT;
@@ -206,9 +156,9 @@ C++ input/action/event callbacks use the C signatures exposed by `Wrapper::Input
 ### Declared actions
 
 {% if abstract_ns.rows %}
-| Hook field | DSL action path | Owner state | Stage |
+| Hook field | DSL action path | Owner state or region | Stage |
 | --- | --- | --- | --- |
-{% for row in abstract_ns.rows %}| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% for row in abstract_ns.rows %}| `{{ row['hook_field'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
 {% endfor %}
 {% else %}
 This model declares no abstract actions.
@@ -267,14 +217,28 @@ options.vars_present.{{ item.name | to_c_identifier }} = 1;
 
 ### Hot Start
 
-This fragment continues after a successful cycle in Quick Start. It captures state, all persistent values and parameters from the same checkpoint and restores them without replaying entry actions. For saved checkpoints, supply those saved values instead. Do not replace checkpoint parameters with current defaults or new configuration. A composite target starts in initial-transition wait mode. Hot start preserves installed providers, hooks and event checks; a failed hot start preserves the previous run. Serialize snapshot capture and restoration with all other access to the instance.{% if model.forced_variables %}
+This fragment continues after a successful cycle in Quick Start. It captures {% if model.has_regions %}the configuration (the position of the machine and of every region), {% else %}the state, {% endif %}all persistent values and parameters from the same checkpoint and restores them without replaying entry actions. For saved checkpoints, supply those saved values instead. Do not replace checkpoint parameters with current defaults or new configuration. A composite target starts in initial-transition wait mode. Hot start preserves installed providers, hooks and event checks; a failed hot start preserves the previous run. Serialize snapshot capture and restoration with all other access to the instance.{% if model.has_regions %} A model with regions has no `current_state_id()`; capture the position with `get_configuration` and restore it with `hot_start_at`. `get_configuration` fails once the machine has ended. The plain `hot_start` still accepts the id of one state outside every region.{% else %} `get_configuration` and `hot_start_at` restore the same checkpoint from a configuration value; see [Configuration values](#configuration).{% endif %}{% set hidden_ns = namespace(found=false) %}{% for item in model.persistent_variables.values() %}{% if item.name[:2] == '__' %}{% set hidden_ns.found = true %}{% endif %}{% endfor %}{% if hidden_ns.found %}
 
-The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint. They are ordinary variables of the model: a hot start takes them from the saved checkpoint like every other variable. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}
+The variables whose names start with `__` are generated by the model conversion for forced transitions, `active()` queries and similar constructs. They are ordinary variables of the model: copy them with the rest of `Vars` and take them from the saved checkpoint, so that they agree with the saved position.{% if model.forced_variables %} The `__forced_` variables belong to forced transitions: the machine uses them only inside a cycle, so they are `0` at every checkpoint. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}{% endif %}
 
 <!-- example:hot-start -->
 
 ```cpp
-Wrapper::StateId state = machine.current_state_id();
+{% if model.has_regions %}Wrapper::Configuration configuration;
+Wrapper::Vars initial_vars = *machine.vars();
+Wrapper::Parameters parameters;
+memset(&parameters, 0, sizeof(parameters));
+{% for item in model.parameters.values() %}parameters.{{ item.name | readonly_value_identifier }} = machine.get_param_{{ item.name | readonly_value_identifier }}();
+{% endfor %}
+if (!machine.get_configuration(&configuration)) {
+    fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
+    return 3;
+}
+if (!machine.hot_start_at(configuration, initial_vars, parameters)) {
+    fprintf(stderr, "hot start failed: %s\n", machine.last_error());
+    return 3;
+}
+{% else %}Wrapper::StateId state = machine.current_state_id();
 Wrapper::Vars initial_vars = *machine.vars();
 Wrapper::Parameters parameters;
 memset(&parameters, 0, sizeof(parameters));
@@ -288,11 +252,61 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
     fprintf(stderr, "hot start failed: %s\n", machine.last_error());
     return 3;
 }
+{% endif %}```
+
+<a id="configuration"></a>
+
+### Configuration values
+
+A `Wrapper::Configuration` is a plain value that says where the machine is: `at` is the deepest active state outside every region, and `regions[r]` holds the deepest active state of region `r`, or `{{ a }}_REGION_SLOT_PENDING` while the region waits for its initial transition, or `{{ a }}_REGION_SLOT_DONE` once it has finished. A zeroed configuration is the root state before its own initialization. Copy it freely; a valid configuration has exactly one representation, so `memcmp` compares two configurations. `operator==` and `operator!=` compare two configurations directly. `validate_configuration` accepts or refuses a value and fills `Wrapper::ConfigurationError` with a `kind` (one of the `{{ a }}_CONFIGURATION_ERROR_*` macros), a byte `position` and a `message`; its error argument may be omitted.
+
+The queries are static wrapper methods and need no machine: `region_status` answers `{{ a }}_REGION_STATUS_INACTIVE`, `_PENDING`, `_LIVE` or `_DONE` for a region id, `is_active` tells whether a state or one of its descendants is active, and `leaves` writes the active leaf ids and returns how many there are (call it with a `NULL` buffer and capacity `0` to count them). {% if model.has_regions %}Region ids are listed in the [Region IDs](#region-ids) table.{% else %}This model has no regions, so every configuration has the single position `at`.{% endif %}
+
+The text form is the one the pyfcstm simulator prints and accepts, for example `Root.Run{Motion: Move, Guard: [done]}`: the path of the deepest state outside every region, then a braced block per region owner that lists each region with the path of its deepest state relative to that region. `[init]` marks a region that has not run its initial transition and `[done]` a region that has finished. `format_configuration` writes the text and its terminating NUL into your buffer, truncates to the size you give, and returns the full length (so a result of `size` or more means truncation); an invalid configuration writes an empty string. `parse_configuration` returns 1 and fills the configuration, or returns 0, fills the error and leaves the configuration unchanged; regions left out of the text are pending. Define `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` for `machine.c`, `machine.cpp` and every consumer to leave out `format_configuration`, `parse_configuration` and their name tables; the value type, the validator and the queries stay, and `message` is then empty.
+
+This fragment continues after a successful cycle in Quick Start. It prints the position, parses it back and checks that the round trip gives the same value. Pass a parsed configuration to `hot_start_at` together with the variables and parameters of the same checkpoint to resume from saved text.
+
+<!-- example:configuration -->
+
+```cpp
+Wrapper::Configuration current;
+Wrapper::Configuration parsed;
+Wrapper::ConfigurationError parse_error;
+char text[512];
+size_t length;
+if (!machine.get_configuration(&current)) {
+    fprintf(stderr, "The machine has ended and has no configuration\n");
+    return 4;
+}
+length = Wrapper::format_configuration(current, text, sizeof(text));
+if (length >= sizeof(text)) {
+    fprintf(stderr, "The configuration text needs %lu bytes\n", (unsigned long)(length + 1u));
+    return 4;
+}
+printf("configuration = %s\n", text);
+if (!Wrapper::parse_configuration(text, &parsed, &parse_error)) {
+    fprintf(stderr, "configuration error %d at byte %lu: %s\n", parse_error.kind, (unsigned long)parse_error.position, parse_error.message);
+    return 4;
+}
+printf("round trip equal = %d\n", memcmp(&parsed, &current, sizeof(parsed)) == 0);
 ```
 
 ## Results, failures and lifetime
 
 Initialization and cycle return 1 on success and 0 on failure; inspect `last_error()` immediately after failure. A C++ constructor reports failure through `last_error()` instead of throwing. Sampling/validation/execution errors do not commit persistent values or `last_inputs`. Fix the cause and retry a cycle; it acquires fresh input. External reads, logs and action side effects are not rolled back. A successful Delta cycle holds persistent state and publishes its input snapshot.
+
+The search that decides one whole cycle before it runs is a faithful port of the simulator's, with the same limits: nesting depth 64, group nesting 64 and 1000 steps. A failed cycle reports one of these categories in `last_error()`:
+
+| Message starts with | Cause | What to do |
+| --- | --- | --- |
+| `Speculative search exceeded the capacity safety limit` | The search needed more room than `{{ a }}_ARENA_CAPACITY` (configurations or work items) or `{{ a }}_TRAIL_CAPACITY` (nested checks); the message names the macro | Define the named macro to a larger value everywhere; see [Capacity macros](#capacity) |
+| `Speculative DFS exceeded the structural stack-depth safety limit`, `Group initialization nested deeper than the structural safety limit` or `Speculative DFS exceeded the step safety limit` | The model nests, or chains pseudo states and transitions, beyond the fixed simulator limits | These limits are not configurable; remove the unbounded chain from the model |
+| `Cannot reach a stoppable state in the same cycle; suspected loop.` | A closed loop through pseudo states or re-entry never reaches a state where the cycle can stop; this is an error, not a Delta cycle | Add an exit to a stoppable leaf, a terminating guard, or separate the events that drive exit and re-entry |
+| `Invalid event id`, `Machine is not initialized` or `Invalid state id` | The call itself is wrong | Fix the caller |
+| `Event checks are required`, `Missing required event check function` or `Event checks are not mounted` | The event-check table is absent or incomplete | Install a complete table with `set_event_checks` before the first cycle |
+| `Missing input provider`, `Input provider failed` or `must be finite` | Input sampling or a supplied value failed | Fix the provider or value and retry |
+
+Configuration text and values report their own failures through `Wrapper::ConfigurationError` (see [Configuration values](#configuration)), not through `last_error()`.
 
 Read control/output through `vars()` after success. This returns instance-owned storage, not a historical copy; copy `Vars` to retain values. Input getters are valid only during a cycle; read `last_inputs()` afterwards and copy `Inputs` when retaining history. Context pointers are valid only inside their callback. Getter calls require an initialized live instance. Calls after termination do not sample inputs. The wrapper owns its native instance by value; do not pass its `native_handle()` to a C destroy function.
 
@@ -300,7 +314,7 @@ Read control/output through `vars()` after success. This returns instance-owned 
 
 | Type | Purpose |
 | --- | --- |
-| `Wrapper::Machine` | Native C instance type used by callbacks |
+| `Wrapper::Machine` | Native C instance type used by callbacks; opaque statically sized storage |
 | `Wrapper::InitOptions` | Cold-start values and presence flags |
 | `Wrapper::Parameters` | Complete parameter snapshot |
 | `Wrapper::Inputs` | Complete one-cycle input snapshot |
@@ -313,6 +327,9 @@ Read control/output through `vars()` after success. This returns instance-owned 
 | `Wrapper::EventId` | Generated event identity |
 | `Wrapper::EventChecks` | Borrowed complete event-probe table |
 | `Wrapper::EventContext` | Read-only event observation |
+| `Wrapper::Configuration` | Position value: `at` plus one slot per region; copyable, compared with `memcmp` |
+| `Wrapper::ConfigurationError` | Refusal report of validation and parsing: `kind`, byte `position`, `message` |
+| `Wrapper::RegionId` / `Wrapper::RegionStatus` | Region identity and its status code |
 
 ### Functions
 
@@ -325,6 +342,9 @@ Names below are `MachineWrapper` methods; value snapshots are references, callba
 | `init()` | Cold initialize/reset with DSL defaults |
 | `hot_start(state, vars, parameters)` | Restore a complete live checkpoint |
 | `hot_start(state, vars)` / `hot_start(state, vars_pointer)` | Complete persistent restoration for models without parameters |
+| `hot_start_at(configuration, vars, parameters)` | Restore a complete live checkpoint from a configuration value |
+| `hot_start_at(configuration, vars)` | Same, for models without parameters |
+| `get_configuration(configuration_pointer)` | Write the current position; 0 once the machine has ended |
 | `set_input_provider(provider, user_data)` | Copy the input callback table; NULL clears it |
 | `set_hooks(hooks, user_data)` | Borrow the action table; NULL uninstalls it |
 | `cycle()` | Run using installed input readers |
@@ -333,23 +353,31 @@ Names below are `MachineWrapper` methods; value snapshots are references, callba
 | `vars()` | Read persistent state |
 | `is_ended()` | Test termination |
 | `last_cycle_was_delta()` | Test successful no-progress cycle |
-| `current_state_id()` | Current state id (may be composite while awaiting initial entry), or invalid sentinel |
+{% if not model.has_regions %}| `current_state_id()` | Current state id (may be composite while awaiting initial entry), or invalid sentinel |
 | `current_state_path()` | Diagnostic path or NULL after termination |
-| `last_error()` | Error text or empty string |
+{% endif %}| `last_error()` | Error text or empty string |
 | `native_handle()` | Borrow the underlying C instance for explicit interoperability |
 | `set_event_checks(checks, user_data)` | Install a complete event table; check last_error |
+| `Wrapper::region_status(configuration, region)` | Static; `INACTIVE`, `PENDING`, `LIVE` or `DONE` for one region |
+| `Wrapper::is_active(configuration, state)` | Static; non-zero when the state or a descendant is active |
+| `Wrapper::leaves(configuration, leaves, capacity)` | Static; write active leaf ids and return how many there are |
+| `Wrapper::validate_configuration(configuration, error)` | Static; 1 for a well-formed value, else 0 and fill `error` (default `NULL`) |
+| `Wrapper::format_configuration(configuration, buffer, size)` | Static; write the text form and return the full length; omitted by `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` |
+| `Wrapper::parse_configuration(text, configuration, error)` | Static; parse the text form, unchanged on failure; omitted by `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` |
+| `operator==` / `operator!=` | Compare two configurations (declared at global scope) |
 
-For each input/parameter, use the exact getter names listed in Integration. The parameter-free hot-start overload is valid only for models without parameters. Internal frame, stack and scratch fields are runtime-owned even where visible in the header.
+For each input/parameter, use the exact getter names listed in Integration. The parameter-free hot-start overloads are valid only for models without parameters. The configuration queries take no machine.{% if model.has_regions %} A model with regions generates no `current_state_id()` or `current_state_path()`; use `get_configuration`.{% endif %}
+
 
 ### `Wrapper::ExecutionContext`
 
 | Field | Meaning |
 | --- | --- |
-| `state_id` | Public call-context state id; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
+| `state_id` | State the callsite is reported for; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros. An action inside a region reports its own state; an aspect action reports the deepest state common to everything it wraps, and a region's aspect reports its owner while that region has no active state |
 | `vars` | Read-only snapshot pointer to persistent machine variables |
 | `action_id` | Resolved abstract target action id; compare with generated `{{ machine_macro_name(model) }}_ACTION_*` macros |
 | `action_stage_id` | Lifecycle stage id reported for this callsite; compare with `{{ machine_macro_name(model) }}_STAGE_*` |
-| `active_leaf_state_id` | Active leaf-state id visible to the callsite |
+| `active_leaf_state_id` | Same state as `state_id` for every callsite; a model with regions has no single active leaf, so read the position with `get_configuration` |
 | `call_stage_id` | Lifecycle stage id of the concrete callsite before resolving `ref` chains |
 | `abstract_target_id` | Resolved abstract action id after following `ref` chains |
 | `named_ref_id` | Named `ref` action id when the callsite itself is a named `ref`, otherwise `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`; a chain starting from an anonymous `ref` stays invalid however many named actions it passes through |
@@ -361,10 +389,10 @@ This structure is intended for observation only. Abstract hooks should not mutat
 | Field | Meaning |
 | --- | --- |
 | `event_id` | Queried event id; compare with generated `{{ machine_macro_name(model) }}_EVENT_*` macros |
-| `current_state_id` | Current leaf-state id when the check runs; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
-| `vars` | Read-only snapshot pointer to persistent machine variables |
+{% if not model.has_regions %}| `current_state_id` | Current leaf-state id when the check runs; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
+{% endif %}| `vars` | Read-only snapshot pointer to persistent machine variables |
 
-This structure is the read-only observation surface for event checks. Event- check callbacks should be treated as probes, not as mutation points for persistent machine state. Event and state metadata are numeric so polling code can stay allocation-free and avoid string comparisons.
+This structure is the read-only observation surface for event checks. Event- check callbacks should be treated as probes, not as mutation points for persistent machine state. Event and state metadata are numeric{% if model.has_regions %} (a model with regions has no single current state, so the context has no `current_state_id` field){% endif %} so polling code can stay allocation-free and avoid string comparisons.
 
 <a id="build"></a>
 
@@ -375,6 +403,26 @@ This template is marked experimental. Validate the generated wrapper with your t
 ### Deployment Profiles
 
 `MachineWrapper` owns its C runtime by value; keep it in your application owner, stack or static storage. It is noncopyable. `PYFCSTM_GENERATED_NO_HEAP` removes C heap helper declarations and definitions; it does not change wrapper construction. Define the macro consistently for the C core, wrapper and application. No-heap is not a freestanding guarantee.
+
+<a id="capacity"></a>
+
+### Capacity macros
+
+The machine reserves its private storage statically, so no heap is needed. Two public macros in `machine.h` (included by `machine.hpp`) size it, and their defaults suit this model:
+
+| Macro | Bounds | Raise it when |
+| --- | --- | --- |
+| `{{ a }}_ARENA_CAPACITY` | How many configurations (and pending work items) one decision of a cycle may examine | A cycle fails with `Speculative search exceeded the capacity safety limit` and the message names this macro |
+| `{{ a }}_TRAIL_CAPACITY` | How many checks may be nested | The same failure names this macro |
+
+`{{ a }}_STORAGE_BYTES` is derived from both. Because the size of a machine depends on them, define a changed value identically for `machine.c`, `machine.cpp` and every source file that includes `machine.hpp`, for example with a compiler flag; a mismatch gives the two sides different machine sizes. A model that fits its defaults never needs this, and a value below what the model needs makes a cycle fail with the message above instead of misbehaving.
+
+```bash
+gcc -std=c99 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+g++ -std=c++98 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+g++ -std=c++98 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+g++ machine.o machine_cpp.o app.o -lm -o app
+```
 
 ### Single-command C++ Poll Wrapper Builds
 
@@ -482,7 +530,22 @@ This model has no variable declarations.
 {% for state in state_items -%}
 | `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
-### Event IDs
+{% if model.has_regions %}<a id="region-ids"></a>
+
+### Region IDs
+
+Regions are numbered owner by owner in state-id order and, inside one owner, in declaration order. Use these ids with `region_status` and to index `Configuration.regions`.
+
+| Region path | Macro | Value |
+| --- | --- | ---: |
+{% set region_ns = namespace(index=0) -%}
+{% for state in state_items -%}
+{% for region in state.regions.values() -%}
+| `{{ region.path | join('.') }}` | `{{ a }}_REGION_{{ region.path | to_c_path_identifier }}` | `{{ region_ns.index }}` |
+{% set region_ns.index = region_ns.index + 1 -%}
+{% endfor -%}
+{% endfor %}
+{% endif %}### Event IDs
 
 {% if event_ns.items %}
 | Event path | Macro | Value |
@@ -495,16 +558,10 @@ This state machine does not define any events.
 {% endif %}
 ### Action IDs
 
-{% if action_scan.items %}
-{% set action_doc_ns = namespace(rows=[]) -%}
-{% for action in action_scan.items -%}
-{% if action.func_name not in action_doc_ns.rows | map(attribute='func_name') | list -%}
-{% set action_doc_ns.rows = action_doc_ns.rows + [{'func_name': action.func_name}] -%}
-{% endif -%}
-{% endfor -%}
+{% if action_ns.rows %}
 | Action path | Macro | Value |
 | --- | --- | ---: |
-{% for row in action_doc_ns.rows -%}
+{% for row in action_ns.rows -%}
 | `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}

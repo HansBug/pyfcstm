@@ -88,16 +88,18 @@ private:
     Machine machine_;
 };
 
-/* Two configurations are equal when they name the same position. */
-inline bool operator==(const MachineWrapper::Configuration &left, const MachineWrapper::Configuration &right) {
+}  // namespace {{ machine_class_name(model) }}_cpp_poll
+}  // namespace pyfcstm_generated
+
+/* Two configurations are equal when they name the same position. The type is a global C
+ * structure, so the operators live at global scope where argument-dependent lookup finds them. */
+inline bool operator==(const {{ machine_class_name(model) }}Configuration &left, const {{ machine_class_name(model) }}Configuration &right) {
     return memcmp(&left, &right, sizeof(left)) == 0;
 }
 
-inline bool operator!=(const MachineWrapper::Configuration &left, const MachineWrapper::Configuration &right) {
+inline bool operator!=(const {{ machine_class_name(model) }}Configuration &left, const {{ machine_class_name(model) }}Configuration &right) {
     return !(left == right);
 }
 
-}  // namespace {{ machine_class_name(model) }}_cpp_poll
-}  // namespace pyfcstm_generated
 
 #endif  // PYFCSTM_GENERATED_{{ machine_macro_name(model) }}_CPP_POLL_HPP

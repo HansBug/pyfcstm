@@ -20,10 +20,7 @@
 {%- endfor -%}
 {%- endfor -%}
 {%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
-{%- macro state_path_ref(state) -%}_STATE_PATH_TUPLES[{{ state_items.index(state) }}]{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_state_{{ state_items.index(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
-{%- macro init_transition_id(state, idx) -%}init:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
-{%- macro normal_transition_id(state, idx) -%}transition:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
 {%- macro init_guard_method_name(state, idx) -%}_guard_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_effect_method_name(state, idx) -%}_effect_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
@@ -31,7 +28,6 @@
 {%- macro abstract_hook_method_name(action) -%}{{ action | action_hook_name }}{%- endmacro %}
 {%- set region_items = model.walk_regions() | list -%}
 {%- macro region_action_method_name(region, kind, idx) -%}_action_region_{{ region_items.index(region) }}_{{ kind }}_{{ idx }}{%- endmacro %}
-{%- macro region_init_transition_id(region, idx) -%}init:{{ state_key(region) }}:{{ idx }}{%- endmacro %}
 {%- macro region_init_guard_method_name(region, idx) -%}_guard_init_region_{{ region_items.index(region) }}_{{ idx }}{%- endmacro %}
 {%- macro region_init_effect_method_name(region, idx) -%}_effect_init_region_{{ region_items.index(region) }}_{{ idx }}{%- endmacro %}
 {%- set scope_items = state_items + region_items -%}
@@ -543,10 +539,7 @@ _EVENT_PATHS = (
 {% endfor %}{% endfor %}{% for region in region_items %}{% for event in region.events.values() %}    {{ event.path_name | tojson }},
 {% endfor %}{% endfor -%}
 )
-{% endif -%}
-_EVENT_PATH_SET = set(_EVENT_PATHS)
-_STATE_PATH_TUPLES = tuple(tuple(path.split(".")) for path in _STATE_PATHS)
-
+{% endif %}
 
 class SimulationRuntimeDfsError(RuntimeError):
     """Raised when speculative validation exceeds the generated runtime safety limit."""
@@ -562,12 +555,6 @@ class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
 
 {# region-kernel:module #}{% raw %}class SimulationRuntimeEventError(ValueError):
     """Raised when an event input has an unsupported shape or cannot be resolved."""
-
-    pass
-
-
-class SimulationRuntimeRegionQueryError(RuntimeError):
-    """Raised by a single-path position query on a machine that has regions."""
 
     pass
 
@@ -1006,9 +993,8 @@ class {{ machine_class_name(model) }}:
 {% set variable_name_lines.items = variable_name_lines.items + [')'] -%}
 {{ variable_name_lines.items | join('\n') | indent(4, true) }}
 {% endif %}
-{{ 'ABSTRACT_HOOKS = _ABSTRACT_HOOKS' | indent(4, true) }}
+{{ 'ABSTRACT_HOOKS = MappingProxyType(_ABSTRACT_HOOKS)' | indent(4, true) }}
 {{ 'EVENT_PATHS = _EVENT_PATHS' | indent(4, true) }}
-{{ '_EVENT_PATH_SET = _EVENT_PATH_SET' | indent(4, true) }}
 {% if define_items | length == 0 -%}
 {{ '_VAR_TYPES = {}' | indent(4, true) }}
 {% else -%}
@@ -1304,45 +1290,48 @@ class {{ machine_class_name(model) }}:
 
 {% endfor %}    @property
     def vars(self):
-        return self._vars
+        """
+        Read the persistent variables of the last committed cycle.
+
+        The mapping is a read-only view of the variables as they stand now. A
+        successful cycle commits a new set of values, so read ``vars`` again
+        after every cycle; take ``dict(machine.vars)`` to keep a checkpoint.
+
+        :return: Read-only mapping from variable name to its current value.
+        :rtype: Mapping[str, Number]
+        """
+        return MappingProxyType(self._vars)
 
     @property
     def is_ended(self):
         return self._ended
-
-{% if model.has_regions %}    @property
-    def current_state_path(self):
-        """
-        Refuse a single-path position query: this model has regions.
-
-        :raises SimulationRuntimeRegionQueryError: Always; use
-            :attr:`configuration`, which shows every branch.
-        """
-        raise SimulationRuntimeRegionQueryError(
-            "current_state_path describes a single active path, but this model has "
-            "regions; use configuration, which shows every branch."
-        )
-
+{% if not model.has_regions %}
     @property
-    def current_state_name(self):
-        """
-        Refuse a single-path position query: this model has regions.
-
-        :raises SimulationRuntimeRegionQueryError: Always; use
-            :attr:`configuration`, which shows every branch.
-        """
-        raise SimulationRuntimeRegionQueryError(
-            "current_state_name describes a single active path, but this model has "
-            "regions; use configuration, which shows every branch."
-        )
-{% else %}    @property
     def current_state_path(self):
+        """
+        Return the path of the active state.
+
+        A model with regions has no single active path, so this property and
+        :attr:`current_state_name` exist only for a model without regions; read
+        :attr:`configuration` there.
+
+        :return: The path of the active state, or ``None`` after the machine
+            has ended.
+        :rtype: Optional[Tuple[str, ...]]
+        """
         if not self._stack:
             return None
         return _PATH[self._stack[-1].state]
 
     @property
     def current_state_name(self):
+        """
+        Return the short name of the active state.
+
+        :return: The name of the active state, or ``None`` after the machine
+            has ended.
+        :rtype: Optional[str]
+        """
         state_path = self.current_state_path
         if state_path is None:
             return None

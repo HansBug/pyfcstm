@@ -206,8 +206,20 @@ list and the completion cover every active leaf, and a short name that two leave
 use for different events is not offered; ``init`` completes the states inside
 regions. A model without regions behaves exactly as before.
 
-Models without regions are not affected: their hot start, event names and
-command-line output are the same as in the previous release.
+Models without regions are not affected by any of this: their hot start and
+event names are the same as in the previous release. Two fixes to the command
+line apply to every model:
+
+- ``events`` and the completion of ``cycle`` show a short name only when typing
+  it works. An event that belongs to a state above the leaf (a composite state,
+  a region, an owner) used to be listed as ``Stop (Root.Run.Stop)``, although
+  ``cycle Stop`` was refused; it is now listed by its full path alone.
+- ``init`` refuses a variable that is assigned twice (``init S n=0 n=5``) instead
+  of silently keeping the last value, like ``cycle --input`` already did.
+
+An error that names a path now writes it as ``'W.Nowhere'`` instead of a tuple,
+and an event name that is ambiguous between several leaves is reported as such,
+with its candidates, instead of after a generic "cannot resolve" sentence.
 
 v0.6.0
 ------

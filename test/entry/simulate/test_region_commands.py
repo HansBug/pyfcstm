@@ -386,7 +386,12 @@ def test_a_batch_session_prints_the_golden_output(tmp_path, commands, golden):
             id="variable-missing",
         ),
         pytest.param(
-            "init W.Nowhere n=0 seq=0", "Nowhere", id="unknown-state"
+            "init W.Nowhere n=0 seq=0", "Unknown configuration path: 'W.Nowhere'", id="unknown-state"
+        ),
+        pytest.param(
+            "init W.Job n=0 seq=0 n=5",
+            "variable 'n' is assigned more than once",
+            id="variable-given-twice",
         ),
         pytest.param(
             "cycle; cycle Start; cycle Ping",
@@ -410,7 +415,7 @@ def test_a_command_that_cannot_run_fails_with_its_reason(tmp_path, commands, mes
     assert "Traceback" not in output
 
 
-def _completer(model_text=MODEL):
+def _completer(model_text=MODEL, start_events=("W.Idle.Start",)):
     from prompt_toolkit.document import Document
 
     from pyfcstm.entry.simulate.commands import CommandProcessor
@@ -419,7 +424,8 @@ def _completer(model_text=MODEL):
 
     runtime = SimulationRuntime(load_state_machine_from_text(model_text))
     runtime.cycle()
-    runtime.cycle(["W.Idle.Start"])
+    for event in start_events:
+        runtime.cycle([event])
     completer = CommandProcessor(runtime).create_completer()
     return lambda text: [
         (item.text, item.display_meta_text)
@@ -476,3 +482,43 @@ def test_init_ends_the_position_at_the_closing_brace_even_without_a_space(tmp_pa
     )
     assert result.exitcode == 0, result.stdout
     assert "n = 10101" in output
+
+
+OWNER_EVENT_MODEL = """
+state Root {
+    [*] -> Run;
+    state Run {
+        event Stop;
+        region A {
+            [*] -> X;
+            state X { event Go; }
+            X -> X :: Go;
+            X -> X : /Run.Stop;
+        }
+        region B { [*] -> Y; state Y; Y -> Y : /Run.Stop; }
+    }
+}
+"""
+
+
+def test_events_show_a_short_name_only_when_typing_it_works(tmp_path):
+    """``Go`` belongs to the leaf; ``Stop`` belongs to the owner above both leaves."""
+    path = tmp_path / "owner.fcstm"
+    path.write_text(OWNER_EVENT_MODEL, encoding="utf-8")
+    result = simulate_entry(
+        pyfcstmcli, ["pyfcstm", "simulate", "-i", str(path), "-e", "cycle; events; cycle Go; cycle Stop"]
+    )
+    assert "  • Go (Root.Run.A.X.Go)" in result.stdout
+    assert "  • Root.Run.Stop\n" in result.stdout
+    assert "(Root.Run.Stop)" not in result.stdout
+    # The list told the truth: ``Go`` was accepted and ``Stop`` is not a name from here.
+    assert "Cycle: 2" in result.stdout
+    assert result.exitcode == 1
+    assert "matches no event from any active leaf" in result.stdout
+
+
+def test_completion_offers_a_short_name_only_when_typing_it_works():
+    complete = _completer(OWNER_EVENT_MODEL, start_events=())
+    texts = [text for text, _ in complete("cycle ")]
+    assert "Go" in texts and "Root.Run.Stop" in texts
+    assert "Stop" not in texts

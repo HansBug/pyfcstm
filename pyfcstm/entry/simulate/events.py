@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple
 from ...dsl import EXIT_STATE
 from ...model.configuration import Configuration
 from ...model.region import Region
+from ...utils.validate import ModelLookupError, ModelValueError
 
 
 POST_EXIT_CONTINUATION_LABEL = "post-exit continuation"
@@ -85,44 +86,26 @@ def _iter_post_exit_continuation_states(state):
         current = parent
 
 
-def _active_states(runtime) -> list:
-    """
-    Return the states the runtime currently rests in.
-
-    :param runtime: Simulation runtime to inspect.
-    :type runtime: SimulationRuntime
-    :return: One state for a model without regions; for a model with regions
-        every active leaf in writing order, none before the first cycle (the
-        root state has no outgoing transitions to offer anyway).
-    :rtype: list
-    :raises IndexError: If the runtime has no active stack, for example after
-        termination.
-    """
-    current = runtime.current_state
-    if isinstance(current, Configuration):
-        return list(current.leaves)
-    return [current] if current else []
-
-
 def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
     """
     Return event display rows for the runtime's current position.
 
     The result preserves the legacy ``(full_path, short_name)`` shape used by
-    :class:`pyfcstm.entry.simulate.display.StateDisplay`. Direct leaf events use
-    the event's short name as before. Parent-level continuation candidates use
+    :class:`pyfcstm.entry.simulate.display.StateDisplay`. A model with regions
+    rests in several leaves; the rows of every leaf are listed once per event,
+    in the order of the leaves. Parent-level continuation candidates use
     ``post-exit continuation`` as the display label and keep the full event path
     in the second column.
 
-    A model with regions rests in several leaves. The rows of every leaf are
-    listed once per event, in the order of the leaves. A short name is only shown
-    for an event when it leads to that event from every leaf that offers the
-    name, so a name that two leaves use for different events is shown for
-    neither: it would be refused as ambiguous, and only the full path works.
+    A short name is shown only when typing it works: when resolving it from the
+    current position leads to exactly that event. An event that belongs to a
+    state above the leaf (a composite state, a region, an owner) and a name that
+    two leaves use for different events are therefore listed by their full path
+    alone, which is always accepted.
 
     :param runtime: Simulation runtime to inspect.
     :type runtime: SimulationRuntime
-    :return: Event display rows.
+    :return: Event display rows; empty once the runtime has ended.
     :rtype: List[Tuple[str, Optional[str]]]
 
     Example::
@@ -134,8 +117,9 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
         ... state Root {
         ...     [*] -> P;
         ...     state P {
+        ...         event Stop;
         ...         region L { [*] -> X; state X { event Go; event Ping; }
-        ...                    X -> X :: Go; X -> X :: Ping; }
+        ...                    X -> X :: Go; X -> X :: Ping; X -> X : Stop; }
         ...         region R { [*] -> Y; state Y { event Ping; } Y -> Y :: Ping; }
         ...     }
         ... }
@@ -143,31 +127,24 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
         >>> runtime = SimulationRuntime(model)
         >>> _ = runtime.cycle()
         >>> get_current_event_display_items(runtime)
-        [('Root.P.L.X.Go', 'Go'), ('Root.P.L.X.Ping', None), ('Root.P.R.Y.Ping', None)]
+        [('Root.P.L.X.Go', 'Go'), ('Root.P.L.X.Ping', None), ('Root.P.L.Stop', None), ('Root.P.R.Y.Ping', None)]
     """
     if runtime.is_ended:
         return []
-    try:
-        active_states = _active_states(runtime)
-    except IndexError:
-        # IndexError: SimulationRuntime.current_state raises when the runtime
-        # has no active stack, for example after termination.
-        return []
+    current = runtime.current_state
+    active_states = list(current.leaves) if isinstance(current, Configuration) else [current]
     events: List[Tuple[str, Optional[str]]] = []
     seen_events = set()
-    short_names = {}
-    for current_state in active_states:
-        for transition in current_state.transitions_from:
+    for active_state in active_states:
+        for transition in active_state.transitions_from:
             if not transition.event:
                 continue
             event_path = _event_path(transition.event)
             if event_path in seen_events:
                 continue
             seen_events.add(event_path)
-            short_name = transition.event.name
-            short_names.setdefault(short_name, []).append(event_path)
-            events.append((event_path, short_name if short_name != event_path else None))
-        for state in _iter_post_exit_continuation_states(current_state):
+            events.append((event_path, transition.event.name))
+        for state in _iter_post_exit_continuation_states(active_state):
             for transition in state.transitions_from:
                 if not transition.event:
                     continue
@@ -177,10 +154,36 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
                     transition.event,
                     POST_EXIT_CONTINUATION_LABEL,
                 )
-    ambiguous = {name for name, paths in short_names.items() if len(paths) > 1}
     return [
-        (path, None if label in ambiguous else label) for path, label in events
+        (path, label if label == POST_EXIT_CONTINUATION_LABEL else _usable_short_name(current, path, label))
+        for path, label in events
     ]
+
+
+def _usable_short_name(current, event_path: str, short_name: str) -> Optional[str]:
+    """
+    Return ``short_name`` when typing it from ``current`` reaches ``event_path``.
+
+    :param current: The runtime's current state, or its configuration for a model
+        with regions.
+    :type current: Union[pyfcstm.model.model.State, pyfcstm.model.configuration.Configuration]
+    :param event_path: Full path of the event the row stands for.
+    :type event_path: str
+    :param short_name: The event's own name, which is what a user would type.
+    :type short_name: str
+    :return: ``short_name`` if it resolves to the event, otherwise ``None`` (also
+        when it is the full path itself, which needs no short name).
+    :rtype: Optional[str]
+    """
+    if short_name == event_path:
+        return None
+    try:
+        reached = current.resolve_event(short_name)
+    except (ModelValueError, ModelLookupError):
+        # ModelValueError / ModelLookupError: the name does not lead to one
+        # event from here, so only the full path is shown.
+        return None
+    return short_name if _event_path(reached) == event_path else None
 
 
 def get_current_event_completion_items(runtime) -> List[Tuple[str, str]]:

@@ -12,7 +12,7 @@ import textwrap
 import pytest
 from prompt_toolkit.document import Document
 
-from pyfcstm.dsl import EXIT_STATE, parse_with_grammar_entry
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.entry.simulate.batch import BatchProcessor, create_cross_platform_output_func
 from pyfcstm.entry.simulate.commands import CommandProcessor
 from pyfcstm.entry.simulate.events import get_current_event_display_items
@@ -491,74 +491,74 @@ class TestSimulationCompleterRuntimeEvents:
         assert 'post-exit continuation' in completion_meta['Root.System1.Switch']
 
 
-class _NoCurrentStateRuntime:
-    is_ended = False
+_DISPLAY_MODEL = """
+state Root {
+    [*] -> Parent;
+    state Parent {
+        [*] -> A;
+        state A { event Go; }
+        state B;
+        A -> B :: Go;
+        A -> B :: Go;
+        A -> B : Stop;
+    }
+}
+"""
 
-    @property
-    def current_state(self):
-        raise IndexError('no active state')
+_CONTINUATION_MODEL = """
+state Root {
+    [*] -> Parent;
+    state Parent {
+        [*] -> A;
+        state A;
+        A -> [*];
+    }
+    state B;
+    state C;
+    Parent -> B :: Switch;
+    Parent -> C :: Switch;
+}
+"""
+
+_BOUNDARY_MODEL = """
+state Root {
+    [*] -> A;
+    state A;
+    A -> [*];
+}
+"""
 
 
-class _NoneCurrentStateRuntime:
-    is_ended = False
-    current_state = None
-
-
-class _FakeEvent:
-    def __init__(self, path_name, name):
-        self.path_name = path_name
-        self.name = name
-
-
-class _FakeTransition:
-    def __init__(self, event, to_state='Other'):
-        self.event = event
-        self.to_state = to_state
-
-
-class _FakeState:
-    def __init__(self, transitions, parent=None, is_root_state=False):
-        self.is_root_state = is_root_state
-        self.parent = parent
-        self.transitions_from = transitions
-
-
-class _FakeRuntime:
-    is_ended = False
-
-    def __init__(self, current_state):
-        self.current_state = current_state
+def _resting_runtime(source):
+    runtime = SimulationRuntime(parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(source, entry_name='state_machine_dsl')))
+    runtime.cycle()
+    return runtime
 
 
 @pytest.mark.unittest
 class TestEventDisplayItems:
-    def test_display_items_return_empty_without_active_state(self):
-        assert get_current_event_display_items(_NoCurrentStateRuntime()) == []
-        assert get_current_event_display_items(_NoneCurrentStateRuntime()) == []
+    def test_display_items_return_empty_once_the_runtime_has_ended(self):
+        runtime = _resting_runtime(_BOUNDARY_MODEL)
+        runtime.cycle()
+        assert runtime.is_ended
+        assert get_current_event_display_items(runtime) == []
 
-    def test_display_items_deduplicate_event_paths(self):
-        event = _FakeEvent('System.A.Go', 'Go')
-        state = _FakeState([
-            _FakeTransition(event),
-            _FakeTransition(event),
-        ])
+    def test_display_items_deduplicate_event_paths_and_hide_unusable_short_names(self):
+        """``Go`` belongs to the leaf and can be typed; ``Stop`` belongs to the composite above it."""
+        runtime = _resting_runtime(_DISPLAY_MODEL)
+        assert get_current_event_display_items(runtime) == [
+            ('Root.Parent.A.Go', 'Go'),
+            ('Root.Parent.Stop', None),
+        ]
+        # What the list says is what works: the short name is accepted, the other is not.
+        runtime.cycle(['Go'])
+        assert runtime.current_state.path == ('Root', 'Parent', 'B')
 
-        assert get_current_event_display_items(_FakeRuntime(state)) == [('System.A.Go', 'Go')]
-
-    def test_display_items_omits_root_boundary_continuation(self):
-        root = _FakeState([], is_root_state=True)
-        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=root)
-
-        assert get_current_event_display_items(_FakeRuntime(state)) == []
+    def test_display_items_omit_root_boundary_continuation(self):
+        assert get_current_event_display_items(_resting_runtime(_BOUNDARY_MODEL)) == []
 
     def test_display_items_deduplicate_continuation_event_paths(self):
-        event = _FakeEvent('Root.Parent.Switch', 'Switch')
-        parent = _FakeState([
-            _FakeTransition(event),
-            _FakeTransition(event),
-        ])
-        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=parent)
-
-        assert get_current_event_display_items(_FakeRuntime(state)) == [
+        assert get_current_event_display_items(_resting_runtime(_CONTINUATION_MODEL)) == [
             ('Root.Parent.Switch', 'post-exit continuation'),
         ]

@@ -129,12 +129,13 @@ def _lookup(model, path):
     """
     parts = tuple(path.split('.')) if isinstance(path, str) else tuple(path)
     current = model.root_state
+    shown = _ERROR_REPR.repr('.'.join(parts))
     if not parts or parts[0] != current.name:
-        raise ValueError('Unknown configuration path: %s.' % _ERROR_REPR.repr(path))
+        raise ValueError('Unknown configuration path: %s.' % shown)
     for segment in parts[1:]:
         current = namespace_child(current, segment)
         if current is None:
-            raise ValueError('Unknown configuration path: %s.' % _ERROR_REPR.repr(path))
+            raise ValueError('Unknown configuration path: %s.' % shown)
     return current
 
 

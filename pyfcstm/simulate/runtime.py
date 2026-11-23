@@ -1975,6 +1975,13 @@ class SimulationRuntime:
             except (ModelValueError, ModelLookupError) as err:
                 # ModelValueError/ModelLookupError: the same user-supplied
                 # path also failed state-relative lookup.
+                if isinstance(self.current_state, Configuration) and len(
+                    self.current_state.leaves
+                ) > 1:
+                    # With several active leaves the name was resolved from
+                    # each of them, and the error says why it led nowhere or
+                    # to several events; the fallback wording would bury it.
+                    raise self._event_input_error(str(err)) from err
                 raise self._event_input_error(
                     f"Cannot resolve event path {event!r}: "
                     f"failed with both StateMachine.resolve_event and State.resolve_event. "

@@ -292,6 +292,8 @@ def test_a_state_of_another_model_is_rejected(job):
         pytest.param("", ValueError, "cannot be empty", id="empty-text"),
         pytest.param(42, TypeError, "got int", id="unsupported-type"),
         pytest.param("W.Job.A", ValueError, "names a region", id="a-region-is-no-state"),
+        pytest.param("W.Nowhere", ValueError, r"path: 'W\.Nowhere'\.", id="unknown-state-in-dotted-form"),
+        pytest.param(("W", "Nowhere"), ValueError, r"path: 'W\.Nowhere'\.", id="unknown-tuple-in-dotted-form"),
     ],
 )
 def test_a_reference_that_is_no_state_is_rejected(job, start, error, message):

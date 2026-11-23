@@ -129,6 +129,8 @@ def test_the_runtime_reports_an_ambiguous_name_with_its_candidates(model):
     with pytest.raises(SimulationRuntimeEventError, match="ambiguous") as caught:
         runtime.cycle(["Ping"])
     assert "Controller.Running.Motion.Off.Ping" in str(caught.value)
+    # The reason comes first, not a generic "cannot resolve" wrapper around it.
+    assert str(caught.value).startswith("Position-dependent event name 'Ping' is ambiguous")
     # Nothing ran: the cycle was refused before it started.
     assert runtime.vars["trail"] == 0
     assert runtime.cycle_count == 2

@@ -502,7 +502,8 @@ class CommandProcessor:
         for a model with regions, a configuration text such as
         ``Controller.Running{Safety: Watching, Motion: On}``; a region that is
         left out, and a plain composite state named without a child, wait for
-        initialization. All variables must be provided, hidden ones included.
+        initialization. All variables must be provided, hidden ones included,
+        and each of them only once.
 
         :param args: Command arguments [position, var_assignments...]
         :type args: List[str]
@@ -540,6 +541,11 @@ class CommandProcessor:
             var_name, var_value_str = assignment.split('=', 1)
             var_name = var_name.strip()
             var_value_str = var_value_str.strip()
+            if var_name in initial_vars:
+                return CommandResult(
+                    f"Error: variable '{var_name}' is assigned more than once.",
+                    exit_code=1,
+                )
 
             # Parse value
             try:

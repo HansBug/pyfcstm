@@ -20,6 +20,7 @@
 | 生成指南 | 两份 README Jinja 模板、实际渲染示例和可执行文档测试 |
 | 角色接口或生命周期行为 | 运行时源码、生成指南/API 表、角色测试和语义对齐 |
 | 表达式/getter 生成 | `config.yaml` 中按角色区分的表达式/语句样式、`../../pyfcstm/render/render.py` 上下文，以及生成动作/守卫测试 |
+| region 行为 | `machine.py.j2` 中的 region 代码块（以 `{# region-kernel:NAME #}` 标记）、两份指南的 region 章节、`test/template/python/test_region_runtime.py` 和共享的 `regions` 用例 |
 
 ## 运行时契约
 
@@ -39,6 +40,17 @@
 生成代码保持 Python 3.7+ 和仅标准库依赖。保留 input/param 名称的准确后缀、`read_*` 覆写入口、仅关键字参数 `parameters` / `inputs`、只读参数/输入快照，以及示例子类完整的构造参数转发。代表性产物必须通过显式 Python 3.7 目标的 Ruff 检查与格式门禁。
 
 要给强制转换让路的转移会让条件变长，所以在含强制转换的模型里，`render_guard_lambda` 宏按 Ruff 的排版结果输出条件的 lambda：不超过 51 个字符的条件留在 lambda 那一行，不超过 68 个字符的整体加一层括号换行，更长的在括号之外的每个 `and` / `or` 之前换行。条件方法的缩进变化时要同步调整这两个宽度。其他模型的条件一律留在 lambda 那一行，使它们的生成代码逐字节保持原样；把这套排版推广到所有模型会改变既有输出，应放在允许这样做的改动里。仍会被格式化工具改写、但不阻塞的情形（这些产物 lint 干净，并与仿真器对齐）：不含强制转换的模型里的长条件（例如历史恢复）、单个操作数一行放不下（例如让路条件前面是一个带括号的多项 `||`）、最外层是条件表达式的长条件（它留在 lambda 那一行）、`=>` / `iff` / `xor` 渲染出来的多余外层括号、带指数符号的浮点字面量（如 `1e+308`），以及操作块和初始化里的长算术表达式（仍按单行输出）。
+
+### Region
+
+声明了 region 的模型使用另一套内核生成，只在 `model.has_regions` 为真时才输出：它按方法逐个移植了 `SimulationRuntime` 里 region 的部分（分支栈、外层 owner 链、带回滚的整组进入、owner 续接、aspect 账本、带记忆化的稳定后继搜索、位置树的热启动、依赖位置的事件名）。模板在 `config.yaml` 里声明 `features: [region]`，删掉这一行渲染器就会重新拒绝含 region 的模型。修改时保持以下不变量：
+
+- 不含 region 的模型必须继续生成逐字节相同的 `machine.py`、`README.md` 和 `README_zh.md`。region 代码只放在 `has_regions` 条件里，条件块不能让不含 region 的模型多出或少掉换行。
+- 共享的 `regions` 用例决定行为，对齐 runner 除了位置文本还会比较异常类别和消息文本，所以内核里的消息照抄仿真器，不改写措辞。
+- 仿真器的 region 行为改动要在同一次改动里移植过来，不要让两套内核漂移；用例没有钉住的行为，用随机 region 模型对照仿真器检查。
+- 生成的模块保持自包含、仅标准库、Python 3.7+。region 的输出必须通过 `ruff check`；格式化器可能改写少数很长的隐藏变量名和很长的条件 lambda，不含 region 的模型也有同样的情形。
+
+先 `make tpl`，再运行 `pytest test/template/python/test_semantic_fixture_alignment.py -k region_ test/template/python/test_region_runtime.py` 验证，并对每个已跟踪的不含 region 的模型比较改动前后的生成文件。
 
 ## 文档维护纪律
 

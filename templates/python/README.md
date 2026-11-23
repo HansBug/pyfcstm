@@ -20,6 +20,7 @@ Generation-time helpers run inside pyfcstm; generated programs must remain self-
 | Generated guide | Both README Jinja files, rendered examples and executable documentation tests |
 | Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
 | Expression/getter emission | `config.yaml` role-aware expression/statement styles and `../../pyfcstm/render/render.py` context; generated action/guard tests |
+| Region behavior | The region blocks of `machine.py.j2` (marked `{# region-kernel:NAME #}`), the region sections of both guides, `test/template/python/test_region_runtime.py` and the shared `regions` fixtures |
 
 ## Runtime contracts
 
@@ -39,6 +40,17 @@ Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, 
 Keep generated code Python 3.7+ and standard-library-only. Preserve exact input/parameter suffixes, `read_*` overrides, keyword-only `parameters` / `inputs`, read-only parameter/input snapshots and complete constructor forwarding in documented subclasses. Representative artifacts must pass Ruff check and format with an explicit Python 3.7 target.
 
 A forced transition that has to give way lengthens guards, so in a model with forced transitions the `render_guard_lambda` macro lays guard lambdas out the way Ruff leaves them: a guard of up to 51 characters stays on the lambda line, one of up to 68 is wrapped once in parentheses, and a longer one is split in front of every `and` / `or` that is not inside brackets. Keep these widths in step with the indentation of the guard methods when that changes. Every other model keeps each guard on the lambda line, so that its generated code stays byte-for-byte what it was; extending the layout to all models changes existing output and belongs to a change that is allowed to do so. Formatter-only rewrites that remain are non-blocking; the outputs are lint-clean and aligned with the simulator: a long guard in a model without forced transitions (a history restore, for example), a single operand that does not fit on a line (a parenthesised `||` chain of several terms in front of the give-way condition, for example), a long guard whose outermost operator is a conditional expression, which stays on the lambda line, the redundant outer parentheses that `=>`, `iff` and `xor` are rendered with, a float literal written with an exponent sign such as `1e+308`, and long arithmetic in operation blocks and initializers, which is still emitted on one line.
+
+### Regions
+
+A model that declares regions is generated with a different kernel, emitted only when `model.has_regions` is true: it is a method-by-method port of the region part of `SimulationRuntime` (branch stacks, the chain of enclosing owners, group entry with rollback, owner continuation, the aspect ledger, the memoised stable-continuation search, hot start of a position tree, position-dependent event names). The template declares `features: [region]` in `config.yaml`; remove that line and the renderer refuses region models again. Keep these invariants when changing it:
+
+- A model without regions must keep generating byte-identical `machine.py`, `README.md` and `README_zh.md`. Region code stays inside `has_regions` conditions, and a conditional block must not add or remove a newline for a model without regions.
+- The shared `regions` fixtures decide behavior, and the alignment runner compares the exception class and message text as well as the position text, so a message of the kernel is copied from the simulator, never reworded.
+- A change to the simulator's region behavior is ported in the same change; do not let the two kernels drift. A behavior the fixtures do not pin down is checked with random region models against the simulator.
+- The generated module stays self-contained, standard-library-only and Python 3.7+. Region outputs must pass `ruff check`; the formatter may rewrite a few long hidden-variable names and long guard lambdas, which models without regions share.
+
+Verify with `pytest test/template/python/test_semantic_fixture_alignment.py -k region_ test/template/python/test_region_runtime.py` after `make tpl`, plus a before/after comparison of the generated files of every tracked model without regions.
 
 ## Documentation maintenance
 

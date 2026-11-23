@@ -1,0 +1,45 @@
+def int seq = 0;
+def int n = 0;
+state W {
+    [*] -> Job;
+    state Job {
+        enter { seq = seq * 10 + 9; }
+        region A {
+            [*] -> Q;
+            state Q {
+                enter { seq = seq * 10 + 1; }
+                region A1 {
+                    [*] -> W1;
+                    state W1 {
+                        enter { seq = seq * 10 + 2; }
+                        during { n = n + 1; }
+                    }
+                    W1 -> [*] :: Fin;
+                }
+                region A2 {
+                    [*] -> W2;
+                    state W2 {
+                        enter { seq = seq * 10 + 3; }
+                        during { n = n + 100; }
+                    }
+                }
+            }
+        }
+        region B {
+            [*] -> Comp;
+            state Comp {
+                enter { seq = seq * 10 + 4; }
+                [*] -> In1;
+                state In1 {
+                    enter { seq = seq * 10 + 5; }
+                    during { n = n + 10000; }
+                }
+                state In2 { enter { seq = seq * 10 + 6; } }
+                In1 -> In2 :: Next;
+            }
+            pseudo state P;
+            Comp -> P :: Jump;
+            P -> Comp;
+        }
+    }
+}

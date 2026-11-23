@@ -1,0 +1,16 @@
+def int n = 0;
+state Root {
+    [*] -> Run;
+    state Run {
+        region A {
+            [*] -> A1;
+            state A1;
+            state A2;
+            A1 -> A2 :: Go;
+        }
+        region B {
+            [*] -> B1;
+            state B1 { during { if [active("Root.Run.A.A2")] { n = n + 1; } } }
+        }
+    }
+}

@@ -132,9 +132,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
             raise click.UsageError('JSONL output requires --diagnostics.')
         # Use the existing file loader so imported models retain their origins.
         try:
-            from pyfcstm.model.support import require_supported_model
             model = load_state_machine_from_file(input_code_file)
-            require_supported_model(model, 'simulate')
         except (OSError, GrammarParseError, ModelValidationError, UnicodeDecodeError) as e:
             # OSError: input file missing / unreadable (Path.read_bytes).
             # GrammarParseError: DSL syntax issues from ANTLR.

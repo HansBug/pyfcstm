@@ -1468,8 +1468,18 @@ def test_region_fixture_with_canonical_position_runs(tmp_path):
             "an ended machine has no configuration",
         ),
         (
-            lambda data: data.update({"initial": {"state": "Root.P"}}),
-            "regions cases cannot declare initial",
+            lambda data: data.update({"initial": {"state": "Root.P", "vars": {}}}),
+            "regions cases name the start position with initial.configuration",
+        ),
+        (
+            lambda data: data.update({"initial": {"configuration": "  ", "vars": {}}}),
+            "initial.configuration must be a non-empty string",
+        ),
+        (
+            lambda data: data.update(
+                {"initial": {"vars": {}, "expect": {"raises": {"type": "ValueError"}}}}
+            ),
+            "initial.expect requires initial.state or initial.configuration",
         ),
     ],
 )
@@ -1480,6 +1490,22 @@ def test_region_fixture_schema_requires_the_position_after_every_step(
     mutate(data)
     with pytest.raises(SemanticCaseError, match=message):
         load_semantic_case(_write_fixture(tmp_path, data, _REGION_FIXTURE_STABLE_DSL))
+
+
+@pytest.mark.unittest
+def test_fixture_without_regions_cannot_name_a_start_configuration(tmp_path):
+    data = {
+        "title": "A plain machine cannot start from a configuration",
+        "origin": {"files": ["test/simulate/test_semantic_fixtures.py"]},
+        "categories": ["runtime"],
+        "initial": {"configuration": "Root.A", "vars": {}},
+        "steps": [{"cycle": [], "expect": {"state": "Root.A"}}],
+    }
+    path = _write_fixture(tmp_path, data, "state Root { [*] -> A; state A; }")
+    with pytest.raises(
+        SemanticCaseError, match="initial.configuration is only available to regions"
+    ):
+        load_semantic_case(path)
 
 
 @pytest.mark.unittest

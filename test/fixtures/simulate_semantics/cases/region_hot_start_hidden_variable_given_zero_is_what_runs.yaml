@@ -1,0 +1,24 @@
+title: 'Nothing is derived or checked: a flag given as 0 for a state that is in place stays 0 until the
+  state is entered again, so the query is false'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'Root.Run{A: A2, B: B1}'
+  vars:
+    n: 0
+    __active_Root_Run_A_A2: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Run{A: A2, B: B1}'
+    vars:
+      n: 0
+      __active_Root_Run_A_A2: 0

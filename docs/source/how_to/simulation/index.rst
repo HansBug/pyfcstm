@@ -49,8 +49,8 @@ commands are:
      - Show events available from the current state.
    * - ``history [n|all]``
      - Show recent history rows or the full retained history.
-   * - ``init <state_path> [var=value...]``
-     - Rebuild the runtime as a hot start at a state with explicit variables.
+   * - ``init <position> [var=value...]``
+     - Rebuild the runtime as a hot start at a state, or at a configuration text for a model with regions, with explicit variables.
    * - ``setting [key] [value]``
      - Show or change display/history/logging settings.
    * - ``export <path>``

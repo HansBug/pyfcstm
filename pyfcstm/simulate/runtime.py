@@ -167,8 +167,28 @@ The rules that decide the corner cases are:
   report give the deepest state common to every branch, and
   ``configuration_before`` and ``configuration_after`` give the full position.
 
-Hot start, the ``pyfcstm simulate`` command line and position-dependent event
-names with several active leaves do not support regions yet.
+**Hot start of a model with regions.** The start position is a tree. A leaf that
+is written is put in place without any ``enter``. What is not written is left to
+the model and waits for initialization: a plain composite state written without
+a child, a region that is left out, and an owner written as a bare path (all of
+its regions). The first cycle runs the initial transitions of everything that
+waits, in writing order, while the parts that were put in place work as usual.
+``initial_state`` takes a configuration text such as
+``"Root.Run{A: X, B: [done]}"`` (``[done]`` is a finished region, ``[init]`` a
+waiting one), a
+:class:`~pyfcstm.model.configuration.Configuration`, a state path through
+regions, or a state. An owner whose regions are all done is rejected. Hidden
+variables (``__forced_*``, ``__hist_*``, ``__active_*``) are ordinary variables
+and have to be given like any other.
+
+**Event names with several active leaves.** A full path and a name that starts at
+the root mean the same wherever the machine rests. A name that depends on the
+position, such as ``Go`` or ``.Reset``, is resolved once for every active leaf:
+it is an error if no leaf finds an event, the event is used if the leaves that
+find one all find the same event, and the name is ambiguous, with every
+candidate listed, if they find different events. A region that still waits for
+initialization after a hot start has no active leaf yet and does not take part
+in the first cycle; name its events by their full path when that matters.
 
 Basic usage::
 
@@ -274,7 +294,7 @@ from ..model import (
     StateMachine,
     Transition,
 )
-from ..model.configuration import Configuration, _Position, _RegionInit
+from ..model.configuration import Configuration, _Position, _RegionInit, _lookup
 from ..model.region import Region, walk_namespaces
 from .diagnostics import CycleDiagnostics, _DecisionCollector, _transition_label
 from .context import ReadOnlyExecutionContext, _configuration_provider
@@ -1043,7 +1063,7 @@ class SimulationRuntime:
         state_machine: StateMachine,
         abstract_error_mode: Literal["raise", "log"] = "raise",
         history_size: Optional[int] = None,
-        initial_state: Optional[Union[str, Tuple[str, ...], State]] = None,
+        initial_state: Optional[Union[str, Tuple[str, ...], State, Configuration]] = None,
         initial_vars: Optional[Dict[str, Union[int, float]]] = None,
         parameters: Optional[Mapping[str, Union[int, float]]] = None,
         input_source: Optional[InputSourceSpec] = None,
@@ -1076,7 +1096,14 @@ class SimulationRuntime:
         by directly constructing the execution stack to the specified state
         without executing enter actions. This simulates having already entered
         and stabilized at that state. Hot start requires ``initial_vars`` to
-        provide every declared persistent variable.
+        provide every declared persistent variable, hidden ones included: nothing
+        is derived from the position and nothing is checked against it.
+
+        For a model with regions the position is a tree. What is written is put
+        in place; a plain composite state without a child, a region that is not
+        written and an owner written as a bare path wait for initialization and
+        run their initial transitions in the first cycle (see the module
+        documentation).
 
         :param state_machine: The state machine model to simulate.
         :type state_machine: StateMachine
@@ -1090,9 +1117,13 @@ class SimulationRuntime:
         :param initial_state: Optional initial state for hot start. If provided,
             the runtime will start from this state without executing enter actions.
             Supports string path (``"System.Active"``), tuple path
-            (``('System', 'Active')``), or State object. Defaults to ``None``
-            (start from root state).
-        :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
+            (``('System', 'Active')``), or State object. For a model with regions
+            it also supports a configuration text
+            (``"Root.Run{A: X, B: [init]}"``) and a
+            :class:`~pyfcstm.model.configuration.Configuration` of this state
+            machine, and a path may pass through regions
+            (``"Root.Run.A.X"``). Defaults to ``None`` (start from root state).
+        :type initial_state: Optional[Union[str, Tuple[str, ...], State, Configuration]]
         :param parameters: Construction-time parameter overrides. Cold
             construction uses defaults for omitted parameters; hot start
             requires every parameter explicitly. The resulting mapping is
@@ -1115,10 +1146,10 @@ class SimulationRuntime:
             undefined variable, a default initializer fails, or a persistent
             value cannot be normalized to its declared ``int`` / ``float`` type.
         :raises ValueError: If ``initial_state`` cannot be resolved to a
-            state in this machine.
-        :raises pyfcstm.utils.validate.ModelValidationError: If hot start is
-            requested for a model that declares regions or ``active()`` queries,
-            which a cold start already supports.
+            state in this machine, is a configuration of another state machine,
+            names a region instead of a state, is a malformed configuration text,
+            or leaves every region of some owner done.
+        :raises TypeError: If ``initial_state`` is of an unsupported type.
 
         Example - Default initialization::
 
@@ -1181,6 +1212,34 @@ class SimulationRuntime:
            call. This allows inspection of initial variable values and the
            root state before execution begins.
 
+        Example - Hot start of a model with regions::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> sm = load_state_machine_from_text('''
+            ... def int n = 0;
+            ... state Root {
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region A { [*] -> X; state X { enter { n = n + 1; } } }
+            ...         region B { [*] -> Y; state Y { enter { n = n + 10; } } }
+            ...     }
+            ... }
+            ... ''')
+            >>> runtime = SimulationRuntime(
+            ...     sm, initial_state="Root.Run{B: Y}", initial_vars={"n": 0}
+            ... )
+            >>> str(runtime.configuration)  # region A has not been written: it waits
+            'Root.Run{A: [init], B: Y}'
+            >>> _ = runtime.cycle()  # A runs its initial transition, B just works
+            >>> str(runtime.configuration), runtime.vars['n']
+            ('Root.Run{A: X, B: Y}', 1)
+            >>> SimulationRuntime(
+            ...     sm, initial_state="Root.Run{A: [done], B: [done]}", initial_vars={"n": 0}
+            ... )
+            Traceback (most recent call last):
+            ...
+            ValueError: All regions are Done at 'Root.Run'; a finished owner cannot be hot-started.
+
         .. note::
            Hot start mode constructs the stack without executing entry boundary
            actions, simulating having already entered the target state. For
@@ -1189,12 +1248,6 @@ class SimulationRuntime:
            but it does not replay the composite's plain ``during before``
            boundary actions before that child entry.
         """
-        if initial_state is not None:
-            from pyfcstm.model.support import require_supported_model
-
-            # Hot start has to derive the hidden activity flags and place every
-            # region, which the cold-start path does not need.
-            require_supported_model(state_machine, 'simulate hot start')
         if abstract_error_mode not in ("raise", "log"):
             raise ValueError("abstract_error_mode must be 'raise' or 'log'")
         self.state_machine = state_machine
@@ -1328,7 +1381,14 @@ class SimulationRuntime:
         self._error_info: Optional[Tuple[str, Exception]] = None
 
         # Initialize stack - hot start or default
-        if initial_state is not None:
+        if initial_state is not None and self._has_regions:
+            # The start position of a model with regions is a tree.
+            self.stack = self._build_position_stack(
+                self._resolve_start_position(initial_state)
+            )
+            self._check_structural_limit(self.stack)
+            self._initialized = True
+        elif initial_state is not None:
             target_state = self._resolve_initial_state(initial_state)
 
             # Build hot start stack
@@ -1502,6 +1562,180 @@ class SimulationRuntime:
             current = current.substates[state_name]
 
         return current
+
+    def _resolve_start_position(
+        self, start: Union[str, Tuple[str, ...], State, Configuration]
+    ) -> _Position:
+        """
+        Turn a hot-start reference into the position tree of a model with regions.
+
+        A :class:`~pyfcstm.model.configuration.Configuration` or a configuration
+        text (anything with a ``{``) names the position directly; text is read
+        like ``Configuration.parse(..., mode='transient')``, so a region that is
+        left out waits for initialization. A state path, a tuple path or a
+        :class:`~pyfcstm.model.model.State` names one state, possibly inside
+        regions: the regions on the way to it hold that one branch and the other
+        regions of their owners wait for initialization. An owner or a plain
+        composite state named alone waits for initialization as a whole.
+
+        :param start: Configuration, configuration text, state path, tuple path or
+            state.
+        :type start: Union[str, Tuple[str, ...], State, Configuration]
+        :return: The validated position tree.
+        :rtype: pyfcstm.model.configuration._Position
+        :raises ValueError: If the reference names nothing of this model, names a
+            region instead of a state, belongs to another state machine, is empty
+            or malformed, or leaves every region of some owner done.
+        :raises TypeError: If ``start`` is of an unsupported type.
+        """
+        model = self.state_machine
+        if isinstance(start, Configuration):
+            if start._model is not model:
+                raise ValueError(
+                    "Provided Configuration does not belong to this state machine"
+                )
+            position = start._position
+        elif isinstance(start, str) and "{" in start:
+            position = Configuration.parse(model, start, mode="transient")._position
+        else:
+            position = self._position_of_state(self._resolve_start_state(start))
+        self._reject_all_done(position)
+        return position
+
+    def _resolve_start_state(
+        self, start: Union[str, Tuple[str, ...], State]
+    ) -> State:
+        """
+        Resolve a state reference that may pass through regions.
+
+        :param start: Dotted path, tuple path or state object.
+        :type start: Union[str, Tuple[str, ...], State]
+        :return: The state the reference names.
+        :rtype: pyfcstm.model.model.State
+        :raises ValueError: If the state does not belong to this machine, the
+            path is empty or unknown, or the path names a region.
+        :raises TypeError: If ``start`` is of an unsupported type.
+        """
+        if isinstance(start, State):
+            if not self._state_belongs_to_machine(start):
+                raise ValueError(
+                    "Provided State object does not belong to this state machine"
+                )
+            return start
+        if isinstance(start, str):
+            if not start:
+                raise ValueError("State path cannot be empty")
+            path = tuple(start.split("."))
+        elif isinstance(start, tuple):
+            path = start
+        else:
+            raise TypeError(
+                "initial_state must be str, tuple, State or Configuration, "
+                f"got {type(start).__name__}"
+            )
+        found = _lookup(self.state_machine, path)
+        if not isinstance(found, State):
+            raise ValueError(f"{'.'.join(path)!r} names a region, not a state")
+        return found
+
+    @staticmethod
+    def _position_of_state(state: State) -> _Position:
+        """
+        Position tree that holds one state and lets everything else wait.
+
+        :param state: State to hold; it may sit inside any number of regions.
+        :type state: pyfcstm.model.model.State
+        :return: Tree whose root is the outermost owner on the way to ``state``
+            (or ``state`` itself when it sits in no region), with the regions on
+            the way holding their branch and every other region waiting.
+        :rtype: pyfcstm.model.configuration._Position
+        """
+        waiting = lambda owner: tuple(  # noqa: E731
+            (name, _RegionInit.PENDING) for name in owner.regions
+        )
+        node = _Position(state.path, waiting(state))
+        scope = state
+        while scope is not None:
+            if isinstance(scope, Region):
+                owner = scope.parent
+                node = _Position(
+                    owner.path,
+                    tuple(
+                        (name, node if name == scope.name else _RegionInit.PENDING)
+                        for name in owner.regions
+                    ),
+                )
+            scope = scope.parent
+        return node
+
+    def _reject_all_done(self, position: _Position) -> None:
+        """
+        Refuse a position in which some owner has every region done.
+
+        :param position: Position tree to check, nested positions included.
+        :type position: pyfcstm.model.configuration._Position
+        :return: ``None``.
+        :rtype: None
+        :raises ValueError: If the owner of ``position`` or of a nested position
+            has regions and all of them are done; such an owner has finished and
+            is not a position the machine can rest in.
+        """
+        if position.regions and all(child is None for _, child in position.regions):
+            raise ValueError(
+                "All regions are Done at '%s'; a finished owner cannot be hot-started."
+                % ".".join(position.path)
+            )
+        for _, child in position.regions:
+            if isinstance(child, _Position):
+                self._reject_all_done(child)
+
+    def _build_position_stack(
+        self, position: _Position, region: Optional[Region] = None
+    ) -> List[_Frame]:
+        """
+        Build the frames that put a position in place without any ``enter``.
+
+        Leaves are ``active``. A state that holds nothing below it, a plain
+        composite or an owner whose regions all wait, is ``init_wait`` so that
+        its initial transitions run in the first cycle. An owner with at least
+        one region in place is ``active``; its done regions get a finished region
+        frame, its waiting regions an empty branch, the others a branch stack
+        built recursively.
+
+        :param position: Position tree to put in place.
+        :type position: pyfcstm.model.configuration._Position
+        :param region: Region whose branch is being built, ``None`` for the main
+            stack.
+        :type region: Optional[pyfcstm.model.region.Region], optional
+        :return: Frames from below ``region`` (or from the root state) down to the
+            state of ``position``.
+        :rtype: List[_Frame]
+        """
+        chain = []
+        scope = _lookup(self.state_machine, position.path)
+        while scope is not region:
+            chain.insert(0, scope)
+            scope = scope.parent
+        frames = [_Frame(state, "active") for state in chain]
+        top = frames[-1]
+        if position.regions:
+            top.branches = []
+            for name, child in position.regions:
+                owned = top.state.regions[name]
+                if child is None:
+                    stack = [_Frame(owned, "post_child_exit")]
+                elif child is _RegionInit.PENDING:
+                    stack = []
+                else:
+                    stack = [_Frame(owned, "active")] + self._build_position_stack(
+                        child, owned
+                    )
+                top.branches.append(_Branch(owned, stack))
+            if all(branch.status == "pending" for branch in top.branches):
+                top.mode = "init_wait"
+        elif not top.state.is_leaf_state:
+            top.mode = "init_wait"
+        return frames
 
     def _build_hot_start_stack(self, target_state: State) -> List[_Frame]:
         """
@@ -1712,15 +1946,8 @@ class SimulationRuntime:
         """
         from .utils import is_state_resolve_event_path
 
-        has_current_state = len(self.stack) > 0
-        if not has_current_state:
-            try:
-                return self.state_machine.resolve_event(event)
-            except (ModelValueError, ModelLookupError) as err:
-                # ModelValueError/ModelLookupError: the user-supplied event
-                # path is malformed or absent from the model.
-                raise self._event_input_error(str(err)) from err
-
+        # ``cycle`` returns before it resolves any name once the runtime has
+        # ended, so the stack is never empty here.
         if is_state_resolve_event_path(event):
             try:
                 return self.current_state.resolve_event(event)
@@ -1741,6 +1968,13 @@ class SimulationRuntime:
             except (ModelValueError, ModelLookupError) as err:
                 # ModelValueError/ModelLookupError: the same user-supplied
                 # path also failed state-relative lookup.
+                if isinstance(self.current_state, Configuration) and len(
+                    self.current_state.leaves
+                ) > 1:
+                    # With several active leaves the name was resolved from
+                    # each of them, and the error says why it led nowhere or
+                    # to several events; the fallback wording would bury it.
+                    raise self._event_input_error(str(err)) from err
                 raise self._event_input_error(
                     f"Cannot resolve event path {event!r}: "
                     f"failed with both StateMachine.resolve_event and State.resolve_event. "
@@ -3309,7 +3543,10 @@ class SimulationRuntime:
 
         A group that is still waiting is initialized. Otherwise every working
         region advances in declaration order until it stops on a stable leaf or
-        finishes. When the last region finishes the owner switches to
+        finishes. A region that has not been initialized yet, which only a hot
+        start can leave beside regions that already work, gets its turn in the
+        same order and runs its initial transitions first; a region that is done
+        is skipped. When the last region finishes the owner switches to
         ``post_child_exit``, so the loop continues through its outgoing
         transitions.
 
@@ -3339,8 +3576,12 @@ class SimulationRuntime:
             return _CONTINUE if ok else _FAILED
 
         for index, branch in enumerate(frame.branches):
-            if branch.status != "live":
+            if branch.status == "done":
                 continue
+            if branch.status == "pending":
+                # Only a hot start leaves an owner at work with a region that
+                # has not been initialized: it gets its turn like the others.
+                branch.stack = [_Frame(branch.region, "init_wait")]
             self._outer_chain.append(_Outer(stack, index, self._current_outer()))
             try:
                 outcome = self._advance_stack(branch.stack, vars_, d_events, run)
@@ -5541,6 +5782,11 @@ class SimulationRuntime:
         """
         Tell whether every working part of a stack rests on a stoppable leaf.
 
+        An owner rests when it works, has at least one live region and every
+        region is either done or rests itself. A region that waits for
+        initialization, which only a hot start can leave inside a working
+        owner, does not rest.
+
         :param stack: Frame stack, possibly starting with a region frame.
         :type stack: List[_Frame]
         :return: ``True`` for a stable configuration.
@@ -5553,7 +5799,11 @@ class SimulationRuntime:
             top.mode in ("active", "after_entry")
             and any(branch.status == "live" for branch in top.branches)
             and all(
-                branch.status == "done" or SimulationRuntime._is_resting(branch.stack)
+                branch.status == "done"
+                or (
+                    branch.status == "live"
+                    and SimulationRuntime._is_resting(branch.stack)
+                )
                 for branch in top.branches
             )
         )

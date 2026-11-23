@@ -1,0 +1,39 @@
+title: 'A name that leads to different events from different leaves is ambiguous: the cycle is refused
+  and nothing runs; the full path of either works'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+initial:
+  configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+  vars:
+    trail: 0
+steps:
+- cycle:
+  - Ping
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      trail: 0
+    raises:
+      type: SimulationRuntimeEventError
+      match: ambiguous
+      match_kind: substring
+- cycle:
+  - Controller.Running.Motion.Off.Ping
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      trail: 2
+- cycle:
+  - Controller.Running.Safety.Watching.Ping
+  expect:
+    configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+    vars:
+      trail: 21

@@ -21,7 +21,7 @@ def _command_arguments(tmp_path, arguments):
 
 
 @pytest.mark.parametrize('arguments', [
-    ['simulate'], ['generate'], ['bmc'],
+    ['generate'], ['bmc'],
 ])
 def test_cli_refuses_a_model_with_regions(tmp_path, arguments):
     path = tmp_path / 'unsupported.fcstm'
@@ -32,6 +32,22 @@ def test_cli_refuses_a_model_with_regions(tmp_path, arguments):
     output = result.stdout + result.stderr
     assert 'does not support region models yet' in output
     assert 'Traceback' not in output
+
+
+def test_simulate_runs_a_model_with_regions(tmp_path):
+    """``pyfcstm simulate`` drives a model with regions; the command refuses nothing."""
+    path = tmp_path / 'regions.fcstm'
+    path.write_text(
+        'state Root { [*] -> Run; state Run {'
+        ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }',
+        encoding='utf-8',
+    )
+    result = simulate_entry(
+        pyfcstmcli, ['pyfcstm', 'simulate', '-i', str(path), '-e', 'cycle; current']
+    )
+    assert result.exitcode == 0, result.stdout + result.stderr
+    assert 'Current State: Root.Run{A: X, B: Y}' in result.stdout
+    assert 'does not support' not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize('arguments', [

@@ -77,14 +77,42 @@ def test_region_status_names_the_owner_that_is_not_in_the_position():
             machine.region_status("Root.Nowhere")
 
 
-def test_single_path_queries_refuse_and_point_to_the_configuration():
+def test_a_machine_with_regions_has_no_single_path_position():
     with _render_python_module(OWNER_MODEL) as module:
         machine = module.RootMachine()
         machine.cycle()
         for name in ("current_state_path", "current_state_name"):
-            with pytest.raises(module.SimulationRuntimeRegionQueryError, match="configuration"):
+            assert not hasattr(machine, name)
+            with pytest.raises(AttributeError):
                 getattr(machine, name)
         assert machine.info()["configuration"] == "Root.Run{A: X, B: Y}"
+        assert "current_state_path" not in machine.info()
+
+
+def test_a_machine_without_regions_keeps_its_single_path_position():
+    source = "state Root { [*] -> Idle; state Idle; }"
+    with _render_python_module(source) as module:
+        machine = module.RootMachine()
+        machine.cycle()
+        assert machine.current_state_path == ("Root", "Idle")
+        assert machine.current_state_name == "Idle"
+        assert machine.info()["current_state_path"] == ("Root", "Idle")
+
+
+def test_state_can_only_be_read_from_outside():
+    with _render_python_module(OWNER_MODEL) as module:
+        machine = module.RootMachine()
+        machine.cycle()
+        view = machine.vars
+        with pytest.raises(TypeError):
+            view["n"] = 99
+        assert view["n"] == 1
+        machine.cycle()
+        assert machine.vars["n"] == 2
+        assert dict(machine.vars) == {"n": 2}
+        assert not hasattr(machine, "variables")
+        with pytest.raises(TypeError):
+            module.RootMachine.ABSTRACT_HOOKS["Root.Run.Left"] = "x"
 
 
 @pytest.mark.parametrize(
@@ -202,7 +230,7 @@ def test_guide_examples_run_for_a_model_with_regions(language, monkeypatch):
         assert restored.configuration == "Root.Run{A: X, B: Y}"
         assert restored.vars == machine.vars
         assert "current_state_path" not in "\n".join(_python_code_blocks(markdown))
-        assert "SimulationRuntimeRegionQueryError" in markdown
+        assert "AttributeError" in markdown
         assert "[init]" in markdown and "[done]" in markdown
 
 

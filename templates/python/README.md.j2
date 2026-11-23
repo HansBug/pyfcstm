@@ -151,7 +151,7 @@ For repeated execution, update the application sensor source and call `machine.c
 | `control` (`def`, often called var) | Optionally preset at initialization, then observe | Model-owned writable state; holds when not assigned |
 | `output` | Read after a successful cycle and pass to an actuator if needed | Shares persistent storage with control; holds when not assigned |
 
-`control` and `output` share persistent `vars` storage. Both keep their value when a cycle does not assign them. Read results through `vars`; writing internal storage from application code is unsupported and can invalidate verified model properties. Outputs do not invoke external setters or actuator callbacks.
+`control` and `output` share persistent `vars` storage. Both keep their value when a cycle does not assign them. Read results through `vars`, a read-only view; writing internal storage from application code is unsupported and can invalidate verified model properties. State can only be read: the ways to change it are `cycle()` and hot start. Outputs do not invoke external setters or actuator callbacks.
 
 Pass instance configuration through `parameters` when constructing the machine. Values are validated and copied; changing the original mapping has no effect. Cold construction uses each omitted parameter's DSL default. Hot construction requires complete parameters and persistent values. Parameters have no cycle argument or setter; `parameters` and each generated `get_param_*()` are read-only.
 
@@ -226,7 +226,7 @@ This model declares regions, so several leaves can be active at once. A name tha
 
 ## Regions and the position
 
-This model declares regions. A state that owns regions (an owner) runs all of them in every cycle, in writing order, so a later region sees the values and states that an earlier one produced in the same cycle. The position of the machine is therefore a tree rather than one path: `current_state_path` and `current_state_name` raise `SimulationRuntimeRegionQueryError`, and `configuration` is the way to read where the machine is.
+This model declares regions. A state that owns regions (an owner) runs all of them in every cycle, in writing order, so a later region sees the values and states that an earlier one produced in the same cycle. The position of the machine is therefore a tree rather than one path: a machine with regions has no `current_state_path` or `current_state_name` (reading them is an `AttributeError`), and `configuration` is the way to read where the machine is.
 
 `configuration` is the position as one line of text, written exactly as the simulator writes it:
 
@@ -302,7 +302,7 @@ machine = Device(
 
 ## Results, errors and lifetime
 
-`cycle()` returns `None`. After normal return, inspect `vars`, {% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}, `is_ended` and `last_cycle_was_delta`. A Delta cycle is a successful no-progress step: persistent state holds, but the cycle consumes its input sample. `vars` contains both control and output; it is application-read-only. Each commit replaces that dictionary, so obtain it again each cycle; use `dict(machine.vars)` to retain a checkpoint. `last_inputs` and action contexts are independent read-only snapshots.
+`cycle()` returns `None`. After normal return, inspect `vars`, {% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}, `is_ended` and `last_cycle_was_delta`. A Delta cycle is a successful no-progress step: persistent state holds, but the cycle consumes its input sample. `vars` contains both control and output; each access returns a read-only view of the values committed so far, so read it again after every cycle; use `dict(machine.vars)` to retain a checkpoint. `last_inputs` and action contexts are independent read-only snapshots.
 
 Input acquisition errors, invalid values and expression errors prevent the cycle from committing. Fix the source of the error and call `cycle()` again; readers run again. External device reads, logs and action side effects cannot be rolled back. Apply outputs to actuators after normal return when they must reflect committed state. Keep calls to a single instance serialized and do not recursively call `cycle()` from readers or hooks.
 
@@ -345,8 +345,7 @@ Each action receives an independent read-only observation. Context methods below
 | `ValueError` | Unknown/missing names, invalid snapshots or numeric values |
 | `SimulationRuntimeExpressionError` | DSL expression evaluation failed; __cause__ preserves the numeric exception |
 | `SimulationRuntimeDfsError` | Validation exceeded its structural safety limit{% if model.has_regions %}, or a loop has no way out |
-| `SimulationRuntimeEventError` | An event name found no event, or is ambiguous between active leaves |
-| `SimulationRuntimeRegionQueryError` | `current_state_path` or `current_state_name` was read on a model with regions{% endif %} |
+| `SimulationRuntimeEventError` | An event name found no event, or is ambiguous between active leaves{% endif %} |
 
 Exceptions from application readers and actions propagate. Catch only failures your application can handle; report the cause before retrying. A failed cycle does not advance `cycle_count`.
 

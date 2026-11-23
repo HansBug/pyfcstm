@@ -151,7 +151,7 @@ python app.py
 | `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
 | `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
 
-`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
+`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持原值。通过 `vars` 读取结果，它是只读视图；应用代码直接修改内部存储属于不支持的用法，可能破坏模型已经验证过的性质。状态只能读取；改变状态的途径只有 `cycle()` 与热启动。output 不触发外部 setter 或执行器回调。
 
 在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改原始映射不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters` 和生成的 `get_param_*()` 读取。
 
@@ -226,7 +226,7 @@ machine.cycle(inputs={{ example_values(model.inputs.values()) }})
 
 ## Region 与位置
 
-这个模型声明了 region。含 region 的状态（owner）在每个周期里按书写顺序运行它的全部 region，所以靠后的 region 能看到靠前的 region 在同一周期里产生的变量值和状态。状态机的位置因此是一棵树，而不是一条路径：`current_state_path` 与 `current_state_name` 会抛出 `SimulationRuntimeRegionQueryError`，请通过 `configuration`（配置，configuration）读取位置。
+这个模型声明了 region。含 region 的状态（owner）在每个周期里按书写顺序运行它的全部 region，所以靠后的 region 能看到靠前的 region 在同一周期里产生的变量值和状态。状态机的位置因此是一棵树，而不是一条路径：含 region 的状态机没有 `current_state_path` 与 `current_state_name`（读取它们是 `AttributeError`），请通过 `configuration`（配置，configuration）读取位置。
 
 `configuration` 是一行文本，写法与仿真器完全一致：
 
@@ -302,7 +302,7 @@ machine = Device(
 
 ## 结果、错误与生命周期
 
-`cycle()` 返回 `None`。正常返回后读取 `vars`、{% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}、`is_ended` 和 `last_cycle_was_delta`。Delta 周期是成功的无进展步骤：持久状态保持，但仍消耗本拍输入。`vars` 同时包含 control 和 output，应用应只读；提交会替换该字典，因此每拍重新获取，保存检查点时使用 `dict(machine.vars)`。`last_inputs` 和动作上下文都是独立的只读快照。
+`cycle()` 返回 `None`。正常返回后读取 `vars`、{% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}、`is_ended` 和 `last_cycle_was_delta`。Delta 周期是成功的无进展步骤：持久状态保持，但仍消耗本拍输入。`vars` 同时包含 control 和 output，每次访问返回已提交值的只读视图，因此每个周期之后重新读取；保存检查点时使用 `dict(machine.vars)`。`last_inputs` 和动作上下文都是独立的只读快照。
 
 输入获取失败、非法数值和表达式错误会阻止周期提交。修正原因后可再次调用 `cycle()`，届时重新采样。设备读取、日志和动作产生的外部副作用无法撤销；如果执行器必须反映已提交状态，应在周期正常返回后发送 output。同一实例的访问应串行执行，不要在 reader 或 Hook 中递归调用 `cycle()`。
 
@@ -345,8 +345,7 @@ machine = Device(
 | `ValueError` | 未知/缺失名称、非法快照或数值 |
 | `SimulationRuntimeExpressionError` | DSL 表达式求值失败，__cause__ 保留数值异常 |
 | `SimulationRuntimeDfsError` | 验证超过结构性安全上限{% if model.has_regions %}，或某个循环没有出路 |
-| `SimulationRuntimeEventError` | 事件名没有找到事件，或在多个活动叶状态之间有歧义 |
-| `SimulationRuntimeRegionQueryError` | 在含 region 的模型上读取了 `current_state_path` 或 `current_state_name`{% endif %} |
+| `SimulationRuntimeEventError` | 事件名没有找到事件，或在多个活动叶状态之间有歧义{% endif %} |
 
 应用 reader 和动作中的异常向外传播。只捕获应用能够处理的错误，重试前先报告原因。失败周期不增加 `cycle_count`。
 

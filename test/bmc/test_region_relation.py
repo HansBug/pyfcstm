@@ -774,6 +774,57 @@ def simulated(text, inputs, names):
 
 
 @pytest.mark.unittest
+class TestStepsThatOnlyFallBack:
+    # Gamma_i marks a step in which nothing but fallbacks ran: no transition
+    # fired in any region.
+    TEXT = """
+    def int x = 0;
+    state Root {
+        event Go;
+        region R1 {
+            [*] -> A;
+            state A { during { x = x + 1; } }
+            state O {
+                region Q1 { [*] -> P; state P { during { x = x + 10; } } }
+                region Q2 { [*] -> P2; state P2; }
+            }
+            A -> O : /Go;
+        }
+        region R2 { [*] -> S; state S { during { x = x + 100; } } }
+    }
+    """
+
+    def test_a_transition_into_a_nested_owner_is_not_a_step_of_fallbacks_only(self):
+        core = core_of(self.TEXT, 4)
+        cycles = [{}, {}, {"events": ["Root.Go"]}, {}]
+        symbols = core.symbols
+        # The cold start and the cycle in which Go fires take a transition; the
+        # cycles in between only fall back.
+        expected = [False, True, False, True]
+        for index, only_falls_back in enumerate(expected):
+            gamma = symbols.gamma_flag(index)
+            assert holds(core, cycles, gamma) == (
+                z3.sat if only_falls_back else z3.unsat
+            ), index
+            assert holds(core, cycles, z3.Not(gamma)) == (
+                z3.unsat if only_falls_back else z3.sat
+            ), index
+
+    def test_a_leaf_in_place_of_the_nested_owner_gives_the_same_answer(self):
+        leaf = self.TEXT.replace(
+            """state O {
+                region Q1 { [*] -> P; state P { during { x = x + 10; } } }
+                region Q2 { [*] -> P2; state P2; }
+            }""",
+            "state O { during { x = x + 10; } }",
+        )
+        assert leaf != self.TEXT
+        core = core_of(leaf, 4)
+        cycles = [{}, {}, {"events": ["Root.Go"]}, {}]
+        assert holds(core, cycles, core.symbols.gamma_flag(2)) == z3.unsat
+
+
+@pytest.mark.unittest
 class TestAspectScopes:
     # Each scope that declares aspects carries a flag from region to region.
     # How many times a path is lowered may only depend on the flags that path

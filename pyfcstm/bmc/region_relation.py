@@ -1069,7 +1069,10 @@ class _StepBuilder:
                         (q, env_out),
                         record=True,
                     )
-                    result.fallback = z3.And(z3.Not(sub_done), sub_fallback)
+                    # Only the branch that rests in this owner can be a fallback
+                    # here: for any other position the group below it is not
+                    # running, and its terms hold vacuously.
+                    result.fallback = z3.And(unit_gate, z3.Not(sub_done), sub_fallback)
                 else:
                     result = self.lower_unit(
                         ("leaf", entry.path),

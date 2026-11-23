@@ -137,8 +137,6 @@ typedef struct {{ machine_class_name(model) }}InputProvider {
 {% set public_macro_reserved_ns = namespace(items=[
     machine_macro_name(model) ~ '_SUCCESS',
     machine_macro_name(model) ~ '_FAILURE',
-    machine_macro_name(model) ~ '_MAX_STACK_DEPTH',
-    machine_macro_name(model) ~ '_MAX_DFS_STEPS',
     machine_macro_name(model) ~ '_INVALID_STATE_ID',
     machine_macro_name(model) ~ '_INVALID_EVENT_ID',
     machine_macro_name(model) ~ '_INVALID_ACTION_ID',

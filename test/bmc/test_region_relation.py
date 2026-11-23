@@ -19,6 +19,7 @@ from pyfcstm.bmc import (
 from pyfcstm.bmc.region_relation import build_region_core_formula
 from pyfcstm.model import load_state_machine_from_text
 from pyfcstm.simulate import SimulationRuntime
+from pyfcstm.simulate.runtime import SimulationRuntimeExpressionError
 
 INTERLOCK = """
 input int fault;
@@ -771,6 +772,86 @@ def simulated(text, inputs, names):
         values = dict(runtime.vars)
         trace.append({name: values[name] for name in names})
     return trace
+
+
+# Each model has a guard that fails to evaluate when the input ``d`` is 0, in a
+# place where no taken path would show it: a fallback, a candidate that loses
+# to a later one, the start of a group nobody can start, a guard that is
+# false, the continuation of an owner.  The runtime raises there, so the
+# relation may not admit such a cycle.
+GUARD_ERRORS = {
+    "fallback_after_a_failing_guard": (
+        "input int d; state Root { region R { [*] -> Q; state Q; state Q3; "
+        "Q -> Q3 : if [1 % d == 0]; } region R2 { [*] -> P; state P; } }",
+        [1, 0],
+        1,
+    ),
+    "later_candidate_after_a_failing_guard": (
+        "input int d; state Root { region R { [*] -> Q; state Q; state Q3; "
+        "state Q4; Q -> Q3 : if [d == 5]; Q -> Q4 : if [1 % d == 0]; } "
+        "region R2 { [*] -> P; state P; } }",
+        [1, 0],
+        1,
+    ),
+    "initial_candidates_of_a_region": (
+        "input int d; def int y = 0; state Root { region R { "
+        "[*] -> Q : if [y % d < 2]; [*] -> Q2; state Q; state Q2; } }",
+        [0],
+        0,
+    ),
+    "group_start_nobody_can_make": (
+        "input int d; state Root { region R { [*] -> P : if [1 % d == 0]; "
+        "state P; } region R2 { [*] -> Q; state Q; } }",
+        [0],
+        0,
+    ),
+    "group_entered_in_a_later_cycle": (
+        "input int d; state Root { [*] -> I; state I; state O { "
+        "region A { [*] -> P : if [1 % d == 0]; state P; } "
+        "region B { [*] -> Q; state Q; } } I -> O; }",
+        [1, 0],
+        1,
+    ),
+    "start_through_a_pseudo_state": (
+        "input int d; def int y = 0; state Root { [*] -> S1; state S1 { "
+        "region R { [*] -> S4 effect { y = y + d; }; pseudo state S4; "
+        "state S5; S5 -> S4 : if [y >= 4]; S4 -> S5 : if [1 % d == 0]; } } }",
+        [0],
+        0,
+    ),
+    "continuation_of_an_owner": (
+        "input int d; state Root { [*] -> S1; state S1 { region R { "
+        "[*] -> S4; pseudo state S4; S4 -> [*]; } } state T; "
+        "S1 -> T : if [1 % d == 0]; }",
+        [0],
+        0,
+    ),
+}
+
+
+@pytest.mark.unittest
+class TestGuardsThatFailToEvaluate:
+    @pytest.mark.parametrize("name", sorted(GUARD_ERRORS))
+    def test_a_cycle_in_which_the_runtime_raises_has_no_trace(self, name):
+        text, inputs, failing = GUARD_ERRORS[name]
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(text), input_source={"d": 1}
+        )
+        for index, value in enumerate(inputs):
+            if index == failing:
+                with pytest.raises(SimulationRuntimeExpressionError):
+                    runtime.cycle(inputs={"d": value})
+            else:
+                runtime.cycle(inputs={"d": value})
+        core = core_of(text, len(inputs))
+        cycles = [{"inputs": {"d": value}} for value in inputs]
+        assert holds(core, cycles[:failing], z3.BoolVal(True)) == z3.sat
+        assert holds(core, cycles, z3.BoolVal(True)) == z3.unsat
+        # With the divisor defined, the same model has a trace.
+        assert (
+            holds(core, [{"inputs": {"d": 1}} for _ in inputs], z3.BoolVal(True))
+            == z3.sat
+        )
 
 
 @pytest.mark.unittest

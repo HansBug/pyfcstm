@@ -2073,6 +2073,9 @@ class _CaseLowering:
     definedness_constraints: Tuple[DomainConstraint, ...]
     call_records: Tuple[BmcAbstractCallRecord, ...] = ()
     region_terms: Mapping[str, z3.BoolRef] = field(default_factory=dict)
+    region_definedness: Mapping[str, Tuple[DomainConstraint, ...]] = field(
+        default_factory=dict
+    )
 
 
 def _guarded_domain_constraints(
@@ -2357,7 +2360,10 @@ def _lower_bool_template(
             return accepted_lookup(label, active)
         if atom.startswith(_REGION_ATOM_PREFIX):
             try:
-                return _LoweredBoolTemplate(lowering.region_terms[atom])
+                return _LoweredBoolTemplate(
+                    lowering.region_terms[atom],
+                    lowering.region_definedness.get(atom, ()),
+                )
             except KeyError as err:  # pragma: no cover - the region builder supplies every term.
                 # KeyError: a region atom needs a term that the region relation
                 # builder supplies for every case that carries one.

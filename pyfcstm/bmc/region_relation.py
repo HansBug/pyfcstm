@@ -92,6 +92,7 @@ from .relation import (
     _build_environment_formula,
     _build_initial_formula,
     _expect_arith,
+    _guarded_domain_constraints,
     _formula_from_groups,
     _initial_source,
     _internal_bmc_error,
@@ -708,6 +709,7 @@ class _StepBuilder:
                 final_env[key] = z3.BoolVal(True) if path in case.owed else env_in[key]
             entry = None
             terms: Dict[str, z3.BoolRef] = {}
+            nested: Dict[str, Tuple[DomainConstraint, ...]] = {}
             case_tag = "%s_%s" % (tag, len(prepared_cases))
             if _statically_false(case.condition, lowering.guard_terms):
                 # A guard on the path is already false on these values, so the
@@ -717,10 +719,18 @@ class _StepBuilder:
             elif case.target_kind == "owner":
                 entry = self.entry(case.target_state_path, final_env, ns, case_tag)
                 terms[ATOM_REGION_ENTER] = entry.ok
+                nested[ATOM_REGION_ENTER] = _implied(entry.defs)
             elif case.target_kind == "done":
-                terms[ATOM_REGION_DONE] = self.done_viable(ns, final_env, case_tag)
+                viable, viable_defs = self.done_viable(ns, final_env, case_tag)
+                terms[ATOM_REGION_DONE] = viable
+                nested[ATOM_REGION_DONE] = _implied(viable_defs)
             prepared_cases.append(
-                (case, replace(lowering, region_terms=terms), final_env, entry)
+                (
+                    case,
+                    replace(lowering, region_terms=terms, region_definedness=nested),
+                    final_env,
+                    entry,
+                )
             )
 
         lowerings = {case.label: item for case, item, _, _ in prepared_cases}
@@ -729,8 +739,12 @@ class _StepBuilder:
 
         def accepted_lookup(label, active):
             if label not in accepted_cache:
+                condition = condition_for(label, active)
                 accepted_cache[label] = _LoweredBoolTemplate(
-                    _and((gate, condition_for(label, active).expr))
+                    _and((gate, condition.expr)),
+                    _guarded_domain_constraints(
+                        gate, condition.definedness_constraints
+                    ),
                 )
             return accepted_cache[label]
 
@@ -758,6 +772,15 @@ class _StepBuilder:
             condition_for(case.label, set())
 
         result = _UnitResult(z3.BoolVal(False))
+        # Whenever the unit runs, the guards it evaluates have to be defined,
+        # whichever path ends up taken and also when none does: the runtime
+        # raises as soon as a guard fails to evaluate.  The constraints of a
+        # condition already hold each guard to what is evaluated before it.
+        for condition in condition_cache.values():
+            for item in condition.definedness_constraints:
+                result.defs.append((gate, item))
+                if record:
+                    self.constraints.append(z3.Implies(gate, item.constraint))
         antecedents = []
         fallback = []
         for case, lowering, final_env, entry in prepared_cases:
@@ -979,8 +1002,15 @@ class _StepBuilder:
         finally:
             self._entering.pop()
 
-    def done_viable(self, ns: _Namespace, env: _Env, tag: str) -> z3.BoolRef:
-        """Return whether a region that just finished may stay finished."""
+    def done_viable(
+        self, ns: _Namespace, env: _Env, tag: str
+    ) -> Tuple[z3.BoolRef, List[Tuple[z3.BoolRef, DomainConstraint]]]:
+        """Return whether a region that just finished may stay finished.
+
+        The second value is what that check requires to be defined: the guards
+        of the continuation of the owner are only evaluated when no other
+        region is still working.
+        """
         region = ns.region
         cont = self.lower_unit(
             ("cont", region.owner_path),
@@ -991,7 +1021,10 @@ class _StepBuilder:
             None,
             record=False,
         )
-        return z3.Or(ns.others_live, cont.ok)
+        alone = z3.Not(ns.others_live)
+        return z3.Or(ns.others_live, cont.ok), [
+            (z3.And(alone, cond), item) for cond, item in cont.defs
+        ]
 
     # ------------------------------------------------------------------
     # one group of regions advancing in a cycle
@@ -1358,6 +1391,16 @@ class _StepBuilder:
         gamma_constraint = gamma_flag == _or(self.gamma_terms)
         mutex = z3.Not(z3.And(delta_flag, gamma_flag))
         return delta_constraint, gamma_constraint, mutex
+
+
+def _implied(
+    pairs: Iterable[Tuple[z3.BoolRef, DomainConstraint]],
+) -> Tuple[DomainConstraint, ...]:
+    """Turn requirements that each hold under a condition into plain constraints."""
+    return tuple(
+        DomainConstraint(z3.Implies(cond, item.constraint), item.source, item.kind)
+        for cond, item in pairs
+    )
 
 
 def _statically_false(template, guard_terms: Mapping[str, z3.BoolRef]) -> bool:

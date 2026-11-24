@@ -32,6 +32,10 @@ Example::
     True
 """
 
+#: C type declarations of the search engine, with ``@NAME@`` placeholders that
+#: :mod:`pyfcstm.render.c_kernel` fills per model.
+#:
+#: :meta hide-value:
 ENGINE_TYPES = r'''
 /* Frame modes. RM_NONE only marks a region branch that holds no frame at all. */
 enum {
@@ -144,6 +148,10 @@ typedef struct @T@Stack {
 } @T@Stack;
 '''
 
+#: C code of the search engine, with ``@NAME@`` placeholders that
+#: :mod:`pyfcstm.render.c_kernel` fills per model.
+#:
+#: :meta hide-value:
 ENGINE_CODE = r'''
 /* ---------------------------------------------------------------------------
  * Execution engine. Each function names the simulator method it follows.

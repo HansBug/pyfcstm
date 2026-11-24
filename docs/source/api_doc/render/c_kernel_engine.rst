@@ -10,9 +10,11 @@ ENGINE\_TYPES
 -----------------------------------------------------
 
 .. autodata:: ENGINE_TYPES
+   :no-value:
 
 
 ENGINE\_CODE
 -----------------------------------------------------
 
 .. autodata:: ENGINE_CODE
+   :no-value:

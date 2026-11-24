@@ -1462,7 +1462,7 @@ class {{ machine_class_name(model) }}:
             position[0][: len(_PATH[scope])] == _PATH[scope]
             for position in _positions(self._position_now())
         )
-
+{% endraw %}{% if model.has_regions %}{% raw %}
     def region_status(self, path):
         """
         Return ``'live'``, ``'done'``, ``'pending'`` or ``'inactive'`` for a region.
@@ -1488,7 +1488,7 @@ class {{ machine_class_name(model) }}:
                     return "pending"
                 return "done" if child is None else "live"
         return "inactive"
-
+{% endraw %}{% endif %}{% raw %}
     def _validate_position(self, position, base):
         path = position[0]
         if path[: len(base)] != base or len(path) <= len(base):

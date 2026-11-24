@@ -99,6 +99,19 @@ def test_a_machine_without_regions_keeps_its_single_path_position():
         assert machine.info()["current_state_path"] == ("Root", "Idle")
 
 
+def test_region_status_exists_only_for_a_model_with_regions():
+    with _render_python_module("state Root { [*] -> Idle; state Idle; }") as module:
+        machine = module.RootMachine()
+        machine.cycle()
+        assert not hasattr(machine, "region_status")
+        # Where the machine is stays readable for every model.
+        assert machine.configuration == "Root.Idle"
+        assert machine.leaves == (("Root", "Idle"),)
+        assert machine.is_active("Root.Idle")
+    with _render_python_module(OWNER_MODEL) as module:
+        assert hasattr(module.RootMachine(), "region_status")
+
+
 def test_state_can_only_be_read_from_outside():
     with _render_python_module(OWNER_MODEL) as module:
         machine = module.RootMachine()

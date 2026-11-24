@@ -826,6 +826,13 @@ GUARD_ERRORS = {
         [0],
         0,
     ),
+    "effect_ahead_of_a_group_start_that_fails": (
+        "input int d; def int y = 0; state Root { "
+        "[*] -> Run effect { y = 1 % d; }; state Run { "
+        "region A { [*] -> P : if [d > 0]; state P; } } }",
+        [0],
+        0,
+    ),
     "continuation_of_an_owner": (
         "input int d; state Root { [*] -> S1; state S1 { region R { "
         "[*] -> S4; pseudo state S4; S4 -> [*]; } } state T; "

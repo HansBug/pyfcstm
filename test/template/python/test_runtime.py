@@ -633,6 +633,8 @@ class TestPythonBuiltinTemplate:
                     'collections',
                     'math',
                     'dataclasses',
+                    're',
+                    'reprlib',
                     'types',
                     'typing',
                 }

@@ -5,7 +5,18 @@
 {% for event in state.events.values() -%}
 {% set doc_event_paths.items = doc_event_paths.items + [event.path_name] -%}
 {% endfor -%}
-{% endfor %}
+{% endfor -%}
+{%- for scan_region in model.walk_regions() -%}
+{%- for event in scan_region.events.values() -%}
+{%- set doc_event_paths.items = doc_event_paths.items + [event.path_name] -%}
+{%- endfor -%}
+{%- endfor %}
+{%- set owner_ns = namespace(owner=none) -%}
+{%- for owner_candidate in model.walk_states() -%}
+{%- if owner_ns.owner is none and owner_candidate.regions -%}
+{%- set owner_ns.owner = owner_candidate -%}
+{%- endif -%}
+{%- endfor -%}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
 {%- for scan_group in [
@@ -33,6 +44,31 @@
     state.list_on_durings(aspect='after', with_ids=True),
     state.list_on_during_aspects(aspect='before', with_ids=True),
     state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% for region in model.walk_regions() -%}
+{% for group in [
+    region.list_on_during_aspects(aspect='before', with_ids=True),
+    region.list_on_during_aspects(aspect='after', with_ids=True),
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item, seen=[]) -%}
@@ -92,7 +128,7 @@ sensor_values = {{ example_values(model.inputs.values()) }}
 machine = Device(sensor_values{% if model.parameters %}, parameters={{ example_values(model.parameters.values()) }}{% endif %})
 machine.cycle()
 
-print(machine.current_state_path)
+{% if model.has_regions %}print(machine.configuration){% else %}print(machine.current_state_path){% endif %}
 {% for item in model.parameters.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
 {% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
 {% endfor %}# Send committed outputs to your actuator/driver after normal return.
@@ -115,7 +151,7 @@ For repeated execution, update the application sensor source and call `machine.c
 | `control` (`def`, often called var) | Optionally preset at initialization, then observe | Model-owned writable state; holds when not assigned |
 | `output` | Read after a successful cycle and pass to an actuator if needed | Shares persistent storage with control; holds when not assigned |
 
-`control` and `output` share persistent `vars` storage. Both keep their value when a cycle does not assign them. Read results through `vars`; writing internal storage from application code is unsupported and can invalidate verified model properties. Outputs do not invoke external setters or actuator callbacks.
+`control` and `output` share persistent `vars` storage. Both keep their value when a cycle does not assign them. Read results through `vars`, a read-only view; writing internal storage from application code is unsupported and can invalidate verified model properties. State can only be read: the ways to change it are `cycle()` and hot start. Outputs do not invoke external setters or actuator callbacks.
 
 Pass instance configuration through `parameters` when constructing the machine. Values are validated and copied; changing the original mapping has no effect. Cold construction uses each omitted parameter's DSL default. Hot construction requires complete parameters and persistent values. Parameters have no cycle argument or setter; `parameters` and each generated `get_param_*()` are read-only.
 
@@ -179,11 +215,48 @@ The generated runtime accepts:
 - parent-relative paths starting with `.`, such as `..Sibling.Event`
 - local compatible names when they resolve uniquely from the current state
 
-If an event cannot be resolved, the runtime raises `LookupError` or `ValueError`.
+If an event cannot be resolved, the runtime raises `LookupError` or `ValueError`.{% if model.has_regions %}
 
-`cycle(...)` executes the requested step for its side effects and returns `None`. Observe the runtime through `current_state_path`, `current_state_name`, `vars`, and `is_ended`. Use `list` or `tuple` inputs when event input order must be reproducible; `set` inputs follow the iteration order provided by Python.
+This model declares regions, so several leaves can be active at once. A name that depends on the position, such as `Go` or `..Reset`, is resolved once for every active leaf: it is an error (`SimulationRuntimeEventError`) if no active leaf finds an event, the event is used if every leaf that finds one finds the same event, and the name is ambiguous, with every candidate listed, if they find different events. A full path and a `/`-rooted path mean the same wherever the machine rests, so use one of them when a short name is ambiguous. A region that is still `[init]` has no active leaf and does not take part until its initial transition has run.{% endif %}
 
-<a id="initialization"></a>
+`cycle(...)` executes the requested step for its side effects and returns `None`. Observe the runtime through {% if model.has_regions %}`configuration`{% else %}`current_state_path`, `current_state_name`{% endif %}, `vars`, and `is_ended`. Use `list` or `tuple` inputs when event input order must be reproducible; `set` inputs follow the iteration order provided by Python.
+
+{% if model.has_regions %}
+<a id="regions"></a>
+
+## Regions and the position
+
+This model declares regions. A state that owns regions (an owner) runs all of them in every cycle, in writing order, so a later region sees the values and states that an earlier one produced in the same cycle. The position of the machine is therefore a tree rather than one path: a machine with regions has no `current_state_path` or `current_state_name` (reading them is an `AttributeError`), and `configuration` is the way to read where the machine is.
+
+`configuration` is the position as one line of text, written exactly as the simulator writes it:
+
+| Text | Meaning |
+| --- | --- |
+| `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}` | The owner `{{ owner_ns.owner.path | join('.') }}` rests with every region on the named state |
+| `[done]` in place of a state | The region has finished and stays done until its owner is entered again |
+| `[init]` in place of a state | The region waits for initialization; it appears after a hot start that leaves the region out, and stays until the initial transition of the region has run |
+
+<!-- example:regions -->
+
+```python
+print(machine.configuration)
+print(machine.region_status({{ (owner_ns.owner.regions.values() | first).path | join('.') | tojson }}))
+print(machine.is_active({{ owner_ns.owner.path | join('.') | tojson }}))
+print(machine.leaves)
+```
+
+| Query | Result |
+| --- | --- |
+| `configuration` | The position text above; it is never `None`, ask `is_ended` first |
+| `region_status(path)` | `'live'` (the region holds an active state), `'done'`, `'pending'` (its owner is active but it has not been initialized, text `[init]`) or `'inactive'` (its owner is not in the position); an unknown path or a state path raises `ValueError` |
+| `is_active(path)` | Whether the state is part of the position |
+| `leaves` | Tuple of the path tuples of the active leaf states |
+
+When the last region of an owner finishes, the owner continues through its own outgoing transitions in the same cycle; if it cannot continue, that last completion is refused and the leaf keeps working. A group that is entered enters its regions in order, and if a later region has no legal entry the whole entry is rejected. A cycle that cannot reach a legal position is a Delta cycle: position and variables hold and no hook runs.
+
+Action hooks of a state inside a region see the position of that branch. A hook that spans several regions, such as the enter or exit of an owner or an aspect around the whole group, has `ctx.state_path` and `ctx.active_leaf` set to the deepest state that is common to every branch, for example the owner. `ctx.configuration` is the position text at the moment of the call. While an owner is being left, the regions that have already left show as `[done]` whether they finished or were interrupted, so use a variable when an `exit` hook has to tell the two apart. No hook runs for a candidate that is only being tried or rejected.
+
+{% endif %}<a id="initialization"></a>
 
 ## Initialization and recovery
 
@@ -203,15 +276,21 @@ machine = Device(
 
 The following fragment follows a successful cycle of `app.py`. Save state, all control/output values and all parameters from the same checkpoint, then construct another `Device`. The example covers a live leaf checkpoint; a composite path deliberately starts in its initial-transition wait mode. Hot start does not replay entry actions. It requires complete snapshots and is not an API for changing parameters in a running instance. A checkpoint is not a portable binary serialization format.{% if model.forced_variables %}
 
-The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint. They are ordinary variables of the model: a hot start takes them from the saved checkpoint like every other variable. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}
+The variables whose names start with `__forced_` belong to the forced transitions of the model. The machine uses them only inside a cycle, so they are `0` at every checkpoint. They are ordinary variables of the model: a hot start takes them from the saved checkpoint like every other variable. States named `__forced_gate_<n>` are generated pseudo states that a cycle only passes through.{% endif %}{% if model.has_regions %}
+
+For a model with regions, `initial_state` takes the position text of a checkpoint such as `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}`, a dotted path that may pass through regions, or a tuple of names. A leaf that is written is put in place without any enter action. What is not written waits for initialization and runs its initial transitions in the first cycle: a composite state written without a child, a region that is left out, and an owner written as a bare path (all of its regions). A region written `[done]` stays done, and an owner whose regions are all `[done]` is rejected with `ValueError`. A dotted path keeps only the branch it passes through; every other region of the group waits for initialization.
+{% endif %}
 
 <!-- example:hot-start -->
 
 ```python
-state = machine.current_state_path
+{% if model.has_regions %}if machine.is_ended:
+    raise ValueError("Cannot restore a completed machine as a live checkpoint")
+state = machine.configuration
+{% else %}state = machine.current_state_path
 if state is None:
     raise ValueError("Cannot restore a completed machine as a live checkpoint")
-checkpoint_vars = dict(machine.vars)
+{% endif %}checkpoint_vars = dict(machine.vars)
 checkpoint_parameters = dict(machine.parameters)
 machine = Device(
     sensor_values,
@@ -223,7 +302,7 @@ machine = Device(
 
 ## Results, errors and lifetime
 
-`cycle()` returns `None`. After normal return, inspect `vars`, `current_state_path`, `is_ended` and `last_cycle_was_delta`. A Delta cycle is a successful no-progress step: persistent state holds, but the cycle consumes its input sample. `vars` contains both control and output; it is application-read-only. Each commit replaces that dictionary, so obtain it again each cycle; use `dict(machine.vars)` to retain a checkpoint. `last_inputs` and action contexts are independent read-only snapshots.
+`cycle()` returns `None`. After normal return, inspect `vars`, {% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}, `is_ended` and `last_cycle_was_delta`. A Delta cycle is a successful no-progress step: persistent state holds, but the cycle consumes its input sample. `vars` contains both control and output; each access returns a read-only view of the values committed so far, so read it again after every cycle; use `dict(machine.vars)` to retain a checkpoint. `last_inputs` and action contexts are independent read-only snapshots.
 
 Input acquisition errors, invalid values and expression errors prevent the cycle from committing. Fix the source of the error and call `cycle()` again; readers run again. External device reads, logs and action side effects cannot be rolled back. Apply outputs to actuators after normal return when they must reflect committed state. Keep calls to a single instance serialized and do not recursively call `cycle()` from readers or hooks.
 
@@ -236,7 +315,7 @@ These are the supported interfaces of the generated machine. `Device` in Quick S
 | `{{ machine_class_name(model) }}(initial_state=None, initial_vars=None, *, parameters=None)` | Cold construction or complete hot restoration |
 | `cycle(events=None, *, inputs=None)` | Execute one host-scheduled cycle; returns None |
 | `vars`, `parameters`, `last_inputs` | Persistent observations, fixed configuration and last committed inputs |
-| `current_state_path`, `current_state_name` | Current path tuple / short name; None after termination |
+{% if model.has_regions %}| `configuration`, `region_status(path)`, `is_active(path)`, `leaves` | Position text, status of a region, whether a state is active, tuple of active leaf paths |{% else %}| `current_state_path`, `current_state_name` | Current path tuple / short name; None after termination |{% endif %}
 | `is_ended`, `last_cycle_was_delta`, `cycle_count` | Termination, Delta status and completed cycle count |
 | `read_<input>()`, `get_input_<input>()`, `get_param_<param>()` | Implement input readers; use generated read-only getters |
 | `get_abstract_hook_map()`, `ABSTRACT_HOOKS` | Mapping of DSL abstract actions to override names |
@@ -255,7 +334,8 @@ Each action receives an independent read-only observation. Context methods below
 | `action_stage`, `call_stage` | Lifecycle callsite stage |
 | `named_ref` | Named ref callsite, or None for direct/anonymous calls |
 | `get_var(name)`, `has_var(name)` | Read/check persistent snapshot values |
-| `get_state_name()`, `get_full_state_path()` | Short/full path of the executing state |
+| `get_state_name()`, `get_full_state_path()` | Short/full path of the executing state |{% if model.has_regions %}
+| `configuration` | Position text at the moment of the call |{% endif %}
 
 ### Errors
 
@@ -264,7 +344,8 @@ Each action receives an independent read-only observation. Context methods below
 | `NotImplementedError` | A required input reader has no implementation or explicit value |
 | `ValueError` | Unknown/missing names, invalid snapshots or numeric values |
 | `SimulationRuntimeExpressionError` | DSL expression evaluation failed; __cause__ preserves the numeric exception |
-| `SimulationRuntimeDfsError` | Validation exceeded its structural safety limit |
+| `SimulationRuntimeDfsError` | Validation exceeded its structural safety limit{% if model.has_regions %}, or a loop has no way out |
+| `SimulationRuntimeEventError` | An event name found no event, or is ambiguous between active leaves{% endif %} |
 
 Exceptions from application readers and actions propagate. Catch only failures your application can handle; report the cause before retrying. A failed cycle does not advance `cycle_count`.
 
@@ -284,7 +365,11 @@ This model has no variable declarations.
 
 {% for state in model.walk_states() %}- `{{ state | state_path }}`
 {% endfor %}
-### Event paths
+{% if model.has_regions %}### Region paths
+
+{% for region in model.walk_regions() %}- `{{ region.path | join('.') }}`
+{% endfor %}
+{% endif %}### Event paths
 
 {% for path in doc_event_paths.items | unique %}- `{{ path }}`
 {% else %}No declared events.

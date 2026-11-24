@@ -8,7 +8,6 @@ categories:
 - runtime
 - hot_start
 exclude_runners:
-- generated_python_alignment
 - bmc_core
 initial:
   configuration: 'Controller.Running{Safety: [done], Motion: Off}'

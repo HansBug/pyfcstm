@@ -20,7 +20,7 @@
 | 生成指南 | 两份 README Jinja 模板、实际渲染示例和可执行文档测试 |
 | 角色接口或生命周期行为 | 运行时源码、生成指南/API 表、角色测试和语义对齐 |
 | 表达式/getter 生成 | `config.yaml` 中按角色区分的表达式/语句样式、`../../pyfcstm/render/render.py` 上下文，以及生成动作/守卫测试 |
-| region 行为 | `machine.py.j2` 中的 region 代码块（以 `{# region-kernel:NAME #}` 标记）、两份指南的 region 章节、`test/template/python/test_region_runtime.py` 和共享的 `regions` 用例 |
+| region 行为 | `machine.py.j2` 的内核部分、两份指南的 region 章节、`test/template/python/test_region_runtime.py` 和共享的 `regions` 用例 |
 
 ## 运行时契约
 

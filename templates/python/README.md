@@ -20,7 +20,7 @@ Generation-time helpers run inside pyfcstm; generated programs must remain self-
 | Generated guide | Both README Jinja files, rendered examples and executable documentation tests |
 | Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
 | Expression/getter emission | `config.yaml` role-aware expression/statement styles and `../../pyfcstm/render/render.py` context; generated action/guard tests |
-| Region behavior | The region blocks of `machine.py.j2` (marked `{# region-kernel:NAME #}`), the region sections of both guides, `test/template/python/test_region_runtime.py` and the shared `regions` fixtures |
+| Region behavior | The kernel part of `machine.py.j2`, the region sections of both guides, `test/template/python/test_region_runtime.py` and the shared `regions` fixtures |
 
 ## Runtime contracts
 

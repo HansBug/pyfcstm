@@ -40,7 +40,9 @@ from ..utils import auto_decode
 from ..utils.validate import ModelValidationError
 
 
-def _require_template_features(model, renderer, template_label: str) -> None:
+def _require_template_features(
+    model, renderer, template_label: str, opt_in_hint: bool = False
+) -> None:
     """
     Stop the command when the template cannot render the model.
 
@@ -56,6 +58,10 @@ def _require_template_features(model, renderer, template_label: str) -> None:
     :param template_label: How the message names the template, for example
         ``"built-in template 'python'"``.
     :type template_label: str
+    :param opt_in_hint: Whether to add how a template author opts in, defaults
+        to ``False``. Only a template directory the user owns can be edited, so
+        only that case asks for it.
+    :type opt_in_hint: bool, optional
     :return: ``None``.
     :rtype: None
     :raises pyfcstm.entry.base.ClickErrorException: If the model declares
@@ -69,7 +75,13 @@ def _require_template_features(model, renderer, template_label: str) -> None:
         require_supported_model(model, "generate with %s" % template_label)
     except ModelValidationError as err:
         # The template lacks the feature the model needs.
-        raise ClickErrorException(str(err)) from err
+        message = str(err)
+        if opt_in_hint:
+            message += (
+                "\nIf this template renders regions, add `features: [region]` to its "
+                "config.yaml."
+            )
+        raise ClickErrorException(message) from err
 
 
 def _add_generate_subcommand(cli: click.Group) -> click.Group:
@@ -203,6 +215,7 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
             $ pyfcstm generate -i ./regions.fcstm -t ./old_template -o ./out
             Error: generate with template directory '/abs/old_template' does not support region models yet.
+            If this template renders regions, add `features: [region]` to its config.yaml.
         """
         if bool(template_dir) == bool(template_name):
             raise click.UsageError(
@@ -235,7 +248,10 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         else:
             renderer = StateMachineCodeRenderer(template_dir=template_dir)
             _require_template_features(
-                model, renderer, "template directory '%s'" % renderer.template_dir
+                model,
+                renderer,
+                "template directory '%s'" % renderer.template_dir,
+                opt_in_hint=True,
             )
             renderer.render(
                 model,

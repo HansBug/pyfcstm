@@ -553,7 +553,7 @@ class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
     pass
 
 
-{# region-kernel:module #}{% raw %}class SimulationRuntimeEventError(ValueError):
+{% raw %}class SimulationRuntimeEventError(ValueError):
     """Raised when an event input has an unsupported shape or cannot be resolved."""
 
     pass
@@ -862,7 +862,7 @@ _EVENTS = (
 {% else %}    {{ '{}' }},
 {% endif %}{% endfor %})
 
-{# region-kernel:module-derived #}{% raw %}_IS_REGION = tuple(scope >= _STATE_COUNT for scope in range(len(_PATH)))
+{% raw %}_IS_REGION = tuple(scope >= _STATE_COUNT for scope in range(len(_PATH)))
 _IS_STOPPABLE = tuple(
     _IS_LEAF[scope] and not _IS_PSEUDO[scope] for scope in range(len(_PATH))
 )
@@ -1378,7 +1378,7 @@ class {{ machine_class_name(model) }}:
 {% for item in input_items %}            {{ item.name | tojson }}: self.get_input_{{ item.name }}(),
 {% endfor %}        }{% else %}{}{% endif %}
 
-{# region-kernel:classes #}{% raw %}    _DFS_STEP_LIMIT = 1000
+{% raw %}    _DFS_STEP_LIMIT = 1000
     _DFS_STRUCTURAL_DEPTH_LIMIT = 64
 
     def _evaluate_runtime_expr(self, fn, usage):
@@ -2522,7 +2522,7 @@ class {{ machine_class_name(model) }}:
         self._last_inputs = committed_inputs
         return None
 
-{# region-kernel:cycle #}{% raw %}    def _cycle(self, events=None):
+{% raw %}    def _cycle(self, events=None):
         """
         Advance the state machine by one cycle.
 

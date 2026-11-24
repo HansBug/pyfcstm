@@ -43,6 +43,31 @@ def test_cli_refuses_a_model_with_regions(tmp_path, arguments):
     assert 'Traceback' not in output
 
 
+def test_generate_tells_a_custom_template_how_to_opt_in_to_regions(tmp_path):
+    path = tmp_path / 'unsupported.fcstm'
+    path.write_text('state Root { region Motor { state A; [*] -> A; } }', encoding='utf-8')
+    arguments = _command_arguments(tmp_path, ['generate'])
+    result = simulate_entry(pyfcstmcli, ['pyfcstm', *arguments, '-i', str(path)])
+    output = result.stdout + result.stderr
+    assert result.exitcode != 0
+    assert 'does not support region models yet' in output
+    assert 'features: [region]' in output
+    assert 'config.yaml' in output
+
+
+def test_generate_does_not_suggest_editing_a_built_in_template(tmp_path):
+    path = tmp_path / 'unsupported.fcstm'
+    path.write_text('state Root { region Motor { state A; [*] -> A; } }', encoding='utf-8')
+    result = simulate_entry(
+        pyfcstmcli,
+        ['pyfcstm', 'generate', '-i', str(path), '--template', 'c', '-o', str(tmp_path / 'out')],
+    )
+    output = result.stdout + result.stderr
+    assert result.exitcode != 0
+    assert "built-in template 'c' does not support region models yet" in output
+    assert 'features: [region]' not in output
+
+
 def test_simulate_runs_a_model_with_regions(tmp_path):
     """``pyfcstm simulate`` drives a model with regions; the command refuses nothing."""
     path = tmp_path / 'regions.fcstm'

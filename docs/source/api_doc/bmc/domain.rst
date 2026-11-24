@@ -18,6 +18,18 @@ STATE\_TERMINATE\_ID
 .. autodata:: STATE_TERMINATE_ID
 
 
+REGION\_DONE\_ID
+-----------------------------------------------------
+
+.. autodata:: REGION_DONE_ID
+
+
+REGION\_INACTIVE\_ID
+-----------------------------------------------------
+
+.. autodata:: REGION_INACTIVE_ID
+
+
 \_\_all\_\_
 -----------------------------------------------------
 
@@ -28,14 +40,14 @@ StateDomainEntry
 -----------------------------------------------------
 
 .. autoclass:: StateDomainEntry
-    :members: __post_init__,to_canonical,id,path,name,kind,parent_path,is_root,is_stoppable,is_sentinel,is_generated_combo_pseudo
+    :members: __post_init__,to_canonical,id,path,name,kind,parent_path,is_root,is_stoppable,is_sentinel,is_generated_combo_pseudo,region_path,owns_regions
 
 
 EventDomainEntry
 -----------------------------------------------------
 
 .. autoclass:: EventDomainEntry
-    :members: __post_init__,to_canonical,id,path,name,owner_state_path,owner_state_id,owner_is_generated_combo_pseudo
+    :members: __post_init__,to_canonical,id,path,name,owner_state_path,owner_state_id,owner_is_generated_combo_pseudo,owner_region_path
 
 
 VarDomainEntry
@@ -43,6 +55,13 @@ VarDomainEntry
 
 .. autoclass:: VarDomainEntry
     :members: __post_init__,time_domain,to_canonical,id,name,declared_type,role
+
+
+RegionDomainEntry
+-----------------------------------------------------
+
+.. autoclass:: RegionDomainEntry
+    :members: __post_init__,to_canonical,id,path,name,owner_path,owner_id,ordinal,enclosing_region_path,position_state_ids
 
 
 FrameRef
@@ -70,7 +89,7 @@ BmcDomain
 -----------------------------------------------------
 
 .. autoclass:: BmcDomain
-    :members: __post_init__,frame0_state_ids,recurrence_state_ids,input_names,parameter_names,persistent_variable_names,state_by_id,state_by_path,state_path_to_id,state_id_to_path,event_by_id,event_by_path,event_path_to_id,event_id_to_path,variable_by_id,variable_by_name,variable_name_to_id,variable_id_to_name,event_input,to_canonical,bound,states,events,variables,frames,steps,event_inputs,initial_state_ids,stable_state_ids,model
+    :members: __post_init__,frame0_state_ids,recurrence_state_ids,input_names,parameter_names,persistent_variable_names,state_by_id,state_by_path,state_path_to_id,state_id_to_path,event_by_id,event_by_path,event_path_to_id,event_id_to_path,variable_by_id,variable_by_name,variable_name_to_id,variable_id_to_name,event_input,to_canonical,bound,states,events,variables,frames,steps,event_inputs,initial_state_ids,stable_state_ids,model,regions
 
 
 build\_bmc\_domain

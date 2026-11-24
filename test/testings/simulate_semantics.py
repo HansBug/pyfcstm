@@ -2045,16 +2045,6 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
-    if "regions" in categories and "bmc_core" not in (
-        data.get("exclude_runners") or []
-    ):
-        # Region fixtures may only run on runners that already execute regions;
-        # every other shared consumer must opt out explicitly.
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "regions cases must exclude bmc_core",
-        )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
     _validate_initial(data.get("initial"), case_id, yaml_path, runners, categories)

@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import z3
 
-from .errors import BmcBuildError
+from .errors import BmcBuildError, UnsupportedBmcQuery
 from .relation import BmcCoreFormula, BmcRuntimeErrorSite
 from .solver import _check_with_budget, _solver_for_profile, _SolveBudget
 
@@ -189,6 +189,7 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
     :return: The reachability formula and the sites it covers, in evaluation
         order.  The formula is ``False`` when there are no sites.
     :rtype: Tuple[z3.BoolRef, Tuple[pyfcstm.bmc.relation.BmcRuntimeErrorSite, ...]]
+    :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If the model declares regions.
 
     Example::
 
@@ -200,6 +201,10 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
         >>> runtime_error_formula(core)
         (False, ())
     """
+    if core.region_steps:
+        raise UnsupportedBmcQuery(
+            "the runtime-safety check of a model with regions is not supported yet."
+        )
     stages = _stages(core)
     sites = _sites(core)
     if not stages:
@@ -246,6 +251,8 @@ def check_runtime_safety(
     :rtype: BmcRuntimeSafetyResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If ``core`` is not a core
         formula, or the timeout or profile is invalid.
+    :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If ``core`` belongs to a
+        model with regions, whose runtime errors are not located yet.
 
     Example::
 
@@ -261,9 +268,24 @@ def check_runtime_safety(
         ... )
         >>> check_runtime_safety(build_bmc_core_formula(context)).status
         'safe'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> check_runtime_safety(build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();')))
+        Traceback (most recent call last):
+            ...
+        pyfcstm.bmc.errors.UnsupportedBmcQuery: the runtime-safety check of a model with regions is not supported yet.
     """
     if not isinstance(core, BmcCoreFormula):
         raise BmcBuildError("core must be BmcCoreFormula.")
+    if core.region_steps:
+        raise UnsupportedBmcQuery(
+            "the runtime-safety check of a model with regions is not supported yet."
+        )
     return _check_runtime_safety(core, timeout_ms, solver_profile)[0]
 
 

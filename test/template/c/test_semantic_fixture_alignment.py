@@ -2,16 +2,17 @@ import pytest
 
 from test.testings.native_semantic_alignment import (
     GENERATED_C_ALIGNMENT,
+    iter_native_semantic_cases,
     run_native_alignment_case_subprocess,
 )
-from test.testings.simulate_semantics import iter_semantic_cases
 
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
     "case",
-    # C-family backends consume the shared generated-runtime fixture subset.
-    iter_semantic_cases(runners=["generated_python_alignment"]),
+    # The shared generated-runtime subset, plus the region corpus once the
+    # template declares the ``region`` feature.
+    iter_native_semantic_cases("c"),
     ids=lambda case: case.id,
 )
 def test_generated_c_alignment_semantic_fixture(case):

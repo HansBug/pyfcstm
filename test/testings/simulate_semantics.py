@@ -1139,6 +1139,16 @@ class _GeneratedPythonAlignmentRuntime:
                 gen_vars,
             )
         )
+        if self._simulation_runtime.state_machine.has_regions:
+            # With regions the position is a tree: compare its whole text.
+            if not sim_ended:
+                sim_text = str(self._simulation_runtime.configuration)
+                gen_text = str(self._generated_runtime.configuration)
+                assert sim_text == gen_text, (
+                    "%s: configuration mismatch for DSL:\n%s\nsimulation=%r\ngenerated=%r"
+                    % (when, self._dsl_code, sim_text, gen_text)
+                )
+            return
         if sim_ended:
             assert self._generated_runtime.current_state_path is None, (
                 "%s: generated current_state_path should be None after end for DSL:\n%s\npath=%r"
@@ -1227,6 +1237,11 @@ class _GeneratedPythonAlignmentRuntime:
             return self._simulation_runtime.current_state
         self._assert_aligned("current_state access")
         return self._simulation_runtime.current_state
+
+    @property
+    def configuration(self):
+        self._assert_aligned("configuration access")
+        return self._simulation_runtime.configuration
 
     def cycle(self, events: Optional[Sequence[Any]] = None) -> Any:
         sim_exc = None
@@ -1348,9 +1363,10 @@ def _build_generated_runtime(
                         ctx,
                         items=tuple(handler_items),
                         calls=generated_calls,
+                        with_configuration="regions" in case.data["categories"],
                     ):
                         for item in items:
-                            _run_fixture_handler(item, ctx, calls)
+                            _run_fixture_handler(item, ctx, calls, with_configuration)
 
                     attrs[hook_name] = fixture_hook
                 machine_cls = type(
@@ -2029,14 +2045,6 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
-    if "regions" in categories and "generated_python_alignment" in runners:
-        # Region fixtures may only run on runners that already execute regions;
-        # every other shared consumer must opt out explicitly.
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "regions cases must exclude generated_python_alignment",
-        )
     if "parameters" in data:
         _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
     _validate_initial(data.get("initial"), case_id, yaml_path, runners, categories)

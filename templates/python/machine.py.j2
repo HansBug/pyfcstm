@@ -20,16 +20,50 @@
 {%- endfor -%}
 {%- endfor -%}
 {%- set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
-{%- macro state_path_ref(state) -%}_STATE_PATH_TUPLES[{{ state_items.index(state) }}]{%- endmacro %}
 {%- macro action_method_name(state, kind, idx) -%}_action_state_{{ state_items.index(state) }}_{{ kind }}_{{ idx }}{%- endmacro %}
-{%- macro init_transition_id(state, idx) -%}init:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
-{%- macro normal_transition_id(state, idx) -%}transition:{{ state_key(state) }}:{{ idx }}{%- endmacro %}
 {%- macro init_guard_method_name(state, idx) -%}_guard_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro init_effect_method_name(state, idx) -%}_effect_init_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_guard_method_name(state, idx) -%}_guard_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro transition_effect_method_name(state, idx) -%}_effect_transition_state_{{ state_items.index(state) }}_{{ idx }}{%- endmacro %}
 {%- macro abstract_hook_method_name(action) -%}{{ action | action_hook_name }}{%- endmacro %}
-{%- macro render_action_entry(state, item, method_kind, idx) -%}
+{%- set region_items = model.walk_regions() | list -%}
+{%- macro region_action_method_name(region, kind, idx) -%}_action_region_{{ region_items.index(region) }}_{{ kind }}_{{ idx }}{%- endmacro %}
+{%- macro region_init_guard_method_name(region, idx) -%}_guard_init_region_{{ region_items.index(region) }}_{{ idx }}{%- endmacro %}
+{%- macro region_init_effect_method_name(region, idx) -%}_effect_init_region_{{ region_items.index(region) }}_{{ idx }}{%- endmacro %}
+{%- set scope_items = state_items + region_items -%}
+{%- set state_count = state_items | length -%}
+{%- macro scope_id(scope) -%}{{ scope_items.index(scope) }}{%- endmacro -%}
+{%- macro scope_action_name(scope, kind, idx) -%}
+{%- if scope in region_items -%}{{ region_action_method_name(scope, kind, idx) }}{%- else -%}{{ action_method_name(scope, kind, idx) }}{%- endif -%}
+{%- endmacro -%}
+{%- set tr_ns = namespace(items=[]) -%}
+{%- for scope in scope_items -%}
+{%- set scope_index = loop.index0 -%}
+{%- for tr in scope.init_transitions -%}
+{%- set tr_ns.items = tr_ns.items + [{'tid': tr_ns.items | length, 'sid': scope_index, 'kind': 'init', 'idx': loop.index, 'tr': tr}] -%}
+{%- endfor -%}
+{%- if scope not in region_items -%}
+{%- for tr in scope.transitions_from -%}
+{%- set tr_ns.items = tr_ns.items + [{'tid': tr_ns.items | length, 'sid': scope_index, 'kind': 'out', 'idx': loop.index, 'tr': tr}] -%}
+{%- endfor -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set tr_items = tr_ns.items -%}
+{%- macro tr_guard_name(item) -%}
+{%- set scope = scope_items[item.sid] -%}
+{%- if item.kind == 'init' -%}
+{%- if scope in region_items -%}{{ region_init_guard_method_name(scope, item.idx) }}{%- else -%}{{ init_guard_method_name(scope, item.idx) }}{%- endif -%}
+{%- else -%}{{ transition_guard_method_name(scope, item.idx) }}{%- endif -%}
+{%- endmacro -%}
+{%- macro tr_effect_name(item) -%}
+{%- set scope = scope_items[item.sid] -%}
+{%- if item.kind == 'init' -%}
+{%- if scope in region_items -%}{{ region_init_effect_method_name(scope, item.idx) }}{%- else -%}{{ init_effect_method_name(scope, item.idx) }}{%- endif -%}
+{%- else -%}{{ transition_effect_method_name(scope, item.idx) }}{%- endif -%}
+{%- endmacro -%}
+{#- A call of one lifecycle action: a concrete action runs in both the trial and
+    the real pass, an abstract one only in the real pass, through its hook. -#}
+{%- macro act_call(item, method_name, path_expr) -%}
 {%- set resolved = namespace(item=item, seen=[]) -%}
 {%- for _ in range(action_ref_hop_limit) -%}
 {%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
@@ -37,30 +71,266 @@
 {%- set resolved.item = resolved.item.ref -%}
 {%- endif -%}
 {%- endfor -%}
-{
-    "kind": {{ ("abstract" if resolved.item.is_abstract else "concrete") | tojson }},
-    "method": {{ action_method_name(state, method_kind, idx) | tojson if not resolved.item.is_abstract else "None" }},
-    "hook_method": {{ abstract_hook_method_name(resolved.item) | tojson if resolved.item.is_abstract else "None" }},
-    "action_name": {{ resolved.item.func_name | tojson }},
-    "action_stage": {{ item.stage | tojson }},
-    "context_state_path": {{ state_path_ref(state) }},
-    "active_leaf": {{ state_path_ref(state) }},
-    "call_stage": {{ item.stage | tojson }},
-    "abstract_target": {{ resolved.item.func_name | tojson if resolved.item.is_abstract else "None" }},
-    "named_ref": {{ item.func_name | tojson if item.name is not none and item.ref is not none else "None" }},
-    "owner_state_path": {{ state_path_ref(resolved.item.parent) }},
-    "dsl_snippet": {{ (resolved.item.to_ast_node() | string) | tojson }},
-}
-{%- endmacro %}
-{%- macro render_action_entries(state, items, method_kind) -%}
-{%- if items -%}
-[
-{%- for id_, item in items %}
-{{ render_action_entry(state, item, method_kind, id_) | indent(16, true) }},
-{%- endfor %}
-            ]
+{%- if resolved.item.is_abstract -%}
+if not v:
+    self._hook(
+        self.{{ abstract_hook_method_name(resolved.item) }},
+        vars_,
+        {{ path_expr }},
+        {{ path_expr }},
+        (
+            {{ resolved.item.func_name | tojson }},
+            {{ item.stage | tojson }},
+            {{ item.stage | tojson }},
+            {{ resolved.item.func_name | tojson }},
+            {{ (item.func_name | tojson) if item.name is not none and item.ref is not none else 'None' }},
+        ),
+    )
 {%- else -%}
-[]
+self.{{ method_name }}(vars_)
+{%- endif -%}
+{%- endmacro -%}
+{%- macro has_abstract(items) -%}
+{%- set found = namespace(value=false) -%}
+{%- for id_, item in items -%}
+{%- set resolved = namespace(item=item, seen=[]) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
+{%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{%- set resolved.seen = resolved.seen + [resolved.item] -%}
+{%- set resolved.item = resolved.item.ref -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if resolved.item.is_abstract -%}{%- set found.value = true -%}{%- endif -%}
+{%- endfor -%}
+{{ 'yes' if found.value else '' }}
+{%- endmacro -%}
+{%- macro aspect_scope(scope) -%}
+{{ 'yes' if (scope.list_on_during_aspects(aspect='before', with_ids=True) or scope.list_on_during_aspects(aspect='after', with_ids=True)) else '' }}
+{%- endmacro -%}
+{%- macro render_enter(state, sid) -%}
+def _enter_{{ sid }}(self, stack, vars_, v):
+    """Enter ``{{ state | state_path }}``: push its frame and run what entering it runs."""
+    stack.append(_Frame({{ sid }}, _ACTIVE))
+{%- if state.is_pseudo and not state.transitions_from and not state.init_transitions %}
+    # A pseudo state without a way on keeps its frame and runs no action.
+{%- else %}
+{%- for id_, item in state.list_on_enters(with_ids=True) %}
+{{ act_call(item, action_method_name(state, 'enter', id_), '_PATH[%d]' % sid) | indent(4, true) }}
+{%- endfor %}
+{%- if state.is_leaf_state %}
+    self._during_{{ sid }}(vars_, v)
+    stack[-1].mode = _AFTER_ENTRY
+{%- else %}
+    frame = stack[-1]
+    frame.mode = _INIT_WAIT
+    frame.plain_before_pending = True
+{%- if state.regions %}
+    frame.branches = [
+{%- for region in state.regions.values() %}
+        _Branch({{ scope_id(region) }}, []),
+{%- endfor %}
+    ]
+{%- endif %}
+{%- endif %}
+{%- endif %}
+{%- endmacro -%}
+{%- macro render_during(state, sid) -%}
+{%- set anc = namespace(items=[], cur=state.parent) -%}
+{%- for _ in scope_items -%}
+{%- if anc.cur is not none -%}
+{%- set anc.items = [anc.cur] + anc.items -%}
+{%- set anc.cur = anc.cur.parent -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set tracked = namespace(items=[]) -%}
+{%- if not state.is_pseudo -%}
+{%- for scope in anc.items -%}
+{%- if aspect_scope(scope) -%}{%- set tracked.items = tracked.items + [scope] -%}{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+def _during_{{ sid }}(self, vars_, v):
+    """Run the ``during`` step of ``{{ state | state_path }}``: the aspects around it, then its own actions."""
+{%- if tracked.items %}
+    ledger = self._ledger
+{%- endif %}
+{%- for scope in tracked.items %}
+{%- set aid = scope_id(scope) %}
+    entry = ledger.get({{ aid }})
+    if entry is None:
+        entry = ledger[{{ aid }}] = [False, False]
+    if not entry[0]:
+        entry[0] = True
+{%- set before = scope.list_on_during_aspects(aspect='before', with_ids=True) %}
+{%- if has_abstract(before) %}
+        wrapped = _PATH[{{ sid }}] if v else self._wrapped_state_path({{ aid }})
+{%- endif %}
+{%- for id_, item in before %}
+{{ act_call(item, scope_action_name(scope, 'aspect_before', id_), 'wrapped') | indent(8, true) }}
+{%- endfor %}
+{%- endfor %}
+{%- for id_, item in state.list_on_durings(aspect=None, with_ids=True) %}
+{{ act_call(item, action_method_name(state, 'during', id_), '_PATH[%d]' % sid) | indent(4, true) }}
+{%- endfor %}
+{%- for scope in tracked.items %}
+    ledger[{{ scope_id(scope) }}][1] = True
+{%- endfor %}
+{%- endmacro -%}
+{%- macro render_action_run(scope, sid, fname, kind, doc, items, path_expr) -%}
+def _{{ fname }}_{{ sid }}(self, vars_, v):
+    """{{ doc }}"""
+{%- for id_, item in items %}
+{{ act_call(item, scope_action_name(scope, kind, id_), path_expr) | indent(4, true) }}
+{%- endfor %}
+{%- endmacro -%}
+{%- macro render_aspect_after(scope, sid) -%}
+{%- set after = scope.list_on_during_aspects(aspect='after', with_ids=True) -%}
+def _after_{{ sid }}(self, vars_, v):
+    """Run the ``>> during after`` aspects declared on ``{{ scope | state_path }}``."""
+{%- if has_abstract(after) %}
+    wrapped = _PATH[{{ sid }}] if v else self._wrapped_state_path({{ sid }})
+{%- endif %}
+{%- for id_, item in after %}
+{{ act_call(item, scope_action_name(scope, 'aspect_after', id_), 'wrapped') | indent(4, true) }}
+{%- endfor %}
+{%- endmacro -%}
+{%- macro tr_candidate_cond(item) -%}
+{%- set tr = item.tr -%}
+{%- if tr.event is not none and tr.guard is not none -%}
+{{ tr.event.path_name | tojson }} in d_events and self.{{ tr_guard_name(item) }}(vars_)
+{%- elif tr.event is not none -%}
+{{ tr.event.path_name | tojson }} in d_events
+{%- elif tr.guard is not none -%}
+self.{{ tr_guard_name(item) }}(vars_)
+{%- else -%}
+True
+{%- endif -%}
+{%- endmacro -%}
+{%- macro render_pick(scope, sid, kind) -%}
+{%- set candidates = tr_items | selectattr('sid', 'equalto', sid) | selectattr('kind', 'equalto', kind) | list -%}
+def _pick_{{ kind }}_{{ sid }}(self, stack, vars_, d_events, validator):
+    """Pick the first {{ 'initial transition of' if kind == 'init' else 'transition leaving' }} ``{{ scope | state_path }}`` that is enabled and, when asked, viable."""
+{%- if not candidates %}
+    return None
+{%- else %}
+    loop_error = None
+{%- for item in candidates %}
+{%- set cond = tr_candidate_cond(item) %}
+{%- set body -%}
+if validator is None:
+    return {{ item.tid }}
+try:
+    if self._judge(stack, vars_, d_events, {{ item.tid }}, validator):
+        return {{ item.tid }}
+except _SimulationRuntimeLivelockError as error:
+    # _SimulationRuntimeLivelockError: the check proved a loop with no stable
+    # continuation; a later candidate may still work.
+    loop_error = error
+{%- endset %}
+{%- if cond == 'True' %}
+{{ body | indent(4, true) }}
+{%- else %}
+    if {{ cond }}:
+{{ body | indent(8, true) }}
+{%- endif %}
+{%- endfor %}
+    if loop_error is not None:
+        raise loop_error
+    return None
+{%- endif %}
+{%- endmacro -%}
+{%- macro render_enabled(scope, sid, kind) -%}
+{%- set candidates = tr_items | selectattr('sid', 'equalto', sid) | selectattr('kind', 'equalto', kind) | list -%}
+def _enabled_{{ kind }}_{{ sid }}(self, vars_, d_events):
+    """Yield the {{ 'initial transitions of' if kind == 'init' else 'transitions leaving' }} ``{{ scope | state_path }}`` that are enabled, last declared first."""
+{%- if not candidates %}
+    return ()
+{%- else %}
+{%- for item in (candidates | reverse | list) %}
+{%- set cond = tr_candidate_cond(item) %}
+{%- if cond == 'True' %}
+    yield {{ item.tid }}
+{%- else %}
+    if {{ cond }}:
+        yield {{ item.tid }}
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+{%- endmacro -%}
+{%- macro plain_before_call(owner) -%}
+{%- if owner.list_on_durings(aspect='before', with_ids=True) -%}self._plain_before_{{ scope_id(owner) }}(vars_, v){%- else -%}pass{%- endif -%}
+{%- endmacro -%}
+{%- macro render_take(item) -%}
+{%- set tr = item.tr -%}
+{%- set scope = scope_items[item.sid] -%}
+{%- if item.kind == 'init' -%}
+{%- set target = scope.substates[tr.to_state] -%}
+{%- set owner = scope.parent if scope in region_items else scope -%}
+def _take_{{ item.tid }}(self, stack, vars_, v):
+    """Take the initial transition ``{{ scope | state_path }}`` -> ``{{ target | state_path }}``."""
+    composite_frame = stack[-1]
+{%- if tr.effects %}
+    self.{{ tr_effect_name(item) }}(vars_)
+{%- endif %}
+{%- if not target.is_pseudo and owner.list_on_durings(aspect='before', with_ids=True) %}
+    if composite_frame.plain_before_pending:
+        self._plain_before_{{ scope_id(owner) }}(vars_, v)
+        composite_frame.plain_before_pending = False
+{%- elif not target.is_pseudo %}
+    composite_frame.plain_before_pending = False
+{%- endif %}
+    self._enter_{{ scope_id(target) }}(stack, vars_, v)
+    if composite_frame in stack:
+        composite_frame.mode = _ACTIVE
+{%- else -%}
+{%- set parent = scope.parent -%}
+{%- set pid = scope_id(parent) if parent is not none else -1 -%}
+def _take_{{ item.tid }}(self, stack, vars_, v):
+    """Take the transition ``{{ scope | state_path }}`` -> ``{{ '[*]' if tr.to_state == EXIT_STATE else (parent.substates[tr.to_state] | state_path) }}``."""
+{%- if scope.list_on_exits(with_ids=True) %}
+    self._exit_{{ scope_id(scope) }}(vars_, v)
+{%- endif %}
+{%- if tr.effects %}
+    self.{{ tr_effect_name(item) }}(vars_)
+{%- endif %}
+    stack.pop()
+{%- if tr.to_state == EXIT_STATE %}
+{%- if scope.is_pseudo and parent not in region_items %}
+    if stack and stack[-1].state == {{ pid }} and stack[-1].plain_before_pending:
+        stack[-1].plain_before_pending = False
+{%- endif %}
+    return self._finalize_exit_to_parent(stack, vars_, v)
+{%- else %}
+{%- set target = parent.substates[tr.to_state] %}
+{%- set owner = parent.parent if parent in region_items else parent %}
+{%- if scope.is_pseudo and not target.is_pseudo %}
+    if stack and stack[-1].state == {{ pid }}:
+        frame = stack[-1]
+        if frame.plain_before_pending:
+{%- if owner.list_on_durings(aspect='before', with_ids=True) %}
+            self._plain_before_{{ scope_id(owner) }}(vars_, v)
+{%- endif %}
+            frame.plain_before_pending = False
+{%- endif %}
+    self._enter_{{ scope_id(target) }}(stack, vars_, v)
+    return False
+{%- endif %}
+{%- endif %}
+{%- endmacro -%}
+{%- macro dispatch(name, entries) -%}
+{{ name }} = (
+{%- for entry in entries %}
+    {{ entry }},
+{%- endfor %}
+)
+{%- endmacro -%}
+{%- macro path_entry(path) -%}
+{%- set flat = '(' ~ (path | map('tojson') | join(', ')) ~ (',' if path | length == 1 else '') ~ ')' -%}
+{%- if (flat | length) + 5 <= 88 -%}
+{{ '    ' }}{{ flat }},
+{%- else -%}
+{{ '    (' }}
+{% for part in path %}{{ '        ' }}{{ part | tojson }},
+{% endfor %}{{ '    ),' }}
 {%- endif -%}
 {%- endmacro -%}
 """
@@ -119,6 +389,27 @@ Abstract Hook Map:
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
+{% endfor -%}
+{% for region in region_items -%}
+{% for group in [
+    region.list_on_during_aspects(aspect='before', with_ids=True),
+    region.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.seen -%}
+{% set abstract_ns.count = abstract_ns.count + 1 -%}
+{% set abstract_ns.seen = abstract_ns.seen + [resolved.item.func_name] -%}
+* ``{{ resolved.item.func_name }}`` -> ``{{ abstract_hook_method_name(resolved.item) }}``
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
 {% endfor %}
 {% if abstract_ns.count == 0 %}
 * No abstract actions are defined in the DSL.
@@ -130,6 +421,8 @@ Canonical Model Export::
 """
 
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
+import re
+from reprlib import Repr
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
@@ -151,6 +444,25 @@ _STATE_PATHS = (
     state.list_on_durings(aspect="after", with_ids=True),
     state.list_on_during_aspects(aspect="before", with_ids=True),
     state.list_on_during_aspects(aspect="after", with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_hook_scan.seen -%}
+{% set abstract_hook_scan.seen = abstract_hook_scan.seen + [resolved.item.func_name] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% for region in region_items -%}
+{% for group in [
+    region.list_on_during_aspects(aspect='before', with_ids=True),
+    region.list_on_during_aspects(aspect='after', with_ids=True),
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item, seen=[]) -%}
@@ -191,10 +503,31 @@ _ABSTRACT_HOOKS = {% if abstract_hook_scan.seen %}{
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
+{% for region in region_items -%}
+{% for group in [
+    region.list_on_during_aspects(aspect='before', with_ids=True),
+    region.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_const_ns.seen %}{% set abstract_const_ns.seen = abstract_const_ns.seen + [resolved.item.func_name] %}    {{ resolved.item.func_name | tojson }}: {{ abstract_hook_method_name(resolved.item) | tojson }},
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
 }{% else %}{}{% endif %}
 {% set event_ns = namespace(items=[]) -%}
 {% for state in state_items -%}
 {% set event_ns.items = event_ns.items + (state.events.values() | list) -%}
+{% endfor -%}
+{% for region in region_items -%}
+{% set event_ns.items = event_ns.items + (region.events.values() | list) -%}
 {% endfor -%}
 {% if event_ns.items | length == 0 -%}
 _EVENT_PATHS = ()
@@ -203,12 +536,10 @@ _EVENT_PATHS = ({{ event_ns.items[0].path_name | tojson }},)
 {% else -%}
 _EVENT_PATHS = (
 {% for state in state_items %}{% for event in state.events.values() %}    {{ event.path_name | tojson }},
+{% endfor %}{% endfor %}{% for region in region_items %}{% for event in region.events.values() %}    {{ event.path_name | tojson }},
 {% endfor %}{% endfor -%}
 )
-{% endif -%}
-_EVENT_PATH_SET = set(_EVENT_PATHS)
-_STATE_PATH_TUPLES = tuple(tuple(path.split(".")) for path in _STATE_PATHS)
-
+{% endif %}
 
 class SimulationRuntimeDfsError(RuntimeError):
     """Raised when speculative validation exceeds the generated runtime safety limit."""
@@ -220,6 +551,343 @@ class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
     """Raised when a DSL guard or action expression fails during execution."""
 
     pass
+
+
+{% raw %}class SimulationRuntimeEventError(ValueError):
+    """Raised when an event input has an unsupported shape or cannot be resolved."""
+
+    pass
+
+
+class SimulationRuntimeTerminalStateError(IndexError):
+    """Raised when the position is queried after the machine has ended."""
+
+    pass
+
+
+class _SimulationRuntimeLivelockError(SimulationRuntimeDfsError):
+    """A speculative path came back to a position it had already visited."""
+
+    def __init__(self, signatures):
+        paths = [".".join(_PATH[signature[0][-1][0]]) for signature in signatures]
+        super().__init__(
+            "Cannot reach a stoppable state in the same cycle; suspected loop: "
+            + " -> ".join(paths)
+            + ". Add an exit to a stoppable leaf, a terminating guard, or separate "
+            "the events driving exit and re-entry."
+        )
+
+
+class ModelValueError(ValueError):
+    """A reference that is malformed, raised while resolving names in the model."""
+
+    pass
+
+
+class ModelLookupError(LookupError):
+    """A reference that is well formed but names nothing in the model."""
+
+    pass
+
+
+class _Pending(object):
+    """Marks a region that waits for its initial transition (``[init]``)."""
+
+    def __repr__(self):
+        return "[init]"
+
+
+_PENDING = _Pending()
+_UNSET = object()
+# Modes of a frame: where the state or region on top of a stack is in its life.
+_ACTIVE = 0
+_AFTER_ENTRY = 1
+_INIT_WAIT = 2
+_POST_CHILD_EXIT = 3
+_STABLE = "stable"
+_ENDED = "ended"
+_FAILED = "failed"
+_CONTINUE = "continue"
+_REGION_DONE = "region_done"
+_TEXT_TOKENS = re.compile(r"\[init\]|\[done\]|[A-Za-z_][A-Za-z_0-9]*|\S")
+_TEXT_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+
+
+_ERROR_REPR = Repr()
+_ERROR_REPR.maxstring = 80
+
+
+class _Frame(object):
+    """One level of an execution stack."""
+
+    __slots__ = ("state", "mode", "plain_before_pending", "branches")
+
+    def __init__(self, state, mode, plain_before_pending=False, branches=None):
+        self.state = state
+        self.mode = mode
+        self.plain_before_pending = plain_before_pending
+        self.branches = branches
+
+
+class _Branch(object):
+    """The stack of one region of an owner that is at work."""
+
+    __slots__ = ("region", "stack")
+
+    def __init__(self, region, stack):
+        self.region = region
+        self.stack = stack
+
+    @property
+    def status(self):
+        if not self.stack:
+            return "pending"
+        if len(self.stack) == 1:
+            return "done" if self.stack[0].mode == _POST_CHILD_EXIT else "pending"
+        return "live"
+
+
+class _Outer(object):
+    """Link from a branch stack back to the stack that owns it."""
+
+    __slots__ = ("stack", "index", "parent")
+
+    def __init__(self, stack, index, parent):
+        self.stack = stack
+        self.index = index
+        self.parent = parent
+
+
+class _Run(object):
+    """Bookkeeping of one advance of a stack."""
+
+    def __init__(self, is_validation_mode=False, validate_post_child_exit=True):
+        self.is_validation_mode = is_validation_mode
+        self.validate_post_child_exit = validate_post_child_exit
+        self.steps_taken = 0
+        self.seen_signatures = set()
+
+
+def _position_text(position, prefix=0):
+    """Format a position tree the way ``str(Configuration)`` does."""
+    path, regions = position
+    result = ".".join(path[prefix:])
+    if regions:
+        parts = []
+        for name, child in regions:
+            if child is None:
+                value = "[done]"
+            elif child is _PENDING:
+                value = "[init]"
+            else:
+                value = _position_text(child, len(path) + 1)
+            parts.append("%s: %s" % (name, value))
+        result += "{" + ", ".join(parts) + "}"
+    return result
+
+
+def _positions(position):
+    yield position
+    for _, child in position[1]:
+        if isinstance(child, tuple):
+            for item in _positions(child):
+                yield item
+
+
+class _TextParser(object):
+    """Reads the configuration text written by :func:`_position_text`."""
+
+    def __init__(self, text):
+        if not isinstance(text, str):
+            raise TypeError("Configuration text must be a string.")
+        self.text = text
+        self.tokens = [
+            (match.group(), match.start()) for match in _TEXT_TOKENS.finditer(text)
+        ]
+        self.index = 0
+
+    def peek(self):
+        return self.tokens[self.index][0] if self.index < len(self.tokens) else ""
+
+    def location(self):
+        if self.index < len(self.tokens):
+            offset = self.tokens[self.index][1]
+        else:
+            offset = len(self.text)
+        line = self.text.count("\n", 0, offset) + 1
+        column = offset - self.text.rfind("\n", 0, offset)
+        return "line %d, column %d" % (line, column)
+
+    def error(self, expected):
+        actual = _ERROR_REPR.repr(self.peek()) if self.peek() else "end of input"
+        raise ValueError(
+            "Expected %s at %s, got %s." % (expected, self.location(), actual)
+        )
+
+    def take(self, expected=None):
+        token = self.peek()
+        if not token or (expected is not None and token != expected):
+            self.error(repr(expected))
+        self.index += 1
+        return token
+
+    def identifier(self):
+        if _TEXT_IDENTIFIER.fullmatch(self.peek()) is None:
+            self.error("a configuration identifier")
+        return self.take()
+
+    def position(self, base=()):
+        path = [self.identifier()]
+        while self.peek() == ".":
+            self.take(".")
+            path.append(self.identifier())
+        path = tuple(base) + tuple(path)
+        regions = []
+        if self.peek() == "{":
+            self.take("{")
+            while True:
+                name = self.identifier()
+                self.take(":")
+                if self.peek() == "[done]":
+                    self.take("[done]")
+                    child = None
+                elif self.peek() == "[init]":
+                    self.take("[init]")
+                    child = _PENDING
+                else:
+                    child = self.position(path + (name,))
+                regions.append((name, child))
+                if self.peek() != ",":
+                    break
+                self.take(",")
+            self.take("}")
+        return (path, tuple(regions))
+
+
+def _position_of_stack(stack):
+    """Build the position tree of a stack, one entry per active branch."""
+    top = [frame for frame in stack if not _IS_REGION[frame.state]][-1]
+    regions = []
+    if top.branches is not None:
+        for branch in top.branches:
+            if branch.status == "pending":
+                child = _PENDING
+            elif branch.status == "done":
+                child = None
+            else:
+                child = _position_of_stack(branch.stack)
+            regions.append((_PATH[branch.region][-1], child))
+    else:
+        regions = [(name, _PENDING) for name in _REGION_NAMES[top.state]]
+    return (_PATH[top.state], tuple(regions))
+
+
+def _clone_stack(stack):
+    return [
+        _Frame(
+            frame.state,
+            frame.mode,
+            frame.plain_before_pending,
+            None
+            if frame.branches is None
+            else [
+                _Branch(branch.region, _clone_stack(branch.stack))
+                for branch in frame.branches
+            ],
+        )
+        for frame in stack
+    ]
+
+
+def _stack_shape(stack, skip=None):
+    shape = []
+    last = len(stack) - 1
+    for position, frame in enumerate(stack):
+        item = (frame.state, frame.mode, frame.plain_before_pending)
+        if frame.branches is not None:
+            item += (
+                tuple(
+                    None
+                    if position == last and index == skip
+                    else _stack_shape(branch.stack)
+                    for index, branch in enumerate(frame.branches)
+                ),
+            )
+        shape.append(item)
+    return tuple(shape)
+
+
+def _create_execution_signature(stack, vars_):
+    return _stack_shape(stack), tuple((key, vars_[key]) for key in sorted(vars_))
+
+
+def _find_frame_in(stack, scope):
+    """Find the stack and index of the frame that holds ``scope``."""
+    for index, frame in enumerate(stack):
+        if frame.state == scope:
+            return stack, index
+        for branch in frame.branches or ():
+            found = _find_frame_in(branch.stack, scope)
+            if found is not None:
+                return found
+    return None{% endraw %}
+
+
+# Tables of the generated model: one entry per state (numbered in declaration
+# order) followed by one entry per region.
+_STATE_COUNT = {{ state_count }}
+# Without a pseudo state every state the machine enters rests at once, so one
+# advance can never come back to a position it has left.
+_LOOP_FREE = {{ (state_items | selectattr('is_pseudo') | list | length == 0) | repr }}
+_HAS_REGIONS = {{ model.has_regions | repr }}
+_PATH = (
+{% for scope in scope_items %}{{ path_entry(scope.path) }}
+{% endfor %})
+_PARENT = (
+{% for scope in scope_items %}    {{ scope_id(scope.parent) if scope.parent is not none else -1 }},
+{% endfor %})
+_IS_PSEUDO = (
+{% for scope in scope_items %}    {{ (scope not in region_items and scope.is_pseudo) | repr }},
+{% endfor %})
+_IS_LEAF = (
+{% for scope in scope_items %}    {{ (scope not in region_items and scope.is_leaf_state) | repr }},
+{% endfor %})
+_NO_OUTGOING_PSEUDO = (
+{% for scope in scope_items %}    {{ (scope not in region_items and scope.is_pseudo and not scope.transitions_from and not scope.init_transitions) | repr }},
+{% endfor %})
+_EVENTS = (
+{% for scope in scope_items %}{% if scope.events %}    {{ '{' }}
+{% for event in scope.events.values() %}        {{ event.name | tojson }}: {{ event.path_name | tojson }},
+{% endfor %}    {{ '}' }},
+{% else %}    {{ '{}' }},
+{% endif %}{% endfor %})
+
+{% raw %}_IS_REGION = tuple(scope >= _STATE_COUNT for scope in range(len(_PATH)))
+_IS_STOPPABLE = tuple(
+    _IS_LEAF[scope] and not _IS_PSEUDO[scope] for scope in range(len(_PATH))
+)
+_SCOPE_OF_PATH = {path: scope for scope, path in enumerate(_PATH)}
+_REGIONS = tuple(
+    tuple(
+        region for region in range(_STATE_COUNT, len(_PATH)) if _PARENT[region] == scope
+    )
+    for scope in range(len(_PATH))
+)
+_REGION_NAMES = tuple(
+    tuple(_PATH[region][-1] for region in regions) for regions in _REGIONS
+)
+_REGION_OF = tuple(
+    {_PATH[region][-1]: region for region in regions} for regions in _REGIONS
+)
+_CHILD = tuple({} for _ in _PATH)
+for _scope, _parent in enumerate(_PARENT):
+    if _parent >= 0:
+        _CHILD[_parent][_PATH[_scope][-1]] = _scope
+_FLUSH_RANK = [0] * len(_PATH)
+for _rank, _scope in enumerate(
+    sorted(range(len(_PATH)), key=lambda scope: (-len(_PATH[scope]), _PATH[scope]))
+):
+    _FLUSH_RANK[_scope] = _rank{% endraw %}
 
 
 @dataclass(frozen=True)
@@ -256,6 +924,10 @@ class ReadOnlyExecutionContext:
     :type parameters: Mapping[str, Number]
     :param inputs: Frozen input snapshot for the current cycle.
     :type inputs: Mapping[str, Number]
+    :param configuration: Whole position at the moment of the call, as text such
+        as ``Root.Run{A: X, B: [done]}``; ``state_path`` and ``active_leaf``
+        name the deepest state common to every branch the action covers.
+    :type configuration: Optional[str]
     """
 
     state_path: Tuple[str, ...]
@@ -268,6 +940,7 @@ class ReadOnlyExecutionContext:
     named_ref: Optional[str] = None
     parameters: Mapping[str, Number] = field(default_factory=dict, repr=False)
     inputs: Mapping[str, Number] = field(default_factory=dict, repr=False)
+    configuration: Optional[str] = None
 
     def __post_init__(self):
         object.__setattr__(self, "state_path", tuple(self.state_path))
@@ -324,51 +997,8 @@ class {{ machine_class_name(model) }}:
 {% set variable_name_lines.items = variable_name_lines.items + [')'] -%}
 {{ variable_name_lines.items | join('\n') | indent(4, true) }}
 {% endif %}
-{{ 'ABSTRACT_HOOKS = _ABSTRACT_HOOKS' | indent(4, true) }}
+{{ 'ABSTRACT_HOOKS = MappingProxyType(_ABSTRACT_HOOKS)' | indent(4, true) }}
 {{ 'EVENT_PATHS = _EVENT_PATHS' | indent(4, true) }}
-{{ '_EVENT_PATH_SET = _EVENT_PATH_SET' | indent(4, true) }}
-    _ROOT_STATE_PATH = {{ state_key(model.root_state) | tojson }}
-    _STATE_INFO = {
-{% for state in state_items %}        {{ state_key(state) | tojson }}: {
-            "path": _STATE_PATH_TUPLES[{{ loop.index0 }}],
-            "parent": {{ state_key(state.parent) | tojson if state.parent is not none else "None" }},
-            "is_leaf": {{ state.is_leaf_state | repr }},
-            "is_pseudo": {{ state.is_pseudo | repr }},
-            "enter_actions": {{ render_action_entries(state, state.list_on_enters(with_ids=True), "enter") }},
-            "during_actions": {{ render_action_entries(state, state.list_on_durings(aspect=None, with_ids=True), "during") }},
-            "exit_actions": {{ render_action_entries(state, state.list_on_exits(with_ids=True), "exit") }},
-            "during_before_actions": {{ render_action_entries(state, state.list_on_durings(aspect="before", with_ids=True), "during_before") }},
-            "during_after_actions": {{ render_action_entries(state, state.list_on_durings(aspect="after", with_ids=True), "during_after") }},
-            "aspect_before_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="before", with_ids=True), "aspect_before") }},
-            "aspect_after_actions": {{ render_action_entries(state, state.list_on_during_aspects(aspect="after", with_ids=True), "aspect_after") }},
-{% if state.init_transitions %}            "initial_transition_ids": [
-{% for transition in state.init_transitions %}                {{ init_transition_id(state, loop.index) | tojson }},
-{% endfor %}            ],
-{% else %}            "initial_transition_ids": [],
-{% endif %}{% if state.transitions_from %}            "transition_ids": [
-{% for transition in state.transitions_from %}                {{ normal_transition_id(state, loop.index) | tojson }},
-{% endfor %}            ],
-{% else %}            "transition_ids": [],
-{% endif %}        },
-{% endfor %}    }
-    _TRANSITIONS = {
-{% for state in state_items %}{% for transition in state.init_transitions %}        {{ init_transition_id(state, loop.index) | tojson }}: {
-            "target": {{ state_key(state.substates[transition.to_state]) | tojson }},
-            "to_exit": False,
-            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
-            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
-            "guard": {{ init_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
-            "effect": {{ init_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
-        },
-{% endfor %}{% for transition in state.transitions_from %}        {{ normal_transition_id(state, loop.index) | tojson }}: {
-            "target": {{ state_key(state.parent.substates[transition.to_state]) | tojson if transition.to_state != EXIT_STATE else "None" }},
-            "to_exit": {{ (transition.to_state == EXIT_STATE) | repr }},
-            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
-            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
-            "guard": {{ transition_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
-            "effect": {{ transition_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
-        },
-{% endfor %}{% endfor %}    }
 {% if define_items | length == 0 -%}
 {{ '_VAR_TYPES = {}' | indent(4, true) }}
 {% else -%}
@@ -578,7 +1208,6 @@ class {{ machine_class_name(model) }}:
 {% endfor %}        self._active_inputs = None
         self._last_inputs = None
         self._vars = {}
-        self.variables = self._vars
         if initial_state is not None and initial_vars is None:
             raise ValueError(
                 "initial_vars must be provided when initial_state is specified"
@@ -618,13 +1247,21 @@ class {{ machine_class_name(model) }}:
         self._entered_root = initial_state is not None
         self.cycle_count = 0
         self._last_cycle_was_delta = False
+        self._outer_chain = []
+        self._ledger = {}
+        self._init_depth = 0
+        self._continuation_trail = []
+        self._memo = {}
+        self._memo_deps = []
+        self._overflow_depth = None
+        self._root_stack = None
         if initial_state is None:
-            self._stack = [{"state": self._ROOT_STATE_PATH, "mode": "init_wait"}]
+            self._stack = [_Frame(0, _INIT_WAIT)]
         else:
-            self._stack = self._build_hot_start_stack(
-                self._normalize_state_path(initial_state)
+            self._stack = self._build_position_stack(
+                self._resolve_start_position(initial_state)
             )
-            self._validate_hot_start_stack(self._normalize_state_path(initial_state))
+            self._check_structural_limit(self._stack)
 
     @property
     def parameters(self):
@@ -657,25 +1294,53 @@ class {{ machine_class_name(model) }}:
 
 {% endfor %}    @property
     def vars(self):
-        return self._vars
+        """
+        Read the persistent variables of the last committed cycle.
+
+        The mapping is a read-only view of the variables as they stand now. A
+        successful cycle commits a new set of values, so read ``vars`` again
+        after every cycle; take ``dict(machine.vars)`` to keep a checkpoint.
+
+        :return: Read-only mapping from variable name to its current value.
+        :rtype: Mapping[str, Number]
+        """
+        return MappingProxyType(self._vars)
 
     @property
     def is_ended(self):
         return self._ended
-
+{% if not model.has_regions %}
     @property
     def current_state_path(self):
+        """
+        Return the path of the active state.
+
+        A model with regions has no single active path, so this property and
+        :attr:`current_state_name` exist only for a model without regions; read
+        :attr:`configuration` there.
+
+        :return: The path of the active state, or ``None`` after the machine
+            has ended.
+        :rtype: Optional[Tuple[str, ...]]
+        """
         if not self._stack:
             return None
-        return self._STATE_INFO[self._stack[-1]["state"]]["path"]
+        return _PATH[self._stack[-1].state]
 
     @property
     def current_state_name(self):
+        """
+        Return the short name of the active state.
+
+        :return: The name of the active state, or ``None`` after the machine
+            has ended.
+        :rtype: Optional[str]
+        """
         state_path = self.current_state_path
         if state_path is None:
             return None
         return state_path[-1]
-
+{% endif %}
     @property
     def last_cycle_was_delta(self):
         """
@@ -689,8 +1354,9 @@ class {{ machine_class_name(model) }}:
     def info(self):
         return {
             "root_state_name": {{ model.root_state.name | tojson }},
-            "current_state_path": self.current_state_path,
-            "variable_names": sorted(self._vars.keys()),
+{% if model.has_regions %}            "configuration": None if self._ended else self.configuration,
+{% else %}            "current_state_path": self.current_state_path,
+{% endif %}            "variable_names": sorted(self._vars.keys()),
             "state_paths": list(self.STATE_PATHS),
             "abstract_hooks": dict(self.ABSTRACT_HOOKS),
             "is_ended": self._ended,
@@ -706,274 +1372,14 @@ class {{ machine_class_name(model) }}:
         """
         return dict(cls.ABSTRACT_HOOKS)
 
-    def _normalize_state_path(self, state_ref):
-        if isinstance(state_ref, str):
-            if not state_ref:
-                raise ValueError("State path cannot be empty")
-            path = tuple(state_ref.split("."))
-        elif isinstance(state_ref, (tuple, list)):
-            path = tuple(state_ref)
-        else:
-            raise TypeError("state_ref must be str, tuple, or list")
+    def _context_inputs(self):
+        """Snapshot of the inputs of the running cycle for an action context."""
+        return {% if input_items %}{
+{% for item in input_items %}            {{ item.name | tojson }}: self.get_input_{{ item.name }}(),
+{% endfor %}        }{% else %}{}{% endif %}
 
-        if not path:
-            raise ValueError("State path cannot be empty")
-        if path[0] != self._ROOT_STATE_PATH:
-            raise ValueError(
-                "State path root %r does not match state machine root %r"
-                % (path[0], self._ROOT_STATE_PATH)
-            )
-
-        current_path = self._ROOT_STATE_PATH
-        for name in path[1:]:
-            next_path = current_path + "." + name
-            if next_path not in self._STATE_INFO:
-                raise ValueError("State %r not found under %r" % (name, current_path))
-            if self._STATE_INFO[next_path]["parent"] != current_path:
-                raise ValueError(
-                    "State %r is not a direct child of %r" % (name, current_path)
-                )
-            current_path = next_path
-
-        return ".".join(path)
-
-    def _build_hot_start_stack(self, target_path):
-        path_items = []
-        current_path = target_path
-        while current_path is not None:
-            path_items.insert(0, current_path)
-            current_path = self._STATE_INFO[current_path]["parent"]
-
-        stack = []
-        for index, state_path in enumerate(path_items):
-            state_info = self._STATE_INFO[state_path]
-            is_target = index == len(path_items) - 1
-            if state_info["is_leaf"]:
-                stack.append({"state": state_path, "mode": "active"})
-            elif is_target:
-                stack.append({"state": state_path, "mode": "init_wait"})
-            else:
-                stack.append({"state": state_path, "mode": "active"})
-        return stack
-
-    def _validate_hot_start_stack(self, target_path):
-        max_structural_depth = 64
-        if len(self._stack) > max_structural_depth:
-            raise SimulationRuntimeDfsError(
-                "Hot start target exceeds the structural stack-depth safety limit "
-                "(%s) before execution; choose a shallower target state or simplify "
-                "the state hierarchy." % (max_structural_depth,)
-            )
-
-    @staticmethod
-    def _clone_stack(stack):
-        return [dict(frame) for frame in stack]
-
-    @staticmethod
-    def _frame_plain_before_pending(frame):
-        return bool(frame.get("plain_before_pending", False))
-
-    @staticmethod
-    def _create_execution_signature(stack, vars_):
-        return (
-            tuple(
-                (
-                    frame["state"],
-                    frame["mode"],
-                    {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
-                )
-                for frame in stack
-            ),
-            tuple((key, vars_[key]) for key in sorted(vars_)),
-        )
-
-    @staticmethod
-    def _create_structural_signature(stack):
-        return tuple(
-            (
-                frame["state"],
-                frame["mode"],
-                {{ machine_class_name(model) }}._frame_plain_before_pending(frame),
-            )
-            for frame in stack
-        )
-
-    def _is_stoppable_state(self, state_path):
-        state_info = self._STATE_INFO[state_path]
-        return state_info["is_leaf"] and not state_info["is_pseudo"]
-
-    def _is_no_outgoing_pseudo(self, state_path):
-        state_info = self._STATE_INFO[state_path]
-        return bool(
-            state_info["is_pseudo"]
-            and not state_info["transition_ids"]
-            and not state_info["initial_transition_ids"]
-        )
-
-    def _parse_event(self, event):
-        if hasattr(event, "path_name"):
-            event = event.path_name
-        elif not isinstance(event, str):
-            event = str(event)
-
-        if not event:
-            raise ValueError("Event reference cannot be empty")
-
-        if not self._stack:
-            if event in self._EVENT_PATH_SET:
-                return event
-            raise LookupError("Cannot resolve event %r after runtime end." % (event,))
-
-        current_path = self._stack[-1]["state"]
-        current_items = list(self._STATE_INFO[current_path]["path"])
-
-        if event.startswith("/"):
-            relative_path = event[1:]
-            if not relative_path:
-                raise ValueError("Absolute event reference cannot be just '/'.")
-            candidate = self._ROOT_STATE_PATH + "." + relative_path
-            if candidate in self._EVENT_PATH_SET:
-                return candidate
-            raise LookupError("Cannot resolve absolute event path %r." % (event,))
-
-        if event.startswith("."):
-            dot_count = 0
-            for char in event:
-                if char == ".":
-                    dot_count += 1
-                else:
-                    break
-            remaining_path = event[dot_count:]
-            if not remaining_path:
-                raise ValueError(
-                    "Parent-relative event reference cannot end with dots: %r"
-                    % (event,)
-                )
-            if dot_count > len(current_items) - 1:
-                raise ValueError(
-                    "Parent-relative event reference %r goes beyond root state."
-                    % (event,)
-                )
-            base_items = current_items[:-dot_count]
-            candidate = ".".join(tuple(base_items + remaining_path.split(".")))
-            if candidate in self._EVENT_PATH_SET:
-                return candidate
-            raise LookupError(
-                "Cannot resolve parent-relative event path %r." % (event,)
-            )
-
-        if event in self._EVENT_PATH_SET:
-            return event
-
-        candidate = current_path + "." + event
-        if candidate in self._EVENT_PATH_SET:
-            return candidate
-
-        raise LookupError("Cannot resolve event path %r." % (event,))
-
-    def _normalize_events(self, events):
-        if events is None:
-            return ()
-        if isinstance(events, str):
-            events = [events]
-        normalized = []
-        for item in events:
-            normalized.append(self._parse_event(item))
-        return tuple(normalized)
-
-    def _iter_path_to_state(self, state_path):
-        result = []
-        current_path = state_path
-        while current_path is not None:
-            result.insert(0, current_path)
-            current_path = self._STATE_INFO[current_path]["parent"]
-        return result
-
-    def _execute_actions(
-        self, actions, vars_, is_validation_mode=False, active_leaf_path=None
-    ):
-        for action in actions:
-            if action["kind"] == "concrete":
-                getattr(self, action["method"])(vars_)
-            else:
-                self._execute_abstract_action(
-                    action,
-                    vars_,
-                    is_validation_mode=is_validation_mode,
-                    active_leaf_path=active_leaf_path,
-                )
-
-    def _execute_abstract_action(
-        self,
-        action,
-        vars_,
-        is_validation_mode=False,
-        active_leaf_path=None,
-    ):
-        if is_validation_mode:
-            return
-        if active_leaf_path is None:
-            context_state_path = action["context_state_path"]
-        else:
-            # Aspect actions pass the active leaf path at runtime; the
-            # action metadata path is only the owner-state fallback.
-            context_state_path = active_leaf_path
-        ctx = ReadOnlyExecutionContext(
-            state_path=context_state_path,
-            vars=dict(vars_),
-            action_name=action["action_name"],
-            action_stage=action["action_stage"],
-            active_leaf=context_state_path,
-            call_stage=action["call_stage"],
-            abstract_target=action["abstract_target"],
-            named_ref=action["named_ref"],
-            parameters=self.parameters,
-            inputs={% if input_items %}{
-{% for item in input_items %}                {{ item.name | tojson }}: self.get_input_{{ item.name }}(),
-{% endfor %}            }{% else %}{}{% endif %},
-        )
-        old_vars = self._vars
-        old_variables = self.variables
-        self._vars = vars_
-        self.variables = self._vars
-        try:
-            hook_name = action.get("hook_method")
-            if hook_name:
-                getattr(self, hook_name)(ctx)
-        finally:
-            self._vars = old_vars
-            self.variables = old_variables
-
-    def _run_leaf_during(self, state_path, vars_, is_validation_mode=False):
-        state_info = self._STATE_INFO[state_path]
-        if self._is_no_outgoing_pseudo(state_path):
-            return
-        if not state_info["is_pseudo"]:
-            for item_path in self._iter_path_to_state(state_path):
-                self._execute_actions(
-                    self._STATE_INFO[item_path]["aspect_before_actions"],
-                    vars_,
-                    is_validation_mode=is_validation_mode,
-                    active_leaf_path=state_info["path"],
-                )
-        self._execute_actions(
-            state_info["during_actions"],
-            vars_,
-            is_validation_mode=is_validation_mode,
-        )
-        if not state_info["is_pseudo"]:
-            for item_path in reversed(self._iter_path_to_state(state_path)):
-                self._execute_actions(
-                    self._STATE_INFO[item_path]["aspect_after_actions"],
-                    vars_,
-                    is_validation_mode=is_validation_mode,
-                    active_leaf_path=state_info["path"],
-                )
-
-    def _transition_matches_event(self, transition, event_names):
-        if transition["event_path"] is None:
-            return True
-        return transition["event_path"] in event_names
+{% raw %}    _DFS_STEP_LIMIT = 1000
+    _DFS_STRUCTURAL_DEPTH_LIMIT = 64
 
     def _evaluate_runtime_expr(self, fn, usage):
         try:
@@ -989,549 +1395,1095 @@ class {{ machine_class_name(model) }}:
                 "%s evaluation failed: %s" % (usage, err)
             ) from err
 
-    def _transition_matches_guard(self, transition, vars_):
-        if transition["guard"] is None:
+    # -- positions: queries, text and hot start -------------------------------
+
+    @staticmethod
+    def _lookup(path):
+        parts = tuple(path.split(".")) if isinstance(path, str) else tuple(path)
+        found = _SCOPE_OF_PATH.get(parts)
+        if found is None:
+            raise ValueError(
+                "Unknown configuration path: %s." % _ERROR_REPR.repr(".".join(parts))
+            )
+        return found
+
+    def _position_now(self):
+        if not self._stack:
+            raise SimulationRuntimeTerminalStateError(
+                "Cannot access configuration: runtime has ended and the "
+                "active stack is empty. Check is_ended before querying "
+                "configuration."
+            )
+        return _position_of_stack(self._stack)
+
+    @property
+    def configuration(self):
+        """
+        Return the whole position as text, such as ``Root.Run{A: X, B: [done]}``.
+
+        :return: One state path per branch; a region that finished reads
+            ``[done]`` and one that still waits for its initial transition reads
+            ``[init]``.
+        :rtype: str
+        :raises SimulationRuntimeTerminalStateError: If the machine has ended.
+        """
+        return _position_text(self._position_now())
+
+    @property
+    def leaves(self):
+        """
+        Return the path of every active leaf state, in declaration order.
+
+        :return: Paths of the states that are active and have no children.
+        :rtype: Tuple[Tuple[str, ...], ...]
+        :raises SimulationRuntimeTerminalStateError: If the machine has ended.
+        """
+        return tuple(
+            position[0]
+            for position in _positions(self._position_now())
+            if _IS_LEAF[_SCOPE_OF_PATH[position[0]]]
+        )
+
+    def is_active(self, path):
+        """
+        Return whether a state, or one of its descendants, is active.
+
+        :param path: Full state path, dotted or as a tuple.
+        :type path: Union[str, Tuple[str, ...]]
+        :return: ``True`` if the state is on an active branch.
+        :rtype: bool
+        :raises ValueError: If the path is unknown or names a region.
+        :raises SimulationRuntimeTerminalStateError: If the machine has ended.
+        """
+        scope = self._lookup(path)
+        if _IS_REGION[scope]:
+            raise ValueError("is_active requires a State path.")
+        return any(
+            position[0][: len(_PATH[scope])] == _PATH[scope]
+            for position in _positions(self._position_now())
+        )
+{% endraw %}{% if model.has_regions %}{% raw %}
+    def region_status(self, path):
+        """
+        Return ``'live'``, ``'done'``, ``'pending'`` or ``'inactive'`` for a region.
+
+        ``'pending'`` means the owner is active and the region has not been
+        initialized yet; ``'inactive'`` means the owner is not on an active
+        branch.
+
+        :param path: Full region path, dotted or as a tuple.
+        :type path: Union[str, Tuple[str, ...]]
+        :return: The status of the region.
+        :rtype: str
+        :raises ValueError: If the path is unknown or names a state.
+        :raises SimulationRuntimeTerminalStateError: If the machine has ended.
+        """
+        region = self._lookup(path)
+        if not _IS_REGION[region]:
+            raise ValueError("region_status requires a Region path.")
+        for position in _positions(self._position_now()):
+            if position[0] == _PATH[_PARENT[region]]:
+                child = dict(position[1])[_PATH[region][-1]]
+                if child is _PENDING:
+                    return "pending"
+                return "done" if child is None else "live"
+        return "inactive"
+{% endraw %}{% endif %}{% raw %}
+    def _validate_position(self, position, base):
+        path = position[0]
+        if path[: len(base)] != base or len(path) <= len(base):
+            raise ValueError(
+                "Configuration path %s is outside namespace %s."
+                % (_ERROR_REPR.repr(path), _ERROR_REPR.repr(base))
+            )
+        state = self._lookup(path)
+        if _IS_REGION[state]:
+            raise ValueError(
+                "A configuration branch must end at a State, not a Region."
+            )
+        # A linear path cannot skip a parallel owner and select just one region.
+        for end in range(len(base) + 1, len(path)):
+            ancestor = self._lookup(path[:end])
+            if _REGIONS[ancestor]:
+                raise ValueError(
+                    "Parallel owner %s requires a region block."
+                    % _ERROR_REPR.repr(".".join(_PATH[ancestor]))
+                )
+        context = ".".join(path)
+        entries = dict(position[1])
+        if len(entries) != len(position[1]):
+            raise ValueError(
+                "Duplicate region in configuration for %s." % _ERROR_REPR.repr(context)
+            )
+        if set(entries) - set(_REGION_NAMES[state]):
+            raise ValueError(
+                "Unknown region in configuration for %s." % _ERROR_REPR.repr(context)
+            )
+        ordered = []
+        for name in _REGION_NAMES[state]:
+            child = entries.get(name, _PENDING)
+            if isinstance(child, tuple):
+                child = self._validate_position(child, path + (name,))
+            ordered.append((name, child))
+        return (path, tuple(ordered))
+
+    def _parse_position(self, text):
+        parser = _TextParser(text)
+        try:
+            position = parser.position()
+            if parser.peek():
+                parser.error("end of input")
+            return self._validate_position(position, ())
+        except RecursionError:
+            # RecursionError: position() parses nested blocks and the validation
+            # walks the resulting recursive position tree within Python's stack
+            # limit.
+            raise ValueError(
+                "Configuration nesting is too deep near %s; "
+                "reduce nested region blocks." % parser.location()
+            ) from None
+
+    @staticmethod
+    def _position_of_state(state):
+        node = (_PATH[state], tuple((name, _PENDING) for name in _REGION_NAMES[state]))
+        scope = state
+        while scope >= 0:
+            if _IS_REGION[scope]:
+                owner = _PARENT[scope]
+                node = (
+                    _PATH[owner],
+                    tuple(
+                        (name, node if name == _PATH[scope][-1] else _PENDING)
+                        for name in _REGION_NAMES[owner]
+                    ),
+                )
+            scope = _PARENT[scope]
+        return node
+
+    def _reject_all_done(self, position):
+        if position[1] and all(child is None for _, child in position[1]):
+            raise ValueError(
+                "All regions are Done at '%s'; a finished owner cannot be hot-started."
+                % ".".join(position[0])
+            )
+        for _, child in position[1]:
+            if isinstance(child, tuple):
+                self._reject_all_done(child)
+
+    def _resolve_start_position(self, start):
+        if isinstance(start, str) and "{" in start:
+            position = self._parse_position(start)
+        else:
+            if isinstance(start, str):
+                if not start:
+                    raise ValueError("State path cannot be empty")
+                path = tuple(start.split("."))
+            elif isinstance(start, (tuple, list)):
+                path = tuple(start)
+            else:
+                raise TypeError(
+                    "initial_state must be str, tuple or list, got %s"
+                    % type(start).__name__
+                )
+            found = self._lookup(path)
+            if _IS_REGION[found]:
+                raise ValueError("%r names a region, not a state" % ".".join(path))
+            position = self._position_of_state(found)
+        self._reject_all_done(position)
+        return position
+
+    def _build_position_stack(self, position, region=-1):
+        chain = []
+        scope = self._lookup(position[0])
+        while scope != region:
+            chain.insert(0, scope)
+            scope = _PARENT[scope]
+        frames = [_Frame(state, _ACTIVE) for state in chain]
+        top = frames[-1]
+        if position[1]:
+            top.branches = []
+            for name, child in position[1]:
+                owned = _REGION_OF[top.state][name]
+                if child is None:
+                    stack = [_Frame(owned, _POST_CHILD_EXIT)]
+                elif child is _PENDING:
+                    stack = []
+                else:
+                    stack = [_Frame(owned, _ACTIVE)] + self._build_position_stack(
+                        child, owned
+                    )
+                top.branches.append(_Branch(owned, stack))
+            if all(branch.status == "pending" for branch in top.branches):
+                top.mode = _INIT_WAIT
+        elif not _IS_LEAF[top.state]:
+            top.mode = _INIT_WAIT
+        return frames
+
+    # -- event names -------------------------------------------------------
+
+    @staticmethod
+    def _scope_resolve_event(scope, event_ref):
+        """Resolve an event name from one state, the way ``State.resolve_event`` does."""
+        if not event_ref:
+            raise ModelValueError("Event reference cannot be empty")
+        root = scope
+        while _PARENT[root] >= 0:
+            root = _PARENT[root]
+        if event_ref.startswith("/"):
+            relative_path = event_ref[1:]
+            if not relative_path:
+                raise ModelValueError("Absolute event reference cannot be just '/'")
+            path_parts = relative_path.split(".")
+            if not all(path_parts):
+                raise ModelValueError(
+                    "Invalid absolute event reference: %r" % (event_ref,)
+                )
+            event_name = path_parts[-1]
+            target_path = _PATH[root] + tuple(path_parts[:-1])
+        elif event_ref.startswith("."):
+            dot_count = 0
+            for char in event_ref:
+                if char == ".":
+                    dot_count += 1
+                else:
+                    break
+            remaining_path = event_ref[dot_count:]
+            if not remaining_path:
+                raise ModelValueError(
+                    "Parent-relative event reference cannot end with dots: %r"
+                    % (event_ref,)
+                )
+            path_parts = remaining_path.split(".")
+            if not all(path_parts):
+                raise ModelValueError(
+                    "Invalid parent-relative event reference: %r" % (event_ref,)
+                )
+            current = scope
+            for _ in range(dot_count):
+                if _PARENT[current] < 0:
+                    raise ModelValueError(
+                        "Parent-relative event reference %r goes beyond root state "
+                        "(current state: %s, tried to go up %d levels)"
+                        % (event_ref, ".".join(_PATH[scope]), dot_count)
+                    )
+                current = _PARENT[current]
+            event_name = path_parts[-1]
+            target_path = _PATH[current] + tuple(path_parts[:-1])
+        else:
+            path_parts = event_ref.split(".")
+            if not all(path_parts):
+                raise ModelValueError(
+                    "Invalid relative event reference: %r" % (event_ref,)
+                )
+            event_name = path_parts[-1]
+            target_path = _PATH[scope] + tuple(path_parts[:-1])
+        current = root
+        for index, name in enumerate(target_path[1:], 1):
+            if _CHILD[current].get(name) is None:
+                raise ModelLookupError(
+                    "State %r not found in hierarchy while resolving event "
+                    "reference %r" % (".".join(target_path[: index + 1]), event_ref)
+                )
+            current = _CHILD[current][name]
+        if event_name not in _EVENTS[current]:
+            raise ModelLookupError(
+                "Event %r not found in state %r while resolving event reference %r"
+                % (event_name, ".".join(target_path), event_ref)
+            )
+        return _EVENTS[current][event_name]
+
+    @staticmethod
+    def _machine_resolve_event(event_path):
+        """Resolve a full event path, the way ``StateMachine.resolve_event`` does."""
+        if not event_path:
+            raise ModelValueError("Event path cannot be empty")
+        path_parts = event_path.split(".")
+        if not all(path_parts):
+            raise ModelValueError(
+                "Invalid event path: %r (contains empty parts)" % (event_path,)
+            )
+        if len(path_parts) < 2:
+            raise ModelValueError(
+                "Invalid event path: %r (must contain at least state name and "
+                "event name)" % (event_path,)
+            )
+        event_name = path_parts[-1]
+        state_path_parts = path_parts[:-1]
+        if state_path_parts[0] != _PATH[0][-1]:
+            raise ModelLookupError(
+                "Event path root '%s' does not match state machine root '%s' "
+                "while resolving event path %r"
+                % (state_path_parts[0], _PATH[0][-1], event_path)
+            )
+        current = 0
+        for index, name in enumerate(state_path_parts[1:], 1):
+            if _CHILD[current].get(name) is None:
+                raise ModelLookupError(
+                    "State '%s' not found in state '%s' while resolving event "
+                    "path %r" % (name, ".".join(state_path_parts[:index]), event_path)
+                )
+            current = _CHILD[current][name]
+        if event_name not in _EVENTS[current]:
+            raise ModelLookupError(
+                "Event '%s' not found in state '%s' while resolving event path %r"
+                % (event_name, ".".join(state_path_parts), event_path)
+            )
+        return _EVENTS[current][event_name]
+
+    def _position_resolve_event(self, event_ref):
+        """Resolve an event name from every active leaf of the current position."""
+        # With no active leaf yet the name is looked up from the state the machine
+        # rests on: the composite of a hot start in a model without regions, and
+        # the root when regions that still wait leave nothing active.
+        leaves = [self._lookup(path) for path in self.leaves] or [
+            0 if _HAS_REGIONS else self._stack[-1].state
+        ]
+        if len(leaves) == 1:
+            return self._scope_resolve_event(leaves[0], event_ref)
+        if event_ref.startswith("/"):
+            return self._scope_resolve_event(0, event_ref)
+        found = {}
+        errors = []
+        for leaf in leaves:
+            try:
+                event = self._scope_resolve_event(leaf, event_ref)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError / ModelLookupError: the name leads nowhere
+                # from this leaf; another leaf may still find it.
+                errors.append(err)
+                continue
+            found.setdefault(event, []).append(".".join(_PATH[leaf]))
+        if not found:
+            if all(isinstance(err, ModelValueError) for err in errors):
+                # The name is malformed from every leaf, so there is nothing to
+                # look up and the first complaint says why.
+                raise errors[0]
+            where = ", ".join(".".join(_PATH[leaf]) for leaf in leaves)
+            raise ModelLookupError(
+                "Position-dependent event name %s matches no event from any "
+                'active leaf (%s); use the full event path or a root-based "/path".'
+                % (_ERROR_REPR.repr(event_ref), where)
+            )
+        if len(found) > 1:
+            candidates = "; ".join(
+                "%s (from %s)" % (name, ", ".join(origins))
+                for name, origins in found.items()
+            )
+            raise ModelValueError(
+                "Position-dependent event name %s is ambiguous: %s; use the "
+                'full event path or a root-based "/path".'
+                % (_ERROR_REPR.repr(event_ref), candidates)
+            )
+        return next(iter(found))
+
+    def _resolve_event_path(self, event):
+        if event.startswith("/") or event.startswith("."):
+            try:
+                return self._position_resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the user-supplied
+                # state-relative path is malformed or absent from the current
+                # position.
+                raise SimulationRuntimeEventError(str(err)) from err
+        try:
+            return self._machine_resolve_event(event)
+        except (ModelValueError, ModelLookupError):
+            # ModelValueError/ModelLookupError: the path was not a valid full
+            # event path, so try the current position before surfacing a single
+            # public diagnostic.
+            try:
+                return self._position_resolve_event(event)
+            except (ModelValueError, ModelLookupError) as err:
+                # ModelValueError/ModelLookupError: the same user-supplied
+                # path also failed position-relative lookup.
+                if len(self.leaves) > 1:
+                    # With several active leaves the name was resolved from
+                    # each of them, and the error says why it led nowhere or
+                    # to several events; the fallback wording would bury it.
+                    raise SimulationRuntimeEventError(str(err)) from err
+                raise SimulationRuntimeEventError(
+                    "Cannot resolve event path %r: "
+                    "failed with both StateMachine.resolve_event and State.resolve_event. "
+                    "Last error: %s" % (event, err)
+                ) from err
+
+    def _parse_event(self, event):
+        if isinstance(event, str):
+            return self._resolve_event_path(event)
+        if hasattr(event, "path_name") and isinstance(event.path_name, str):
+            return self._machine_event_object(event.path_name, event)
+        raise SimulationRuntimeEventError(
+            "Unsupported event input %r of type %r; "
+            "expected an event path string or an object with a path_name."
+            % (event, type(event))
+        )
+
+    def _machine_event_object(self, path_name, event):
+        try:
+            return self._machine_resolve_event(path_name)
+        except (ModelValueError, ModelLookupError) as err:
+            # ModelValueError/ModelLookupError: the caller supplied an event
+            # object whose canonical path is malformed or absent from this
+            # runtime's state machine.
+            raise SimulationRuntimeEventError(
+                "Event object %r does not resolve in this runtime: %s" % (event, err)
+            ) from err
+
+    def _normalize_events(self, events):
+        if events is None:
+            return ()
+        if isinstance(events, str):
+            events = [events]
+        elif hasattr(events, "path_name"):
+            raise SimulationRuntimeEventError(
+                "Unsupported event input %r of type %r; "
+                "expected an event path string, an event object, or an iterable "
+                "of those values." % (events, type(events))
+            )
+        try:
+            items = list(events)
+        except TypeError as err:
+            # TypeError: list(events) raises when the caller supplied a
+            # non-iterable object that is not one of the supported single-event
+            # shapes.
+            raise SimulationRuntimeEventError(
+                "Unsupported event input %r of type %r; "
+                "expected an event path string, an event object, or an iterable "
+                "of those values." % (events, type(events))
+            ) from err
+        return tuple(self._parse_event(item) for item in items)
+
+    # -- actions and aspects -----------------------------------------------------
+
+    def _hook(self, method, vars_, state_path, active_leaf, info):
+        """Call one abstract hook with a read-only snapshot of this moment."""
+        ctx = ReadOnlyExecutionContext(
+            state_path=state_path,
+            vars=dict(vars_),
+            action_name=info[0],
+            action_stage=info[1],
+            active_leaf=active_leaf,
+            call_stage=info[2],
+            abstract_target=info[3],
+            named_ref=info[4],
+            parameters=self.parameters,
+            inputs=self._context_inputs(),
+            configuration=_position_text(_position_of_stack(self._root_stack)),
+        )
+        old_vars = self._vars
+        self._vars = vars_
+        try:
+            method(ctx)
+        finally:
+            self._vars = old_vars
+
+    def _wrapped_state_path(self, scope):
+        stack, index = _find_frame_in(self._root_stack, scope)
+        while True:
+            frame = stack[index]
+            if frame.branches is not None and len(frame.branches) == 1:
+                stack, index = frame.branches[0].stack, 0
+            elif (
+                _IS_REGION[frame.state] or frame.branches is None
+            ) and index + 1 < len(stack):
+                index += 1
+            else:
+                break
+        return _PATH[stack[index].state]
+
+    def _flush_after_aspects(self, vars_, is_validation_mode, prefix=()):
+        ledger = self._ledger
+        owed = [
+            scope
+            for scope, entry in ledger.items()
+            if entry[1] and _PATH[scope][: len(prefix)] == prefix
+        ]
+        for scope in sorted(owed, key=_FLUSH_RANK.__getitem__):
+            ledger[scope][1] = False
+            flush = self._ASPECT_AFTER[scope]
+            if flush is not None:
+                flush(self, vars_, is_validation_mode)
+
+    @staticmethod
+    def _copy_ledger(ledger):
+        return {scope: list(entry) for scope, entry in ledger.items()}
+
+    def _run_owner_plain_after(self, owner, vars_, is_validation_mode):
+        run = self._PLAIN_AFTER[owner]
+        if run is not None:
+            run(self, vars_, is_validation_mode)
+
+    # -- entering states and groups -------------------------------------------------
+
+    def _attempt_init_transition(
+        self, stack, vars_, d_events, is_validation_mode=False
+    ):
+        transition = self._PICK_INIT[stack[-1].state](
+            self, stack, vars_, d_events, self._validate_initial_transition
+        )
+        if transition is None:
+            return False
+        self._TAKE[transition](self, stack, vars_, is_validation_mode)
+        return True
+
+    def _current_outer(self):
+        return self._outer_chain[-1] if self._outer_chain else None
+
+    def _init_group(self, stack, vars_, d_events, is_validation_mode=False, outer=None):
+        self._init_depth += 1
+        try:
+            if self._init_depth > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+                limit = self._DFS_STRUCTURAL_DEPTH_LIMIT
+                raise SimulationRuntimeDfsError(
+                    "Group initialization nested deeper than the structural safety "
+                    "limit (%s) within one cycle; the state machine either "
+                    "enters more than %s groups inside one another or one "
+                    "after another in the same cycle, or re-enters a group without "
+                    "bound." % (limit, limit)
+                )
+            frame = stack[-1]
+            pending = frame.plain_before_pending
+            for index, branch in enumerate(frame.branches):
+                region_frame = _Frame(branch.region, _INIT_WAIT, pending)
+                branch.stack = [region_frame]
+                run = _Run(is_validation_mode=is_validation_mode)
+                self._outer_chain.append(_Outer(stack, index, outer))
+                try:
+                    outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+                finally:
+                    self._outer_chain.pop()
+                if outcome not in (_STABLE, _REGION_DONE):
+                    return False
+                self._flush_after_aspects(
+                    vars_, is_validation_mode, _PATH[branch.region]
+                )
+                # The first non-pseudo child entered anywhere in the group consumes
+                # the owner's plain ``during before`` boundary actions.
+                pending = region_frame.plain_before_pending
+            frame.plain_before_pending = False
+            self._finish_group_advance(frame, vars_, is_validation_mode, entered=True)
             return True
-        return bool(getattr(self, transition["guard"])(vars_))
+        except RecursionError:
+            # RecursionError: the interpreter's call stack ran out somewhere
+            # below this group entry. Only note how deep the entries were
+            # nested, so that the cycle can say so; nothing else is safe to do
+            # this close to the limit.
+            if self._overflow_depth is None:
+                self._overflow_depth = self._init_depth
+            raise
+        finally:
+            self._init_depth -= 1
 
-    def _transition_is_enabled(self, transition, event_names, vars_):
-        return self._transition_matches_event(
-            transition, event_names
-        ) and self._transition_matches_guard(transition, vars_)
+    def _finish_group_advance(self, frame, vars_, is_validation_mode, entered=False):
+        if all(branch.status == "done" for branch in frame.branches):
+            self._run_owner_plain_after(frame.state, vars_, is_validation_mode)
+            frame.mode = _POST_CHILD_EXIT
+        else:
+            frame.mode = _AFTER_ENTRY if entered else _ACTIVE
 
-    def _execute_transition_effect(self, transition, vars_, is_validation_mode=False):
-        if transition["effect"] is not None:
-            getattr(self, transition["effect"])(vars_)
+    def _advance_owner(self, stack, vars_, d_events, run):
+        frame = stack[-1]
+        if frame.mode == _INIT_WAIT:
+            ok = self._init_group(
+                stack,
+                vars_,
+                d_events,
+                is_validation_mode=run.is_validation_mode,
+                outer=self._current_outer(),
+            )
+            return _CONTINUE if ok else _FAILED
+        for index, branch in enumerate(frame.branches):
+            if branch.status == "done":
+                continue
+            if branch.status == "pending":
+                # Only a hot start leaves an owner at work with a region that
+                # has not been initialized: it gets its turn like the others.
+                branch.stack = [_Frame(branch.region, _INIT_WAIT)]
+            self._outer_chain.append(_Outer(stack, index, self._current_outer()))
+            try:
+                outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+            finally:
+                self._outer_chain.pop()
+            if outcome not in (_STABLE, _REGION_DONE):
+                return _FAILED
+            self._flush_after_aspects(
+                vars_, run.is_validation_mode, _PATH[branch.region]
+            )
+        self._finish_group_advance(frame, vars_, run.is_validation_mode)
+        return _CONTINUE if frame.mode == _POST_CHILD_EXIT else _STABLE
+
+    # -- judging a candidate ------------------------------------------------------------
+
+    def _continuation_viable(self, branch_stack, vars_, d_events, outer):
+        owner_stack = _clone_stack(outer.stack)
+        owner_frame = owner_stack[-1]
+        owner_frame.branches[outer.index].stack = _clone_stack(branch_stack)
+        if any(branch.status != "done" for branch in owner_frame.branches):
+            return True
+        sim_vars = dict(vars_)
+        self._run_owner_plain_after(owner_frame.state, sim_vars, True)
+        owner_frame.mode = _POST_CHILD_EXIT
+        return self._owner_can_continue(owner_stack, sim_vars, d_events, outer.parent)
+
+    def _owner_can_continue(self, owner_stack, vars_, d_events, outer):
+        signature = _create_execution_signature(owner_stack, vars_)
+        key = (signature, self._enclosing_shapes(outer))
+        # A group only hands control back inside a check started by
+        # _judge.
+        self._memo_deps[-1].add(key)
+        # Seeing this position again is the loop that the starting points of
+        # the checks would find one round later; stopping here keeps the
+        # nesting one level lower.
+        if key in self._continuation_trail:
+            raise _SimulationRuntimeLivelockError((signature, signature))
+        self._continuation_trail.append(key)
+        try:
+            memo_key = self._memo_key(("continuation",), owner_stack, vars_, outer)
+            viable = self._memo_get(memo_key)
+            if viable is None:
+                self._memo_deps.append(set())
+                try:
+                    viable = self._validation_search_reaches_stable(
+                        owner_stack, vars_, d_events, outer=outer
+                    )
+                finally:
+                    positions = self._memo_close()
+                self._memo_put(memo_key, viable, positions)
+            return viable
+        finally:
+            self._continuation_trail.pop()
+
+    @staticmethod
+    def _enclosing_shapes(outer):
+        shapes = []
+        while outer is not None:
+            # The branch being examined is described by its own stack; what the
+            # enclosing stack still holds in that slot may be out of date.
+            shapes.append(_stack_shape(outer.stack, outer.index))
+            outer = outer.parent
+        return tuple(shapes)
+
+    def _judge(self, stack, vars_, d_events, transition, validator):
+        """Ask whether taking an enabled candidate can end in a stable position."""
+        memo_key = self._memo_key(
+            ("candidate", stack[-1].state, transition),
+            stack,
+            vars_,
+            self._current_outer(),
+        )
+        # A check that is under way owns the point it started from. Coming
+        # back to that point further in is a loop, whichever candidate is
+        # asked about there: taking it for real would arrive here again and
+        # choose the same way.
+        origin = ("origin",) + memo_key[1:]
+        if self._memo_deps:
+            self._memo_deps[-1].add(origin)
+        if origin in self._continuation_trail:
+            # A region is not a state: a loop met while it picks its
+            # initial transition is reported at its owner.
+            where = stack
+            if _IS_REGION[stack[-1].state]:
+                where = self._current_outer().stack
+            signature = _create_execution_signature(where, vars_)
+            raise _SimulationRuntimeLivelockError((signature, signature))
+        accepted = self._memo_get(memo_key)
+        if accepted is None:
+            self._continuation_trail.append(origin)
+            self._memo_deps.append(set())
+            try:
+                accepted = validator(stack, vars_, transition, d_events)
+            finally:
+                positions = self._memo_close()
+                self._continuation_trail.pop()
+            self._memo_put(memo_key, accepted, positions)
+        return accepted
+
+    def _memo_key(self, tag, stack, vars_, outer):
+        enclosing = []
+        while outer is not None:
+            enclosing.append(_stack_shape(outer.stack, outer.index))
+            outer = outer.parent
+        ledger = tuple(
+            sorted((scope, entry[0], entry[1]) for scope, entry in self._ledger.items())
+        )
+        return (
+            tag,
+            _stack_shape(stack),
+            tuple(sorted(vars_.items())),
+            tuple(enclosing),
+            ledger,
+        )
+
+    def _memo_get(self, key):
+        entry = self._memo.get(key)
+        if entry is None:
+            return None
+        result, positions, on_trail = entry
+        if positions.intersection(self._continuation_trail) != on_trail:
+            return None
+        if self._memo_deps:
+            self._memo_deps[-1].update(positions)
+        return result
+
+    def _memo_close(self):
+        positions = self._memo_deps.pop()
+        if self._memo_deps:
+            self._memo_deps[-1].update(positions)
+        return positions
+
+    def _memo_put(self, key, result, positions):
+        self._memo[key] = (
+            result,
+            frozenset(positions),
+            frozenset(positions.intersection(self._continuation_trail)),
+        )
+
+    # -- transitions -----------------------------------------------------------------
+
+    def _validate_initial_transition(self, stack, vars_, transition, d_events):
+        sim_stack = _clone_stack(stack)
+        sim_vars = dict(vars_)
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            self._TAKE[transition](self, sim_stack, sim_vars, True)
+            return self._validation_search_reaches_stable(
+                sim_stack,
+                sim_vars,
+                d_events,
+                trail=(_create_execution_signature(stack, vars_),),
+            )
+        finally:
+            self._ledger = saved
+
+    def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
+        if not stack:
+            return True
+        parent = stack[-1].state
+        if _IS_REGION[parent]:
+            # The child left through ``[*]`` directly under a region: the region
+            # is done. It has no ``during after`` action to run.
+            stack[-1].mode = _POST_CHILD_EXIT
+            return False
+        self._run_owner_plain_after(parent, vars_, is_validation_mode)
+        if _PARENT[parent] < 0:
+            leave = self._EXIT[parent]
+            if leave is not None:
+                leave(self, vars_, is_validation_mode)
+            stack.clear()
+            return True
+        stack[-1].mode = _POST_CHILD_EXIT
+        return False
 
     def _select_transition(
         self,
         stack,
         vars_,
-        event_names,
+        d_events,
         validate_stoppable=True,
         force_validate=False,
     ):
-        if not stack:
-            return None
-        state_path = stack[-1]["state"]
-        state_info = self._STATE_INFO[state_path]
-        for transition_id in state_info["transition_ids"]:
-            transition = self._TRANSITIONS[transition_id]
-            if not self._transition_is_enabled(transition, event_names, vars_):
-                continue
-            if validate_stoppable and (
-                self._is_stoppable_state(state_path) or force_validate
-            ):
-                if not self._validate_transition(
-                    stack, vars_, transition_id, event_names
-                ):
-                    continue
-            return transition_id
-        return None
-
-    def _enter_state(
-        self,
-        stack,
-        state_path,
-        vars_,
-        event_names,
-        is_validation_mode=False,
-        attempt_initial_transition=True,
-    ):
-        state_info = self._STATE_INFO[state_path]
-        stack.append({"state": state_path, "mode": "active"})
-        if self._is_no_outgoing_pseudo(state_path):
-            return
-        self._execute_actions(
-            state_info["enter_actions"], vars_, is_validation_mode=is_validation_mode
+        current = stack[-1].state
+        validator = (
+            self._validate_transition
+            if validate_stoppable and (_IS_STOPPABLE[current] or force_validate)
+            else None
         )
+        return self._PICK_OUT[current](self, stack, vars_, d_events, validator)
 
-        if state_info["is_leaf"]:
-            self._run_leaf_during(
-                state_path, vars_, is_validation_mode=is_validation_mode
-            )
-            stack[-1]["mode"] = "after_entry"
-        else:
-            stack[-1]["mode"] = "init_wait"
-            stack[-1]["plain_before_pending"] = True
-            if attempt_initial_transition:
-                self._attempt_init_transition(
-                    stack,
-                    vars_,
-                    event_names,
-                    is_validation_mode=is_validation_mode,
-                )
-
-    def _attempt_init_transition(
-        self,
-        stack,
-        vars_,
-        event_names,
-        is_validation_mode=False,
-    ):
-        if not stack:
-            return False
-        current_path = stack[-1]["state"]
-        for transition_id in self._STATE_INFO[current_path]["initial_transition_ids"]:
-            transition = self._TRANSITIONS[transition_id]
-            if self._transition_is_enabled(transition, event_names, vars_):
-                if not self._validate_initial_transition(
-                    stack, vars_, transition_id, event_names
-                ):
-                    continue
-                self._execute_initial_transition_on_context(
-                    stack,
-                    vars_,
-                    transition_id,
-                    event_names,
-                    is_validation_mode=is_validation_mode,
-                    attempt_initial_transition=not is_validation_mode,
-                )
+    def _validate_transition(self, stack, vars_, transition, d_events):
+        saved = self._ledger
+        self._ledger = self._copy_ledger(saved)
+        try:
+            sim_stack = _clone_stack(stack)
+            sim_vars = dict(vars_)
+            ended = self._TAKE[transition](self, sim_stack, sim_vars, True)
+            if ended:
                 return True
-        return False
-
-    def _execute_initial_transition_on_context(
-        self,
-        stack,
-        vars_,
-        transition_id,
-        event_names,
-        is_validation_mode=False,
-        attempt_initial_transition=True,
-    ):
-        composite_frame = stack[-1]
-        transition = self._TRANSITIONS[transition_id]
-        self._execute_transition_effect(
-            transition, vars_, is_validation_mode=is_validation_mode
-        )
-        if not self._STATE_INFO[transition["target"]]["is_pseudo"]:
-            self._consume_plain_before_if_pending(
-                composite_frame, vars_, is_validation_mode=is_validation_mode
+            return self._validation_search_reaches_stable(
+                sim_stack,
+                sim_vars,
+                d_events,
+                trail=(_create_execution_signature(stack, vars_),),
             )
-        self._enter_state(
-            stack,
-            transition["target"],
-            vars_,
-            event_names,
-            is_validation_mode=is_validation_mode,
-            attempt_initial_transition=attempt_initial_transition,
-        )
-        if any(frame is composite_frame for frame in stack):
-            composite_frame["mode"] = "active"
+        finally:
+            self._ledger = saved
 
-    def _validate_initial_transition(self, stack, vars_, transition_id, event_names):
-        sim_stack = self._clone_stack(stack)
-        sim_vars = dict(vars_)
-        self._execute_initial_transition_on_context(
-            sim_stack,
-            sim_vars,
-            transition_id,
-            event_names,
-            is_validation_mode=True,
-            attempt_initial_transition=False,
-        )
-        return self._validation_search_reaches_stable(sim_stack, sim_vars, event_names)
-
-    def _consume_plain_before_if_pending(self, frame, vars_, is_validation_mode=False):
-        if not frame.get("plain_before_pending", False):
-            return
-        self._execute_actions(
-            self._STATE_INFO[frame["state"]]["during_before_actions"],
-            vars_,
-            is_validation_mode=is_validation_mode,
-        )
-        frame["plain_before_pending"] = False
-
-    def _clear_parent_plain_before_pending_after_pseudo_exit(self, stack, current_path):
-        if not self._STATE_INFO[current_path]["is_pseudo"] or not stack:
-            return
-        parent_path = self._STATE_INFO[current_path]["parent"]
-        if stack[-1]["state"] == parent_path and stack[-1].get(
-            "plain_before_pending", False
-        ):
-            stack[-1]["plain_before_pending"] = False
-
-    def _finalize_exit_to_parent(self, stack, vars_, is_validation_mode=False):
-        if not stack:
-            return True
-
-        parent_path = stack[-1]["state"]
-        if parent_path == self._ROOT_STATE_PATH:
-            self._execute_actions(
-                self._STATE_INFO[parent_path]["during_after_actions"],
-                vars_,
-                is_validation_mode=is_validation_mode,
-            )
-            self._execute_actions(
-                self._STATE_INFO[parent_path]["exit_actions"],
-                vars_,
-                is_validation_mode=is_validation_mode,
-            )
-            stack[:] = []
-            return True
-
-        self._execute_actions(
-            self._STATE_INFO[parent_path]["during_after_actions"],
-            vars_,
-            is_validation_mode=is_validation_mode,
-        )
-        stack[-1]["mode"] = "post_child_exit"
-        return False
-
-    def _execute_transition_on_context(
-        self,
-        stack,
-        vars_,
-        transition_id,
-        event_names,
-        is_validation_mode=False,
-    ):
-        transition = self._TRANSITIONS[transition_id]
-        current_path = stack[-1]["state"]
-        self._execute_actions(
-            self._STATE_INFO[current_path]["exit_actions"],
-            vars_,
-            is_validation_mode=is_validation_mode,
-        )
-        self._execute_transition_effect(
-            transition, vars_, is_validation_mode=is_validation_mode
-        )
-        stack.pop()
-
-        if transition["to_exit"]:
-            self._clear_parent_plain_before_pending_after_pseudo_exit(
-                stack, current_path
-            )
-            return self._finalize_exit_to_parent(
-                stack, vars_, is_validation_mode=is_validation_mode
+    def _check_structural_limit(self, stack):
+        if len(stack) > self._DFS_STRUCTURAL_DEPTH_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the structural stack-depth safety limit "
+                "(%s) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded nesting chain."
+                % (self._DFS_STRUCTURAL_DEPTH_LIMIT,)
             )
 
-        if (
-            self._STATE_INFO[current_path]["is_pseudo"]
-            and stack
-            and stack[-1]["state"] == self._STATE_INFO[current_path]["parent"]
-            and not self._STATE_INFO[transition["target"]]["is_pseudo"]
-        ):
-            self._consume_plain_before_if_pending(
-                stack[-1], vars_, is_validation_mode=is_validation_mode
+    def _check_step_limit(self, steps_taken):
+        if steps_taken >= self._DFS_STEP_LIMIT:
+            raise SimulationRuntimeDfsError(
+                "Speculative DFS exceeded the step safety limit "
+                "(%s) without reaching a stoppable state or pruning; "
+                "the state machine likely contains an invalid unbounded pseudo-state "
+                "or transition chain." % (self._DFS_STEP_LIMIT,)
             )
-        self._enter_state(
-            stack,
-            transition["target"],
-            vars_,
-            event_names,
-            is_validation_mode=is_validation_mode,
-        )
-        return False
 
-    def _validate_transition(self, stack, vars_, transition_id, event_names):
-        sim_stack = self._clone_stack(stack)
-        sim_vars = dict(vars_)
-        ended = self._execute_transition_on_context(
-            sim_stack,
-            sim_vars,
-            transition_id,
-            event_names,
-            is_validation_mode=True,
-        )
-        if ended:
-            return True
-        return self._validation_search_reaches_stable(
-            sim_stack,
-            sim_vars,
-            event_names,
-            ended=ended,
-            validate_post_child_exit=True,
-        )
+    # -- searching for a stable position ---------------------------------------------
 
     def _validation_search_reaches_stable(
-        self,
-        stack,
-        vars_,
-        event_names,
-        ended=False,
-        validate_post_child_exit=True,
+        self, stack, vars_, d_events, trail=(), outer=_UNSET
     ):
-        if ended:
-            stack[:] = []
-            vars_.clear()
-            return True
+        saved = self._ledger
+        try:
+            return self._search_stable_continuation(
+                stack, vars_, d_events, trail=trail, outer=outer
+            )
+        finally:
+            self._ledger = saved
 
-        worklist = [(self._clone_stack(stack), dict(vars_), False)]
+    def _search_stable_continuation(
+        self, stack, vars_, d_events, trail=(), outer=_UNSET
+    ):
+        if outer is _UNSET:
+            outer = self._current_outer()
+        original_ledger = self._ledger
+        worklist = [
+            (
+                _clone_stack(stack),
+                dict(vars_),
+                False,
+                trail,
+                self._copy_ledger(original_ledger),
+            )
+        ]
+        loop_error = None
         seen_signatures = set()
         steps_taken = 0
-        max_steps = 1000
-        max_structural_depth = 64
-
         while worklist:
-            current_stack, current_vars, current_ended = worklist.pop()
+            current_stack, current_vars, current_ended, trail, current_ledger = (
+                worklist.pop()
+            )
             if current_ended:
-                stack[:] = []
+                stack.clear()
                 vars_.clear()
                 vars_.update(current_vars)
                 return True
-            if not current_stack:
-                stack[:] = []
-                vars_.clear()
-                vars_.update(current_vars)
-                return True
-
-            structural_signature = self._create_structural_signature(current_stack)
-            if len(structural_signature) > max_structural_depth:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    "(%s) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                    % (max_structural_depth,)
+            self._check_structural_limit(current_stack)
+            signature = _create_execution_signature(current_stack, current_vars)
+            if signature in trail:
+                loop_error = _SimulationRuntimeLivelockError(
+                    trail[trail.index(signature) :] + (signature,)
                 )
-
-            signature = self._create_execution_signature(current_stack, current_vars)
+                continue
             if signature in seen_signatures:
                 continue
             seen_signatures.add(signature)
-
-            if steps_taken >= max_steps:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    "(%s) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain." % (max_steps,)
-                )
+            next_trail = trail + (signature,)
+            self._check_step_limit(steps_taken)
             steps_taken += 1
-
             frame = current_stack[-1]
-            state_path = frame["state"]
-            state_info = self._STATE_INFO[state_path]
-
-            if state_info["is_leaf"] and frame["mode"] == "after_entry":
-                next_stack = self._clone_stack(current_stack)
+            state = frame.state
+            if _IS_REGION[state]:
+                # Only a finished region can be on top of a searched stack: its
+                # initial transition already ran before the search started.
+                self._ledger = self._copy_ledger(current_ledger)
+                try:
+                    viable = self._continuation_viable(
+                        current_stack, current_vars, d_events, outer
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: the owner's continuation
+                    # leads back to the same position. That kills this path
+                    # only; other worklist items may still succeed.
+                    loop_error = error
+                    continue
+                if viable:
+                    stack[:] = current_stack
+                    vars_.clear()
+                    vars_.update(current_vars)
+                    return True
+                continue
+            if frame.branches is not None and frame.mode == _INIT_WAIT:
+                next_stack = _clone_stack(current_stack)
                 next_vars = dict(current_vars)
-                next_stack[-1]["mode"] = "active"
-                if self._is_stoppable_state(state_path):
+                self._ledger = self._copy_ledger(current_ledger)
+                try:
+                    initialized = self._init_group(
+                        next_stack,
+                        next_vars,
+                        d_events,
+                        is_validation_mode=True,
+                        outer=outer,
+                    )
+                except _SimulationRuntimeLivelockError as error:
+                    # _SimulationRuntimeLivelockError: a region's own initial
+                    # candidates loop without a stable exit. That only kills
+                    # this path; other items of the worklist may still succeed.
+                    loop_error = error
+                    continue
+                if initialized:
+                    worklist.append(
+                        (next_stack, next_vars, False, next_trail, self._ledger)
+                    )
+                continue
+            if frame.branches is not None and frame.mode in (_ACTIVE, _AFTER_ENTRY):
+                # Every working region rests on a stable leaf.
+                stack[:] = current_stack
+                vars_.clear()
+                vars_.update(current_vars)
+                return True
+            if _IS_LEAF[state] and frame.mode == _AFTER_ENTRY:
+                next_stack = _clone_stack(current_stack)
+                next_vars = dict(current_vars)
+                self._ledger = self._copy_ledger(current_ledger)
+                next_stack[-1].mode = _ACTIVE
+                if _IS_STOPPABLE[state]:
                     stack[:] = next_stack
                     vars_.clear()
                     vars_.update(next_vars)
                     return True
-                worklist.append((next_stack, next_vars, False))
+                worklist.append(
+                    (next_stack, next_vars, False, next_trail, self._ledger)
+                )
                 continue
-
-            if state_info["is_leaf"]:
-                progressed = False
-                for transition_id in reversed(state_info["transition_ids"]):
-                    transition = self._TRANSITIONS[transition_id]
-                    if not self._transition_is_enabled(
-                        transition, event_names, current_vars
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
+            if frame.mode == _INIT_WAIT and not _IS_LEAF[state]:
+                for transition in self._ENABLED_INIT[state](
+                    self, current_vars, d_events
+                ):
+                    next_stack = _clone_stack(current_stack)
                     next_vars = dict(current_vars)
-                    next_ended = self._execute_transition_on_context(
-                        next_stack,
-                        next_vars,
-                        transition_id,
-                        event_names,
-                        is_validation_mode=True,
+                    self._ledger = self._copy_ledger(current_ledger)
+                    self._TAKE[transition](self, next_stack, next_vars, True)
+                    worklist.append(
+                        (next_stack, next_vars, False, next_trail, self._ledger)
                     )
-                    worklist.append((next_stack, next_vars, next_ended))
-                    progressed = True
-                if progressed:
-                    continue
-
-                if not self._is_stoppable_state(state_path):
-                    continue
-
-                next_stack = self._clone_stack(current_stack)
+                continue
+            # A pseudo leaf (a stoppable leaf entry returned above) routes on,
+            # and every other frame in the search is a parent whose child exited.
+            for transition in self._ENABLED_OUT[state](self, current_vars, d_events):
+                next_stack = _clone_stack(current_stack)
                 next_vars = dict(current_vars)
-                self._run_leaf_during(state_path, next_vars, is_validation_mode=True)
-                next_stack[-1]["mode"] = "after_entry"
-                worklist.append((next_stack, next_vars, False))
-                continue
-
-            if frame["mode"] == "init_wait":
-                progressed = False
-                for transition_id in reversed(state_info["initial_transition_ids"]):
-                    transition = self._TRANSITIONS[transition_id]
-                    if not self._transition_is_enabled(
-                        transition, event_names, current_vars
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
-                    next_vars = dict(current_vars)
-                    self._execute_initial_transition_on_context(
-                        next_stack,
-                        next_vars,
-                        transition_id,
-                        event_names,
-                        is_validation_mode=True,
-                        attempt_initial_transition=False,
-                    )
-                    worklist.append((next_stack, next_vars, False))
-                    progressed = True
-                if not progressed:
-                    continue
-                continue
-
-            if frame["mode"] == "post_child_exit":
-                if not validate_post_child_exit:
-                    continue
-                for transition_id in reversed(state_info["transition_ids"]):
-                    transition = self._TRANSITIONS[transition_id]
-                    if not self._transition_is_enabled(
-                        transition, event_names, current_vars
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
-                    next_vars = dict(current_vars)
-                    next_ended = self._execute_transition_on_context(
-                        next_stack,
-                        next_vars,
-                        transition_id,
-                        event_names,
-                        is_validation_mode=True,
-                    )
-                    worklist.append((next_stack, next_vars, next_ended))
-                continue
-
+                self._ledger = self._copy_ledger(current_ledger)
+                next_ended = self._TAKE[transition](self, next_stack, next_vars, True)
+                worklist.append(
+                    (next_stack, next_vars, next_ended, next_trail, self._ledger)
+                )
+        if loop_error is not None:
+            raise loop_error
         return False
 
-    def _initialize_context(
-        self,
-        stack,
-        vars_,
-        event_names,
-        is_validation_mode=False,
-    ):
-        stack[:] = []
-        self._enter_state(
-            stack,
-            self._ROOT_STATE_PATH,
-            vars_,
-            event_names,
-            is_validation_mode=is_validation_mode,
-        )
+    # -- one cycle ---------------------------------------------------------------------------
+
+    def _initialize_context(self, stack, vars_, d_events, is_validation_mode=False):
+        stack.clear()
+        if not is_validation_mode:
+            self._root_stack = stack
+        self._enter_0(stack, vars_, is_validation_mode)
         return len(stack) == 0
 
     def _run_cycle_on_context(
         self,
         stack,
         vars_,
-        event_names,
-        ended=False,
+        d_events,
         validate_post_child_exit=True,
         is_validation_mode=False,
     ):
-        if ended:
+        run = _Run(
+            is_validation_mode=is_validation_mode,
+            validate_post_child_exit=validate_post_child_exit,
+        )
+        self._outer_chain = []
+        if not is_validation_mode:
+            self._root_stack = stack
+        outcome = self._advance_stack(stack, vars_, d_events, run)
+        if outcome == _STABLE:
+            # Work is always followed by a stable boundary, so a cycle that
+            # ends the machine owes no aspect.
+            self._flush_after_aspects(vars_, is_validation_mode)
+            return True, False
+        if outcome == _ENDED:
             return True, True
+        return False, False
 
-        steps_taken = 0
-        max_steps = 1000
-        seen_signatures = set()
-        max_structural_depth = 64
-
-        while not ended:
-            if not stack:
-                ended = True
-                break
-
-            signature = self._create_execution_signature(stack, vars_)
-            if signature in seen_signatures:
-                return False, False
-            seen_signatures.add(signature)
-
-            if len(self._create_structural_signature(stack)) > max_structural_depth:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the structural stack-depth safety limit "
-                    "(%s) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded nesting chain."
-                    % (max_structural_depth,)
-                )
-
-            if steps_taken >= max_steps:
-                raise SimulationRuntimeDfsError(
-                    "Speculative DFS exceeded the step safety limit "
-                    "(%s) without reaching a stoppable state or pruning; "
-                    "the state machine likely contains an invalid unbounded pseudo-state "
-                    "or transition chain." % (max_steps,)
-                )
-
+    def _advance_stack(self, stack, vars_, d_events, run):
+        is_validation_mode = run.is_validation_mode
+        validate_post_child_exit = run.validate_post_child_exit
+        while True:
+            if not _LOOP_FREE:
+                signature = _create_execution_signature(stack, vars_)
+                if signature in run.seen_signatures:
+                    return _FAILED
+                run.seen_signatures.add(signature)
+            self._check_structural_limit(stack)
+            self._check_step_limit(run.steps_taken)
             frame = stack[-1]
-            state_path = frame["state"]
-            state_info = self._STATE_INFO[state_path]
-
-            if self._is_no_outgoing_pseudo(state_path):
-                return False, False
-
-            if state_info["is_leaf"]:
-                if frame["mode"] == "after_entry":
-                    frame["mode"] = "active"
-                    if self._is_stoppable_state(state_path):
-                        return True, False
-                    steps_taken += 1
-                    continue
-
-                transition_id = self._select_transition(
-                    stack,
-                    vars_,
-                    event_names,
-                    force_validate=state_info["is_pseudo"],
-                )
-                if transition_id is not None:
-                    ended = self._execute_transition_on_context(
-                        stack,
-                        vars_,
-                        transition_id,
-                        event_names,
-                        is_validation_mode=is_validation_mode,
-                    )
-                    steps_taken += 1
-                    if ended:
-                        return True, True
-                    continue
-
-                self._run_leaf_during(
-                    state_path, vars_, is_validation_mode=is_validation_mode
-                )
-                frame["mode"] = "after_entry"
-                steps_taken += 1
-                continue
-
-            if frame["mode"] == "init_wait":
+            state = frame.state
+            if _IS_REGION[state]:
+                if frame.mode == _POST_CHILD_EXIT:
+                    return _REGION_DONE
                 progressed = self._attempt_init_transition(
-                    stack,
-                    vars_,
-                    event_names,
-                    is_validation_mode=is_validation_mode,
+                    stack, vars_, d_events, is_validation_mode=is_validation_mode
                 )
-                steps_taken += 1
+                run.steps_taken += 1
                 if not progressed:
-                    return False, False
+                    return _FAILED
                 continue
-
-            if frame["mode"] == "post_child_exit":
-                transition_id = self._select_transition(
+            if _NO_OUTGOING_PSEUDO[state]:
+                return _FAILED
+            if frame.branches is not None and frame.mode == _AFTER_ENTRY:
+                frame.mode = _ACTIVE
+                return _STABLE
+            if frame.branches is not None and frame.mode != _POST_CHILD_EXIT:
+                outcome = self._advance_owner(stack, vars_, d_events, run)
+                run.steps_taken += 1
+                if outcome == _CONTINUE:
+                    continue
+                return outcome
+            if _IS_LEAF[state]:
+                if frame.mode == _AFTER_ENTRY:
+                    frame.mode = _ACTIVE
+                    if _IS_STOPPABLE[state]:
+                        return _STABLE
+                    run.steps_taken += 1
+                    continue
+                transition = self._select_transition(
                     stack,
                     vars_,
-                    event_names,
+                    d_events,
+                    force_validate=not _IS_STOPPABLE[state],
+                )
+                if transition is not None:
+                    ended = self._TAKE[transition](
+                        self, stack, vars_, is_validation_mode
+                    )
+                    run.steps_taken += 1
+                    if ended:
+                        return _ENDED
+                    continue
+                self._DURING[state](self, vars_, is_validation_mode)
+                frame.mode = _AFTER_ENTRY
+                run.steps_taken += 1
+                continue
+            if frame.mode == _POST_CHILD_EXIT:
+                transition = self._select_transition(
+                    stack,
+                    vars_,
+                    d_events,
                     validate_stoppable=validate_post_child_exit,
                     force_validate=validate_post_child_exit,
                 )
-                if transition_id is None:
-                    return False, False
-                ended = self._execute_transition_on_context(
-                    stack,
-                    vars_,
-                    transition_id,
-                    event_names,
-                    is_validation_mode=is_validation_mode,
-                )
-                steps_taken += 1
+                ended = self._TAKE[transition](self, stack, vars_, is_validation_mode)
+                run.steps_taken += 1
                 if ended:
-                    return True, True
+                    return _ENDED
                 continue
-
-            return False, False
-
-        return True, True
+            # A composite that is waiting for its initial transition.
+            progressed = self._attempt_init_transition(
+                stack, vars_, d_events, is_validation_mode=is_validation_mode
+            )
+            run.steps_taken += 1
+            if not progressed:
+                return _FAILED{% endraw %}
 
     def cycle(self, events=None, *, inputs=None):
         """Freeze external inputs and execute one atomic model cycle."""
@@ -1570,71 +2522,73 @@ class {{ machine_class_name(model) }}:
         self._last_inputs = committed_inputs
         return None
 
-    def _cycle(self, events=None):
+{% raw %}    def _cycle(self, events=None):
         """
         Advance the state machine by one cycle.
 
-        :param events: Optional event name or event collection for this cycle.
-        :type events: Optional[Union[str, List[str], Tuple[str, ...], set]]
+        :param events: Resolved event paths of this cycle.
+        :type events: Tuple[str, ...]
         :return: ``None``.
         :rtype: None
         """
         self._last_cycle_was_delta = False
         if self._ended:
             return None
-        event_names = self._normalize_events(events)
-        event_name_set = set(event_names)
+        d_events = set(events or ())
+        self._outer_chain = []
+        self._memo = {}
+        self._memo_deps = []
+        self._overflow_depth = None
 
-        snapshot_stack = self._clone_stack(self._stack)
+        snapshot_stack = _clone_stack(self._stack)
         snapshot_vars = dict(self._vars)
         snapshot_entered_root = self._entered_root
         snapshot_ended = self._ended
 
-        validation_stack = self._clone_stack(snapshot_stack)
+        validation_stack = _clone_stack(snapshot_stack)
         validation_vars = dict(snapshot_vars)
         validation_entered_root = snapshot_entered_root
         validation_ended = snapshot_ended
 
-        if not validation_entered_root:
-            validation_ended = self._initialize_context(
+        self._ledger = {}
+        try:
+            if not validation_entered_root:
+                validation_ended = self._initialize_context(
+                    validation_stack,
+                    validation_vars,
+                    d_events,
+                    is_validation_mode=True,
+                )
+                validation_entered_root = True
+            success, validation_ended = self._run_cycle_on_context(
                 validation_stack,
                 validation_vars,
-                event_name_set,
+                d_events,
                 is_validation_mode=True,
             )
-            validation_entered_root = True
-
-        success, validation_ended = self._run_cycle_on_context(
-            validation_stack,
-            validation_vars,
-            event_name_set,
-            ended=validation_ended,
-            is_validation_mode=True,
-        )
+        except RecursionError as err:
+            if self._overflow_depth is None or self._overflow_depth < 2:
+                raise
+            raise SimulationRuntimeDfsError(
+                "The call stack was exhausted with group entries nested "
+                "%s deep within one cycle; the state machine "
+                "likely re-enters a group without bound, or the caller's own "
+                "stack was already deep." % (self._overflow_depth,)
+            ) from err
 
         delta = not success
-
         if success:
-            sim_stack = self._clone_stack(snapshot_stack)
+            sim_stack = _clone_stack(snapshot_stack)
             sim_vars = dict(snapshot_vars)
             sim_entered_root = snapshot_entered_root
             sim_ended = snapshot_ended
-
+            self._ledger = {}
             if not sim_entered_root:
-                sim_ended = self._initialize_context(
-                    sim_stack,
-                    sim_vars,
-                    event_name_set,
-                )
+                sim_ended = self._initialize_context(sim_stack, sim_vars, d_events)
                 sim_entered_root = True
-
             success, sim_ended = self._run_cycle_on_context(
-                sim_stack,
-                sim_vars,
-                event_name_set,
-                ended=sim_ended,
+                sim_stack, sim_vars, d_events
             )
-
             if not success:
                 delta = True
 
@@ -1650,14 +2604,13 @@ class {{ machine_class_name(model) }}:
             self._entered_root = sim_entered_root
             self._ended = sim_ended
 
-        self.variables = self._vars
         self.cycle_count += 1
 
         if self._ended or not self._stack:
             self._ended = True
             self._stack = []
 
-        return None
+        return None{% endraw %}
 
 {%- macro render_abstract_hook_method(item) -%}
 def {{ abstract_hook_method_name(item) }}(self, ctx):
@@ -1708,14 +2661,12 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
 {% endif -%}
 {%- endmacro %}
 {%- macro render_guard_lambda(guard) -%}
-{#- The lambda argument of a guard method. In a model with forced transitions,
-    which lengthen guards, it is laid out the way ``ruff format`` leaves it: the
+{#- The lambda argument of a guard method, laid out the way ``ruff format`` leaves it: the
     line starts at column 16 of the generated file, a guard that fits stays on
     one line, one that fits inside parentheses is wrapped once, and a longer one
-    is split in front of every ``and`` / ``or`` that is not inside brackets. Every
-    other model keeps the guard on the lambda line, so its output is unchanged. -#}
+    is split in front of every ``and`` / ``or`` that is not inside brackets. -#}
 {%- set expr = guard.to_ast_node() | expr_render(style='python_scope_expr') -%}
-{%- if not model.forced_variables or (expr | length) <= 51 -%}
+{%- if (expr | length) <= 51 -%}
 {{ '            ' }}lambda scope=scope: {{ expr }},
 {%- elif (expr | length) <= 68 -%}
 {{ '            ' }}lambda scope=scope: (
@@ -1829,6 +2780,68 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
 
     self._execute_operation_block(operations, scope, "operation block writeback")
 {%- endmacro %}
+{%- macro render_region_action_method(region, method_kind, idx, item) -%}
+def {{ region_action_method_name(region, method_kind, idx) }}(self, vars_=None):
+    """
+    Execute the concrete DSL action block for ``{{ item | action_owner_path }}``.
+
+    Lifecycle stage: ``{{ item.stage }}``
+{% if item.aspect %}    Aspect: ``{{ item.aspect }}``
+{% endif %}
+    DSL fragment::
+
+{{ ((item.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
+    """
+{% if item.operations %}    scope = vars_ if vars_ is not None else self._vars
+
+    def operations(local_scope):
+        _v = local_scope
+        _s = self._sign
+        _p = self._power
+        _c = self._cbrt
+{{ item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+    self._execute_operation_block(operations, scope, "operation block writeback")
+{% else %}    pass
+{% endif -%}
+{%- endmacro %}
+{%- macro render_region_init_guard_method(region, idx, transition) -%}
+def {{ region_init_guard_method_name(region, idx) }}(self, vars_=None):
+    """
+    Evaluate the initial-transition guard for region ``{{ region | state_path }}``.
+
+    DSL fragment::
+
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
+    return bool(
+        self._evaluate_runtime_expr(
+{{ render_guard_lambda(transition.guard) }}
+            "transition guard",
+        )
+    )
+{%- endmacro %}
+{%- macro render_region_init_effect_method(region, idx, transition) -%}
+def {{ region_init_effect_method_name(region, idx) }}(self, vars_=None):
+    """
+    Execute the initial-transition effect for region ``{{ region | state_path }}``.
+
+    DSL fragment::
+
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
+    """
+    scope = vars_ if vars_ is not None else self._vars
+
+    def operations(local_scope):
+        _v = local_scope
+        _s = self._sign
+        _p = self._power
+        _c = self._cbrt
+{{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
+
+    self._execute_operation_block(operations, scope, "operation block writeback")
+{%- endmacro %}
 {%- set hook_ns = namespace(seen=[]) -%}
 {%- set methods = namespace(items=[]) -%}
 {%- for state in state_items -%}
@@ -1875,6 +2888,85 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
 {%- endif -%}
 {%- endfor -%}
 {%- endfor -%}
+{%- if model.has_regions -%}
+{%- for region in region_items -%}
+{%- for method_kind, group in [
+    ('aspect_before', region.list_on_during_aspects(aspect="before", with_ids=True)),
+    ('aspect_after', region.list_on_during_aspects(aspect="after", with_ids=True)),
+] -%}
+{%- for id_, item in group -%}
+{%- set resolved = namespace(item=item, seen=[]) -%}
+{%- for _ in range(action_ref_hop_limit) -%}
+{%- if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{%- set resolved.seen = resolved.seen + [resolved.item] -%}
+{%- set resolved.item = resolved.item.ref -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if resolved.item.is_abstract and resolved.item.func_name not in hook_ns.seen -%}
+{%- set hook_ns.seen = hook_ns.seen + [resolved.item.func_name] -%}
+{%- set methods.items = methods.items + [render_abstract_hook_method(resolved.item)] -%}
+{%- endif -%}
+{%- if not resolved.item.is_abstract -%}
+{%- set methods.items = methods.items + [render_region_action_method(region, method_kind, id_, resolved.item)] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- for transition in region.init_transitions -%}
+{%- if transition.guard is not none -%}
+{%- set methods.items = methods.items + [render_region_init_guard_method(region, loop.index, transition)] -%}
+{%- endif -%}
+{%- if transition.effects -%}
+{%- set methods.items = methods.items + [render_region_init_effect_method(region, loop.index, transition)] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- endif -%}
+{%- for scope in scope_items -%}
+{%- set sid = loop.index0 -%}
+{%- if scope not in region_items -%}
+{%- set state = scope -%}
+{%- set methods.items = methods.items + [render_enter(state, sid)] -%}
+{%- if state.is_leaf_state and not (state.is_pseudo and not state.transitions_from and not state.init_transitions) -%}
+{%- set methods.items = methods.items + [render_during(state, sid)] -%}
+{%- endif -%}
+{%- if state.list_on_exits(with_ids=True) -%}
+{%- set methods.items = methods.items + [render_action_run(state, sid, 'exit', 'exit', 'Run the ``exit`` actions of ``' ~ (state | state_path) ~ '``.', state.list_on_exits(with_ids=True), '_PATH[%d]' % sid)] -%}
+{%- endif -%}
+{%- if state.list_on_durings(aspect='before', with_ids=True) -%}
+{%- set methods.items = methods.items + [render_action_run(state, sid, 'plain_before', 'during_before', 'Run the ``during before`` actions of ``' ~ (state | state_path) ~ '``.', state.list_on_durings(aspect='before', with_ids=True), '_PATH[%d]' % sid)] -%}
+{%- endif -%}
+{%- if state.list_on_durings(aspect='after', with_ids=True) -%}
+{%- set methods.items = methods.items + [render_action_run(state, sid, 'plain_after', 'during_after', 'Run the ``during after`` actions of ``' ~ (state | state_path) ~ '``.', state.list_on_durings(aspect='after', with_ids=True), '_PATH[%d]' % sid)] -%}
+{%- endif -%}
+{%- set methods.items = methods.items + [render_pick(state, sid, 'out'), render_enabled(state, sid, 'out')] -%}
+{%- endif -%}
+{%- if scope.list_on_during_aspects(aspect='after', with_ids=True) -%}
+{%- set methods.items = methods.items + [render_aspect_after(scope, sid)] -%}
+{%- endif -%}
+{%- if scope.init_transitions -%}
+{%- set methods.items = methods.items + [render_pick(scope, sid, 'init'), render_enabled(scope, sid, 'init')] -%}
+{%- endif -%}
+{%- endfor -%}
+{%- for item in tr_items -%}
+{%- set methods.items = methods.items + [render_take(item)] -%}
+{%- endfor -%}
+{%- set dsp = namespace(during=[], exit=[], plain_after=[], aspect_after=[], pick_out=[], enabled_out=[], pick_init=[], enabled_init=[], take=[]) -%}
+{%- for scope in scope_items -%}
+{%- set sid = loop.index0 -%}
+{%- set is_state = scope not in region_items -%}
+{%- set dsp.during = dsp.during + [('_during_%d' % sid) if (is_state and scope.is_leaf_state and not (scope.is_pseudo and not scope.transitions_from and not scope.init_transitions)) else 'None'] -%}
+{%- set dsp.exit = dsp.exit + [('_exit_%d' % sid) if (is_state and scope.list_on_exits(with_ids=True)) else 'None'] -%}
+{%- set dsp.plain_after = dsp.plain_after + [('_plain_after_%d' % sid) if (is_state and scope.list_on_durings(aspect='after', with_ids=True)) else 'None'] -%}
+{%- set dsp.aspect_after = dsp.aspect_after + [('_after_%d' % sid) if scope.list_on_during_aspects(aspect='after', with_ids=True) else 'None'] -%}
+{%- set dsp.pick_out = dsp.pick_out + [('_pick_out_%d' % sid) if is_state else 'None'] -%}
+{%- set dsp.enabled_out = dsp.enabled_out + [('_enabled_out_%d' % sid) if is_state else 'None'] -%}
+{%- set dsp.pick_init = dsp.pick_init + [('_pick_init_%d' % sid) if scope.init_transitions else 'None'] -%}
+{%- set dsp.enabled_init = dsp.enabled_init + [('_enabled_init_%d' % sid) if scope.init_transitions else 'None'] -%}
+{%- endfor -%}
+{%- for item in tr_items -%}
+{%- set dsp.take = dsp.take + ['_take_%d' % item.tid] -%}
+{%- endfor -%}
+{%- set methods.items = methods.items + [dispatch('_DURING', dsp.during), dispatch('_EXIT', dsp.exit), dispatch('_PLAIN_AFTER', dsp.plain_after), dispatch('_ASPECT_AFTER', dsp.aspect_after), dispatch('_PICK_OUT', dsp.pick_out), dispatch('_ENABLED_OUT', dsp.enabled_out), dispatch('_PICK_INIT', dsp.pick_init), dispatch('_ENABLED_INIT', dsp.enabled_init), dispatch('_TAKE', dsp.take)] -%}
 {%- if methods.items -%}
 {{ ('\n\n' ~ (methods.items | map('trim') | join('\n\n')) ~ '\n') | indent(4) }}
 {%- else -%}

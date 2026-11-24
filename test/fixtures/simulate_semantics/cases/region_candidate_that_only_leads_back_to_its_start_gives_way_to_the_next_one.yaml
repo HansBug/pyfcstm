@@ -10,8 +10,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- generated_python_alignment
 steps:
 - cycle: []
   expect:

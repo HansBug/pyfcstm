@@ -275,17 +275,19 @@ Rules:
 
 ## Region cases
 
-A case in the `regions` category exercises a model that declares regions. Until
-every shared runner supports regions, such a case must set
-`exclude_runners: [generated_python_alignment]`; the loader rejects a `regions`
-case that leaves that runner selected. The `bmc_core` runner takes a region case
-once its relation reports the configuration, the variables and the Delta
-classification of every cycle. It does not report the call fields of a handler
-call, so it checks such a case without its `handler_calls` and says so in
-`test/bmc/semantic_fixture_policy.py`; every other field must be one it checks.
-A case that hot-starts keeps `bmc_core` excluded, because the relation only
-starts cold, and so does a case whose cycle the runtime refuses with an error,
-because a bounded relation has no run to compare. A region case that
+A case in the `regions` category exercises a model that declares regions. It
+always runs in the simulator and in the generated Python runner. The `bmc_core`
+runner takes a region case once its relation reports the configuration, the
+variables and the Delta classification of every cycle. It does not report the
+call fields of a handler call, so it checks such a case without its
+`handler_calls` and says so in `test/bmc/semantic_fixture_policy.py`; every
+other field must be one it checks. A case that hot-starts keeps `bmc_core`
+excluded, because the relation only starts cold, and so does a case whose cycle
+the runtime refuses with an error, because a bounded relation has no run to
+compare: such a case sets `exclude_runners: [bmc_core]`. The native C-family
+runners are not named in `exclude_runners`: a native template runs every
+`regions` case when it declares the `region` feature in its `config.yaml`, and
+none otherwise. A region case that
 hot-starts names the start position with `initial.configuration` (see below)
 instead of `initial.state`.
 
@@ -495,7 +497,8 @@ alignment runner checks construction outcomes and, after every step:
 
 - `is_ended`
 - variables
-- current state path
+- current state path, or for a model with regions the whole `configuration`
+  text (the generated runtime exposes it as `configuration`, a string)
 - `delta` (simulator `CycleResult.delta` versus the generated runtime's public
   `last_cycle_was_delta` getter)
 - expected exception class names, messages, and causes

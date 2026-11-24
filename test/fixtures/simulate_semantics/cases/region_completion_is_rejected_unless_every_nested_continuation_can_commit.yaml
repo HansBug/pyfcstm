@@ -8,8 +8,6 @@ categories:
 - regions
 - runtime
 - inputs
-exclude_runners:
-- generated_python_alignment
 steps:
 - cycle: []
   inputs:

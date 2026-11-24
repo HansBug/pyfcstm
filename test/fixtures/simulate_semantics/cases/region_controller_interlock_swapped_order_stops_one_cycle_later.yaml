@@ -7,8 +7,6 @@ categories:
 - runtime
 - inputs
 - design_example
-exclude_runners:
-- generated_python_alignment
 steps:
 - cycle: []
   inputs:

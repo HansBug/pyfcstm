@@ -93,10 +93,13 @@ Renderer 主要实现在 `pyfcstm/render/render.py` 和 `pyfcstm/render/env.py`�
 | `filters` | 通过声明式配置项添加 Jinja2 filters。 | 仅 generation-time。 |
 | `tests` | 通过声明式配置项添加 Jinja2 tests。 | 仅 generation-time。 |
 | `ignores` | 从渲染/复制中排除的 Git-style patterns。 | 仅 generation-time。 |
+| `features` | 模板能渲染的模型特性列表，唯一的成员是 `region`。 | 仅 generation-time。 |
 
 大多数 key 是可选的，默认等价于空配置。Jinja2、PyYAML、`pathspec`、renderer helpers、imported filters 这类 generation-time dependencies 是允许的，因为它们只在 `pyfcstm` 生成阶段运行。除非 generated target language 明确拥有并通过 runtime policy 批准，否则这些依赖不能泄露为 generated runtime dependency。
 
 目标语言专属 helper 应由对应模板通过 `type: import` 显式加载。`to_c_identifier`、`to_c_path_identifier`、`render_c_action_body`、`render_c_condition_body` 等 C-family helper 属于 `c` / `c_poll` / `cpp` / `cpp_poll` 的 config，而不是默认 renderer 环境。
+
+`features` 声明模板能渲染的模型特性，取值是字符串列表，目前唯一的成员是 `region`。没有声明 `region` 的模板遇到含 region 的模型会在写出任何文件之前被拒绝：内置模板报 `generate with built-in template '<name>' does not support region models yet.`，`-t` 指定的目录会写出该目录，诊断码为 `E_UNSUPPORTED_FEATURE`。不含 region 的模型不受声明影响，所以没有声明 `region` 的模板行为和生成物都不变。`pyfcstm generate` 的拒绝信息面向两类读者：写明模型声明了几个 region、第一个在哪里，列出支持 region 的内置模板并给出可直接复制的命令，也建议把 region 从模型里拿掉；对模板目录还会告诉模板作者该声明什么、什么时候声明。内置模板的使用者不会去改它，所以它的拒绝信息没有后面这一段。未知或重复的成员在构造渲染器时报错，`StateMachineCodeRenderer.features` 给出已声明的集合。声明 `region` 的模板要自己承担目标语言上的全部 region 语义，并在所有共享的 `regions` 用例上与 `SimulationRuntime` 对齐；原生 C 系 runner 按这个声明选取这些用例。
 
 当代码新增 `config.yaml` key 时，必须同时更新本手册、受影响的单模板 README 和结构检查。
 

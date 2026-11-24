@@ -6,8 +6,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- generated_python_alignment
 handlers:
 - action: Root.P.Pre
   behavior: record_call

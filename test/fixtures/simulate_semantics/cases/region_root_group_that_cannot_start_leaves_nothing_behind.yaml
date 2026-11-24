@@ -9,8 +9,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- generated_python_alignment
 handlers:
 - action: Root.A.A1.Tick
   behavior: record_call

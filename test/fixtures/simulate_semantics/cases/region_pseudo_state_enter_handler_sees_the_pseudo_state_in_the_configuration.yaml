@@ -5,8 +5,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- generated_python_alignment
 handlers:
 - action: Root.P.R1.Q.QOn
   behavior: record_call

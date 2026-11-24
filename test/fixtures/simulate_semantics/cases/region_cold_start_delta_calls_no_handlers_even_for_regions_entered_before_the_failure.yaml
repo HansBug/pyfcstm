@@ -7,8 +7,6 @@ categories:
 - regions
 - runtime
 - inputs
-exclude_runners:
-- generated_python_alignment
 handlers:
 - action: Root.R1.X.XOn
   behavior: record_call

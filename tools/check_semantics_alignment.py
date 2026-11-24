@@ -1,7 +1,7 @@
 """
 Differential check of the operator catalog's runnable and Z3 semantics.
 
-Two seeded comparisons, both through public APIs:
+Three seeded comparisons, all through public APIs:
 
 * Expressions: random expressions are evaluated by the concrete engine and
   translated to Z3.  Where the runtime returns a value, every definedness fact
@@ -12,11 +12,19 @@ Two seeded comparisons, both through public APIs:
 * Models: random state machines are checked for reachable runtime errors by
   ``pyfcstm bmc``'s runtime-safety check and by exhaustive simulation over a
   small input domain; every reported error must replay.
+* Region models: random state machines whose states own regions are run by
+  exhaustive simulation over a small input domain, and the trace relation of
+  ``build_bmc_core_formula`` must force exactly the simulator's cycle-by-cycle
+  configuration, variables, Delta classification and fallback-only
+  classification.  A model that the
+  simulator or the relation rejects with an error is counted and skipped, never
+  compared.
 
 Usage::
 
     python tools/check_semantics_alignment.py --check
     python tools/check_semantics_alignment.py --check --expressions 5000 --models 200
+    python tools/check_semantics_alignment.py --check --region-models 200 --region-steps 3
 """
 
 import argparse
@@ -29,6 +37,12 @@ from fractions import Fraction
 import z3
 
 from pyfcstm.bmc import (
+    REGION_DONE_ID,
+    STATE_INIT_ID,
+    STATE_TERMINATE_ID,
+    BmcEngine,
+    BmcError,
+    build_bmc_core_formula,
     compile_bmc_query,
     decode_bmc_result_trace,
     replay_bmc_witness,
@@ -49,7 +63,10 @@ from pyfcstm.semantics.concrete import evaluate
 from pyfcstm.semantics.errors import EvaluationError
 from pyfcstm.semantics.symbolic import SymbolicFailure, SymbolicSession, translate
 from pyfcstm.simulate import SimulationRuntime
-from pyfcstm.simulate.runtime import SimulationRuntimeExpressionError
+from pyfcstm.simulate.runtime import (
+    SimulationRuntimeDfsError,
+    SimulationRuntimeExpressionError,
+)
 
 _INT_POINTS = (-3, 0, 2)
 _FLOAT_POINTS = (-1.5, 0.0, 2.25)
@@ -264,6 +281,230 @@ def check_models(count, seed, steps=3):
     return checked, undecided, failures
 
 
+_REGION_GUARDS = (
+    "x > 2",
+    "y < 3",
+    "d == 1",
+    "x % 2 == 0",
+    "d > 0 && x < 5",
+    "x > y",
+    "y >= 4",
+)
+_REGION_ACTIONS = (
+    "x = x + 1;",
+    "y = y + d;",
+    "x = y + 2;",
+    "y = x * 2;",
+    "x = d;",
+    "x = x + y;",
+)
+
+
+def _aspect_lines(rng, probability):
+    """Return ``>> during`` aspect declarations of one scope, possibly none."""
+    lines = []
+    for when in ("before", "after"):
+        if rng.random() < probability:
+            lines.append(">> during %s { %s }" % (when, rng.choice(_REGION_ACTIONS)))
+    return lines
+
+
+def _region_body(rng, name, depth):
+    """Return the source of one region with one to three states."""
+    names = ["%s_S%d" % (name, index) for index in range(rng.randint(1, 3))]
+    lines = ["region %s {" % name]
+    lines.extend("    " + line for line in _aspect_lines(rng, 0.2))
+    if rng.random() < 0.3:
+        # A guarded start: the region may fail to start, or start somewhere else.
+        lines.append("    [*] -> %s : if [%s];" % (names[0], rng.choice(_REGION_GUARDS)))
+        if rng.random() < 0.6:
+            lines.append("    [*] -> %s;" % names[-1])
+    else:
+        lines.append("    [*] -> %s;" % names[0])
+    nested = depth == 0 and rng.random() < 0.25
+    for index, state in enumerate(names):
+        if nested and index == len(names) - 1:
+            lines.append("    state %s {" % state)
+            lines.append("        " + _region_body(rng, state + "_A", 1).replace("\n", "\n        "))
+            lines.append("        " + _region_body(rng, state + "_B", 1).replace("\n", "\n        "))
+            lines.append("    }")
+            continue
+        parts = []
+        if rng.random() < 0.4:
+            parts.append("enter { %s }" % rng.choice(_REGION_ACTIONS))
+        if rng.random() < 0.7:
+            parts.append("during { %s }" % rng.choice(_REGION_ACTIONS))
+        lines.append("    state %s { %s }" % (state, " ".join(parts)))
+    for source in names:
+        for target in names + ["[*]", "[*]"]:
+            if source == target or rng.random() > 0.35:
+                continue
+            trigger = rng.choice(
+                ["if [%s]" % rng.choice(_REGION_GUARDS), "if [%s]" % rng.choice(_REGION_GUARDS), "/Go"]
+            )
+            lines.append("    %s -> %s : %s;" % (source, target, trigger))
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _region_model(rng):
+    """Return a random machine whose ``Run`` state owns two or three regions."""
+    regions = "\n".join(
+        "        " + _region_body(rng, "R%d" % index, 0).replace("\n", "\n        ")
+        for index in range(rng.randint(2, 3))
+    )
+    lines = [
+        "input int d;",
+        "def int x = 0;",
+        "def int y = 0;",
+        "state Root {",
+        "    event Go;",
+    ]
+    lines.extend("    " + line for line in _aspect_lines(rng, 0.25))
+    lines += [
+        "    [*] -> %s;" % rng.choice(["Run", "Idle"]),
+        "    state Idle;",
+        "    state Run {",
+    ]
+    lines.extend("        " + line for line in _aspect_lines(rng, 0.25))
+    for when in ("before", "after"):
+        if rng.random() < 0.2:
+            lines.append(
+                "        during %s { %s }" % (when, rng.choice(_REGION_ACTIONS))
+            )
+    lines += [
+        regions,
+        "    }",
+        "    state Done { during { x = x + 1; } }",
+        "    Idle -> Run : /Go;",
+    ]
+    if rng.random() < 0.7:
+        lines.append("    Run -> Done : if [%s];" % rng.choice(_REGION_GUARDS))
+    if rng.random() < 0.3:
+        lines.append("    Run -> Run : /Go;")
+    if rng.random() < 0.5:
+        lines.append("    Done -> Idle : /Go;")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _configuration_predicate(core, frame, node, region_path=None):
+    symbols = core.symbols
+    state_id = core.context.domain.state_path_to_id(node["state"])
+    position = (
+        symbols.frame_state(frame)
+        if region_path is None
+        else symbols.region_position(frame, region_path)
+    )
+    parts = [position == z3.IntVal(state_id)]
+    for item in node.get("regions") or []:
+        path = "%s.%s" % (node["state"], item["name"])
+        if item["configuration"] is None:
+            parts.append(symbols.region_position(frame, path) == z3.IntVal(REGION_DONE_ID))
+        else:
+            parts.append(_configuration_predicate(core, frame, item["configuration"], path))
+    return z3.And(*parts)
+
+
+def _region_observation(core, runtime, result, frame, cycle):
+    symbols = core.symbols
+    if runtime.is_ended:
+        position = symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
+    else:
+        tree = runtime.configuration.to_dict()
+        if tree["mode"] != "stable":
+            # Entered but not started: the cold start stayed a Delta.
+            position = symbols.frame_state(frame) == z3.IntVal(STATE_INIT_ID)
+        else:
+            position = _configuration_predicate(core, frame, tree)
+    return z3.And(
+        position,
+        symbols.frame_var(frame, "x") == runtime.vars["x"],
+        symbols.frame_var(frame, "y") == runtime.vars["y"],
+        symbols.delta_flag(cycle) == bool(result.delta),
+        # A cycle is one of fallbacks only when it is not a Delta and no
+        # transition, initial ones included, fired in any region.
+        symbols.gamma_flag(cycle)
+        == (
+            not result.delta
+            and not any(item.kind == "transition" for item in result.trace)
+        ),
+    )
+
+
+def check_region_models(count, seed, steps=3):
+    """Return ``(checked, skipped_by_simulator, skipped_by_relation, failures)``.
+
+    Every cycle of every sequence over the input domain is compared: the
+    relation, pinned to the sequence, must have a solution and no solution that
+    differs from the simulator's configuration, variables, Delta or whether the
+    cycle was one of fallbacks only.
+    """
+    rng = random.Random(seed)
+    checked = skipped_sim = skipped_bmc = 0
+    failures = []
+    cycle_inputs = [(d, go) for d in (0, 1) for go in (False, True)]
+    for index in range(count):
+        text = _region_model(rng)
+        try:
+            model = load_state_machine_from_text(text)
+        except Exception:  # noqa: BLE001 - generator output the grammar refuses
+            skipped_sim += 1
+            continue
+        try:
+            core = build_bmc_core_formula(
+                BmcEngine(model).prepare("check reach <= %d: terminated();" % steps)
+            )
+        except BmcError:
+            skipped_bmc += 1
+            continue
+        try:
+            runs = []
+            for sequence in itertools.product(cycle_inputs, repeat=steps):
+                runtime = SimulationRuntime(model, input_source={"d": 0})
+                pins = []
+                expected = []
+                for cycle, (d, go) in enumerate(sequence):
+                    result = runtime.cycle(
+                        ["Root.Go"] if go else [], inputs={"d": d}, trace=True
+                    )
+                    pins.append(core.symbols.step_inputs[cycle]["d"] == d)
+                    literal = core.symbols.event_input(cycle, "Root.Go")
+                    pins.append(literal if go else z3.Not(literal))
+                    expected.append(
+                        _region_observation(core, runtime, result, cycle + 1, cycle)
+                    )
+                runs.append((sequence, pins, expected))
+        except (SimulationRuntimeDfsError, SimulationRuntimeExpressionError, ValueError):
+            skipped_sim += 1
+            continue
+        verdicts = []
+        for sequence, pins, expected in runs:
+            solver = z3.Solver()
+            solver.set("timeout", 20000)
+            solver.add(core.core, *pins)
+            solver.push()
+            solver.add(z3.And(*expected))
+            reachable = solver.check()
+            solver.pop()
+            solver.add(z3.Not(z3.And(*expected)))
+            forced = solver.check()
+            if reachable == z3.unknown or forced == z3.unknown:
+                verdicts.append("undecided")
+            elif reachable != z3.sat or forced != z3.unsat:
+                failures.append((index, sequence, reachable, forced, text))
+                break
+            else:
+                verdicts.append("ok")
+        if failures and failures[-1][0] == index:
+            continue
+        if "undecided" in verdicts:
+            skipped_bmc += 1
+        else:
+            checked += 1
+    return checked, skipped_sim, skipped_bmc, failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument(
@@ -271,6 +512,8 @@ def main() -> int:
     )
     parser.add_argument("--expressions", type=int, default=1500)
     parser.add_argument("--models", type=int, default=40)
+    parser.add_argument("--region-models", type=int, default=30)
+    parser.add_argument("--region-steps", type=int, default=3)
     parser.add_argument("--seed", type=int, default=522)
     args = parser.parse_args()
     compared, boundary, unsupported, failures = check_expressions(
@@ -289,7 +532,20 @@ def main() -> int:
     )
     for index, reason, text in model_failures[:5]:
         print("  model %d: %s\n%s" % (index, reason, text))
-    return 1 if failures or model_failures else 0
+    region_checked, skipped_sim, skipped_bmc, region_failures = check_region_models(
+        args.region_models, args.seed, args.region_steps
+    )
+    print(
+        "region models: %d agree on every sequence, %d skipped by the simulator, "
+        "%d skipped by the relation, %d failures"
+        % (region_checked, skipped_sim, skipped_bmc, len(region_failures))
+    )
+    for index, sequence, reachable, forced, text in region_failures[:5]:
+        print(
+            "  region model %d, inputs %r: observations %s, forced %s\n%s"
+            % (index, sequence, reachable, forced, text)
+        )
+    return 1 if failures or model_failures or region_failures else 0
 
 
 if __name__ == "__main__":

@@ -25,7 +25,10 @@ from pyfcstm.bmc.witness import (
     replay_bmc_witness,
     solve_bmc_property,
 )
-from test.bmc.semantic_fixture_policy import policy_for_case
+from test.bmc.semantic_fixture_policy import (
+    REGION_CORE_EXCLUDE_CASES,
+    policy_for_case,
+)
 from test.bmc.test_relation_semantic_fixtures import (
     _query_text_for_case,
     _input_assumption_lines,
@@ -244,8 +247,14 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
         )
-        + sum(1 for case in iter_semantic_cases() if "regions" in case.data["categories"]),
+        + len(REGION_CORE_EXCLUDE_CASES),
         "long_term_exclude": 5,
+        # Region fixtures are checked by the relation fixture runner; replaying
+        # their witnesses is not part of this runner.
+        "region_core": sum(
+            1 for case in iter_semantic_cases() if "regions" in case.data["categories"]
+        )
+        - len(REGION_CORE_EXCLUDE_CASES),
     }
     assert len(_hard_pass_cases()) == 220
     zero_step_ids = set()

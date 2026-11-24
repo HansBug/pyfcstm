@@ -7,8 +7,6 @@ categories:
 - regions
 - runtime
 - inputs
-exclude_runners:
-- bmc_core
 handlers:
 - action: Root.R1.X.XOn
   behavior: record_call

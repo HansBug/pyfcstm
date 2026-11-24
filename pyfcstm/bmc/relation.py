@@ -125,6 +125,7 @@ _CallCountLowerer = Callable[[CallCount, int, Optional[int]], _Z3Expr]
 _EVENT_ATOM_PREFIX = "event:"
 _GUARD_ATOM_PREFIX = "guard:"
 _ACCEPTED_ATOM_PREFIX = "accepted:"
+_REGION_ATOM_PREFIX = "region:"
 _ISSUE_URL = "https://github.com/HansBug/pyfcstm/issues"
 
 
@@ -839,6 +840,9 @@ class BmcTraceSymbols:
     :type gamma_flags: Tuple[z3.BoolRef, ...]
     :param case_selectors: Per-step case-selector symbols.
     :type case_selectors: Tuple[Mapping[str, z3.BoolRef], ...]
+    :param region_positions: Per-frame position symbols of every region, keyed by
+        region path; empty for a model without regions.
+    :type region_positions: Tuple[Mapping[str, z3.ArithRef], ...]
 
     Example::
 
@@ -861,6 +865,9 @@ class BmcTraceSymbols:
     case_selectors: Tuple[Mapping[str, z3.BoolRef], ...] = field(default_factory=tuple)
     step_inputs: Tuple[Mapping[str, z3.ArithRef], ...] = field(default_factory=tuple)
     parameters: Mapping[str, z3.ArithRef] = field(default_factory=dict)
+    region_positions: Tuple[Mapping[str, z3.ArithRef], ...] = field(
+        default_factory=tuple
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.domain, BmcDomain):
@@ -1015,6 +1022,15 @@ class BmcTraceSymbols:
                     for label in labels
                 }
             )
+        region_positions = tuple(
+            {
+                region.path: z3.Int(
+                    "F_%d_region_%s" % (frame.index, _safe_symbol_fragment(region.path))
+                )
+                for region in domain.regions
+            }
+            for frame in domain.frames
+        ) if domain.regions else ()
         return cls(
             domain=domain,
             frame_states=frame_states,
@@ -1025,7 +1041,47 @@ class BmcTraceSymbols:
             delta_flags=delta_flags,
             gamma_flags=gamma_flags,
             case_selectors=tuple(case_selectors),
+            region_positions=region_positions,
         )
+
+    def region_position(self, frame_index: int, region_path: str) -> z3.ArithRef:
+        """Return the position symbol of a region in a frame.
+
+        The symbol holds the id of the state the region's branch rests in, or
+        :data:`pyfcstm.bmc.domain.REGION_DONE_ID` once the region finished, or
+        :data:`pyfcstm.bmc.domain.REGION_INACTIVE_ID` while the state that owns
+        the region is not resting in the frame.
+
+        :param frame_index: Frame index in ``0..N``.
+        :type frame_index: int
+        :param region_path: Dot-separated region path, for example ``"Root.Run.A"``.
+        :type region_path: str
+        :return: Position symbol of the region.
+        :rtype: z3.ArithRef
+        :raises pyfcstm.bmc.errors.BmcBuildError: If the frame or the region is
+            unknown, which includes every call on a model without regions.
+
+        Example::
+
+            >>> from pyfcstm.bmc.domain import build_bmc_domain
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     region A { [*] -> P; state P; }
+            ...     region B { [*] -> Q; state Q; }
+            ... }
+            ... ''')
+            >>> symbols = BmcTraceSymbols.allocate(build_bmc_domain(model, 1))
+            >>> symbols.region_position(0, 'Root.A').decl().name().startswith('F_0_region_Root_A')
+            True
+        """
+        if frame_index < 0 or frame_index >= len(self.region_positions):
+            raise BmcBuildError("frame index out of range: %r." % frame_index)
+        try:
+            return self.region_positions[frame_index][region_path]
+        except KeyError as err:
+            # KeyError: the path names no region of the domain.
+            raise BmcBuildError("Unknown region path: %r." % region_path) from err
 
     def frame_state(self, frame_index: int) -> z3.ArithRef:
         """Return the state symbol for a frame.
@@ -1275,7 +1331,7 @@ class BmcTraceSymbols:
             >>> BmcTraceSymbols.allocate(domain).to_canonical()['frame_states'][0]
             'F_0_state'
         """
-        return {
+        canonical = {
             "node": "bmc_trace_symbols",
             "bound": self.domain.bound,
             "frame_states": [_z3_text(item) for item in self.frame_states],
@@ -1301,6 +1357,12 @@ class BmcTraceSymbols:
                 for mapping in self.case_selectors
             ],
         }
+        if self.region_positions:
+            canonical["region_positions"] = [
+                {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
+                for mapping in self.region_positions
+            ]
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -1642,6 +1704,10 @@ class BmcCoreFormula:
     :param cone_slice: Conservative variable partition when slicing was
         requested; ``None`` when disabled.
     :type cone_slice: pyfcstm.bmc.slicing.ConeSlice, optional
+    :param region_steps: Lowered paths of every step of a model that has regions,
+        as :class:`pyfcstm.bmc.region_relation.RegionStepRelation` objects; empty
+        for a model without regions, whose paths are in ``steps``.
+    :type region_steps: Tuple[pyfcstm.bmc.region_relation.RegionStepRelation, ...], optional
 
     Example::
 
@@ -1651,6 +1717,8 @@ class BmcCoreFormula:
         >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
         >>> build_bmc_core_formula(context).to_canonical()['bound']
         1
+        >>> build_bmc_core_formula(context).region_steps
+        ()
     """
 
     context: BmcPreparedContext
@@ -1672,6 +1740,7 @@ class BmcCoreFormula:
     _initial_error_sites: Tuple[BmcRuntimeErrorSite, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
+    region_steps: Tuple[Any, ...] = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _require_context(self.context)
@@ -2003,6 +2072,24 @@ class _CaseLowering:
     final_env: Mapping[str, z3.ArithRef]
     definedness_constraints: Tuple[DomainConstraint, ...]
     call_records: Tuple[BmcAbstractCallRecord, ...] = ()
+    region_terms: Mapping[str, z3.BoolRef] = field(default_factory=dict)
+    region_definedness: Mapping[str, Tuple[DomainConstraint, ...]] = field(
+        default_factory=dict
+    )
+    priority_first: bool = False
+
+
+def _only_acceptances(template: BoolTemplate) -> bool:
+    """Return whether a condition is made of acceptance atoms and nothing else."""
+    if template.kind == "atom":
+        return template.name is not None and template.name.startswith(
+            _ACCEPTED_ATOM_PREFIX
+        )
+    return (
+        template.kind in ("not", "and", "or")
+        and bool(template.operands)
+        and all(_only_acceptances(item) for item in template.operands)
+    )
 
 
 def _guarded_domain_constraints(
@@ -2230,7 +2317,17 @@ def _lower_bool_template(
     if template.kind == "and":
         expr = z3.BoolVal(True)
         definedness: List[DomainConstraint] = []
-        for item in template.operands:
+        operands = template.operands
+        if lowering.priority_first:
+            # The candidates that rank higher are tried, and may be taken,
+            # before anything this path evaluates, so what a guard of this path
+            # requires to be defined only matters where they were not taken.
+            operands = tuple(
+                sorted(
+                    operands, key=lambda item: 0 if _only_acceptances(item) else 1
+                )
+            )
+        for item in operands:
             lowered = _lower_bool_template(
                 item,
                 lowering,
@@ -2285,6 +2382,16 @@ def _lower_bool_template(
         if atom.startswith(_ACCEPTED_ATOM_PREFIX):
             label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
             return accepted_lookup(label, active)
+        if atom.startswith(_REGION_ATOM_PREFIX):
+            try:
+                return _LoweredBoolTemplate(
+                    lowering.region_terms[atom],
+                    lowering.region_definedness.get(atom, ()),
+                )
+            except KeyError as err:  # pragma: no cover - the region builder supplies every term.
+                # KeyError: a region atom needs a term that the region relation
+                # builder supplies for every case that carries one.
+                raise _internal_bmc_error("missing region term %r." % atom) from err
         raise BmcBuildError(  # pragma: no cover - BoolTemplate atom namespace is validated by macro contract.
             "Unsupported macro condition atom namespace: %r." % atom
         )
@@ -2905,6 +3012,13 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     ``D_N ∧ I_0 ∧ T_N ∧ ENV_N``.  Health gates, objective predicates,
     solving, and witness replay are intentionally left to later layers.
 
+    A model that declares regions is lowered by
+    :func:`pyfcstm.bmc.region_relation.build_region_core_formula`: every region
+    has its own position symbol and the regions advance in declaration order
+    inside one step.  Such a model supports a cold start only, and
+    :func:`pyfcstm.bmc.properties.compile_bmc_property` does not accept the
+    result yet.
+
     :param context: Prepared BMC context from :class:`pyfcstm.bmc.BmcEngine`.
     :type context: pyfcstm.bmc.engine.BmcPreparedContext
     :return: Solver-level core formula bundle.
@@ -2912,7 +3026,9 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     :raises pyfcstm.bmc.errors.BmcBuildError: If the prepared context or macro
         handoff data is internally inconsistent.
     :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If a well-formed query or
-        action uses a solver feature not supported by this relation builder.
+        action uses a solver feature not supported by this relation builder,
+        or if the model has regions and the query starts from a hot-start
+        state.
 
     Example::
 
@@ -2922,8 +3038,22 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         >>> context = BmcEngine(model).prepare('check reach <= 1: terminated();')
         >>> build_bmc_core_formula(context).core.sort().name()
         'Bool'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();'))
+        >>> len(core.region_steps)
+        1
     """
     prepared = _require_context(context)
+    if prepared.domain.regions:
+        from .region_relation import build_region_core_formula
+
+        return build_region_core_formula(prepared)
     cone_slice = build_cone_slice(prepared) if prepared.options.cone_slicing else None
     effective_slice = (
         cone_slice if cone_slice is not None and cone_slice.dropped_variables else None

@@ -7,8 +7,6 @@ categories:
 - regions
 - runtime
 - inputs
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   inputs:

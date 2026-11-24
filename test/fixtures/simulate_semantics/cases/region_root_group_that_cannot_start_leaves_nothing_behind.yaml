@@ -9,8 +9,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- bmc_core
 handlers:
 - action: Root.A.A1.Tick
   behavior: record_call

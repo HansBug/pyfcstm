@@ -6,8 +6,6 @@ origin:
 categories:
 - regions
 - runtime
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

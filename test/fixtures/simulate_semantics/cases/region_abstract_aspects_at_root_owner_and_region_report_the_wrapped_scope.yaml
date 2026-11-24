@@ -7,8 +7,6 @@ categories:
 - regions
 - runtime
 - inputs
-exclude_runners:
-- bmc_core
 handlers:
 - action: Controller.Tick
   behavior: record_call

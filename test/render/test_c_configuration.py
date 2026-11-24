@@ -982,6 +982,10 @@ def test_header_compiles_as_strict_cxx98(drivers, tmp_path, name):
         "return CFG_FN(validate)(&value, 0) == CFG_SUCCESS ? 0 : 1; }\n",
         encoding="utf-8",
     )
+    # Where ``long`` has 32 bits (Windows) a 64-bit integer needs ``long long``
+    # in C++98, which the generated header already uses there; that one
+    # construct is allowed, everything else stays an error.
+    allowed = ["-Wno-long-long"] if os.name == "nt" else []
     result = subprocess.run(
         [
             compiler,
@@ -990,6 +994,7 @@ def test_header_compiles_as_strict_cxx98(drivers, tmp_path, name):
             "-Wall",
             "-Wextra",
             "-Werror",
+            *allowed,
             "-fsyntax-only",
             "-I",
             os.path.join(drivers["_sources"], name),

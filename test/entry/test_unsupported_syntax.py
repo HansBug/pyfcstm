@@ -68,29 +68,25 @@ def test_refusal_by_a_custom_template_guides_its_author_and_the_model_writer(tmp
     assert 'config.yaml' in output
     assert 'Declaring model features' in output
     # The model writer: a template that does support regions, or a model without regions.
-    assert '--template python' in output
+    assert 'Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python' in output
+    assert '--template c ' in output
     assert 'take the regions out of the model' in output
     assert 'Traceback' not in output
 
 
-def test_refusal_by_a_built_in_template_names_the_templates_that_do_support_regions(tmp_path):
+@pytest.mark.parametrize('template', ['c', 'c_poll', 'cpp', 'cpp_poll', 'python'])
+def test_every_built_in_template_renders_a_model_with_regions(tmp_path, template):
     path = tmp_path / 'machine.fcstm'
     path.write_text(REGION_MODEL, encoding='utf-8')
+    output_dir = tmp_path / 'out'
     result = simulate_entry(
         pyfcstmcli,
-        ['pyfcstm', 'generate', '-i', str(path), '--template', 'c', '-o', str(tmp_path / 'out')],
+        ['pyfcstm', 'generate', '-i', str(path), '--template', template, '-o', str(output_dir)],
     )
     output = result.stdout + result.stderr
-    assert result.exitcode != 0
-    assert "built-in template 'c' does not support region models yet" in output
-    assert 'declares 2 regions' in output
-    assert 'Root.Run.Motor' in output
-    assert 'Built-in templates that support regions: python' in output
-    assert '--template python' in output
-    assert 'take the regions out of the model' in output
-    # A user cannot edit a built-in template, so it is not told to.
-    assert 'features: [region]' not in output
-    assert not (tmp_path / 'out').exists()
+    assert result.exitcode == 0, output
+    assert 'does not support region models yet' not in output
+    assert any(output_dir.iterdir())
 
 
 def test_simulate_runs_a_model_with_regions(tmp_path):

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import pathlib
 from tempfile import TemporaryDirectory
+from typing import List
 
 import click
 
@@ -40,16 +41,96 @@ from ..utils import auto_decode
 from ..utils.validate import ModelValidationError
 
 
+def _builtin_templates_with_region_support() -> List[str]:
+    """
+    List the built-in templates that declare the ``region`` feature.
+
+    The packaged templates are extracted one by one and asked for the
+    ``features`` they declare, so the answer follows the templates themselves
+    instead of a list kept here. It is only called when a model has been
+    refused, so the cost of extracting each template does not matter.
+
+    :return: Names of the built-in templates that render models with regions,
+        in the order of :func:`pyfcstm.template.list_templates`.
+    :rtype: List[str]
+    """
+    from ..template import extract_template, list_templates
+
+    names = []
+    for name in list_templates():
+        with TemporaryDirectory() as work:
+            if "region" in StateMachineCodeRenderer(extract_template(name, work)).features:
+                names.append(name)
+    return names
+
+
+def _region_refusal_guidance(
+    model, builtin: bool, input_code_file: str, output_dir: str
+) -> str:
+    """
+    Explain what a refusal of a model with regions means and what to do next.
+
+    The text answers three questions: what happened (how many regions the
+    model declares and where the first one is), what a template author has to
+    do (only for a template directory, because nobody edits a built-in one),
+    and what a model writer can do right away (a template that supports
+    regions, with a command that can be copied, or a model without regions).
+
+    :param model: The refused model; it declares at least one region.
+    :type model: pyfcstm.model.model.StateMachine
+    :param builtin: Whether the refusing template is a built-in one.
+    :type builtin: bool
+    :param input_code_file: Input file of the command, used in the suggested command.
+    :type input_code_file: str
+    :param output_dir: Output directory of the command, used in the suggested command.
+    :type output_dir: str
+    :return: Several lines of guidance, without a trailing newline.
+    :rtype: str
+    """
+    import shlex
+
+    regions = list(model.walk_regions())
+    capable = _builtin_templates_with_region_support()
+    lines = [
+        "The model declares %d region%s, the first is '%s'."
+        % (len(regions), "" if len(regions) == 1 else "s", ".".join(regions[0].path))
+    ]
+    if not builtin:
+        lines.append(
+            "If you write this template: its config.yaml does not list `region` under "
+            "`features`. List it (`features: [region]`) only once the template really "
+            "renders regions, because a template written for a single active path would "
+            "generate wrong code for them, which is why it is refused. See \"Declaring "
+            "model features\" in templates/README.md."
+        )
+    lines.append(
+        "If you write the model: use a template that supports regions. Built-in "
+        "templates that support regions: %s." % ", ".join(capable)
+    )
+    lines.append(
+        "  pyfcstm generate -i %s --template %s -o %s"
+        % (shlex.quote(input_code_file), capable[0], shlex.quote(output_dir))
+    )
+    lines.append("Or take the regions out of the model.")
+    return "\n".join(lines)
+
+
 def _require_template_features(
-    model, renderer, template_label: str, opt_in_hint: bool = False
+    model,
+    renderer,
+    template_label: str,
+    builtin: bool,
+    input_code_file: str,
+    output_dir: str,
 ) -> None:
     """
     Stop the command when the template cannot render the model.
 
     The renderer refuses such a model itself; checking here first lets the
     command name the template the way the user selected it (a built-in name
-    instead of the temporary directory it was extracted to) and turn the
-    refusal into a Click error before anything is written.
+    instead of the temporary directory it was extracted to), turn the refusal
+    into a Click error before anything is written, and add the guidance of
+    :func:`_region_refusal_guidance`.
 
     :param model: Model that is about to be rendered.
     :type model: pyfcstm.model.model.StateMachine
@@ -58,10 +139,12 @@ def _require_template_features(
     :param template_label: How the message names the template, for example
         ``"built-in template 'python'"``.
     :type template_label: str
-    :param opt_in_hint: Whether to add how a template author opts in, defaults
-        to ``False``. Only a template directory the user owns can be edited, so
-        only that case asks for it.
-    :type opt_in_hint: bool, optional
+    :param builtin: Whether the template is a built-in one.
+    :type builtin: bool
+    :param input_code_file: Input file of the command.
+    :type input_code_file: str
+    :param output_dir: Output directory of the command.
+    :type output_dir: str
     :return: ``None``.
     :rtype: None
     :raises pyfcstm.entry.base.ClickErrorException: If the model declares
@@ -75,13 +158,8 @@ def _require_template_features(
         require_supported_model(model, "generate with %s" % template_label)
     except ModelValidationError as err:
         # The template lacks the feature the model needs.
-        message = str(err)
-        if opt_in_hint:
-            message += (
-                "\nIf this template renders regions, add `features: [region]` to its "
-                "config.yaml."
-            )
-        raise ClickErrorException(message) from err
+        guidance = _region_refusal_guidance(model, builtin, input_code_file, output_dir)
+        raise ClickErrorException("%s\n%s" % (err, guidance)) from err
 
 
 def _add_generate_subcommand(cli: click.Group) -> click.Group:
@@ -214,8 +292,16 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
         template the command stops before it writes anything::
 
             $ pyfcstm generate -i ./regions.fcstm -t ./old_template -o ./out
-            Error: generate with template directory '/abs/old_template' does not support region models yet.
-            If this template renders regions, add `features: [region]` to its config.yaml.
+            generate with template directory '/abs/old_template' does not support region models yet. (line 4)
+            The model declares 2 regions, the first is 'Root.Run.Motor'.
+            If you write this template: its config.yaml does not list `region` under `features`. ...
+            If you write the model: use a template that supports regions. Built-in templates that support regions: python.
+              pyfcstm generate -i ./regions.fcstm --template python -o ./out
+            Or take the regions out of the model.
+
+        The text tells a template author what to declare and when, and a model
+        writer which built-in templates can render the model, with a command that
+        can be copied.
         """
         if bool(template_dir) == bool(template_name):
             raise click.UsageError(
@@ -238,7 +324,12 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
                 )
                 renderer = StateMachineCodeRenderer(template_dir=extracted_template_dir)
                 _require_template_features(
-                    model, renderer, "built-in template '%s'" % template_name
+                    model,
+                    renderer,
+                    "built-in template '%s'" % template_name,
+                    True,
+                    input_code_file,
+                    output_dir,
                 )
                 renderer.render(
                     model,
@@ -251,7 +342,9 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
                 model,
                 renderer,
                 "template directory '%s'" % renderer.template_dir,
-                opt_in_hint=True,
+                False,
+                input_code_file,
+                output_dir,
             )
             renderer.render(
                 model,

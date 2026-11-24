@@ -275,10 +275,13 @@ Rules:
 
 ## Region cases
 
-A case in the `regions` category exercises a model that declares regions. Until
-every shared runner supports regions, such a case must set
-`exclude_runners: [generated_python_alignment, bmc_core]`; the loader rejects a
-`regions` case that leaves either runner selected. A region case that
+A case in the `regions` category exercises a model that declares regions. It
+always runs in the simulator and in the generated Python runner. Until
+`bmc_core` supports regions, such a case must set `exclude_runners: [bmc_core]`;
+the loader rejects a `regions` case that leaves it selected while it cannot run
+it. The native C-family runners are not named in `exclude_runners`:
+a native template runs every `regions` case when it declares the `region`
+feature in its `config.yaml`, and none otherwise. A region case that
 hot-starts names the start position with `initial.configuration` (see below)
 instead of `initial.state`.
 
@@ -485,7 +488,8 @@ alignment runner checks construction outcomes and, after every step:
 
 - `is_ended`
 - variables
-- current state path
+- current state path, or for a model with regions the whole `configuration`
+  text (the generated runtime exposes it as `configuration`, a string)
 - `delta` (simulator `CycleResult.delta` versus the generated runtime's public
   `last_cycle_was_delta` getter)
 - expected exception class names, messages, and causes

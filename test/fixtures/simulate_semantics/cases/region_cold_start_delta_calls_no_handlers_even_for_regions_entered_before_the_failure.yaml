@@ -8,7 +8,6 @@ categories:
 - runtime
 - inputs
 exclude_runners:
-- generated_python_alignment
 - bmc_core
 handlers:
 - action: Root.R1.X.XOn

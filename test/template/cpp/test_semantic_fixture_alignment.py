@@ -5,15 +5,17 @@ import pytest
 from test.template.cpp_shared import _assert_wrapper_only_harness
 from test.template.cpp_shared import run_cpp_alignment_case
 from test.testings.native_toolchain_alignment.report import read_observations_jsonl
-from test.testings.simulate_semantics import iter_semantic_cases, load_semantic_case
+from test.testings.native_semantic_alignment import iter_native_semantic_cases
+from test.testings.simulate_semantics import load_semantic_case
 
 
 @pytest.mark.unittest
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "case",
-    # C-family backends consume the shared generated-runtime fixture subset.
-    iter_semantic_cases(runners=["generated_python_alignment"]),
+    # The shared generated-runtime subset, plus the region corpus once the
+    # template declares the ``region`` feature.
+    iter_native_semantic_cases("cpp"),
     ids=lambda case: case.id,
 )
 def test_generated_cpp_alignment_semantic_fixture(case, tmp_path):

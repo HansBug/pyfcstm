@@ -2076,6 +2076,20 @@ class _CaseLowering:
     region_definedness: Mapping[str, Tuple[DomainConstraint, ...]] = field(
         default_factory=dict
     )
+    priority_first: bool = False
+
+
+def _only_acceptances(template: BoolTemplate) -> bool:
+    """Return whether a condition is made of acceptance atoms and nothing else."""
+    if template.kind == "atom":
+        return template.name is not None and template.name.startswith(
+            _ACCEPTED_ATOM_PREFIX
+        )
+    return (
+        template.kind in ("not", "and", "or")
+        and bool(template.operands)
+        and all(_only_acceptances(item) for item in template.operands)
+    )
 
 
 def _guarded_domain_constraints(
@@ -2303,7 +2317,17 @@ def _lower_bool_template(
     if template.kind == "and":
         expr = z3.BoolVal(True)
         definedness: List[DomainConstraint] = []
-        for item in template.operands:
+        operands = template.operands
+        if lowering.priority_first:
+            # The candidates that rank higher are tried, and may be taken,
+            # before anything this path evaluates, so what a guard of this path
+            # requires to be defined only matters where they were not taken.
+            operands = tuple(
+                sorted(
+                    operands, key=lambda item: 0 if _only_acceptances(item) else 1
+                )
+            )
+        for item in operands:
             lowered = _lower_bool_template(
                 item,
                 lowering,

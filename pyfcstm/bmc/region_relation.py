@@ -727,7 +727,12 @@ class _StepBuilder:
             prepared_cases.append(
                 (
                     case,
-                    replace(lowering, region_terms=terms, region_definedness=nested),
+                    replace(
+                        lowering,
+                        region_terms=terms,
+                        region_definedness=nested,
+                        priority_first=True,
+                    ),
                     final_env,
                     entry,
                 )
@@ -931,12 +936,15 @@ class _StepBuilder:
                     record=False,
                     pending_io=pending_io,
                 )
+                # A region is only started when the ones before it started.
+                reached = _and(ok_terms)
                 ok_terms.append(result.ok)
                 nested_facts.extend(result.facts)
-                defs.extend(result.defs)
+                defs.extend((_and((reached, cond)), item) for cond, item in result.defs)
                 positions[region.path] = position
                 # The branch of a region is over: the scopes below it that owe
                 # an after action run it now.
+                flushed = len(defs)
                 env = self.flush(
                     region.path,
                     z3.BoolVal(True),
@@ -944,10 +952,15 @@ class _StepBuilder:
                     "%s_f%d" % (tag, index),
                     defs,
                 )
+                started = _and(ok_terms)
+                defs[flushed:] = [
+                    (_and((started, cond)), item) for cond, item in defs[flushed:]
+                ]
             if z3.is_false(z3.simplify(_and(ok_terms))):
                 # A region cannot start on these values, so the whole entry
-                # fails and what follows an entry is never reached.
-                return _Entry(z3.BoolVal(False), out_pos, env_out, [], [])
+                # fails and what follows an entry is never reached.  What the
+                # starts evaluated on the way still has to be defined.
+                return _Entry(z3.BoolVal(False), out_pos, env_out, [], defs)
             # The regions can only all be done right after starting when each of
             # them has a start path that ends in a finished region or in a nested
             # group; otherwise the owner certainly rests and what would follow a
@@ -976,9 +989,10 @@ class _StepBuilder:
                 )
             )
             if may_finish:
+                # The owner only continues when every region started.
                 cont = self.lower_unit(
                     ("cont", owner_path),
-                    all_done,
+                    z3.And(all_done, _and(ok_terms)),
                     env,
                     ns,
                     "%s_c" % tag,

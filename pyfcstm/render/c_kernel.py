@@ -419,7 +419,7 @@ class _Plan:
         :rtype: int
         """
         return _layout(
-            [_Field("ctx", self.context_size(), 8), _Field("hash", 8, 8), _Field("parent", 4, 4), _Field("flags", 4, 2)]
+            [_Field("ctx", self.context_size(), 8), _Field("hash", 8, 8), _Field("parent", 4, 4), _Field("flags", 5, 2)]
         )
 
     # -- ids ------------------------------------------------------------

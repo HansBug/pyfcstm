@@ -125,6 +125,7 @@ typedef struct @T@Node {
     short stack;
     unsigned char visited;
     unsigned char ended;
+    unsigned char hashed;
 } @T@Node;
 
 /* An entry of the continuation trail: a check that is under way. */
@@ -243,6 +244,7 @@ static int @P@arena_alloc(@T@Priv *m, const @T@Ctx *src, int stack)
     m->arena[k].visited = 0;
     m->arena[k].ended = 0;
     m->arena[k].hash = 0;
+    m->arena[k].hashed = 0;
     return k;
 }
 
@@ -356,6 +358,22 @@ static PYFCSTM_GENERATED_UINT64 @P@signature_hash(const @T@Ctx *c, int stack)
 static int @P@signature_equal(const @T@Ctx *a, const @T@Ctx *b, int stack)
 {
     return @P@vars_equal(&a->vars, &b->vars) && @P@stack_equal(a, b, stack, -1);
+}
+
+/*
+ * The hash of a node only filters candidates for the exact comparison above, so it is computed when a
+ * search or a run has grown past SMALL_SET nodes and compared directly before that. Either way the
+ * answer is decided by signature_equal.
+ */
+#define @MM@_K_SMALL_SET 8
+
+static PYFCSTM_GENERATED_UINT64 @P@node_hash(@T@Priv *m, int k)
+{
+    if (!m->arena[k].hashed) {
+        m->arena[k].hash = @P@signature_hash(&m->arena[k].ctx, m->arena[k].stack);
+        m->arena[k].hashed = 1;
+    }
+    return m->arena[k].hash;
 }
 
 static int @P@chain_equal(const @T@Ctx *a, const @T@Outer *oa, const @T@Ctx *b, const @T@Outer *ob)
@@ -770,15 +788,16 @@ static int @P@continuation_viable(@T@Priv *m, const @T@Ctx *c, const @T@Outer *o
     return r;
 }
 
-static int @P@on_search_path(const @T@Priv *m, int node, PYFCSTM_GENERATED_UINT64 h, int stack, const @T@Ctx *trail0, PYFCSTM_GENERATED_UINT64 h0)
+static int @P@on_search_path(@T@Priv *m, int node, int hashed, int stack, const @T@Ctx *trail0)
 {
     int p;
+    PYFCSTM_GENERATED_UINT64 h = hashed ? @P@node_hash(m, node) : 0;
     for (p = m->arena[node].parent; p >= 0; p = m->arena[p].parent) {
-        if (m->arena[p].hash == h && @P@signature_equal(&m->arena[p].ctx, &m->arena[node].ctx, stack)) {
+        if ((!hashed || @P@node_hash(m, p) == h) && @P@signature_equal(&m->arena[p].ctx, &m->arena[node].ctx, stack)) {
             return 1;
         }
     }
-    return trail0 != NULL && h0 == h && @P@signature_equal(trail0, &m->arena[node].ctx, stack);
+    return trail0 != NULL && @P@signature_equal(trail0, &m->arena[node].ctx, stack);
 }
 
 static int @P@push_work(@T@Priv *m, int k)
@@ -801,7 +820,6 @@ static int @P@search(@T@Priv *m, const @T@Ctx *start, int stack, const @T@Outer 
 {
     int mark = m->arena_top, wmark = m->work_size, root, loop = 0, result = @MM@_K_B_FALSE;
     long steps = 0;
-    PYFCSTM_GENERATED_UINT64 h0 = trail0 != NULL ? @P@signature_hash(trail0, stack) : 0;
     root = @P@arena_alloc(m, start, stack);
     if (root < 0) {
         return @MM@_K_B_ERR;
@@ -812,7 +830,7 @@ static int @P@search(@T@Priv *m, const @T@Ctx *start, int stack, const @T@Outer 
     }
     while (m->work_size > wmark) {
         int k = m->work[--m->work_size], j, i, count, index, s, mode;
-        PYFCSTM_GENERATED_UINT64 h;
+        int hashed;
         const int *ids;
         @T@Ctx *cur;
         @T@Stack st;
@@ -824,14 +842,13 @@ static int @P@search(@T@Priv *m, const @T@Ctx *start, int stack, const @T@Outer 
             result = @MM@_K_B_ERR;
             goto out;
         }
-        h = @P@signature_hash(&m->arena[k].ctx, stack);
-        m->arena[k].hash = h;
-        if (@P@on_search_path(m, k, h, stack, trail0, h0)) {
+        hashed = m->arena_top - mark > @MM@_K_SMALL_SET;
+        if (@P@on_search_path(m, k, hashed, stack, trail0)) {
             loop = 1;
             continue;
         }
         for (j = mark; j < m->arena_top; ++j) {
-            if (m->arena[j].visited && m->arena[j].hash == h
+            if (m->arena[j].visited && (!hashed || @P@node_hash(m, j) == @P@node_hash(m, k))
                 && @P@signature_equal(&m->arena[j].ctx, &m->arena[k].ctx, stack)) {
                 break;
             }
@@ -1096,10 +1113,11 @@ static int @P@advance_owner(@T@Priv *m, @T@Ctx *c, int stack, @T@Run *run)
 /* The seen set of a _Run: 1 when this stack and these values were met before in this run. */
 static int @P@run_seen(@T@Priv *m, @T@Run *run, const @T@Ctx *c, int stack)
 {
-    PYFCSTM_GENERATED_UINT64 h = @P@signature_hash(c, stack);
+    int hashed = m->arena_top - run->base > @MM@_K_SMALL_SET;
+    PYFCSTM_GENERATED_UINT64 h = hashed ? @P@signature_hash(c, stack) : 0;
     int j, k;
     for (j = run->base; j < m->arena_top; ++j) {
-        if (m->arena[j].stack == stack && m->arena[j].hash == h
+        if (m->arena[j].stack == stack && (!hashed || @P@node_hash(m, j) == h)
             && @P@signature_equal(&m->arena[j].ctx, c, stack)) {
             return 1;
         }
@@ -1108,7 +1126,10 @@ static int @P@run_seen(@T@Priv *m, @T@Run *run, const @T@Ctx *c, int stack)
     if (k < 0) {
         return -1;
     }
-    m->arena[k].hash = h;
+    if (hashed) {
+        m->arena[k].hash = h;
+        m->arena[k].hashed = 1;
+    }
     return 0;
 }
 

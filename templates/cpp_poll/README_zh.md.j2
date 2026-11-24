@@ -414,7 +414,7 @@ printf("round trip equal = %d\n", memcmp(&parsed, &current, sizeof(parsed)) == 0
 | `{{ a }}_ARENA_CAPACITY` | 一个周期的一次决策可以检查多少个配置（及待处理工作项） | 周期因 `Speculative search exceeded the capacity safety limit` 失败，且消息点名了此宏 |
 | `{{ a }}_TRAIL_CAPACITY` | 最多可嵌套多少层检查 | 同一失败消息点名了此宏 |
 
-`{{ a }}_STORAGE_BYTES` 由这两个宏推导。由于状态机的大小依赖它们，修改后的值必须对 `machine.c`、`machine.cpp` 和所有包含 `machine.hpp` 的源文件保持一致，例如通过编译器选项；不一致会让两侧得到不同的状态机大小。能容纳在默认值内的模型无需修改，低于模型所需的值会让周期以上述消息失败，而不会产生错误行为。
+`{{ a }}_STORAGE_BYTES` 由这两个宏推导。由于状态机的大小依赖它们，修改后的值必须对 `machine.c`、`machine.cpp` 和所有包含 `machine.hpp` 的源文件保持一致，例如通过编译器选项；不一致会让两侧得到不同的状态机大小。能容纳在默认值内的模型无需修改，低于模型所需的值会让周期以上述消息失败，而不会产生错误行为。 一个状态机对象的大小就是 `{{ a }}_STORAGE_BYTES` 字节，并随模型的状态数与区域数增长（约 400 个状态的模型会达到数兆字节），所以大模型的状态机应放在静态存储或堆上而不是栈上，放置前先查看 `sizeof`。 一次进入多层嵌套的区域所有者时，每一层都要计算两遍，所以首次进入这样一条嵌套链的那个周期，耗时会随层数翻倍：10 层约 0.04 秒，12 层约 0.5 秒，之后的周期不受影响。
 
 ```bash
 gcc -std=c99 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o

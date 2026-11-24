@@ -786,6 +786,38 @@ class _StepBuilder:
                 result.defs.append((gate, item))
                 if record:
                     self.constraints.append(z3.Implies(gate, item.constraint))
+        # A path that ends in a group start or in the check that a finished
+        # region may stay finished has run its actions before that is decided,
+        # so they have to be defined whenever the path got that far, also when
+        # the start or the check then turns out to fail.
+        for case, lowering, _, _ in prepared_cases:
+            decided = (ATOM_REGION_ENTER, ATOM_REGION_DONE)
+            if not any(name in lowering.region_terms for name in decided):
+                continue
+            if any(z3.is_false(lowering.region_terms.get(name)) for name in decided):
+                continue
+            relaxed = replace(
+                lowering,
+                region_terms={name: z3.BoolVal(True) for name in lowering.region_terms},
+                region_definedness={},
+            )
+            reached = _and(
+                (
+                    gate,
+                    _lower_bool_template(
+                        case.condition,
+                        relaxed,
+                        accepted_lookup,
+                        set(),
+                        self.symbols,
+                        self.step,
+                    ).expr,
+                )
+            )
+            for item in lowering.definedness_constraints:
+                result.defs.append((reached, item))
+                if record:
+                    self.constraints.append(z3.Implies(reached, item.constraint))
         antecedents = []
         fallback = []
         for case, lowering, final_env, entry in prepared_cases:

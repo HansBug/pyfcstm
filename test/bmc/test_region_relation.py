@@ -819,6 +819,13 @@ GUARD_ERRORS = {
         [0],
         0,
     ),
+    "plain_before_of_an_owner_ahead_of_a_nested_start_that_fails": (
+        "input int d; def int y = 0; state Root { [*] -> Run; state Run { "
+        "during before { y = y + 1 % d; } region A { [*] -> Mid; "
+        "state Mid { region B { [*] -> X : if [d > 0]; state X; } } } } }",
+        [0],
+        0,
+    ),
     "continuation_of_an_owner": (
         "input int d; state Root { [*] -> S1; state S1 { region R { "
         "[*] -> S4; pseudo state S4; S4 -> [*]; } } state T; "

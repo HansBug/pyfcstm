@@ -559,7 +559,9 @@ def drivers(tmp_path_factory):
         'if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")',
         "    set(STRICT_FLAGS -std=c99 -pedantic -Wall -Wextra -Werror)",
         "endif()",
-        "link_libraries(m)",
+        "if(NOT WIN32)",
+        "    link_libraries(m)",
+        "endif()",
     ]
     for name, text in MODELS.items():
         model = load_state_machine_from_text(text)

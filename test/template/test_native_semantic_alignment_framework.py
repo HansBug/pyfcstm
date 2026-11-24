@@ -165,6 +165,9 @@ def test_alignment_runtime_large_integer_filter_retains_other_exact_values():
 
         current_state = _State()
 
+        class state_machine:
+            has_regions = False
+
     class _StubNative:
         is_ended = False
         vars = {"big": 0, "fraction": 1.5}

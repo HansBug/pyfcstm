@@ -22,7 +22,7 @@ Usage::
 Example::
 
     $ python tools/check_c_kernel_alignment.py --models 1 --cycles 3 --template c
-    checked 1 model runs: ok=1, refused=0, invalid=0, mismatch=0
+    checked 1 model runs: ok=1, refused=0, out_of_range=0, invalid=0, mismatch=0
 
 The exit status is ``0`` when every model aligned and ``1`` otherwise; each
 mismatch prints its seed and the DSL source, so ``--first-seed N --models 1``
@@ -39,6 +39,11 @@ from typing import List, Optional, Sequence, Tuple
 # The native adapters of the unit tests drive the generated library, so the
 # repository root has to be importable next to the installed package.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# The simulator computes integers without a bound while a generated runtime
+# holds 64-bit values, so a random model whose variable grows past this limit
+# leaves the range the two sides agree on; the run stops there.
+INT_LIMIT = 2 ** 62
 
 VARS = ["a", "b", "c"]
 INPUTS = ["i", "j"]
@@ -519,8 +524,9 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
     :type job: Tuple[int, str, int, int]
     :return: ``(seed, template, verdict, detail, source)`` where the verdict is ``ok``,
         ``invalid`` (the random source is not a valid model, not a finding),
-        ``refused`` (counts of cycles both sides refused are in ``detail``) or
-        ``mismatch``.
+        ``refused`` (counts of cycles both sides refused are in ``detail``),
+        ``out_of_range`` (a variable left the 64-bit range, so the run stopped
+        before the sides could be compared further) or ``mismatch``.
     :rtype: Tuple[int, str, str, str, str]
 
     Example::
@@ -572,6 +578,7 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
         return aligned._GeneratedNativeAlignmentRuntime(simulation, native, source), source_of_inputs
 
     refused = 0
+    out_of_range = False
     pair = None
     try:
         pair, inputs = build_pair()
@@ -587,6 +594,9 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
                 pair._native_runtime.close()
                 pair, inputs = build_pair(configuration, values)
                 pair._assert_aligned("after hot start at %s" % configuration)
+            if any(abs(value) >= INT_LIMIT for value in pair.vars.values()):
+                out_of_range = True
+                break
             inputs.snapshot = {name: rng.randint(-2, 3) for name in model.inputs}
             events = [event for event in ("Root.E1", "Root.E2") if rng.random() < 0.35]
             try:
@@ -600,6 +610,8 @@ def run_model(job: Tuple[int, str, int, int]) -> Tuple[int, str, str, str, str]:
     finally:
         if pair is not None:
             pair._native_runtime.close()
+    if out_of_range:
+        return seed, template, "out_of_range", "a variable left the 64-bit range", source
     if refused:
         return seed, template, "refused", "%d refused cycle(s)" % refused, source
     return seed, template, "ok", "", source
@@ -651,7 +663,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     Example::
 
         >>> main(['--models', '1', '--cycles', '3', '--template', 'c'])
-        checked 1 model runs: ok=1, refused=0, invalid=0, mismatch=0
+        checked 1 model runs: ok=1, refused=0, out_of_range=0, invalid=0, mismatch=0
         0
     """
     args = _parse_args(argv)
@@ -663,7 +675,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for template in templates
         for seed in range(args.first_seed, args.first_seed + args.models)
     ]
-    counts = {"ok": 0, "refused": 0, "invalid": 0, "mismatch": 0}
+    counts = {"ok": 0, "refused": 0, "out_of_range": 0, "invalid": 0, "mismatch": 0}
     failures = []
 
     def record(result):

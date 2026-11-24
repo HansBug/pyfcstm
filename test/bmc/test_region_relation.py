@@ -855,6 +855,79 @@ class TestGuardsThatFailToEvaluate:
 
 
 @pytest.mark.unittest
+class TestGuardsThatAreNeverReached:
+    # The runtime stops evaluating as soon as a candidate is taken, and it
+    # starts the regions of a group one after another: a guard or an action
+    # that is not reached may fail to evaluate without anybody noticing.
+
+    FORCED_FIRST = """
+    input int d;
+    def int x = 1;
+    def int y = 3;
+    state Root {
+        event Go;
+        region R {
+            [*] -> A;
+            state A;
+            state B;
+            A -> B : /Go;
+            B -> A : if [x > y % d];
+            !B -> A : if [x >= 1];
+        }
+    }
+    """
+
+    LATER_REGION = """
+    input int e;
+    input int d;
+    def int y = 0;
+    state Root {
+        region R1 { [*] -> P; pseudo state P; P -> [*] : if [e > 0]; }
+        region R3 { [*] -> Q; state Q; }
+    }
+    """
+
+    def runs(self, text, inputs, defaults):
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(text), input_source=defaults
+        )
+        for item in inputs:
+            runtime.cycle(item.get("events", []), inputs=item.get("inputs", defaults))
+        return runtime
+
+    def test_a_guard_behind_a_candidate_that_wins_is_not_evaluated(self):
+        # In B the forced transition ranks first and is taken, so the guard
+        # with the division is not looked at although the divisor is 0.
+        cycles = [
+            {"inputs": {"d": 1}},
+            {"events": ["Root.Go"], "inputs": {"d": 1}},
+            {"inputs": {"d": 0}},
+        ]
+        self.runs(self.FORCED_FIRST, cycles, {"d": 1})
+        core = core_of(self.FORCED_FIRST, 3)
+        assert holds(core, cycles, z3.BoolVal(True)) == z3.sat
+        # The relation admits exactly the runtime's run: back in A.
+        trace = frames(core, cycles, ["x", "y"])
+        assert trace[-1][1] == {"Root.R": "Root.R.A"}
+
+    def test_a_region_that_is_never_started_does_not_evaluate_its_start(self):
+        text = self.LATER_REGION.replace(
+            "[*] -> Q; state Q;", "[*] -> Q effect { y = y % d; }; state Q;"
+        )
+        core = core_of(text, 1)
+        # R1 cannot settle without e > 0, so the group does not start and the
+        # effect of R3 is never run, whatever the divisor.
+        quiet = [{"inputs": {"e": 0, "d": 0}}]
+        self.runs(text, quiet, {"e": 0, "d": 0})
+        assert holds(core, quiet, z3.BoolVal(True)) == z3.sat
+        # With R1 settled, the effect of R3 runs and fails on a zero divisor.
+        loud = [{"inputs": {"e": 1, "d": 0}}]
+        with pytest.raises(SimulationRuntimeExpressionError):
+            self.runs(text, loud, {"e": 0, "d": 1})
+        assert holds(core, loud, z3.BoolVal(True)) == z3.unsat
+
+
+@pytest.mark.unittest
 class TestStepsThatOnlyFallBack:
     # Gamma_i marks a step in which nothing but fallbacks ran: no transition
     # fired in any region.

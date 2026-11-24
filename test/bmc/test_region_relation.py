@@ -935,6 +935,75 @@ class TestGuardsThatAreNeverReached:
 
 
 @pytest.mark.unittest
+class TestAssignmentsThatAreNeverReached:
+    # An integer variable may not receive a value that is not an integer, but
+    # the runtime only notices when the assignment runs.  What a start that is
+    # not reached would assign must not leave the whole step without a trace.
+
+    EARLIER_REGION_FAILS = """
+    input int d;
+    def int x = 0;
+    state Root {
+        [*] -> Run;
+        state Run {
+            region R1 { [*] -> P : if [d == 1]; state P; }
+            region R3 { [*] -> T; state T { enter { x = 4 / d; } } }
+        }
+    }
+    """
+
+    TRANSITION_NEVER_TAKEN = """
+    input int d;
+    def int x = 0;
+    state Root {
+        [*] -> Run;
+        state Run {
+            region R1 {
+                [*] -> P;
+                state P;
+                state Q { region B { [*] -> B1 effect { x = 4 / d; }; state B1; } }
+                P -> Q : if [d == 100];
+            }
+            region R2 { [*] -> S; state S; }
+        }
+    }
+    """
+
+    def test_a_region_behind_one_that_cannot_start_assigns_nothing(self):
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(self.EARLIER_REGION_FAILS),
+            input_source={"d": 3},
+        )
+        assert runtime.cycle().delta is True
+        assert runtime.vars["x"] == 0
+        core = core_of(self.EARLIER_REGION_FAILS, 1)
+        cycles = [{"inputs": {"d": 3}}]
+        stays = z3.And(core.symbols.delta_flag(0), core.symbols.frame_var(1, "x") == 0)
+        assert holds(core, cycles, stays) == z3.sat
+        assert holds(core, cycles, z3.Not(stays)) == z3.unsat
+
+    def test_a_nested_start_behind_a_transition_that_is_not_taken_assigns_nothing(
+        self,
+    ):
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(self.TRANSITION_NEVER_TAKEN),
+            input_source={"d": 3},
+        )
+        runtime.cycle()
+        runtime.cycle()
+        assert runtime.vars["x"] == 0
+        core = core_of(self.TRANSITION_NEVER_TAKEN, 2)
+        cycles = [{"inputs": {"d": 3}}, {"inputs": {"d": 3}}]
+        trace = frames(core, cycles, ["x"])
+        assert trace[-1][1] == {
+            "Root.Run.R1": "Root.Run.R1.P",
+            "Root.Run.R2": "Root.Run.R2.S",
+            "Root.Run.R1.Q.B": "-",
+        }
+        assert trace[-1][2] == {"x": 0}
+
+
+@pytest.mark.unittest
 class TestStepsThatOnlyFallBack:
     # Gamma_i marks a step in which nothing but fallbacks ran: no transition
     # fired in any region.

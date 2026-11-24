@@ -691,6 +691,7 @@ class _StepBuilder:
         """
         pre_env = self.pre_env(env_in)
         prepared_cases = []
+        started_here: Dict[str, List[z3.BoolRef]] = {}
         for case in unit.cases:
             lowering = _prepare_case_lowering(
                 case, pre_env, self.persistent, None, self.int_names
@@ -717,7 +718,12 @@ class _StepBuilder:
                 terms[ATOM_REGION_ENTER] = z3.BoolVal(False)
                 terms[ATOM_REGION_DONE] = z3.BoolVal(False)
             elif case.target_kind == "owner":
+                before_entry = len(self.constraints)
                 entry = self.entry(case.target_state_path, final_env, ns, case_tag)
+                # What the start says about the values only holds where the
+                # path got as far as the start; it is put back below.
+                started_here[case.label] = self.constraints[before_entry:]
+                del self.constraints[before_entry:]
                 terms[ATOM_REGION_ENTER] = entry.ok
                 nested[ATOM_REGION_ENTER] = _implied(entry.defs)
             elif case.target_kind == "done":
@@ -818,6 +824,9 @@ class _StepBuilder:
                 result.defs.append((reached, item))
                 if record:
                     self.constraints.append(z3.Implies(reached, item.constraint))
+            self.constraints.extend(
+                z3.Implies(reached, item) for item in started_here.get(case.label, ())
+            )
         antecedents = []
         fallback = []
         for case, lowering, final_env, entry in prepared_cases:
@@ -958,6 +967,7 @@ class _StepBuilder:
                     ]
                 )
                 region_ns = _Namespace(region, others_live, ns)
+                before_start = len(self.constraints)
                 result = self.lower_unit(
                     ("init", region.path),
                     z3.BoolVal(True),
@@ -968,8 +978,13 @@ class _StepBuilder:
                     record=False,
                     pending_io=pending_io,
                 )
-                # A region is only started when the ones before it started.
+                # A region is only started when the ones before it started, so
+                # what its start says about the values holds only there.
                 reached = _and(ok_terms)
+                self.constraints[before_start:] = [
+                    z3.Implies(reached, item)
+                    for item in self.constraints[before_start:]
+                ]
                 ok_terms.append(result.ok)
                 nested_facts.extend(result.facts)
                 defs.extend((_and((reached, cond)), item) for cond, item in result.defs)
@@ -977,6 +992,7 @@ class _StepBuilder:
                 # The branch of a region is over: the scopes below it that owe
                 # an after action run it now.
                 flushed = len(defs)
+                before_flush = len(self.constraints)
                 env = self.flush(
                     region.path,
                     z3.BoolVal(True),
@@ -987,6 +1003,10 @@ class _StepBuilder:
                 started = _and(ok_terms)
                 defs[flushed:] = [
                     (_and((started, cond)), item) for cond, item in defs[flushed:]
+                ]
+                self.constraints[before_flush:] = [
+                    z3.Implies(started, item)
+                    for item in self.constraints[before_flush:]
                 ]
             if z3.is_false(z3.simplify(_and(ok_terms))):
                 # A region cannot start on these values, so the whole entry

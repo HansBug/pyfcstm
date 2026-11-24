@@ -55,7 +55,7 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
 
 import z3
 
@@ -692,6 +692,7 @@ class _StepBuilder:
         pre_env = self.pre_env(env_in)
         prepared_cases = []
         started_here: Dict[str, List[z3.BoolRef]] = {}
+        dead_paths: Set[str] = set()
         for case in unit.cases:
             lowering = _prepare_case_lowering(
                 case, pre_env, self.persistent, None, self.int_names
@@ -717,6 +718,7 @@ class _StepBuilder:
                 # path is dead and what follows it is never built.
                 terms[ATOM_REGION_ENTER] = z3.BoolVal(False)
                 terms[ATOM_REGION_DONE] = z3.BoolVal(False)
+                dead_paths.add(case.label)
             elif case.target_kind == "owner":
                 before_entry = len(self.constraints)
                 entry = self.entry(case.target_state_path, final_env, ns, case_tag)
@@ -727,7 +729,10 @@ class _StepBuilder:
                 terms[ATOM_REGION_ENTER] = entry.ok
                 nested[ATOM_REGION_ENTER] = _implied(entry.defs)
             elif case.target_kind == "done":
+                before_check = len(self.constraints)
                 viable, viable_defs = self.done_viable(ns, final_env, case_tag)
+                started_here[case.label] = self.constraints[before_check:]
+                del self.constraints[before_check:]
                 terms[ATOM_REGION_DONE] = viable
                 nested[ATOM_REGION_DONE] = _implied(viable_defs)
             prepared_cases.append(
@@ -800,7 +805,7 @@ class _StepBuilder:
             decided = (ATOM_REGION_ENTER, ATOM_REGION_DONE)
             if not any(name in lowering.region_terms for name in decided):
                 continue
-            if any(z3.is_false(lowering.region_terms.get(name)) for name in decided):
+            if case.label in dead_paths:
                 continue
             relaxed = replace(
                 lowering,
@@ -1078,6 +1083,8 @@ class _StepBuilder:
         region is still working.
         """
         region = ns.region
+        alone = z3.Not(ns.others_live)
+        before_check = len(self.constraints)
         cont = self.lower_unit(
             ("cont", region.owner_path),
             z3.BoolVal(True),
@@ -1087,7 +1094,11 @@ class _StepBuilder:
             None,
             record=False,
         )
-        alone = z3.Not(ns.others_live)
+        # The continuation is only tried when no other region is still working,
+        # so what its starts say about the values holds only there.
+        self.constraints[before_check:] = [
+            z3.Implies(alone, item) for item in self.constraints[before_check:]
+        ]
         return z3.Or(ns.others_live, cont.ok), [
             (z3.And(alone, cond), item) for cond, item in cont.defs
         ]

@@ -833,6 +833,20 @@ GUARD_ERRORS = {
         [0],
         0,
     ),
+    "plain_before_ahead_of_a_nested_start_false_on_constants": (
+        "input int d; def int x = 0; def int y = 0; state Root { [*] -> Run; "
+        "state Run { during before { x = 4 / d; } region R1 { [*] -> S2; "
+        "state S2 { region R5 { [*] -> S6 : if [y >= 4]; state S6; } } } } }",
+        [0],
+        0,
+    ),
+    "enter_of_an_owner_ahead_of_a_nested_start_false_on_constants": (
+        "input int d; def int x = 0; def int y = 0; state Root { [*] -> Run; "
+        "state Run { region R1 { [*] -> S2; state S2 { enter { y = 1 % d; } "
+        "region R5 { [*] -> S6 : if [x > 2]; state S6; } } } } }",
+        [0],
+        0,
+    ),
     "continuation_of_an_owner": (
         "input int d; state Root { [*] -> S1; state S1 { region R { "
         "[*] -> S4; pseudo state S4; S4 -> [*]; } } state T; "
@@ -975,6 +989,39 @@ class TestAssignmentsThatAreNeverReached:
         }
     }
     """
+
+    OWNER_REENTERED = """
+    input int d;
+    def int x = 0;
+    state Root {
+        event Go;
+        event Halt;
+        [*] -> Run;
+        state Run {
+            region A { [*] -> Work; state Work; Work -> [*] : /Halt; }
+            region B { [*] -> Hold; state Hold { enter { x = 4 / d; } } }
+        }
+        Run -> Run : /Go;
+    }
+    """
+
+    def test_the_continuation_of_a_finishing_region_is_not_tried_in_other_cycles(self):
+        # The owner is only re-entered once both regions finished; in the second
+        # cycle region A is still working, so Go does nothing and x stays.
+        cycles = [
+            {"inputs": {"d": 1}},
+            {"events": ["Root.Go"], "inputs": {"d": 3}},
+        ]
+        runtime = SimulationRuntime(
+            load_state_machine_from_text(self.OWNER_REENTERED),
+            input_source={"d": 1},
+        )
+        runtime.cycle(inputs={"d": 1})
+        runtime.cycle(["Root.Go"], inputs={"d": 3})
+        assert runtime.vars["x"] == 4
+        core = core_of(self.OWNER_REENTERED, 2)
+        assert holds(core, cycles, z3.BoolVal(True)) == z3.sat
+        assert holds(core, cycles, core.symbols.frame_var(2, "x") != 4) == z3.unsat
 
     def test_a_region_behind_one_that_cannot_start_assigns_nothing(self):
         runtime = SimulationRuntime(

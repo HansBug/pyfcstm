@@ -200,12 +200,25 @@ static void query(const CFG_T *configuration)
 }
 
 #ifndef PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT
+static int hex_digit(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
 static size_t unhex(const char *hex, char *out)
 {
     size_t length = 0;
-    unsigned int value;
-    while (hex[0] != '\0' && hex[0] != '\n' && hex[1] != '\0' && sscanf(hex, "%2x", &value) == 1) {
-        out[length++] = (char)value;
+    while (hex_digit(hex[0]) >= 0 && hex_digit(hex[1]) >= 0) {
+        out[length++] = (char)(hex_digit(hex[0]) * 16 + hex_digit(hex[1]));
         hex += 2;
     }
     out[length] = '\0';

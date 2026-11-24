@@ -361,8 +361,16 @@ int main(int argc, char **argv)
         if (!Wrapper::parse_configuration({{ context.initial.configuration | tojson }}, &start_configuration, &start_error)) {
 {% if context.initial_expect %}            {
                 char start_message[256];
-                strcpy(start_message, {{ invalid_start_prefix | tojson }});
-                strncat(start_message, start_error.message, sizeof(start_message) - strlen(start_message) - 1u);
+                size_t used = 0u;
+                const char *prefix = {{ invalid_start_prefix | tojson }};
+                const char *reason = start_error.message;
+                while (*prefix != '\0' && used + 1u < sizeof(start_message)) {
+                    start_message[used++] = *prefix++;
+                }
+                while (*reason != '\0' && used + 1u < sizeof(start_message)) {
+                    start_message[used++] = *reason++;
+                }
+                start_message[used] = '\0';
                 write_initial_error(out, start_message);
             }
             fclose(out);
@@ -756,8 +764,16 @@ int main(int argc, char **argv)
         if (!Wrapper::parse_configuration({{ context.initial.configuration | tojson }}, &start_configuration, &start_error)) {
 {% if context.initial_expect %}            {
                 char start_message[256];
-                strcpy(start_message, {{ invalid_start_prefix | tojson }});
-                strncat(start_message, start_error.message, sizeof(start_message) - strlen(start_message) - 1u);
+                size_t used = 0u;
+                const char *prefix = {{ invalid_start_prefix | tojson }};
+                const char *reason = start_error.message;
+                while (*prefix != '\0' && used + 1u < sizeof(start_message)) {
+                    start_message[used++] = *prefix++;
+                }
+                while (*reason != '\0' && used + 1u < sizeof(start_message)) {
+                    start_message[used++] = *reason++;
+                }
+                start_message[used] = '\0';
                 write_initial_error(out, start_message);
             }
             fclose(out);

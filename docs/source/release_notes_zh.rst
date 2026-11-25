@@ -50,8 +50,11 @@ PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展
 
 - ``init state("...")`` 可以写配置文本，例如 ``Controller.Running{Safety: Watching, Motion: On}``\ ，也可以写区域内某个状态的路径，或者只写拥有者的路径。省略的区域，或者写成 ``[init]`` 的区域，在第一个周期里等待启动（\ ``REGION_PENDING_ID``\ ）。让某个拥有者的全部区域都处于完成状态的起点会被 ``invalid_start_position`` 拒绝；
 - ``called`` 与 ``call_count`` 统计各区域的抽象调用；运行时安全检查覆盖每个区域的运算，包括没有被选中的候选的探测；起不来的区域让整个周期成为 Delta，位置与变量保持不变；
-- 见证帧带有可选的 ``configuration`` 文本，区域步带有 ``local_cases``\ （\ ``scope``\ 、\ ``kind`` 与 ``label``\ ）以及取值为 ``null`` 的 ``case_label``\ ，抽象调用带有调用时刻整台机器的配置。回放比较配置、变量、事件、输入和调用，不比较局部分支。人类可读报告里每个区域步占一行。新增的 JSON 字段都是可选的，不含区域的模型不会出现。
-在变化的取值上重入自身的组会被展开到固定深度，需要更深时抛出 :class:`pyfcstm.bmc.BmcBuildError`\ ，而不是被近似。不含区域的模型生成的公式与以前相同。
+- 见证帧带有可选的 ``configuration`` 文本，区域步带有 ``local_cases``\ （\ ``scope``\ 、\ ``kind`` 与 ``label``\ ），抽象调用带有调用时刻整台机器的配置。步的 ``case_label`` 是在所有区域之外运行的那个分支的标签，没有这样的分支时为 ``null``\ 。回放比较配置、变量、事件、输入和调用，还会把每一步提交的转换与仿真器提交的转换逐一比较，分支标签正是靠它检查。人类可读报告里每个区域步占一行，局部分支的作用域按所属拥有者写成相对路径。新增的 JSON 字段都是可选的，不含区域的模型不会出现；
+- 区域组结束时才结算的 ``>> during after`` 切面调用，按仿真器告诉其处理函数的状态统计，所以 ``call_count(..., state=...)`` 与 ``active_leaf=`` 和仿真运行逐次调用一致；
+- ``active("...")`` 接受配置文本作为\ *模式*\ （见 :doc:`FBMCQ 参考 </reference/bmc_query/index_zh>`\ ）：写出的区域必须在所写的位置，省略的区域不受约束；允许 ``[done]`` 与 ``[init]``\ ，拥有者可以嵌套。在调用过滤的 ``where`` 里，它描述调用发生那一刻的整台机器。不是模型位置的模式会被 ``invalid_active_pattern`` 拒绝；单个表达式嵌套超过 100 层会被 ``expression_too_deep`` 拒绝，而不是耗尽 Python 栈。
+
+在变化的取值上重入自身的组，会被展开到 :attr:`pyfcstm.bmc.BmcOptions.max_group_reentries` 次（默认 16）；需要更多时抛出 :class:`pyfcstm.bmc.BmcBuildError`\ ，而不是被近似，调大这个选项即可提高上限。不含区域的模型生成的公式与以前相同。
 
 历史与 ``active()``
 ~~~~~~~~~~~~~~~~~~~~
@@ -59,12 +62,14 @@ PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展
 历史和 ``active()`` 的隐藏变量同样是普通变量，所以模型和它导出的文本在每个环节的行为都相同：
 
 - 热启动不再检查 ``__hist_goto`` 和各个 ``__hist_*`` 记录的取值，BMC 查询里放开（havoc）的起点也不再被限制在执行能取到的值之内。给什么值，状态机就按什么值运行；\ ``StateMachine.history_variables()``\ 仍然可以算出合法的值。BMC 约束组的类别 ``domain.history_variable`` 不再存在。
-- 用到 ``active()`` 的模型，热启动、\ ``pyfcstm simulate``\ 、代码生成、\ ``pyfcstm bmc``\ 和 ``pyfcstm.verify`` 的结构类算法都会接受。它的标志 ``__active_*`` 在热启动时和其他变量一样由调用方提供；\ ``StateMachine.active_variables()``\ 可以从位置算出它们。这些环节现在只拒绝区域，所以 ``E_UNSUPPORTED_FEATURE`` 诊断码不再列出 ``active`` 这个特性，inspect 报告里也不再出现原因 ``active_query_unsupported``\ 。
+- 用到 ``active()`` 的模型，热启动、\ ``pyfcstm simulate``\ 、代码生成、\ ``pyfcstm bmc``\ 和 ``pyfcstm.verify`` 的结构类算法都会接受。它的标志 ``__active_*`` 在热启动时和其他变量一样由调用方提供；\ ``StateMachine.active_variables()``\ 可以从位置算出它们。\ ``E_UNSUPPORTED_FEATURE`` 诊断码不再列出 ``active`` 这个特性，inspect 报告里也不再出现原因 ``active_query_unsupported``\ 。
 
 检查与验证
 ~~~~~~~~~~
 
 带 ``--enable-verify`` 时，验证流水线的发现（\ ``W_DEAD_GUARD``\ 、\ ``W_GUARD_TAUTOLOGY``\ 、\ ``W_EFFECT_SMT_NO_OP``\ 、\ ``I_EFFECT_GUARD_CONTRADICT``\ 、\ ``W_TRANSITION_SHADOWED``\ 、\ ``I_ENTER_DURING_CONTRADICT``\ 、\ ``W_COMPOSITE_INIT_INCOMPLETE``\ 、\ ``I_NONTRIVIAL_SCC``\ 、\ ``W_TOPOLOGICAL_NOEXIT``\ 、\ ``I_TOPOLOGICAL_NON_TERMINATING`` 和 ``W_EVENT_UNREACHABLE_EMIT``\ ）按实际运行的状态机判断。用到历史、\ ``active()`` 或强制转换声明的模型，和它导出的文本，因此给出相同的发现。报告本身以及所有描述“写成了什么”的发现仍来自按书写的模型，判断声明本身的 ``W_FORCED_GUARD_UNSAT`` 也是如此。\ ``active("...")`` 上的条件，与隐藏标志上的任何条件一样被判断，而不是被跳过。实际运行的状态机里的发现可以提到隐藏变量或生成的伪状态，也可以报告关于它们的事情：强制转换声明的中继转换把自己守卫读取的变量降下来，就是 ``I_EFFECT_GUARD_CONTRADICT``\ 。每一条这样的发现都指向它所降级自的声明、历史或被查询的状态。组合触发（combo trigger）仍然把关于它生成的守卫的发现，以触发项的身份通过 ``W_COMBO_*`` 诊断码报告。
+
+``pyfcstm.verify`` 的结构类算法与 inspect 报告的可达性现在接受含区域的模型。复合状态按分支判断：拥有区域的状态每个区域一条分支，不含区域的复合状态是只有一条分支的情形，所以不含区域的模型是没有分支的特例。离开复合状态的普通转换，只有在它的某个子状态能到达 ``[*]`` 之后才会被执行；强制转换则从每个叶子出发。对不含区域的模型，inspect 报告因此有一处变化：所有子状态都无法离开的复合状态永远不会执行它的普通外出转换，它通向的状态由 ``W_UNREACHABLE_STATE`` 报告，这条转换在 ``unreachable_transition_reasons`` 里得到原因 ``owner_never_completes``\ 。仿真器本来就是这样运行的，此前的报告把这样的复合状态当成机器可以随意离开的状态。jsfcstm 的 inspect 报告遵循同一规则。
 
 ``pyfcstm.verify`` 的求解器查询各自在独立的 Z3 上下文里运行。此前只要从共享上下文里取过一次模型，之后一条非线性查询的答案就可能从 ``sat`` 变成 ``unknown``\ ，结果因此取决于进程之前求解过什么。像 ``x ** y > 0`` 这样 Z3 无法判定的条件，现在每次都得到 ``unknown``\ 。
 

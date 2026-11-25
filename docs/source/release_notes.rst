@@ -144,16 +144,34 @@ too:
   candidates that were not chosen, and a region that cannot start makes the
   whole cycle a Delta that keeps positions and variables;
 - witness frames carry an optional ``configuration`` text, region steps carry
-  ``local_cases`` (``scope``, ``kind`` and ``label``) and a ``null``
-  ``case_label``, and abstract calls carry the configuration of the whole
-  machine at the moment of the call. Replay compares configurations, variables,
-  events, inputs and calls; local cases are not compared. The human report
-  prints one line per region step. The new JSON fields are optional and absent
-  for models without regions.
+  ``local_cases`` (``scope``, ``kind`` and ``label``), and abstract calls carry
+  the configuration of the whole machine at the moment of the call. The
+  ``case_label`` of a step is the label of the case that ran outside every
+  region, or ``null`` when no case did. Replay compares configurations,
+  variables, events, inputs and calls, and it also compares the transitions each
+  step committed with the ones the simulator committed, which is what checks the
+  case labels. The human report prints one line per region step, with the scope
+  of a local case written relative to the owner it belongs to. The new JSON
+  fields are optional and absent for models without regions;
+- a call of a ``>> during after`` aspect that is settled when a group of regions
+  finishes is counted against the state the simulator tells its handler, so
+  ``call_count(..., state=...)`` and ``active_leaf=`` agree with a simulated run
+  call by call;
+- ``active("...")`` accepts a configuration text as a *pattern* (see
+  :doc:`the FBMCQ reference </reference/bmc_query/index>`): the regions it
+  writes have to be where it says and the regions it leaves out are free;
+  ``[done]`` and ``[init]`` are allowed and owners nest. Inside the ``where`` of
+  a call filter it describes the machine at the moment of the call. A pattern
+  that is not a position of the model is refused with
+  ``invalid_active_pattern``, and one expression that nests deeper than 100
+  levels is refused with ``expression_too_deep`` instead of exhausting the
+  Python stack.
 
-A group that re-enters itself on changing values is unrolled to a fixed depth;
-a model that needs more raises :class:`pyfcstm.bmc.BmcBuildError` instead of
-being approximated. Models without regions produce the same formulas as before.
+A group that re-enters itself on changing values is unrolled to
+:attr:`pyfcstm.bmc.BmcOptions.max_group_reentries` times (16 by default); a
+model that needs more raises :class:`pyfcstm.bmc.BmcBuildError` instead of being
+approximated, and the option raises the bound. Models without regions produce
+the same formulas as before.
 
 History and ``active()``
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -171,9 +189,9 @@ so a model and the text it exports behave the same in every stage:
   code generation, ``pyfcstm bmc`` and the structural ``pyfcstm.verify``
   algorithms. Its flags ``__active_*`` are supplied by a hot start like any
   other variable; ``StateMachine.active_variables()`` computes them from a
-  position. Only regions are still refused by those consumers, so the
-  ``E_UNSUPPORTED_FEATURE`` code lists no ``active`` feature any more and the
-  inspect report no longer carries the reason ``active_query_unsupported``.
+  position. The ``E_UNSUPPORTED_FEATURE`` code lists no ``active`` feature any
+  more and the inspect report no longer carries the reason
+  ``active_query_unsupported``.
 
 Inspect and verify
 ~~~~~~~~~~~~~~~~~~
@@ -195,6 +213,21 @@ variable its own guard reads, which is ``I_EFFECT_GUARD_CONTRADICT``. Each such
 finding points at the declaration, history or queried state it was lowered
 from. A combo trigger keeps reporting the findings about its generated guard as
 the term of the trigger, through the ``W_COMBO_*`` codes.
+
+The structural algorithms of ``pyfcstm.verify`` and the reachability of the
+inspect report accept models with regions. A composite state is judged by its
+branches: a state that owns regions has one branch per region, and a composite
+state without regions is the case of one branch, so a model without regions is
+the special case of none. An ordinary transition that leaves a composite state
+is taken only once a child of it can reach ``[*]``, and a forced transition
+leaves from every leaf. This changes what inspect reports for a model without
+regions in one respect: a composite state none of whose children can leave never
+takes its ordinary outgoing transitions, so the state it leads to is reported
+by ``W_UNREACHABLE_STATE`` and the transition gets the reason
+``owner_never_completes`` in ``unreachable_transition_reasons``. The simulator
+behaves that way already; earlier reports treated the composite state as
+something the machine could simply leave. The jsfcstm inspect report follows the
+same rule.
 
 The solver queries of ``pyfcstm.verify`` each run in a Z3 context of their own.
 Extracting one model from the shared context used to turn the answer of a later

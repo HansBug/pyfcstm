@@ -400,3 +400,21 @@ def test_call_time_active_in_a_model_without_regions_is_the_state_the_action_run
     assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root.A"));').witness_found is True
     assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root"));').witness_found is True
     assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root.B"));').witness_found is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Controller.Running{Motion On}",
+        "S" + "{A: S" * 4000 + "}" * 4000,
+        "Controller.Running{Motion: Controller.Idle}",
+        "Controller.Idle{Motion: On}",
+    ],
+)
+def test_a_pattern_read_against_the_domain_is_refused_with_a_query_error(text):
+    from pyfcstm.bmc import build_bmc_domain, parse_active_pattern
+
+    domain = build_bmc_domain(load_state_machine_from_text(interlock()), 1)
+    with pytest.raises(InvalidBmcQuery):
+        parse_active_pattern(domain, text)
+

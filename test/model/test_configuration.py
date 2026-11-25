@@ -402,3 +402,38 @@ def test_mutated_configuration_inputs_return_values_or_informative_errors(machin
                 accepted += 1
     assert accepted > 5
     assert rejected > 1000
+
+
+def test_a_configuration_pattern_is_read_into_a_tree_of_regions():
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    assert read_configuration_pattern("Root.Run{A: P, B: [done], C: [init]}") == {
+        "state": "Root.Run",
+        "regions": [
+            {"name": "A", "configuration": {"state": "Root.Run.A.P", "regions": []}},
+            {"name": "B", "configuration": "done"},
+            {"name": "C", "configuration": "init"},
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("Root.Run{A: P} trailing", "end of input"),
+        ("Root.Run{A P}", "':'"),
+        ("S" + "{A: S" * 4000 + "}" * 4000, "too deep"),
+    ],
+)
+def test_a_configuration_pattern_that_is_not_text_of_the_form_is_refused(text, message):
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    with pytest.raises(ValueError, match=message):
+        read_configuration_pattern(text)
+
+
+def test_a_configuration_pattern_must_be_text():
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    with pytest.raises(TypeError):
+        read_configuration_pattern(42)

@@ -195,3 +195,25 @@ def test_the_human_trace_tells_regions_with_the_same_name_apart(tmp_path):
     assert result.exit_code == 0, result.output
     assert "Work: A -> B [transition]" in result.output
     assert "Side.Inner.Work: X -> Y [transition]" in result.output
+
+
+def test_the_human_trace_of_a_cycle_that_terminates_is_relative_to_the_state_it_left(
+    tmp_path,
+):
+    text = (
+        "state Root {\n"
+        "    state Run {\n"
+        "        region A { state P; [*] -> P; P -> [*] :: Go; }\n"
+        "        region B { state X; [*] -> X; X -> [*] :: Go; }\n"
+        "    }\n"
+        "    [*] -> Run;\n"
+        "    Run -> [*];\n"
+        "}\n"
+    )
+    result = run_bmc(
+        tmp_path, text, "check reach <= 3: terminated();", "--color", "never"
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert "       A: P -> [done] [transition]" in lines
+    assert "       B: X -> [done] [transition]" in lines

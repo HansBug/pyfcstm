@@ -550,11 +550,7 @@ class _CallSnapshotSymbols:
         :type state_path: str
         :return: The predicate over the positions captured with the call.
         :rtype: z3.BoolRef
-        :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If no call-time position
-            was captured for the call.
         """
-        if self.active is None:
-            raise UnsupportedBmcQuery("call where needs the position of the call.")
         return self.active(state_path)
 
     def resolve_query_value(

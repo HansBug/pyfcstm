@@ -166,6 +166,7 @@ def _without_regions(paths, region_names):
         "state P; state Q; P -> Q :: Go; Q -> [*] :: Fin;",
         "state P; state Q; P -> Q :: Go;",
         "state P; state Q; P -> Q :: Go; Q -> P :: Back; P -> [*] :: Fin;",
+        "state P; state Q; P -> Q :: Go; Q -> P :: Back;",
         "state P; state Dead;",
     ],
 )

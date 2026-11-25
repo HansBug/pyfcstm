@@ -484,11 +484,13 @@ def _human_local_case(case, main: Optional[str] = None) -> str:
     line = "%s -> %s [%s]" % (relative(case.source), relative(case.target), case.kind)
     if scope is None:
         return line
-    if main is not None and scope == main:
-        return "%s: %s" % (scope.rsplit(".", 1)[-1], line)
-    if main is not None and scope.startswith(main + "."):
-        return "%s: %s" % (scope[len(main) + 1 :], line)
-    return "%s: %s" % (scope, line)
+    inside = main is not None and scope.startswith(main + ".")
+    label = (
+        scope[len(main) + 1 :]
+        if inside
+        else (scope.rsplit(".", 1)[-1] if scope == main else scope)
+    )
+    return "%s: %s" % (label, line)
 
 
 def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
@@ -527,7 +529,12 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
             "       -> %s [%s]"
             % (_human_frame_label(witness, step.target_frame), "; ".join(details))
         )
-        main = witness.frames[step.target_frame].state
+        # A cycle that terminates the machine ends in a frame without a state, so
+        # the scopes are written relative to the state it started from.
+        main = (
+            witness.frames[step.target_frame].state
+            or witness.frames[step.source_frame].state
+        )
         lines.extend(
             "       %s" % _human_local_case(case, main) for case in step.local_cases
         )

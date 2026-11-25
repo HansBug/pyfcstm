@@ -972,7 +972,7 @@ BMC 原子及上下文合法性
    * - ``call_where_atom_not_allowed`` / ``cycle_not_allowed``
      - 调用快照谓词使用了除 ``active(...)`` 之外的轨迹原子（``terminated()``、``event()``、``case()``、``called()``）或裸 ``cycle``。
    * - ``invalid_active_pattern``
-     - ``active(...)`` 里的配置模式不是该模型的模式：语法错误、状态不存在、状态没有这个区域、状态不在所写的区域里、同一区域写了两次，或者在没有区域的模型里写了区域块。
+     - ``active(...)`` 里的配置模式不是该模型的模式：语法错误、状态不存在、状态没有这个区域、同一区域写了两次，或者在没有区域的模型里写了区域块。
    * - ``unknown_call_action`` / ``unknown_named_ref``
      - 模型感知调用元数据路径不存在。
    * - ``invalid_start_position``

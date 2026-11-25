@@ -1372,3 +1372,11 @@ class TestStartValuesAndFlushes:
         # once, after both regions worked. Values come from the simulator.
         trace = frames(core_of(text, 2), [{}, {}], names=("x",))
         assert [item[2] for item in trace[1:]] == [{"x": 21}, {"x": 63}]
+
+
+@pytest.mark.unittest
+def test_a_step_built_without_a_start_position_lists_no_occurrences():
+    from pyfcstm.bmc import RegionStepRelation
+    from pyfcstm.bmc.region_relation import region_occurrences
+
+    assert region_occurrences(RegionStepRelation(0, (), ())) == ()

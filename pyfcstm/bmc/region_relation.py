@@ -389,8 +389,8 @@ def _with_positions(
                 seen_main = main
                 seen = dict(regions)
                 if case.home is None:
-                    if top is not None:
-                        seen_main = z3.IntVal(ids[top])
+                    # A call outside every region runs with a state on the stack.
+                    seen_main = z3.IntVal(ids[top])
                 else:
                     seen[case.home] = (
                         z3.IntVal(ids[top])

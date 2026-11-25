@@ -96,8 +96,7 @@ def parse_active_pattern(domain: BmcDomain, text: str) -> ActivePattern:
     :rtype: ActivePattern
     :raises pyfcstm.bmc.errors.InvalidBmcQuery: If the text is not a pattern of
         this model: a syntax error, a state that does not exist, a region the
-        state does not own, a state outside the region it is written in, a region
-        written twice, or region blocks in a model without regions.
+        state does not own, a region written twice, or region blocks in a model without regions.
 
     Example::
 
@@ -114,8 +113,8 @@ def parse_active_pattern(domain: BmcDomain, text: str) -> ActivePattern:
     """
     try:
         tree = read_configuration_pattern(text)
-    except (ValueError, TypeError) as err:
-        # ValueError: syntax error or nesting too deep; TypeError: not text.
+    except ValueError as err:
+        # ValueError: syntax error or nesting too deep in the pattern text.
         raise InvalidBmcQuery("%s" % (err,)) from err
     if tree["regions"] and not domain.regions:
         raise InvalidBmcQuery(
@@ -149,10 +148,6 @@ def _check(domain: BmcDomain, node: dict) -> ActivePattern:
             written.append((region.path, wanted))
             continue
         child = _check(domain, wanted)
-        if not child.state_path.startswith(region.path + "."):
-            raise InvalidBmcQuery(
-                "state %r is not a state of region %r." % (child.state_path, region.path)
-            )
         written.append((region.path, child))
     return ActivePattern(state, tuple(written))
 

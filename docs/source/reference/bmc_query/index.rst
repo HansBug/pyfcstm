@@ -1052,8 +1052,7 @@ names exist.
    * - ``invalid_active_pattern``
      - The configuration pattern in ``active(...)`` is not a pattern of the
        model: a syntax error, an unknown state, a region the state does not own,
-       a state outside the region it is written in, a region written twice, or
-       region blocks in a model without regions.
+       a region written twice, or region blocks in a model without regions.
    * - ``unknown_call_action`` / ``unknown_named_ref``
      - A model-aware call metadata path does not exist.
    * - ``invalid_start_position``

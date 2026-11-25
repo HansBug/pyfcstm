@@ -397,9 +397,10 @@ def _with_positions(
                         if top is not None
                         else z3.IntVal(REGION_PENDING_ID)
                     )
-                if case.target_kind == "owner" and record.stage != "exit":
-                    # Once the exits are over, entering an owner that is gone
-                    # through again has put its regions back to waiting.
+                if case.target_kind == "owner" and record.stage == "enter":
+                    # The exits and the aspects of the state it leaves see where
+                    # the regions are; entering the owner again has put them back
+                    # to waiting.
                     for path in owned.get(case.target_state_path, ()):
                         seen[path] = z3.IntVal(REGION_PENDING_ID)
                 snapshots.append(PositionSnapshot(seen_main, seen))

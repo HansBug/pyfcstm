@@ -408,6 +408,10 @@ def _record_case(
     for record in relation.call_records:
         stack = record.stack_states or ()
         top = stack[-1] if stack else None
+        if case.target_kind == "owner" and record.stage == "enter":
+            # The exits and the aspects of the state it leaves see where the
+            # regions are; entering the owner again has put them back to waiting.
+            machine.enter(case.target_state_path)
         if case.home is None:
             tree = machine.tree(main_top=top)
         else:

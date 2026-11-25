@@ -362,6 +362,79 @@ FLOAT_SNAPSHOT = (
     [[], []],
 )
 
+REENTERED_OWNER = (
+    """
+    state Root {
+        event Fin;
+        [*] -> Run;
+        state Run {
+            enter abstract RunIn;
+            exit abstract RunOut;
+            region A { [*] -> P; state P; P -> [*] : /Fin; }
+            region B { [*] -> Q; state Q; Q -> [*] : /Fin; }
+        }
+        Run -> Run;
+    }
+    """,
+    ["Root.Run.RunIn", "Root.Run.RunOut"],
+    [[], ["Root.Fin"], []],
+)
+
+FORCED_REENTRY = (
+    """
+    state Root {
+        event Again; event Go;
+        [*] -> Own;
+        state Own {
+            enter abstract OwnIn; exit abstract OwnOut;
+            during before abstract OwnPre; during after abstract OwnPost;
+            region A {
+                >> during after abstract APost;
+                [*] -> P;
+                state P { enter abstract PIn; exit abstract POut; }
+                P -> Q : /Go;
+                state Q { enter abstract QIn; exit abstract QOut; }
+            }
+            region B {
+                >> during before abstract BPre;
+                [*] -> S;
+                state S { enter abstract SIn; exit abstract SOut; }
+            }
+        }
+        !Own -> Own : /Again;
+    }
+    """,
+    [
+        "Root.Own.OwnIn", "Root.Own.OwnOut", "Root.Own.OwnPre", "Root.Own.OwnPost",
+        "Root.Own.A.APost", "Root.Own.A.P.PIn", "Root.Own.A.P.POut",
+        "Root.Own.A.Q.QIn", "Root.Own.A.Q.QOut", "Root.Own.B.BPre",
+        "Root.Own.B.S.SIn", "Root.Own.B.S.SOut",
+    ],
+    [[], ["Root.Again"], ["Root.Go"], ["Root.Again"]],
+)
+
+NESTED_REENTRY = (
+    """
+    state Root {
+        [*] -> Outer;
+        state Outer {
+            region R {
+                [*] -> In;
+                state In {
+                    enter abstract InIn; exit abstract InOut;
+                    region X { [*] -> X1; state X1 { enter abstract X1In; } X1 -> [*]; }
+                    region Y { [*] -> Y1; state Y1; Y1 -> [*]; }
+                }
+                In -> In;
+            }
+            region S { [*] -> S1; state S1; }
+        }
+    }
+    """,
+    ["Root.Outer.R.In.InIn", "Root.Outer.R.In.InOut", "Root.Outer.R.In.X.X1.X1In"],
+    [[], [], [], []],
+)
+
 
 @pytest.mark.parametrize(
     "text, actions, cycles",
@@ -379,6 +452,9 @@ FLOAT_SNAPSHOT = (
         AFTER_ASPECT_ABOVE_THE_GROUP,
         AFTER_ASPECT_OF_A_COMPOSITE,
         FLOAT_SNAPSHOT,
+        REENTERED_OWNER,
+        FORCED_REENTRY,
+        NESTED_REENTRY,
     ],
     ids=[
         "wrapped_scopes",
@@ -394,6 +470,9 @@ FLOAT_SNAPSHOT = (
         "after_aspect_above_the_group",
         "after_aspect_of_a_composite",
         "float_snapshot",
+        "reentered_owner",
+        "forced_reentry",
+        "nested_reentry",
     ],
 )
 def test_the_calls_of_every_cycle_match_what_the_simulator_reports(
@@ -531,24 +610,6 @@ def test_a_cycle_is_summed_up_as_one_kind():
 
 
 
-REENTERED_OWNER = (
-    """
-    state Root {
-        event Fin;
-        [*] -> Run;
-        state Run {
-            enter abstract RunIn;
-            exit abstract RunOut;
-            region A { [*] -> P; state P; P -> [*] : /Fin; }
-            region B { [*] -> Q; state Q; Q -> [*] : /Fin; }
-        }
-        Run -> Run;
-    }
-    """,
-    ["Root.Run.RunIn", "Root.Run.RunOut"],
-    [[], ["Root.Fin"], []],
-)
-
 SCENARIOS = {
     "wrapped_scopes": WRAPPED_SCOPES,
     "after_aspects": AFTER_ASPECTS,
@@ -563,6 +624,8 @@ SCENARIOS = {
     "after_aspect_above_the_group": AFTER_ASPECT_ABOVE_THE_GROUP,
     "after_aspect_of_a_composite": AFTER_ASPECT_OF_A_COMPOSITE,
     "reentered_owner": REENTERED_OWNER,
+    "forced_reentry": FORCED_REENTRY,
+    "nested_reentry": NESTED_REENTRY,
 }
 
 

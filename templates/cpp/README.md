@@ -24,6 +24,7 @@ Generation-time helpers run inside pyfcstm; generated programs must remain self-
 | Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
 | Expression/getter emission | `../../pyfcstm/render/c_runtime.py`, explicit imports in `config.yaml`, C and poll runtimes, both wrappers |
 | Input/parameter identifiers | `readonly_value_identifier`; declarations, getters, providers, README examples and ABI tests |
+| Execution kernel, configuration type or capacity macros | `../../pyfcstm/render/c_kernel.py`, `c_kernel_engine.py`, `c_configuration.py`, both C templates' `machine.h.j2` / `machine.c.j2`, both wrappers, the generated guides, `test/render/test_c_kernel.py`, `test/render/test_c_configuration.py` and the region/alignment tests |
 | Shared C core | Edit `../c/machine.c.j2` / `machine.h.j2`; these files are symlinked here. Test both the core and wrapper suites |
 
 ## Runtime contracts
@@ -45,6 +46,15 @@ Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, 
 
 The wrapper remains C++98-compatible, exception-free, RTTI-free and free of STL container requirements. It delegates to public C functions and never implements another execution engine or reads private machine fields. Semantic alignment must enter through `machine.hpp`, `Wrapper::` aliases and wrapper methods. Packaged archives must resolve C-core symlinks to ordinary files and work without the sibling template directory. `experimental: true` describes early first-class template status, not missing runtime functionality.
 
+## Shared kernel
+
+The execution core comes from the symlinked C core template and is generated per model by `../../pyfcstm/render/c_kernel.py`, `c_kernel_engine.py` and `c_configuration.py`; see the `c` maintainer guide for its invariants. The wrapper adds these obligations:
+
+- Every public C function the wrapper forwards to must keep its signature. A new C function that guides document needs a wrapper method in `machine.hpp.j2` / `machine.cpp.j2` and a row in both generated guides.
+- The configuration queries are static wrapper methods; `operator==` and `operator!=` live in the wrapper namespace, so a user reaches them only after a using-directive.
+- `current_state_id()` and `current_state_path()` are emitted only when `not model.has_regions`, matching the C header.
+- The guides take events, abstract actions and action ids from `event_paths`, `hook_rows` and `action_rows`, which include items declared on a region.
+
 ## Documentation maintenance
 
 Maintain the user journey as a whole. There must be one complete Quick Start, followed by extensions of the same instance, recovery, API reference and advanced integration. A new API belongs in its existing tutorial section and reference table; replace obsolete examples and remove duplicate explanations in the same edit. Do not append a second quick start, final “complete example” or corrective note to compensate for a broken earlier section.
@@ -63,7 +73,10 @@ Run commands from the repository root. `make template_unittest` refreshes packag
 
 ```bash
 make tpl
-PYFCSTM_TEMPLATE_SUITES=c,cpp make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll,cpp,cpp_poll make template_unittest
+python -m pytest test/render/test_c_kernel.py test/render/test_c_configuration.py
+make doctest DOCTEST_SCOPE=pyfcstm/render
+make c_kernel_alignment_check
 make test_boundary_check resource_ownership_check
 make rst_auto
 ```

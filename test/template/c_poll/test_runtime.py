@@ -8,7 +8,7 @@ import pytest
 
 from test.template.readme_examples import example_code
 
-from ._utils import render_c_artifacts, render_c_runtime
+from ._utils import SimulationRuntimeDfsError, render_c_artifacts, render_c_runtime
 
 _CLANG_FORMAT_STYLE = '{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}'
 
@@ -663,7 +663,7 @@ class TestCPollBuiltinTemplate:
             assert runtime.current_state_path == ('System', 'Running')
             assert runtime.vars == {'counter': 111}
 
-    def test_generated_machine_classifies_unchanged_self_loop_as_delta(self):
+    def test_generated_machine_reports_a_pseudo_state_self_loop_as_a_loop(self):
         dsl_code = """
         state Root {
             state A;
@@ -680,12 +680,14 @@ class TestCPollBuiltinTemplate:
             assert runtime.last_cycle_was_delta is False
             runtime.hot_start('Root.P', {})
             assert runtime.current_state_path == ('Root', 'P')
-            runtime.cycle()
-            assert runtime.last_cycle_was_delta is True
-            runtime.cycle()
-            assert runtime.last_cycle_was_delta is True
+            # The simulator reports a pseudo state that only leads back to
+            # itself as a loop, and the generated runtime does the same; the
+            # position is kept.
+            with pytest.raises(SimulationRuntimeDfsError, match='suspected loop'):
+                runtime.cycle()
+            assert runtime.current_state_path == ('Root', 'P')
 
-    def test_generated_machine_detects_two_state_cycle_without_actions(self):
+    def test_generated_machine_reports_a_two_state_pseudo_cycle_as_a_loop(self):
         dsl_code = """
         state Root {
             pseudo state A;
@@ -698,9 +700,9 @@ class TestCPollBuiltinTemplate:
 
         with render_c_runtime(dsl_code) as (runtime, _):
             runtime.hot_start('Root.A', {})
-            runtime.cycle()
+            with pytest.raises(SimulationRuntimeDfsError, match='suspected loop'):
+                runtime.cycle()
             assert runtime.current_state_path == ('Root', 'A')
-            assert runtime.last_cycle_was_delta is True
 
     def test_generated_machine_create_failure_cannot_be_cycled(self):
         dsl_code = """
@@ -1156,18 +1158,6 @@ class TestCPollBuiltinTemplate:
 
                 assert formatted_once == formatted_twice
                 assert "\t" not in formatted_once
-
-    def test_generated_hot_start_checks_stack_depth_before_path_write(self):
-        with render_c_artifacts(_representative_gate_dsl()) as artifacts:
-            with open(artifacts["machine_c_file"], "r", encoding="utf-8") as f:
-                source = f.read()
-
-            hot_start = source.index("int ControlMachine_hot_start(")
-            path_loop = source.index("path_count = 0u;", hot_start)
-            guard = source.index("if (path_count >=", path_loop)
-            write = source.index("path_ids[path_count++]", path_loop)
-
-            assert guard < write
 
     def test_generated_readme_code_blocks_are_formatter_friendly(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:

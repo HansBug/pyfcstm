@@ -31,9 +31,12 @@ import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.simulate import SimulationRuntimeEventError
 from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
 from test.testings.native_toolchain_alignment.harness import (
+    EVENT_RESOLUTION_ERROR_PREFIX,
+    INVALID_START_ERROR_PREFIX,
     HarnessContext,
     render_cmake_project,
     render_harness,
@@ -100,6 +103,17 @@ class _ObservationRuntime:
     @property
     def outputs(self):
         return {name: self.vars[name] for name in self._output_names}
+
+    @property
+    def configuration(self):
+        """
+        Return the configuration text of a model with regions.
+
+        :return: The text the harness printed as the position, or ``None`` once
+            the machine has ended.
+        :rtype: typing.Optional[str]
+        """
+        return self._observation["current_state"]
 
     @property
     def is_ended(self) -> bool:
@@ -393,8 +407,36 @@ def _assert_expected_exception_from_observation(
 ) -> None:
     message = observation.get("last_error")
     assert message, "%s %s expected native error" % (case.id, field_path)
+    if message.startswith(EVENT_RESOLUTION_ERROR_PREFIX):
+        simulate_semantics._assert_exception(
+            SimulationRuntimeEventError(message[len(EVENT_RESOLUTION_ERROR_PREFIX):]),
+            expect,
+            case,
+            field_path,
+        )
+        return
+    if message.startswith(INVALID_START_ERROR_PREFIX):
+        simulate_semantics._assert_exception(
+            ValueError(message[len(INVALID_START_ERROR_PREFIX):]),
+            expect,
+            case,
+            field_path,
+        )
+        return
     template_utils = _template_utils(template_name)
     error, cause = template_utils._runtime_exception_from_message(message)
+    raises = expect.get("raises") or {}
+    if raises.get("type") == "SimulationRuntimeDfsError":
+        # A native runtime reports which kind of search failure it hit, a loop or
+        # a safety limit, but does not reproduce the simulator's wording or the
+        # position the loop was found at.
+        assert "SimulationRuntimeDfsError" in [
+            cls.__name__ for cls in type(error).__mro__
+        ], "%s %s expected a search failure, got %r" % (case.id, field_path, message)
+        assert ("suspected loop" in message) == (
+            "suspected loop" in str(raises.get("match", ""))
+        ), "%s %s search failure kind mismatch: %r" % (case.id, field_path, message)
+        return
     if cause is not None:
         try:
             raise error from cause

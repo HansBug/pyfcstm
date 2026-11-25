@@ -1,27 +1,66 @@
 """Built-in template ``cpp_poll`` and models that declare regions."""
 
+import os
+
 import pytest
 from hbutils.testing import simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
+from test.template.cpp_poll._utils import compile_and_run_cpp_poll_wrapper_harness, render_cpp_poll_artifacts
+from test.testings.native_semantic_alignment import iter_native_semantic_cases
+from test.testings.simulate_semantics import iter_semantic_cases
 
 pytestmark = pytest.mark.unittest
 
 REGION_SOURCE = 'state Root { region Worker { state Idle; [*] -> Idle; } }'
 
 
-def test_generate_refuses_a_region_model_until_the_template_declares_it(tmp_path):
+def test_generate_writes_a_runtime_for_a_region_model(tmp_path):
     source = tmp_path / 'regions.fcstm'
     source.write_text(REGION_SOURCE, encoding='utf-8')
     output = tmp_path / 'generated'
-    output.mkdir()
-    (output / 'keep.txt').write_text('existing output', encoding='utf-8')
     result = simulate_entry(
         pyfcstmcli,
         ['pyfcstm', 'generate', '-i', str(source), '--template', 'cpp_poll', '-o', str(output)],
     )
     text = result.stdout + result.stderr
-    assert result.exitcode != 0
-    assert "generate with built-in template 'cpp_poll' does not support region models yet." in text
+    assert result.exitcode == 0, text
     assert 'Traceback' not in text
-    assert [item.name for item in output.iterdir()] == ['keep.txt']
+    assert {'machine.c', 'machine.h', 'machine.cpp', 'machine.hpp'} <= {item.name for item in output.iterdir()}
+    header = (output / 'machine.hpp').read_text(encoding='utf-8')
+    # A model with regions has no single current state, so no query for one.
+    assert 'current_state_id' not in header
+    assert 'hot_start_at' in header
+    assert 'format_configuration' in header
+
+
+def test_the_whole_region_corpus_runs_on_the_cpp_poll_template():
+    selected = {case.id for case in iter_native_semantic_cases('cpp_poll')}
+    regions = {case.id for case in iter_semantic_cases(categories=['regions'])}
+    assert regions
+    assert regions <= selected
+
+
+def _controller_dsl():
+    path = os.path.join(
+        os.path.dirname(__file__), '..', '..', 'testfile', 'region_diagram', 'controller.fcstm'
+    )
+    with open(path, encoding='utf-8') as stream:
+        return stream.read()
+
+
+@pytest.mark.parametrize('readme_key', ['readme_file', 'readme_zh_file'])
+def test_region_readme_examples_run(readme_key):
+    from test.template.cpp_poll._utils import compile_and_run_cpp_poll_wrapper_harness as compile_harness
+    from test.template.readme_examples import example_code, extend_native_main
+
+    with render_cpp_poll_artifacts(_controller_dsl()) as artifacts:
+        with open(artifacts[readme_key], encoding='utf-8') as stream:
+            readme = stream.read()
+        source = extend_native_main(
+            example_code(readme, 'quick-start'),
+            example_code(readme, 'hot-start') + '\n' + example_code(readme, 'configuration'),
+        )
+        run = compile_harness(artifacts, 'region_readme_' + readme_key, source)
+        assert run.returncode == 0, run.stderr
+        assert 'round trip equal = 1' in run.stdout, run.stdout

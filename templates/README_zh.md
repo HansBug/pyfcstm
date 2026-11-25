@@ -216,6 +216,22 @@ Generated implementation files 应优先服务模型语义、可预测执行和�
 
 C/C++ 生成指南必须在相关用法和构建说明中讲清集成边界。只拿到生成目录的用户， 也应能直接看到 compiler/profile 边界、内存 ownership 选择、event/hook 要求、单实例并发假设、 外部设备 adapter 边界、numeric inspect 入口，以及“工程证据不等于认证”的边界，而不需要阅读本维护手册。
 
+## C 系模板公开接口迁移
+
+四个 C 系模板（`c`、`c_poll`、`cpp`、`cpp_poll`）声明了 `features: [region]`，并共用同一个专用化的静态内存执行核。下文用 `<M>` 表示生成的状态机类前缀，用 `<MACRO>` 表示其宏前缀。这些模板在声明该特性之前会拒绝含区域的模型，因此区域支持本身是新增能力而不是迁移项。只列出现有接口上实际发生的变化；形如 `<M>_...` 的名字在 C++ 封装中对应生成指南里列出的方法。
+
+| 旧接口 | 新接口 | 迁移说明 |
+| --- | --- | --- |
+| 状态机类型公开帧、栈和临时存储成员 | `<M>` 是不透明类型：一个对齐成员加上 `unsigned char _private[<MACRO>_STORAGE_BYTES]` | 只通过公开函数读取状态机；存储仍由调用方拥有，不使用堆 |
+| `<MACRO>_MAX_STACK_DEPTH` 与 `<MACRO>_MAX_DFS_STEPS` | 已删除 | 仿真器的限制（嵌套深度 64、组嵌套 64、1000 步）固定不变，不可配置 |
+| 没有容量宏 | `<MACRO>_ARENA_CAPACITY`、`<MACRO>_TRAIL_CAPACITY` 以及由它们推导的 `<MACRO>_STORAGE_BYTES` | 默认值适合模型；在包含 `machine.h` 之前覆盖，并在所有编译单元使用相同的值。搜索超出容量时以点名对应宏的 `capacity safety limit` 消息失败 |
+| 位置只能读成唯一的当前状态 | `<M>Configuration`、`<M>_get_configuration`、`<M>_hot_start_at`、`<M>_hot_start_at_with_parameters`，以及 `<M>_configuration_region_status` / `_is_active` / `_leaves` / `_validate` 查询 | `<M>_configuration_format` / `_parse` 读写仿真器的文本形式，可用 `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` 去掉 |
+| `<M>_current_state_id`、`_current_state_path`、`_current_state_name` 总是生成 | 只为不含区域的模型生成 | 含区域的模型（这些模板此前会拒绝它）没有唯一的当前状态：用 `get_configuration` 获取，用 `hot_start_at` 恢复；普通的 `hot_start` 仍接受一个位于所有区域之外的状态 |
+| 经过伪状态的闭环以 Delta 周期结束 | 周期以 `suspected loop` 错误失败 | 增加退出、能终止的守卫，或把驱动事件分开 |
+| 生成的 `machine.c` 的内部布局 | 由 `pyfcstm/render/c_kernel.py`、`c_kernel_engine.py` 和 `c_configuration.py` 按模型专用化生成 | 不要依赖任何内部名字或布局 |
+
+除上表之外，不含区域的模型行为不变。
+
 ## Source context contract
 
 当前 renderer 会传入 model object，但不会传入 raw source text。因此 generated artifacts 必须精确标注 model text 来源：

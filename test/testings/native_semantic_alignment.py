@@ -293,8 +293,48 @@ def _normalize_events_for_native(events: Any) -> Any:
     return events
 
 
-def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
-    return {
+def _exception_family(error: BaseException) -> str:
+    """
+    Name the exception class two runtimes are compared by.
+
+    Every exception of the ``SimulationRuntimeDfsError`` family (including the
+    simulator's private loop subclass) compares as one class, because a native
+    runtime reports "the speculative search found a loop" or "the search ran
+    past a safety limit" and the finer simulator class is not part of that
+    report. Any other exception compares by its own class name.
+
+    :param error: Exception raised by the simulator or by a native adapter.
+    :type error: BaseException
+    :return: ``SimulationRuntimeDfsError`` for the family, else the class name.
+    :rtype: str
+    """
+    if "SimulationRuntimeDfsError" in [cls.__name__ for cls in type(error).__mro__]:
+        return "SimulationRuntimeDfsError"
+    return type(error).__name__
+
+
+def _dfs_error_category(error: BaseException) -> str:
+    """
+    Classify an exception of the ``SimulationRuntimeDfsError`` family.
+
+    The two categories are what a native runtime can report without
+    reproducing the simulator's wording: ``loop`` for a search that came back to
+    a position it was already examining, and ``limit`` for a search that ran past
+    the step, depth or group-nesting safety limit. Where each limit triggers
+    differs between implementations; only "unbounded in either" is shared.
+
+    :param error: Exception of the ``SimulationRuntimeDfsError`` family.
+    :type error: BaseException
+    :return: ``loop`` or ``limit``.
+    :rtype: str
+    """
+    return "loop" if "suspected loop" in str(error) else "limit"
+
+
+def _native_handler_call_record(
+    runtime: Any, ctx: Any, with_configuration: bool = False
+) -> Dict[str, Any]:
+    record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
@@ -304,6 +344,9 @@ def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
         "abstract_target": ctx.abstract_target,
         "named_ref": ctx.named_ref,
     }
+    if with_configuration:
+        record["configuration"] = ctx.configuration
+    return record
 
 
 def _install_native_fixture_handlers(
@@ -313,6 +356,8 @@ def _install_native_fixture_handlers(
     if not case.data.get("handlers"):
         return calls
     hook_map = runtime.get_abstract_hook_map()
+    # Only region cases observe the configuration, as for the other runners.
+    with_configuration = "regions" in case.data["categories"]
     callback_map = {}
     for handler_data in case.data.get("handlers") or []:
         hook_name = hook_map[handler_data["action"]]
@@ -321,7 +366,9 @@ def _install_native_fixture_handlers(
             ctx, machine=runtime, item=handler_data, handler_calls=calls
         ):
             if item["behavior"] == "record_call":
-                handler_calls.append(_native_handler_call_record(machine, ctx))
+                handler_calls.append(
+                    _native_handler_call_record(machine, ctx, with_configuration)
+                )
             else:
                 raise ValueError("handlers behavior is invalid: %r" % item["behavior"])
 
@@ -336,6 +383,9 @@ class _GeneratedNativeAlignmentRuntime:
         self._native_runtime = native_runtime
         self._dsl_code = dsl_code
         self._last_simulation_delta = False
+        self._has_regions = bool(
+            getattr(simulation_runtime.state_machine, "has_regions", False)
+        )
         if hasattr(simulation_runtime, "_fixture_input_source"):
             self._fixture_input_source = simulation_runtime._fixture_input_source
 
@@ -363,6 +413,10 @@ class _GeneratedNativeAlignmentRuntime:
             % (self._dsl_code, value)
         )
         return value
+
+    @property
+    def configuration(self) -> Optional[str]:
+        return self._native_runtime.configuration
 
     @property
     def current_state(self) -> Optional[_StateProxy]:
@@ -395,7 +449,22 @@ class _GeneratedNativeAlignmentRuntime:
             "%s: vars mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
             % (when, self._dsl_code, comparable_sim_vars, comparable_native_vars)
         )
-        if sim_ended:
+        if self._has_regions:
+            # A model with regions has no single current state: the position is
+            # the configuration, compared as the text both sides print.
+            native_configuration = self._native_runtime.configuration
+            if sim_ended:
+                assert native_configuration is None, (
+                    "%s: native configuration should be None after end for DSL:\n%s\nconfiguration=%r"
+                    % (when, self._dsl_code, native_configuration)
+                )
+            else:
+                sim_configuration = str(self._simulation_runtime.configuration)
+                assert sim_configuration == native_configuration, (
+                    "%s: configuration mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
+                    % (when, self._dsl_code, sim_configuration, native_configuration)
+                )
+        elif sim_ended:
             assert self._native_runtime.current_state_path is None, (
                 "%s: native current_state_path should be None after end for DSL:\n%s\npath=%r"
                 % (when, self._dsl_code, self._native_runtime.current_state_path)
@@ -453,7 +522,7 @@ class _GeneratedNativeAlignmentRuntime:
                 "cycle(events=%r) exception mismatch for DSL:\n%s\nsimulation=%r, native=%r"
                 % (events, self._dsl_code, sim_exc, native_exc)
             )
-            assert type(sim_exc).__name__ == type(native_exc).__name__, (
+            assert _exception_family(sim_exc) == _exception_family(native_exc), (
                 "cycle(events=%r) exception type mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
                 % (
                     events,
@@ -464,17 +533,32 @@ class _GeneratedNativeAlignmentRuntime:
                     native_exc,
                 )
             )
-            assert str(sim_exc) == str(native_exc), (
-                "cycle(events=%r) exception message mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
-                % (
-                    events,
-                    self._dsl_code,
-                    type(sim_exc).__name__,
-                    sim_exc,
-                    type(native_exc).__name__,
-                    native_exc,
+            if _exception_family(sim_exc) == "SimulationRuntimeDfsError":
+                # The native runtime reports the kind of failure, not the
+                # simulator's wording (which names the positions it visited).
+                assert _dfs_error_category(sim_exc) == _dfs_error_category(native_exc), (
+                    "cycle(events=%r) search failure category mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_exc).__name__,
+                        sim_exc,
+                        type(native_exc).__name__,
+                        native_exc,
+                    )
                 )
-            )
+            else:
+                assert str(sim_exc) == str(native_exc), (
+                    "cycle(events=%r) exception message mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_exc).__name__,
+                        sim_exc,
+                        type(native_exc).__name__,
+                        native_exc,
+                    )
+                )
             sim_cause = sim_exc.__cause__
             native_cause = native_exc.__cause__
             assert (sim_cause is None) == (native_cause is None), (

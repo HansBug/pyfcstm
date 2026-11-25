@@ -514,6 +514,49 @@ class TestInspectModelViews:
             'owner_never_completes': 1,
         }
 
+    def test_the_exits_of_a_forced_transition_do_not_let_the_composite_state_go_on(self):
+        # ``!Run -> Idle`` takes the machine to ``Idle`` through its own exits, so
+        # ``Run -> Done`` still waits for a child that leaves on its own.
+        dsl = """
+        state Root {
+            event Reset;
+            [*] -> Run;
+            state Run { state A; [*] -> A; }
+            state Done;
+            state Idle;
+            Run -> Done;
+            !Run -> Idle : /Reset;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        unreachable = {
+            diag.refs['state_path']
+            for diag in report.diagnostics if diag.code == 'W_UNREACHABLE_STATE'
+        }
+        assert unreachable == {'Root.Done'}
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'owner_never_completes': 1,
+        }
+
+    def test_an_authored_forced_exit_lets_the_composite_state_go_on(self):
+        dsl = """
+        state Root {
+            event Reset;
+            [*] -> Run;
+            state Run { state A; [*] -> A; !A -> [*] :: Reset; }
+            state Done;
+            Run -> Done;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE' for diag in report.diagnostics
+        )
+
     def test_a_history_default_is_an_entry_of_the_composite_state_that_can_complete(self):
         # ``Off -> C.[H]`` restores ``B`` (the default of the history), and ``B``
         # leaves, so ``C`` can be over although its initial child ``A`` cannot.

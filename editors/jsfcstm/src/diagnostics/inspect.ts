@@ -2460,10 +2460,18 @@ function branchCanFinish(
         reachable.add(entry);
         (graph[entry] ?? []).forEach(next => reachable.add(next));
     }
+    // The expansion of ``!S -> T`` lets every state below ``S`` leave through
+    // ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
+    // hand the machine to that forced transition, so they do not let ``S`` go on
+    // through its ordinary transitions.
+    const forcedSources = new Set(transitions
+        .filter(t => t.is_forced)
+        .map(t => JSON.stringify([t.forced_origin, t.from_path])));
     return transitions.some(t =>
         t.to_path === EXIT_MARK
         && t.from_path !== INIT_MARK
         && t.from_path.slice(0, t.from_path.lastIndexOf('.')) === path
+        && !(t.is_forced && forcedSources.has(JSON.stringify([t.forced_origin, path])))
         && reachable.has(t.from_path)
         && (!composites.has(t.from_path) || t.is_forced || completable.has(t.from_path)));
 }

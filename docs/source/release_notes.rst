@@ -226,8 +226,14 @@ takes its ordinary outgoing transitions, so the state it leads to is reported
 by ``W_UNREACHABLE_STATE`` and the transition gets the reason
 ``owner_never_completes`` in ``unreachable_transition_reasons``. The simulator
 behaves that way already; earlier reports treated the composite state as
-something the machine could simply leave. The jsfcstm inspect report follows the
-same rule.
+something the machine could simply leave. The exits that the expansion of
+``!S -> T`` adds below ``S`` do not count as a child leaving on its own, and a
+history default that a transition enters through ``Owner.[H]`` starts a branch
+like the initial transition does. The jsfcstm inspect report follows the same
+rule. The algorithms of ``pyfcstm.verify`` judge the machine that runs, where a
+forced declaration is a relay, and stay a guard-agnostic over-approximation
+there: a state behind a composite that only a forced declaration can take
+elsewhere may still be listed as reachable by them.
 
 The solver queries of ``pyfcstm.verify`` each run in a Z3 context of their own.
 Extracting one model from the shared context used to turn the answer of a later

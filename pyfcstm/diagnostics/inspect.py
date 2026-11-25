@@ -2916,10 +2916,20 @@ def _region_can_finish(
     reachable = set(entries)
     for start in tuple(reachable):
         reachable |= set(mapping.get(start, ()))
+    # The expansion of ``!S -> T`` lets every state below ``S`` leave through
+    # ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
+    # hand the machine to that forced transition, so they do not let ``S`` go on
+    # through its ordinary transitions.
+    forced_sources = {
+        (transition.forced_origin, transition.from_path)
+        for transition in transitions if transition.is_forced
+    }
     for transition in transitions:
         if transition.to_path != _EXIT_MARK or transition.from_path == _INIT_MARK:
             continue
         if transition.from_path.rsplit('.', 1)[0] != region.path:
+            continue
+        if transition.is_forced and (transition.forced_origin, region.path) in forced_sources:
             continue
         if transition.from_path not in reachable:
             continue

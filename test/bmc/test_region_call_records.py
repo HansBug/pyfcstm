@@ -624,7 +624,13 @@ SCENARIOS = {
     "after_aspect_above_the_group": AFTER_ASPECT_ABOVE_THE_GROUP,
     "after_aspect_of_a_composite": AFTER_ASPECT_OF_A_COMPOSITE,
     "reentered_owner": REENTERED_OWNER,
-    "forced_reentry": FORCED_REENTRY,
+    # The queries ask about every pattern of every call, so the model is asked about
+    # the calls of the re-entered owner only, over two forced re-entries.
+    "forced_reentry": (
+        FORCED_REENTRY[0],
+        ["Root.Own.OwnIn", "Root.Own.OwnOut", "Root.Own.B.S.SIn"],
+        [[], ["Root.Again"], ["Root.Again"]],
+    ),
     "nested_reentry": NESTED_REENTRY,
 }
 

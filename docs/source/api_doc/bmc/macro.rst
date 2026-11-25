@@ -58,7 +58,7 @@ CycleCase
 -----------------------------------------------------
 
 .. autoclass:: CycleCase
-    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,consumed_events,domain
+    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,consumed_events,domain,transitions
 
 
 PartitionCheckResult

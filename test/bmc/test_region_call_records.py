@@ -529,3 +529,204 @@ def test_a_cycle_is_summed_up_as_one_kind():
     )
     assert moved.kind(False, False, False) == "transition"
 
+
+
+SCENARIOS = {
+    "wrapped_scopes": WRAPPED_SCOPES,
+    "after_aspects": AFTER_ASPECTS,
+    "nested_group": NESTED_GROUP,
+    "forced_exit": FORCED_EXIT,
+    "continuation": CONTINUATION,
+    "finishing_region_aspect": FINISHING_REGION_ASPECT,
+    "nested_owner_aspect": NESTED_OWNER_ASPECT,
+    "nested_region_after_aspect": NESTED_REGION_AFTER_ASPECT,
+    "done_sibling_before_nested_aspect": DONE_SIBLING_BEFORE_NESTED_ASPECT,
+    "single_region_owner_below_aspect": SINGLE_REGION_OWNER_BELOW_ASPECT,
+    "after_aspect_above_the_group": AFTER_ASPECT_ABOVE_THE_GROUP,
+    "after_aspect_of_a_composite": AFTER_ASPECT_OF_A_COMPOSITE,
+}
+
+
+@pytest.mark.parametrize("name", sorted(SCENARIOS))
+def test_a_query_counts_the_calls_of_every_state_the_way_the_simulator_makes_them(
+    name,
+):
+    # For every action, every cycle and every state a handler was ever told, the
+    # number of calls a query selects with ``state=`` is the number the simulator
+    # made there, and no call is made in a state no handler was told.
+    from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+
+    text, actions, cycles = SCENARIOS[name]
+    model = load_state_machine_from_text(text)
+    wanted = simulated_calls(text, actions, cycles)
+    events = sorted(
+        ".".join(event.path)
+        for state in model.walk_states()
+        for event in state.events.values()
+    )
+    lines = [
+        'assume event("%s", %d) == %s;' % (event, index, "true" if event in fired else "false")
+        for index, fired in enumerate(cycles)
+        for event in events
+    ]
+    every_state = sorted(".".join(state.path) for state in model.walk_states())
+    terms = []
+    for action in actions:
+        for index, calls in enumerate(wanted):
+            for field in ("state", "active_leaf"):
+                # Every state of the model, so also the ones no handler was told.
+                for state in every_state:
+                    count = sum(
+                        1
+                        for call in calls
+                        if call["action"] == action and call[field] == state
+                    )
+                    terms.append(
+                        'call_count("%s", step=%d, %s="%s") == %d'
+                        % (action, index, field, state, count)
+                    )
+    # One query per slice keeps the conjunction a size a person would write.
+    for start in range(0, len(terms), 40):
+        check = "check reach <= %d: %s;" % (
+            len(cycles),
+            " && ".join(terms[start : start + 40]),
+        )
+        result = solve_bmc_property(
+            compile_bmc_query(model, "\n".join(lines + [check]))
+        )
+        assert result.witness_found is True, terms[start : start + 40]
+
+
+def _region_value(tree, region_path):
+    """Return what a configuration tree says about a region: a node, ``None`` or ``'init'``."""
+    owner, _, name = region_path.rpartition(".")
+    pending = [tree]
+    while pending:
+        node = pending.pop()
+        if node["state"] == owner:
+            for item in node["regions"]:
+                if item["name"] == name:
+                    return item["configuration"]
+            return "init"
+        pending.extend(
+            item["configuration"] for item in node["regions"] if item["configuration"]
+        )
+    return "absent"
+
+
+def _matches(configuration, tree, pattern):
+    """Whether a configuration matches a pattern read from text: free regions are free."""
+    if not configuration.is_active(pattern["state"]):
+        return False
+    for item in pattern["regions"]:
+        region_path = pattern["state"] + "." + item["name"]
+        value = _region_value(tree, region_path)
+        wanted = item["configuration"]
+        if wanted == "done":
+            if value is not None:
+                return False
+        elif wanted == "init":
+            if value != "init":
+                return False
+        else:
+            if not isinstance(value, dict) or not _matches(configuration, tree, wanted):
+                return False
+    return True
+
+
+def _variants(text):
+    """The text of a configuration, and the patterns that can be made of it."""
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    tree = read_configuration_pattern(text)
+    found = {text}
+
+    def render(node, base=""):
+        if isinstance(node, str):
+            return "[%s]" % node
+        body = ", ".join(
+            "%s: %s"
+            % (
+                item["name"],
+                render(item["configuration"], node["state"] + "." + item["name"] + "."),
+            )
+            for item in node["regions"]
+        )
+        # A nested state is written relative to the region it sits in.
+        return node["state"][len(base) :] + ("{%s}" % body if body else "")
+
+    def walk(node, rebuild):
+        regions = node["regions"]
+        for index in range(len(regions)):
+            kept = regions[:index] + regions[index + 1 :]
+            found.add(render(rebuild(dict(node, regions=kept))))
+            for marker in ("done", "init"):
+                swapped = [dict(item) for item in regions]
+                swapped[index]["configuration"] = marker
+                found.add(render(rebuild(dict(node, regions=swapped))))
+            child = regions[index]["configuration"]
+            if isinstance(child, dict):
+                walk(
+                    child,
+                    lambda made, index=index, node=node, rebuild=rebuild: rebuild(
+                        dict(
+                            node,
+                            regions=[
+                                dict(item, configuration=made) if i == index else item
+                                for i, item in enumerate(node["regions"])
+                            ],
+                        )
+                    ),
+                )
+
+    walk(tree, lambda made: made)
+    return sorted(found)
+
+
+@pytest.mark.parametrize("name", sorted(SCENARIOS))
+def test_a_query_asks_where_the_machine_is_at_the_moment_of_each_call(name):
+    # For every cycle, ``call_count(action, step=k, where active(P))`` counts the
+    # calls whose handler was handed a configuration that matches ``P``, for the
+    # configurations the handlers saw and the patterns that can be made of them.
+    from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+    from pyfcstm.model import Configuration
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    text, actions, cycles = SCENARIOS[name]
+    model = load_state_machine_from_text(text)
+    wanted = simulated_calls(text, actions, cycles)
+    events = sorted(
+        ".".join(event.path)
+        for state in model.walk_states()
+        for event in state.events.values()
+    )
+    lines = [
+        'assume event("%s", %d) == %s;' % (event, index, "true" if event in fired else "false")
+        for index, fired in enumerate(cycles)
+        for event in events
+    ]
+    patterns = sorted(
+        {variant for calls in wanted for call in calls for variant in _variants(call["configuration"])}
+    )
+    terms = []
+    for action in actions:
+        for index, calls in enumerate(wanted):
+            for pattern in patterns:
+                parsed = read_configuration_pattern(pattern)
+                count = 0
+                for call in calls:
+                    if call["action"] != action:
+                        continue
+                    configuration = Configuration.parse(
+                        model, call["configuration"], mode="transient"
+                    )
+                    if _matches(configuration, configuration.to_dict(), parsed):
+                        count += 1
+                terms.append(
+                    'call_count("%s", step=%d, where active("%s")) == %d'
+                    % (action, index, pattern, count)
+                )
+    for start in range(0, len(terms), 30):
+        check = "check reach <= %d: %s;" % (len(cycles), " && ".join(terms[start : start + 30]))
+        result = solve_bmc_property(compile_bmc_query(model, "\n".join(lines + [check])))
+        assert result.witness_found is True, terms[start : start + 30]

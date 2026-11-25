@@ -6,12 +6,6 @@ pyfcstm.bmc.region\_relation
 .. automodule:: pyfcstm.bmc.region_relation
 
 
-GROUP\_REENTRY\_LIMIT
------------------------------------------------------
-
-.. autodata:: GROUP_REENTRY_LIMIT
-
-
 \_\_all\_\_
 -----------------------------------------------------
 
@@ -36,14 +30,21 @@ RegionOccurrence
 -----------------------------------------------------
 
 .. autoclass:: RegionOccurrence
-    :members: call_records,order,condition,case,flush
+    :members: call_records,order,condition,case,flush,positions
+
+
+PositionSnapshot
+-----------------------------------------------------
+
+.. autoclass:: PositionSnapshot
+    :members: main,regions
 
 
 RegionStepRelation
 -----------------------------------------------------
 
 .. autoclass:: RegionStepRelation
-    :members: step_index,cases,constraints,flushes,rolled_back
+    :members: step_index,cases,constraints,flushes,rolled_back,start,owned,state_ids
 
 
 region\_occurrences

@@ -51,6 +51,7 @@ from pyfcstm.bmc import (
     solve_bmc_property,
 )
 from pyfcstm.model import Configuration, load_state_machine_from_text
+from pyfcstm.model.region import walk_namespaces
 from pyfcstm.model.expr import (
     BinaryOp,
     ConditionalOp,
@@ -310,9 +311,12 @@ _REGION_FAILING_GUARDS = ("10 % d == 0", "x / d > 1")
 class _Pool:
     """The actions and guards a random region model is made of."""
 
-    def __init__(self, errors=False):
+    def __init__(self, errors=False, abstract=False):
         self.actions = _REGION_ACTIONS + (_REGION_FAILING_ACTIONS if errors else ())
         self.guards = _REGION_GUARDS + (_REGION_FAILING_GUARDS if errors else ())
+        # Whether scopes and leaves also declare abstract actions.  The extra
+        # random draws only happen with it, so the other models stay the same.
+        self.abstract = abstract
 
 
 def _aspect_lines(rng, probability, pool):
@@ -321,6 +325,10 @@ def _aspect_lines(rng, probability, pool):
     for when in ("before", "after"):
         if rng.random() < probability:
             lines.append(">> during %s { %s }" % (when, rng.choice(pool.actions)))
+    if pool.abstract:
+        for when in ("before", "after"):
+            if rng.random() < 0.6:
+                lines.append(">> during %s abstract Hook%s;" % (when, when.title()))
     return lines
 
 
@@ -349,6 +357,8 @@ def _region_body(rng, name, depth, pool):
             parts.append("enter { %s }" % rng.choice(pool.actions))
         if rng.random() < 0.7:
             parts.append("during { %s }" % rng.choice(pool.actions))
+        if pool.abstract and rng.random() < 0.5:
+            parts.append("during abstract Work;")
         lines.append("    state %s { %s }" % (state, " ".join(parts)))
     for source in names:
         for target in names + ["[*]", "[*]"]:
@@ -362,13 +372,14 @@ def _region_body(rng, name, depth, pool):
     return "\n".join(lines)
 
 
-def _region_model(rng, errors=False):
+def _region_model(rng, errors=False, abstract=False):
     """Return a random machine whose ``Run`` state owns two or three regions.
 
     With ``errors`` the guards and actions also include operations that divide by
-    the input and so raise for some inputs.
+    the input and so raise for some inputs.  With ``abstract`` the scopes also
+    declare abstract ``>> during`` aspects and the leaves abstract during actions.
     """
-    pool = _Pool(errors)
+    pool = _Pool(errors, abstract)
     regions = "\n".join(
         "        " + _region_body(rng, "R%d" % index, 0, pool).replace("\n", "\n        ")
         for index in range(rng.randint(2, 3))
@@ -825,6 +836,319 @@ def check_region_properties(count, seed, steps=3):
     return checked, undecided, skipped, failures
 
 
+def _abstract_actions(model):
+    """Return the full names of the abstract actions a model declares."""
+    names = []
+    for namespace in walk_namespaces(model.root_state):
+        actions = list(namespace.on_during_aspects)
+        actions.extend(getattr(namespace, "on_durings", ()) or ())
+        names.extend(action.func_name for action in actions if action.is_abstract)
+    return sorted(set(names))
+
+
+def check_region_calls(count, seed, steps=3, sequences=4):
+    """Return ``(checked, undecided, skipped, failures)`` for call filters.
+
+    A random region model with abstract actions on its scopes and leaves is run
+    in the simulator over a few sequences of inputs and events, with a handler on
+    every abstract action.  A query pinned to the same sequence must count the
+    calls the way the simulator made them: for every action and every cycle,
+    ``call_count(..., step=k, state=...)`` and the same with ``active_leaf`` give
+    the number of calls whose handler was told that state, for the states some
+    handler was told and for two states picked at random.
+    """
+    rng = random.Random(seed)
+    checked = undecided = skipped = 0
+    failures = []
+    cycle_inputs = [(d, go) for d in (0, 1) for go in (False, True)]
+    every_sequence = list(itertools.product(cycle_inputs, repeat=steps))
+    for index in range(count):
+        text = _region_model(rng, abstract=True)
+        try:
+            model = load_state_machine_from_text(text)
+        except Exception:  # noqa: BLE001 - generator output the grammar refuses
+            skipped += 1
+            continue
+        actions = _abstract_actions(model)
+        states = sorted(".".join(state.path) for state in model.walk_states())
+        for sequence in rng.sample(every_sequence, sequences):
+            runtime = SimulationRuntime(model, input_source={"d": 0})
+            seen = []
+            for action in actions:
+                runtime.register_abstract_handler(
+                    action,
+                    lambda ctx, action=action: seen.append(
+                        (
+                            action,
+                            ctx.get_full_state_path(),
+                            ".".join(ctx.active_leaf or ctx.state_path),
+                        )
+                    ),
+                )
+            per_cycle = []
+            try:
+                for d, go in sequence:
+                    seen.clear()
+                    runtime.cycle(["Root.Go"] if go else [], inputs={"d": d})
+                    per_cycle.append(list(seen))
+            except (SimulationRuntimeDfsError, SimulationRuntimeExpressionError, ValueError):
+                skipped += 1
+                continue
+            terms = []
+            for action in actions:
+                told = {call[1] for calls in per_cycle for call in calls if call[0] == action}
+                asked = sorted(told | set(rng.sample(states, min(2, len(states)))))
+                for cycle, calls in enumerate(per_cycle):
+                    for position, field in ((1, "state"), (2, "active_leaf")):
+                        for state in asked:
+                            made = sum(
+                                1 for call in calls if call[0] == action and call[position] == state
+                            )
+                            terms.append(
+                                'call_count("%s", step=%d, %s="%s") == %d'
+                                % (action, cycle, field, state, made)
+                            )
+            outcome = "agree"
+            for start in range(0, len(terms), 40):
+                part = terms[start : start + 40]
+                query = "check reach <= %d: %s;" % (steps, " && ".join(part))
+                try:
+                    formula = compile_bmc_query(model, query)
+                except BmcError:
+                    outcome = "skipped"
+                    break
+                symbols = formula.core.symbols
+                solver = z3.Solver()
+                solver.set("timeout", 20000)
+                solver.add(formula.solve_formula)
+                for cycle, (d, go) in enumerate(sequence):
+                    event = symbols.event_input(cycle, "Root.Go")
+                    solver.add(event if go else z3.Not(event))
+                    solver.add(symbols.step_inputs[cycle]["d"] == d)
+                verdict = solver.check()
+                if verdict == z3.unknown:
+                    outcome = "undecided"
+                    break
+                if verdict == z3.unsat:
+                    outcome = "differs"
+                    failures.append((index, sequence, part, text))
+                    break
+            if outcome == "agree":
+                checked += 1
+            elif outcome == "undecided":
+                undecided += 1
+            elif outcome == "skipped":
+                skipped += 1
+    return checked, undecided, skipped, failures
+
+
+class _StructureModels:
+    """Random region models in which every transition has an event of its own.
+
+    Nothing is forced and nothing is guarded, so every edge of the topology can
+    really be taken, which is what makes the structural answers exact.
+    """
+
+    def __init__(self, rng):
+        self.rng = rng
+        self.count = 0
+        self.acyclic = rng.random() < 0.4
+
+    def event(self):
+        self.count += 1
+        return "E%d" % self.count
+
+    def edges(self, names, indent, exits=True):
+        rng = self.rng
+        lines = []
+        for index, source in enumerate(names):
+            taken = 0
+            for position, target in enumerate(names + (["[*]"] if exits else [])):
+                if source == target or (self.acyclic and position < index):
+                    continue
+                if rng.random() < (0.45 if self.acyclic else 0.3):
+                    lines.append("%s%s -> %s :: %s;" % (indent, source, target, self.event()))
+                    taken += 1
+            if self.acyclic and exits and not taken:
+                lines.append("%s%s -> [*] :: %s;" % (indent, source, self.event()))
+        return lines
+
+    def region(self, name, depth):
+        rng = self.rng
+        names = ["%s_S%d" % (name, i) for i in range(rng.randint(1, 3))]
+        lines = ["region %s {" % name, "    [*] -> %s;" % names[0]]
+        kind = rng.random()
+        for index, state in enumerate(names):
+            last = index == len(names) - 1
+            if depth == 0 and last and kind < 0.25:
+                lines.append("    state %s {" % state)
+                for suffix in ("A", "B"):
+                    lines.append(
+                        "        " + self.region(state + "_" + suffix, 1).replace("\n", "\n        ")
+                    )
+                lines.append("    }")
+            elif depth == 0 and last and kind < 0.45:
+                kids = ["%s_K%d" % (state, k) for k in range(rng.randint(1, 2))]
+                lines.append("    state %s {" % state)
+                lines.append("        [*] -> %s;" % kids[0])
+                lines.extend("        state %s;" % kid for kid in kids)
+                lines.extend(self.edges(kids, "        "))
+                lines.append("    }")
+            else:
+                lines.append("    state %s;" % state)
+        lines.extend(self.edges(names, "    "))
+        lines.append("}")
+        return "\n".join(lines)
+
+    def model(self):
+        rng = self.rng
+        regions = "\n".join(
+            "        " + self.region("R%d" % i, 0).replace("\n", "\n        ")
+            for i in range(rng.randint(2, 3))
+        )
+        lines = [
+            "state Root {",
+            "    [*] -> %s;" % rng.choice(["Run", "Idle"]),
+            "    state Idle;",
+            "    state Run {",
+            regions,
+            "    }",
+            "    state Done;",
+            "    state Spare;",
+            "    Idle -> Run :: %s;" % self.event(),
+        ]
+        if self.acyclic:
+            wanted = ((1.0, "Run -> Done"), (1.0, "Done -> [*]"), (0.3, "Run -> [*]"), (0.2, "Idle -> [*]"))
+        else:
+            wanted = (
+                (0.7, "Run -> Done"), (0.25, "Run -> Spare"), (0.4, "Done -> Idle"),
+                (0.3, "Run -> Run"), (0.6, "Done -> [*]"), (0.2, "Idle -> [*]"),
+                (0.2, "Run -> [*]"), (0.2, "Spare -> Idle"),
+            )
+        for probability, text in wanted:
+            if rng.random() < probability:
+                lines.append("    %s :: %s;" % (text, self.event()))
+        lines.append("}")
+        return "\n".join(lines)
+
+
+_STRUCTURE_END = "<end>"
+
+
+def _explore_configurations(model, limit=250):
+    """Return the exact configuration graph of a model, or ``None`` when it is too large.
+
+    Every configuration the simulator can come to is explored with every set of
+    up to three events; a cycle that consumed an event or ended the machine is an
+    edge.  Returns ``(start, edges, active_leaves, leaves)``.
+    """
+    events = sorted(".".join(e.path) for s in model.walk_states() for e in s.events.values())
+    subsets = [c for k in range(1, 4) for c in itertools.combinations(events, k)]
+    leaves = sorted(".".join(s.path) for s in model.walk_states() if s.is_leaf_state)
+    first = SimulationRuntime(model)
+    first.cycle([])
+    edges = {_STRUCTURE_END: set()}
+    active = {}
+    queue = []
+
+    def node(runtime):
+        if runtime.is_ended:
+            return _STRUCTURE_END
+        text = str(runtime.configuration)
+        if text not in edges:
+            edges[text] = set()
+            active[text] = {p for p in leaves if runtime.configuration.is_active(p)}
+            queue.append(text)
+        return text
+
+    start = node(first)
+    while queue:
+        if len(edges) > limit:
+            return None
+        text = queue.pop()
+        for subset in subsets:
+            runtime = SimulationRuntime(model, initial_state=text, initial_vars={})
+            result = runtime.cycle(list(subset))
+            if result.consumed_events or runtime.is_ended:
+                edges[text].add(node(runtime))
+    return start, edges, active, leaves
+
+
+def _exact_structure(start, edges, active, leaves):
+    """Answer the structural questions on an exact configuration graph."""
+    from pyfcstm.verify.topology import _closure_from, _is_cyclic_component, _scc_components
+
+    table = {key: tuple(sorted(value)) for key, value in edges.items()}
+    reached = _closure_from(table, (start,))
+    reverse = {key: set() for key in edges}
+    for source, targets in edges.items():
+        for target in targets:
+            reverse[target].add(source)
+    can_end = _closure_from({k: tuple(sorted(v)) for k, v in reverse.items()}, (_STRUCTURE_END,))
+    configurations = [c for c in reached if c != _STRUCTURE_END]
+    cyclic = any(
+        _is_cyclic_component(component, table) and set(component) & reached
+        for component in _scc_components(tuple(k for k in edges if k != _STRUCTURE_END), table)
+    )
+    seen = set().union(*[active[c] for c in configurations]) if configurations else set()
+    return {
+        "unreachable": set(leaves) - seen,
+        "finite": all(c in can_end for c in configurations),
+        "inevitable": not cyclic and not any(not edges[c] for c in configurations),
+    }
+
+
+def check_region_structure(count, seed):
+    """Return ``(checked, skipped, failures)`` for the structural analysis of region models.
+
+    A random region model in which every transition has an event of its own is
+    explored exactly through the simulator.  The unreachable leaves, whether
+    every position can still end, and whether the topology ends for sure, as
+    :mod:`pyfcstm.verify.topology` answers them, have to be the exact ones, and
+    the leaves that ``pyfcstm inspect`` reports as unreachable are the same
+    leaves.
+    """
+    from pyfcstm.diagnostics.inspect import inspect_model
+    from pyfcstm.verify.topology import topological_finite, topological_inevitable_terminator, unreachable_states
+
+    rng = random.Random(seed)
+    checked = skipped = 0
+    failures = []
+    for index in range(count):
+        text = _StructureModels(rng).model()
+        try:
+            model = load_state_machine_from_text(text)
+            explored = _explore_configurations(model)
+        except (SimulationRuntimeDfsError, SimulationRuntimeExpressionError, ValueError):
+            skipped += 1
+            continue
+        if explored is None:
+            skipped += 1
+            continue
+        exact = _exact_structure(*explored)
+        leaves = {".".join(s.path) for s in model.walk_states() if s.is_leaf_state and not s.is_pseudo}
+        answers = {
+            "verify unreachable": (set(unreachable_states(model)), exact["unreachable"] & leaves),
+            "verify finite": (topological_finite(model).finite, exact["finite"]),
+            "verify inevitable": (topological_inevitable_terminator(model).inevitable, exact["inevitable"]),
+            "inspect unreachable": (
+                {
+                    d.refs["state_path"]
+                    for d in inspect_model(model).diagnostics
+                    if d.code == "W_UNREACHABLE_STATE"
+                }
+                & leaves,
+                exact["unreachable"] & leaves,
+            ),
+        }
+        wrong = {name: pair for name, pair in answers.items() if pair[0] != pair[1]}
+        if wrong:
+            failures.append((index, wrong, text))
+        else:
+            checked += 1
+    return checked, skipped, failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument(
@@ -837,6 +1161,8 @@ def main() -> int:
     parser.add_argument("--region-safety-models", type=int, default=12)
     parser.add_argument("--region-hot-start-models", type=int, default=10)
     parser.add_argument("--region-property-models", type=int, default=8)
+    parser.add_argument("--region-call-models", type=int, default=6)
+    parser.add_argument("--region-structure-models", type=int, default=12)
     parser.add_argument("--seed", type=int, default=522)
     args = parser.parse_args()
     compared, boundary, unsupported, failures = check_expressions(
@@ -903,6 +1229,28 @@ def main() -> int:
             "  region model %d, active(%r): witness %r, the simulator reaches it: %r\n%s"
             % (index, path, found, simulated, text)
         )
+    call_checked, call_undecided, call_skipped, call_failures = check_region_calls(
+        args.region_call_models, args.seed
+    )
+    print(
+        "region call filters: %d sequences agree with the simulator, %d undecided by Z3, "
+        "%d skipped, %d failures"
+        % (call_checked, call_undecided, call_skipped, len(call_failures))
+    )
+    for index, sequence, part, text in call_failures[:5]:
+        print(
+            "  region model %d, inputs %r: no run counts the calls as %s\n%s"
+            % (index, sequence, " && ".join(part), text)
+        )
+    structure_checked, structure_skipped, structure_failures = check_region_structure(
+        args.region_structure_models, args.seed
+    )
+    print(
+        "region structure: %d models agree with the exact configuration graph, %d skipped, "
+        "%d failures" % (structure_checked, structure_skipped, len(structure_failures))
+    )
+    for index, wrong, text in structure_failures[:3]:
+        print("  region model %d: %r\n%s" % (index, wrong, text))
     return (
         1
         if failures
@@ -911,6 +1259,8 @@ def main() -> int:
         or safe_failures
         or hot_failures
         or prop_failures
+        or call_failures
+        or structure_failures
         else 0
     )
 

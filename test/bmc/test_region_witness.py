@@ -67,7 +67,9 @@ def test_every_frame_of_a_model_with_regions_carries_its_configuration():
 
 def test_the_cold_start_is_one_initial_case():
     step = witness_of(INTERLOCK, MOTOR_ON).steps[0]
-    assert step.case_label is None
+    # The case outside every region is the cycle's case_label, as for a model
+    # without regions.
+    assert step.case_label == "__init__::initial::Controller.Idle::0"
     assert step.case_kind == "initial"
     assert step.progress == "initial"
     assert [(item.scope, item.kind, item.label) for item in step.local_cases] == [
@@ -92,6 +94,7 @@ def test_entering_a_group_lists_the_transition_and_then_every_start_in_order():
 
 def test_a_step_lists_its_local_cases_region_by_region():
     step = witness_of(INTERLOCK, MOTOR_ON).steps[-1]
+    # Every case of this cycle ran inside a region, so none is outside.
     assert step.case_label is None
     assert step.case_kind == "transition"
     assert [(item.scope, item.kind) for item in step.local_cases] == [
@@ -275,3 +278,14 @@ def test_an_abstract_aspect_declared_in_a_region_replays_and_takes_a_handler():
         abstract_handlers={"Root.Run.A.Tick": lambda ctx: seen.append(ctx.action_name)},
     )
     assert handled.ok and seen
+
+
+def test_the_case_label_of_a_step_is_the_local_case_outside_every_region():
+    witness = witness_of(INTERLOCK, MOTOR_ON)
+    for step in witness.steps:
+        outside = [case.label for case in step.local_cases if case.scope is None]
+        assert step.case_label == (outside[0] if outside else None)
+    assert [step.case_label for step in witness.steps][:2] == [
+        "__init__::initial::Controller.Idle::0",
+        "Controller.Idle::transition::Controller.Running::0",
+    ]

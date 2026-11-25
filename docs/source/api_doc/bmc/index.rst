@@ -29,6 +29,7 @@ pyfcstm.bmc
     provenance
     query
     region_expand
+    region_pattern
     region_relation
     region_start
     region_witness

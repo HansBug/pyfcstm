@@ -1190,12 +1190,19 @@ class CycleCase:
     :param domain: Optional domain used for eager validation, defaults to
         ``None``.
     :type domain: BmcDomain, optional
+    :param transitions: Labels of the transitions the path commits, in the order
+        it commits them and in the format the simulator's execution trace uses
+        (``owner::index::source->target``).  They are replay evidence, not part
+        of the canonical form; defaults to ``()``.
+    :type transitions: Tuple[str, ...], optional
 
     Example::
 
         >>> case = CycleCase('transition', 0, 'Root', 0, 'Root', 'Root::transition::Root::0', BoolTemplate.true(), ())
         >>> case.condition.evaluate({})
         True
+        >>> case.transitions
+        ()
     """
 
     kind: str
@@ -1212,6 +1219,7 @@ class CycleCase:
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     consumed_events: Tuple[str, ...] = ()
     domain: Optional[BmcDomain] = field(default=None, repr=False, compare=False)
+    transitions: Tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         kind = _validate_choice(self.kind, _CASE_KINDS, "case kind")

@@ -167,7 +167,8 @@ Public module structure:
        :func:`expand_flush_unit`, :func:`expand_wait_unit`, :class:`RegionCaseRelation`,
        :class:`RegionFlushRelation`, :class:`RegionStepRelation`,
        :func:`region_frame_constraints`, :func:`region_error_analysis`,
-       :class:`RegionStart`, :func:`resolve_region_start`, :class:`RegionCall`,
+       :class:`RegionStart`, :func:`resolve_region_start`,
+       :class:`ActivePattern`, :func:`parse_active_pattern`, :class:`RegionCall`,
        :class:`RegionStepSummary`, :class:`RegionStepTrace`,
        :func:`frame_configuration`, :func:`summarize_region_step`,
        :func:`trace_region_step`
@@ -392,6 +393,11 @@ _REGION_START_EXPORTS = {
     "resolve_region_start",
 }
 
+_REGION_PATTERN_EXPORTS = {
+    "ActivePattern",
+    "parse_active_pattern",
+}
+
 _REGION_WITNESS_EXPORTS = {
     "RegionCall",
     "RegionStepSummary",
@@ -514,6 +520,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.region_expand": _REGION_EXPAND_EXPORTS,
     "pyfcstm.bmc.region_relation": _REGION_RELATION_EXPORTS,
     "pyfcstm.bmc.region_start": _REGION_START_EXPORTS,
+    "pyfcstm.bmc.region_pattern": _REGION_PATTERN_EXPORTS,
     "pyfcstm.bmc.region_witness": _REGION_WITNESS_EXPORTS,
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
     "pyfcstm.bmc.relation": _RELATION_EXPORTS,
@@ -580,6 +587,7 @@ def __dir__():
         | _REGION_EXPAND_EXPORTS
         | _REGION_RELATION_EXPORTS
         | _REGION_START_EXPORTS
+        | _REGION_PATTERN_EXPORTS
         | _REGION_WITNESS_EXPORTS
         | _ENGINE_EXPORTS
         | _RELATION_EXPORTS
@@ -711,6 +719,8 @@ __all__ = [
     "region_frame_constraints",
     "RegionStart",
     "resolve_region_start",
+    "ActivePattern",
+    "parse_active_pattern",
     "RegionCall",
     "RegionStepSummary",
     "RegionStepTrace",

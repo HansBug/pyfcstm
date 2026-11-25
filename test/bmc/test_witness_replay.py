@@ -626,14 +626,17 @@ def test_replay_reports_witness_trace_shape_mismatches() -> None:
         """,
         'check reach <= 1: active("Root.A");',
     )
-    bad_step = replace(trace.steps[0], index=3, source_frame=2, target_frame=4)
+    # The steps do not name the transitions they commit, so only the shape is checked.
+    bad_step = replace(
+        trace.steps[0], index=3, source_frame=2, target_frame=4, transitions=None
+    )
     bad_frame = replace(trace.frames[1], index=7)
     bad_trace = BmcWitnessTrace(
         trace.property,
         trace.solver,
         trace.initial,
         (trace.frames[0], bad_frame),
-        (bad_step,) + trace.steps,
+        (bad_step,) + tuple(replace(step, transitions=None) for step in trace.steps),
         trace.diagnostics,
     )
 
@@ -1866,3 +1869,99 @@ def test_abstract_call_snapshot_excludes_inputs_and_parameters(action):
     replay = replay_bmc_witness(model, trace)
     assert replay.ok
     assert replay.runtime_trace.steps[0].abstract_calls[0].snapshot == call.snapshot
+
+
+_REPLAYED_MODELS = {
+    "plain": (
+        """
+        def int x = 0;
+        state Root {
+            event Go;
+            [*] -> Idle;
+            state Idle;
+            state Work { [*] -> W1; state W1; state W2; W1 -> W2 :: Hop; W2 -> [*]; }
+            state Done;
+            Idle -> Work :: Go;
+            Work -> Done;
+        }
+        """,
+        'check reach <= 4: active("Root.Done");',
+    ),
+    "regions": (
+        """
+        state Root {
+            event Go;
+            [*] -> Idle;
+            state Idle;
+            state Par {
+                region A { [*] -> P; state P; state P2; P -> P2 :: Go; }
+                region B { [*] -> Q; state Q; }
+            }
+            Idle -> Par :: Go;
+        }
+        """,
+        'check reach <= 3: active("Root.Par.A.P2");',
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_REPLAYED_MODELS))
+def test_replay_checks_the_transitions_each_step_claims_to_commit(name) -> None:
+    text, query = _REPLAYED_MODELS[name]
+    model, trace = _trace(text, query)
+    claimed = [step.transitions for step in trace.steps]
+    assert all(items is not None for items in claimed)
+    assert any(items for items in claimed)
+    assert replay_bmc_witness(model, trace).ok
+
+    # A step that claims a case it did not run is a replay mismatch.
+    index = next(i for i, items in enumerate(claimed) if items)
+    steps = list(trace.steps)
+    steps[index] = replace(steps[index], transitions=("Root::0::INIT_STATE->Nowhere",))
+    forged = BmcWitnessTrace(
+        trace.property,
+        trace.solver,
+        trace.initial,
+        trace.frames,
+        tuple(steps),
+        trace.diagnostics,
+    )
+    replayed = replay_bmc_witness(model, forged)
+    assert replayed.ok is False
+    assert [item.path for item in replayed.mismatches] == [
+        "steps[%d].transitions" % index
+    ]
+    assert replayed.mismatches[0].message == "committed transitions mismatch"
+
+
+def test_replay_does_not_check_the_cases_of_a_step_that_names_no_transitions() -> None:
+    text, query = _REPLAYED_MODELS["plain"]
+    model, trace = _trace(text, query)
+    steps = tuple(replace(step, transitions=None) for step in trace.steps)
+    unchecked = BmcWitnessTrace(
+        trace.property, trace.solver, trace.initial, trace.frames, steps, trace.diagnostics
+    )
+    assert replay_bmc_witness(model, unchecked).ok
+
+
+def test_replay_of_a_delta_cycle_does_not_write_the_runtimes_warning_to_stderr(capfd) -> None:
+    text = """
+    input int a;
+    state Root {
+        [*] -> P;
+        state P {
+            region A { [*] -> X; state X; }
+            region B { [*] -> Y : if [a > 0]; state Y; }
+        }
+    }
+    """
+    model, trace = _trace(
+        text,
+        'init state("Root.P{A: X}");\n'
+        "assume at 0: a == 0;\n"
+        "check reach <= 1: cycle == 1;",
+    )
+    assert trace.steps[0].delta is True
+    capfd.readouterr()
+    assert replay_bmc_witness(model, trace).ok
+    assert "Delta" not in capfd.readouterr().err

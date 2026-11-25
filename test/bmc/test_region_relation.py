@@ -517,6 +517,45 @@ class TestNestedAndRepeatedGroups:
         with pytest.raises(BmcBuildError, match="re-enters its own group more than"):
             core_of(text, 1)
 
+    SIX_LAPS = """
+    def int n = 0;
+    state Root {
+        [*] -> O;
+        state O { region A { [*] -> p : if [n < 6]; pseudo state p; p -> [*]; } }
+        state Done;
+        O -> O effect { n = n + 1; };
+        O -> Done;
+    }
+    """
+
+    @pytest.mark.parametrize("limit, built", [(16, True), (7, True), (6, False), (4, False)])
+    def test_the_depth_a_group_may_re_enter_itself_is_an_option(self, limit, built):
+        from pyfcstm.bmc import BmcOptions
+
+        engine = BmcEngine(
+            load_state_machine_from_text(self.SIX_LAPS),
+            BmcOptions(max_group_reentries=limit),
+        )
+        context = engine.prepare("check reach <= 1: terminated();")
+        if built:
+            assert build_bmc_core_formula(context).region_steps
+        else:
+            with pytest.raises(BmcBuildError, match="BmcOptions.max_group_reentries"):
+                build_bmc_core_formula(context)
+
+    @pytest.mark.parametrize("value", [0, -1, 2.5, True, "16"])
+    def test_a_depth_that_is_not_a_positive_integer_is_refused(self, value):
+        from pyfcstm.bmc import BmcOptions
+
+        with pytest.raises(BmcBuildError, match="max_group_reentries"):
+            BmcOptions(max_group_reentries=value)
+
+    def test_the_default_depth_is_not_part_of_the_canonical_options(self):
+        from pyfcstm.bmc import BmcOptions
+
+        assert "max_group_reentries" not in BmcOptions().to_canonical()
+        assert BmcOptions(max_group_reentries=3).to_canonical()["max_group_reentries"] == 3
+
 
 @pytest.mark.unittest
 class TestAspectsAndPlainBefore:

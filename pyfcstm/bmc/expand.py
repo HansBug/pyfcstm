@@ -151,6 +151,8 @@ class _MacroFrontier:
     depth: int = 0
     consumed_events: Tuple[str, ...] = ()
     last_point: Optional[EvaluationPoint] = None
+    # Labels of the transitions the path has committed so far, in order.
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,7 @@ class _MacroOutcome:
     case_kind: str
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     consumed_events: Tuple[str, ...] = ()
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -620,6 +623,7 @@ class _MacroExpander:
             used_events=used_events,
             guard_requirements=guard_requirements,
             last_point=last_point,
+            transitions=frontier.transitions + (transition_label,),
             consumed_events=(
                 frontier.consumed_events + (transition.event.path_name,)
                 if transition.event is not None
@@ -1162,6 +1166,7 @@ class _MacroExpander:
                 _CASE_KIND_FALLBACK,
                 tuple(failed),
                 outcome.consumed_events,
+                outcome.transitions,
             )
             for outcome in expansion.outcomes
         )
@@ -1179,6 +1184,7 @@ class _MacroExpander:
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _terminate_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
@@ -1193,6 +1199,7 @@ class _MacroExpander:
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _cases_from_outcomes(
@@ -1213,6 +1220,7 @@ class _MacroExpander:
                 guard_requirements=outcome.guard_requirements,
                 priority_exclusions=outcome.priority_exclusions,
                 failed_conditions=outcome.failed_conditions,
+                transitions=outcome.transitions,
                 domain=self.domain,
             )
             for outcome in outcomes
@@ -1326,6 +1334,7 @@ class _MacroExpander:
             "depth": frontier.depth,
             "consumed_events": frontier.consumed_events,
             "last_point": frontier.last_point,
+            "transitions": frontier.transitions,
         }
         values.update(updates)
         return _MacroFrontier(**values)

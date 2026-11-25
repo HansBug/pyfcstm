@@ -98,6 +98,9 @@ def step(case_label, local_cases):
         (None, None),
         ("Root::initial::Root.A::0", (BmcWitnessLocalCase(None, "initial", "a::b::c::0"),)),
         (None, ("not a case",)),
+        # A cycle that ran only inside regions has no case outside them.
+        ("Root.A.P::fallback::Root.A.P::0", (BmcWitnessLocalCase("Root.A", "fallback", "Root.A.P::fallback::Root.A.P::0"),)),
+        (None, (BmcWitnessLocalCase(None, "initial", "__init__::initial::Root::0"),)),
     ],
 )
 def test_a_witness_step_with_inconsistent_local_cases_is_refused(
@@ -116,3 +119,22 @@ def test_an_action_block_lists_the_stack_of_its_unit_only_when_it_is_set():
         "state_action", "leaf_during", 1, "Root", (), stack_states=("Root.A.P",)
     )
     assert stacked.to_canonical()["stack_states"] == ["Root.A.P"]
+
+
+@pytest.mark.parametrize(
+    "case_label, local_cases",
+    [
+        (
+            "__init__::initial::Root::0",
+            (
+                BmcWitnessLocalCase(None, "initial", "__init__::initial::Root::0"),
+                BmcWitnessLocalCase("Root", "initial", "Root::initial::Root.A.P::0"),
+            ),
+        ),
+        (None, (BmcWitnessLocalCase("Root.A", "fallback", "Root.A.P::fallback::Root.A.P::0"),)),
+    ],
+)
+def test_a_witness_step_names_the_case_outside_every_region_or_none(
+    case_label, local_cases
+):
+    assert step(case_label, local_cases).case_label == case_label

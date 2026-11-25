@@ -6,6 +6,12 @@ pyfcstm.bmc.binding
 .. automodule:: pyfcstm.bmc.binding
 
 
+MAX\_EXPRESSION\_DEPTH
+-----------------------------------------------------
+
+.. autodata:: MAX_EXPRESSION_DEPTH
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

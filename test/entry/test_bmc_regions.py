@@ -167,3 +167,31 @@ def test_the_human_trace_marks_a_region_that_finished(tmp_path):
     )
     assert result.exit_code == 0
     assert "A: P -> [done] [transition]" in result.output
+
+
+def test_the_human_trace_tells_regions_with_the_same_name_apart(tmp_path):
+    text = (
+        "state Root {\n"
+        "    [*] -> Run;\n"
+        "    state Run {\n"
+        "        region Work { [*] -> A; state A; state B; A -> B; }\n"
+        "        region Side {\n"
+        "            [*] -> Inner;\n"
+        "            state Inner {\n"
+        "                region Work { [*] -> X; state X; state Y; X -> Y; }\n"
+        "                region Other { [*] -> Z; state Z; }\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    result = run_bmc(
+        tmp_path,
+        text,
+        'check reach <= 3: active("Root.Run.Work.B") && active("Root.Run.Side.Inner.Work.Y");',
+        "--color",
+        "never",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Work: A -> B [transition]" in result.output
+    assert "Side.Inner.Work: X -> Y [transition]" in result.output

@@ -135,6 +135,8 @@ def test_bmc_public_api_exports_exact_names():
         "region_frame_constraints",
         "RegionStart",
         "resolve_region_start",
+        "ActivePattern",
+        "parse_active_pattern",
         "RegionCall",
         "RegionStepSummary",
         "RegionStepTrace",
@@ -265,6 +267,8 @@ def test_bmc_public_api_exports_exact_names():
         "region_frame_constraints",
         "RegionStart",
         "resolve_region_start",
+        "ActivePattern",
+        "parse_active_pattern",
         "RegionCall",
         "RegionStepSummary",
         "RegionStepTrace",
@@ -355,6 +359,8 @@ def test_bmc_public_api_exports_exact_names():
         "region_frame_constraints",
         "RegionStart",
         "resolve_region_start",
+        "ActivePattern",
+        "parse_active_pattern",
         "RegionCall",
         "RegionStepSummary",
         "RegionStepTrace",
@@ -529,6 +535,13 @@ def test_submodule_all_exports_are_exact():
     }
     region_expand = importlib.import_module("pyfcstm.bmc.region_expand")
     region_relation = importlib.import_module("pyfcstm.bmc.region_relation")
+    region_pattern = importlib.import_module("pyfcstm.bmc.region_pattern")
+    assert set(region_pattern.__all__) == {
+        "ActivePattern",
+        "parse_active_pattern",
+        "active_over",
+        "pattern_predicate",
+    }
     assert set(region_expand.__all__) == {
         "ATOM_REGION_DONE",
         "ATOM_REGION_ENTER",
@@ -545,6 +558,7 @@ def test_submodule_all_exports_are_exact():
     }
     assert set(region_relation.__all__) == {
         "RegionCaseRelation",
+        "PositionSnapshot",
         "RegionFlushRelation",
         "RegionOccurrence",
         "RegionStepRelation",

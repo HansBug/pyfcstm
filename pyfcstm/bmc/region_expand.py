@@ -150,6 +150,16 @@ class RegionCase:
         work unit, the region that starts for an init unit and the region the
         owner sits in for a continuation; defaults to ``None``.
     :type home: str, optional
+    :param owed_leaves: For every scope in ``owed``, the path of the leaf whose
+        during work made it owe, as ``(scope, leaf)`` pairs sorted by scope.  The
+        handler of the scope's ``>> during after`` action is told a state that
+        this leaf determines; defaults to ``()``.
+    :type owed_leaves: Tuple[Tuple[str, str], ...], optional
+    :param transitions: Labels of the transitions the path commits, in the order
+        it commits them and in the format the simulator's execution trace uses
+        (``owner::index::source->target``); replay compares them with what the
+        simulator committed; defaults to ``()``.
+    :type transitions: Tuple[str, ...], optional
 
     Example::
 
@@ -179,6 +189,8 @@ class RegionCase:
     scope: Optional[str] = None
     public_label: str = ""
     home: Optional[str] = None
+    owed_leaves: Tuple[Tuple[str, str], ...] = ()
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -221,6 +233,8 @@ class _RegionFrontier(_MacroFrontier):
 
     before_done: FrozenSet[str] = frozenset()
     owed: FrozenSet[str] = frozenset()
+    # For every scope in ``owed``, the leaf whose during work made it owe.
+    owed_leaves: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -348,7 +362,13 @@ class _RegionExpander(_MacroExpander):
                 for scope in scopes
                 if scope.list_on_during_aspects(aspect="after")
             }
-            current = replace(current, owed=current.owed | owed)
+            leaves = dict(current.owed_leaves)
+            leaves.update((path, ".".join(state.path)) for path in owed)
+            current = replace(
+                current,
+                owed=current.owed | owed,
+                owed_leaves=tuple(sorted(leaves.items())),
+            )
         return current
 
     def _clear_parent_plain_before_pending_after_pseudo_exit(
@@ -397,7 +417,8 @@ class _RegionExpander(_MacroExpander):
 
         The label survives the copies the base class makes of an outcome, so the case
         built from it can carry the before actions that ran, the scopes that owe an
-        after action and whether the plain during-before of the owner is pending.
+        after action, whether the plain during-before of the owner is pending and
+        the leaf that made each scope owe.
         """
         bottom = frontier.stack[0] if frontier.stack else None
         self._ledger_by_label[outcome.label] = (
@@ -408,6 +429,7 @@ class _RegionExpander(_MacroExpander):
                 and isinstance(bottom.state, Region)
                 and bottom.plain_before_pending
             ),
+            getattr(frontier, "owed_leaves", ()),
         )
         return outcome
 
@@ -557,6 +579,7 @@ class _RegionExpander(_MacroExpander):
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _owner_outcome(self, frontier: _MacroFrontier, owner: State) -> _MacroOutcome:
@@ -581,6 +604,7 @@ class _RegionExpander(_MacroExpander):
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def classify_target(self, outcome: _MacroOutcome) -> str:
@@ -635,6 +659,12 @@ class _RegionExpander(_MacroExpander):
         expansion = self._merge_expansions(
             self._expand_frontier(frontier) for frontier in frontiers
         )
+        ledgers = {
+            outcome.label: self._ledger_by_label.get(
+                outcome.label, (frozenset(), frozenset(), False, ())
+            )
+            for outcome in expansion.outcomes
+        }
         cases = tuple(
             RegionCase(
                 outcome.case_kind,
@@ -650,12 +680,12 @@ class _RegionExpander(_MacroExpander):
                 outcome.priority_exclusions,
                 outcome.consumed_events,
                 outcome.failed_conditions,
-                *self._ledger_by_label.get(
-                    outcome.label, (frozenset(), frozenset(), False)
-                ),
+                *ledgers[outcome.label][:3],
                 scope,
                 self.public_label_of(unit_id, outcome.label, public_source),
                 home,
+                ledgers[outcome.label][3],
+                outcome.transitions,
             )
             for outcome in expansion.outcomes
         )

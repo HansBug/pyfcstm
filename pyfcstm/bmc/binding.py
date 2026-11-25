@@ -40,10 +40,11 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 from .ast import (
+    BmcExpr,
     Active,
     BmcCondExpr,
     BmcNumExpr,
@@ -125,7 +126,46 @@ def _require_query(query: object) -> BmcQuery:
             "query must be a BmcQuery object.",
         )
     _validate_query_shape(query)
+    _validate_expression_depth(query)
     return query
+
+
+MAX_EXPRESSION_DEPTH = 100
+"""Deepest nesting of one query expression that the BMC pipeline accepts.
+
+Every pass over an expression follows its nesting, so a chain of a few hundred
+operators would exhaust the interpreter's call stack inside one of them.  A
+query this deep is refused with the diagnostic ``expression_too_deep``, which
+leaves room for the call stack of the caller.
+"""
+
+
+def _validate_expression_depth(query: BmcQuery) -> None:
+    """Refuse a query whose expressions nest deeper than :data:`MAX_EXPRESSION_DEPTH`.
+
+    The depth is measured without recursion, so that measuring a deep query is
+    safe in itself: it follows every dataclass and sequence of the query and counts
+    the :class:`pyfcstm.bmc.ast.BmcExpr` nodes on the way down.
+
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: With code ``expression_too_deep``.
+    """
+    pending = [(query, 0)]
+    while pending:
+        node, depth = pending.pop()
+        if isinstance(node, BmcExpr):
+            depth += 1
+            if depth > MAX_EXPRESSION_DEPTH:
+                _raise_binding_error(
+                    "expression_too_deep",
+                    "query",
+                    "an expression nests deeper than %d levels; split the chain "
+                    "of operators across several assume or check clauses."
+                    % MAX_EXPRESSION_DEPTH,
+                )
+        if is_dataclass(node) and not isinstance(node, type):
+            pending.extend((getattr(node, item.name), depth) for item in fields(node))
+        elif isinstance(node, (list, tuple)):
+            pending.extend((item, depth) for item in node)
 
 
 @dataclass(frozen=True)
@@ -964,6 +1004,39 @@ def _resolve_state(
     return entry.id
 
 
+def _bind_active(ctx: _BindingContext, expr: Active, path: str) -> None:
+    """Bind an ``active(...)`` atom: a state path, or a configuration pattern.
+
+    A text with region blocks is read as a pattern and checked against the
+    model, and every state it names is recorded as a reference.
+    """
+    _validate_current_frame(expr.frame, path + ".frame")
+    if "{" not in expr.state_path:
+        _resolve_state(ctx, expr.state_path, path, "active")
+        return
+    # The binding layer does not import the model package; reading a pattern is
+    # the one place besides a hot start that needs it.
+    from .region_pattern import ActivePattern, parse_active_pattern
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    try:
+        if not ctx.has_domain:
+            read_configuration_pattern(expr.state_path)
+            ctx.add_reference("state", expr.state_path, path, "active")
+            return
+        pattern = parse_active_pattern(ctx.domain, expr.state_path)
+    except (InvalidBmcQuery, ValueError) as err:
+        # InvalidBmcQuery: the text is not a pattern of this model; ValueError:
+        # it is not configuration text at all (no model to read it against).
+        _raise_binding_error("invalid_active_pattern", path, str(err))
+    pending = [pattern]
+    while pending:
+        node = pending.pop()
+        entry = ctx.domain.state_by_path(node.state_path)
+        ctx.add_reference("state", node.state_path, path, "active", entry.id)
+        pending.extend(item for _, item in node.regions if isinstance(item, ActivePattern))
+
+
 def _resolve_event(
     ctx: _BindingContext, event_path: str, path: str, spelling: str
 ) -> Optional[int]:
@@ -1216,12 +1289,15 @@ def _bind_call_where_condition(
         _bind_call_where_condition(ctx, expr.if_true, path + ".if_true")
         _bind_call_where_condition(ctx, expr.if_false, path + ".if_false")
         return
-    if isinstance(expr, (Active, Terminated, Event, Case, Called)):
+    if isinstance(expr, Active):
+        _bind_active(ctx, expr, path)
+        return
+    if isinstance(expr, (Terminated, Event, Case, Called)):
         _raise_binding_error(
             "call_where_atom_not_allowed",
             path,
             "call where filters may only use snapshot variables, literals, "
-            "numeric operators, comparisons, and logical operators.",
+            "numeric operators, comparisons, logical operators and active().",
         )
     _raise_binding_error(
         "unsupported_call_where_condition_expr",
@@ -1370,8 +1446,7 @@ def _bind_condition_expr(
         _bind_condition_expr(ctx, expr.if_false, path + ".if_false", rules)
         return
     if isinstance(expr, Active):
-        _validate_current_frame(expr.frame, path + ".frame")
-        _resolve_state(ctx, expr.state_path, path, "active")
+        _bind_active(ctx, expr, path)
         return
     if isinstance(expr, Terminated):
         _validate_current_frame(expr.frame, path + ".frame")

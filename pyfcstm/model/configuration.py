@@ -284,6 +284,64 @@ class _TextParser:
         return _Position(path, tuple(regions))
 
 
+def read_configuration_pattern(text):
+    """
+    Read configuration text as a pattern, without a model.
+
+    The grammar is the one of :meth:`Configuration.parse`, but nothing is
+    validated and nothing is filled in: a region the text leaves out stays out
+    of the result, which is what tells a pattern ("this region must be here")
+    from a construction ("a region left out waits for initialization").
+
+    :param text: Configuration text such as ``'Root.Run{Safety: Watching}'``.
+    :type text: str
+    :return: ``{'state': 'Root.Run', 'regions': [{'name': 'Safety',
+        'configuration': ...}]}`` where ``configuration`` is a nested node of the
+        same shape, ``'done'`` for ``[done]`` or ``'init'`` for ``[init]``.  The
+        state of a nested node is its full path from the root.
+    :rtype: dict
+    :raises TypeError: If ``text`` is not a string.
+    :raises ValueError: On any syntax error, or when the nesting is too deep.
+
+    Example::
+
+        >>> read_configuration_pattern('Root.Run{Safety: Watching, Motion: [done]}')
+        {'state': 'Root.Run', 'regions': [{'name': 'Safety', 'configuration': {'state': 'Root.Run.Safety.Watching', 'regions': []}}, {'name': 'Motion', 'configuration': 'done'}]}
+        >>> read_configuration_pattern('Root.Run')
+        {'state': 'Root.Run', 'regions': []}
+        >>> read_configuration_pattern('Root.Run{Safety Watching}')
+        Traceback (most recent call last):
+        ...
+        ValueError: Expected ':' at line 1, column 17, got 'Watching'.
+    """
+    if not isinstance(text, str):
+        raise TypeError('Configuration text must be a string.')
+    parser = _TextParser(text)
+
+    def render(node):
+        regions = []
+        for name, child in node.regions:
+            if child is None:
+                value = 'done'
+            elif child is _RegionInit.PENDING:
+                value = 'init'
+            else:
+                value = render(child)
+            regions.append({'name': name, 'configuration': value})
+        return {'state': '.'.join(node.path), 'regions': regions}
+
+    try:
+        position = parser.position()
+        if parser.peek():
+            parser.error('end of input')
+        return render(position)
+    except RecursionError:
+        # RecursionError: position() and render() follow the nested region blocks
+        # within Python's stack limit.
+        raise ValueError('Configuration nesting is too deep near %s; '
+                         'reduce nested region blocks.' % parser.location()) from None
+
+
 def _from_dict(data, outer=False):
     """
     Read a JSON-compatible tree into an owned, immutable :class:`_Position`.

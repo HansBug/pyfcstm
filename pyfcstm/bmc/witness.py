@@ -41,6 +41,7 @@ Example::
 from __future__ import annotations
 
 import io
+import logging
 import math
 import sys
 import time
@@ -148,6 +149,10 @@ _PRETTY_EXTRA_LEGEND = (
     "W=cell width truncated P=full path unavailable R=hidden event reads"
 )
 _PUBLIC_JSON_MAX_DEPTH = 256
+
+_REPLAY_LOGGER = logging.getLogger("pyfcstm.bmc.replay")
+_REPLAY_LOGGER.addHandler(logging.NullHandler())
+_REPLAY_LOGGER.propagate = False
 
 
 def _internal_error(message: str) -> BmcBuildError:
@@ -4177,11 +4182,21 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         set, defaults to ``None`` (coerced to an empty tuple).
     :type input_reads: Sequence[str], optional
     :param local_cases: For a model with regions, the local cases the cycle took,
-        in the order the runtime ran them; ``case_label`` is then ``None`` because
-        the cycle is not one case, and ``case_kind`` sums it up.  ``None`` for a
-        model without regions, and then left out of the canonical form, defaults
-        to ``None``.
+        in the order the runtime ran them, and ``case_kind`` sums the cycle up.
+        ``case_label`` is then the label of the case that ran outside every
+        region (the one whose ``scope`` is ``None``), or ``None`` when the cycle
+        ran only inside regions.  ``None`` for a model without regions, whose
+        every cycle is one such case, and then left out of the canonical form;
+        defaults to ``None``.
     :type local_cases: Sequence[BmcWitnessLocalCase], optional
+    :param transitions: Labels of the transitions the cycle commits, in order
+        and in the format of the simulator's execution trace
+        (``owner::index::source->target``).  Replay compares them with what the
+        simulator committed, which is what checks ``case_label`` and
+        ``local_cases``.  They are evidence for replay and not part of the
+        canonical form; ``None`` when unknown, and then replay does not check
+        the cases; defaults to ``None``.
+    :type transitions: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
         malformed
 
@@ -4198,6 +4213,14 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         ...                           local_cases=[BmcWitnessLocalCase('Root.A', 'fallback', 'Root.A.P::fallback::Root.A.P::0')])
         >>> regional.to_canonical()['local_cases'][0]['scope']
         'Root.A'
+        >>> entering = BmcWitnessStep(0, 0, 1, 'Root.Idle::transition::Root.Run::0', 'transition', 'transition', 'Root.Idle', 'Root.Run', False, False,
+        ...                           local_cases=[BmcWitnessLocalCase(None, 'transition', 'Root.Idle::transition::Root.Run::0'),
+        ...                                        BmcWitnessLocalCase('Root.Run', 'initial', 'Root.Run::initial::Root.Run.A.P::0')],
+        ...                           transitions=['Root.Idle::0::Idle->Run', 'Root.Run.A::0::INIT_STATE->P'])
+        >>> entering.case_label == entering.local_cases[0].label
+        True
+        >>> 'transitions' in entering.to_canonical()
+        False
     """
 
     index: int
@@ -4218,6 +4241,7 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     inputs: Mapping[str, Union[int, float]] = None
     input_reads: Sequence[str] = None
     local_cases: Optional[Sequence[BmcWitnessLocalCase]] = None
+    transitions: Optional[Sequence[str]] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
@@ -4235,13 +4259,26 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                     "BmcWitnessLocalCase objects",
                 ),
             )
-        if self.case_label is None:
-            if self.local_cases is None:
+        if self.local_cases is None:
+            if self.case_label is None:
                 raise BmcBuildError(
                     "case_label may only be None on a step with local_cases."
                 )
-        elif self.local_cases is not None:
-            raise BmcBuildError("a step with local_cases has no case_label.")
+        else:
+            outside = [case.label for case in self.local_cases if case.scope is None]
+            if self.case_label != (outside[0] if outside else None):
+                raise BmcBuildError(
+                    "case_label must be the label of the local case outside every "
+                    "region, or None when the step has none."
+                )
+        if self.transitions is not None:
+            object.__setattr__(
+                self,
+                "transitions",
+                _coerce_public_sequence(
+                    "transitions", self.transitions, str, "strings"
+                ),
+            )
         for field_name in ("case_label", "case_kind", "progress"):
             value = getattr(self, field_name)
             if field_name == "case_label" and value is None:
@@ -4695,6 +4732,11 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :param inputs: Runtime input snapshot committed by this step's
         cycle, defaults to ``None`` (coerced to an empty mapping).
     :type inputs: Mapping[str, Union[int, float]], optional
+    :param transitions: Labels of the transitions the runtime committed in this
+        cycle, in order, as its execution trace names them.  Replay compares
+        them with the transitions the witness step claims; not part of the
+        canonical form; defaults to ``None`` (not observed).
+    :type transitions: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
@@ -4711,8 +4753,17 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     abstract_calls: Sequence[BmcWitnessCallRecord]
     delta: bool = False
     inputs: Mapping[str, Union[int, float]] = None
+    transitions: Optional[Sequence[str]] = None
 
     def __post_init__(self) -> None:
+        if self.transitions is not None:
+            object.__setattr__(
+                self,
+                "transitions",
+                _coerce_public_sequence(
+                    "transitions", self.transitions, str, "strings"
+                ),
+            )
         if (
             isinstance(self.index, bool)
             or not isinstance(self.index, int)
@@ -6430,6 +6481,7 @@ def _decode_step(
         unconsumed_events=unconsumed_events,
         inputs=step_inputs,
         input_reads=input_reads,
+        transitions=tuple(relation.case.transitions),
     )
 
 
@@ -6486,7 +6538,9 @@ def _decode_region_step(
         index=step_index,
         source_frame=step_index,
         target_frame=step_index + 1,
-        case_label=None,
+        case_label=next(
+            (label for scope, _, label in summary.local_cases if scope is None), None
+        ),
         case_kind=kind,
         progress=progress,
         source_state=source.state,
@@ -6503,6 +6557,9 @@ def _decode_region_step(
         local_cases=tuple(
             BmcWitnessLocalCase(scope, case_kind, label)
             for scope, case_kind, label in summary.local_cases
+        ),
+        transitions=tuple(
+            label for path in summary.trace.paths for label in path.case.transitions
         ),
     )
 
@@ -7231,6 +7288,21 @@ def _compare_step(
             witness.inputs[name],
             runtime.inputs[name],
         )
+    if (
+        witness.transitions is not None
+        and runtime.transitions is not None
+        and tuple(witness.transitions) != tuple(runtime.transitions)
+    ):
+        # The cases a step reports stand for the transitions their paths commit,
+        # so this is what checks ``case_label`` and ``local_cases``.
+        mismatches.append(
+            BmcReplayMismatch(
+                "steps[%d].transitions" % witness.index,
+                tuple(witness.transitions),
+                tuple(runtime.transitions),
+                "committed transitions mismatch",
+            )
+        )
     _compare_calls(
         mismatches, witness.index, witness.abstract_calls, runtime.abstract_calls
     )
@@ -7353,19 +7425,24 @@ def _initial_runtime(
         else None
     )
     if initial_state is None:
-        return SimulationRuntime(
+        runtime = SimulationRuntime(
             state_machine,
             initial_vars=initial_vars,
             parameters=parameters,
             input_source=input_source,
         )
-    return SimulationRuntime(
-        state_machine,
-        initial_state=initial_state,
-        initial_vars=initial_vars,
-        parameters=parameters,
-        input_source=input_source,
-    )
+    else:
+        runtime = SimulationRuntime(
+            state_machine,
+            initial_state=initial_state,
+            initial_vars=initial_vars,
+            parameters=parameters,
+            input_source=input_source,
+        )
+    # Replay runs the cycles of a witness on purpose, Delta cycles included; the
+    # runtime's own warning about a Delta cycle would only be noise on stderr.
+    runtime.logger = _REPLAY_LOGGER
+    return runtime
 
 
 def _compare_runtime_error(
@@ -7519,7 +7596,7 @@ def replay_bmc_witness(
         call_start = len(recorder.calls)
         recorder.begin_step()
         was_ended = runtime.is_ended
-        result = runtime.cycle(step.input_event_paths)
+        result = runtime.cycle(step.input_event_paths, trace=True)
         recorder.end_step()
         step_calls = tuple(
             BmcWitnessCallRecord(
@@ -7543,6 +7620,11 @@ def replay_bmc_witness(
             abstract_calls=step_calls,
             delta=result.delta,
             inputs=dict(result.inputs),
+            transitions=tuple(
+                entry.transition_label
+                for entry in (result.trace or ())
+                if entry.kind == "transition"
+            ),
         )
         steps.append(runtime_step)
         _compare_step(mismatches, step, runtime_step)

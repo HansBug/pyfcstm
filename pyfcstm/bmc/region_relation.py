@@ -55,7 +55,17 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import (
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 import z3
 
@@ -117,11 +127,6 @@ from pyfcstm.dsl.role import VariableRole
 from .provenance import BmcTrackedConstraint
 from pyfcstm.solver.domain import DomainConstraint
 
-# How many times one owner may be entered inside the entry of itself before the
-# build gives up.  A group that re-enters itself keeps going until a value stops
-# it, so the depth depends on data; past this depth the formula would no longer
-# describe the runtime, and the build fails instead of guessing.
-GROUP_REENTRY_LIMIT = 16
 _Env = Dict[str, z3.ArithRef]
 # A fact assigns a frame-position symbol under a condition.
 _Fact = Tuple[z3.BoolRef, z3.ArithRef, z3.ArithRef]
@@ -245,6 +250,11 @@ class RegionOccurrence:
     :type case: RegionCaseRelation, optional
     :param flush: The settlement, or ``None`` for a path.
     :type flush: RegionFlushRelation, optional
+    :param positions: For every call record, in the same order, where the machine
+        is at the moment of that call: what the handler is told about the whole
+        position.  Empty when the step has no start to fold from; defaults to
+        ``()``.
+    :type positions: Tuple[PositionSnapshot, ...], optional
 
     Example::
 
@@ -258,6 +268,7 @@ class RegionOccurrence:
     condition: z3.BoolRef
     case: Optional[RegionCaseRelation]
     flush: Optional[RegionFlushRelation]
+    positions: Tuple[PositionSnapshot, ...] = ()
 
     @property
     def call_records(self) -> Tuple[BmcAbstractCallRecord, ...]:
@@ -333,7 +344,98 @@ def region_occurrences(step: "RegionStepRelation") -> Tuple[RegionOccurrence, ..
         found.append(
             RegionOccurrence(flush.order, _and(ran + (flush.condition,)), None, flush)
         )
-    return tuple(sorted(found, key=lambda item: item.order))
+    ordered = sorted(found, key=lambda item: item.order)
+    if step.start is None:
+        return tuple(ordered)
+    return tuple(_with_positions(step, ordered))
+
+
+def _with_positions(
+    step: "RegionStepRelation", ordered: Sequence[RegionOccurrence]
+) -> List[RegionOccurrence]:
+    """Give every occurrence the positions its calls see.
+
+    The positions fold the way the runtime moves them: from where the cycle
+    starts, every path in the order it runs moves the place it runs in to where
+    it ends, under the condition it runs under, and a path that starts a group
+    sets the regions of that group to wait for their start.  A call made while a
+    path runs sees the place that path runs in as the top of the stack it has
+    built so far, and a settlement sees the positions as they are.
+    """
+    owned = dict(step.owned)
+    ids = dict(step.state_ids)
+    main = step.start.main
+    regions: Dict[str, z3.ExprRef] = dict(step.start.regions)
+    result: List[RegionOccurrence] = []
+
+    def move(where: Optional[str], value: z3.ExprRef, condition: z3.BoolRef) -> None:
+        nonlocal main
+        if where is None:
+            main = z3.If(condition, value, main)
+        else:
+            regions[where] = z3.If(condition, value, regions[where])
+
+    for occurrence in ordered:
+        snapshots: List[PositionSnapshot] = []
+        if occurrence.case is None:
+            snapshots = [
+                PositionSnapshot(main, dict(regions))
+                for _ in occurrence.call_records
+            ]
+        else:
+            case = occurrence.case.case
+            for record in occurrence.case.call_records:
+                top = (record.stack_states or ())[-1] if record.stack_states else None
+                seen_main = main
+                seen = dict(regions)
+                if case.home is None:
+                    if top is not None:
+                        seen_main = z3.IntVal(ids[top])
+                else:
+                    seen[case.home] = (
+                        z3.IntVal(ids[top])
+                        if top is not None
+                        else z3.IntVal(REGION_PENDING_ID)
+                    )
+                snapshots.append(PositionSnapshot(seen_main, seen))
+            if case.target_kind == "terminate":
+                move(None, z3.IntVal(STATE_TERMINATE_ID), occurrence.condition)
+            else:
+                value = (
+                    z3.IntVal(REGION_DONE_ID)
+                    if case.target_kind == "done"
+                    else z3.IntVal(case.target_state_id)
+                )
+                move(case.home, value, occurrence.condition)
+                if case.target_kind == "owner":
+                    for path in owned.get(case.target_state_path, ()):
+                        regions[path] = z3.If(
+                            occurrence.condition, z3.IntVal(REGION_PENDING_ID), regions[path]
+                        )
+        result.append(replace(occurrence, positions=tuple(snapshots)))
+    return result
+
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    """Where the machine is at one moment of a cycle, as expressions.
+
+    :param main: The state the machine rests in outside every region, as a state
+        id.
+    :type main: z3.ExprRef
+    :param regions: The position of every region by its path: a state id,
+        ``REGION_DONE_ID``, ``REGION_PENDING_ID`` or ``REGION_INACTIVE_ID``.
+    :type regions: Mapping[str, z3.ExprRef]
+
+    Example::
+
+        >>> import z3
+        >>> PositionSnapshot(z3.IntVal(1), {'Root.A': z3.IntVal(2)}).regions['Root.A']
+        2
+    """
+
+    main: z3.ExprRef
+    regions: Mapping[str, z3.ExprRef]
 
 
 @dataclass(frozen=True)
@@ -355,6 +457,15 @@ class RegionStepRelation:
         start.  The cycle is then a Delta, so none of its paths ran; defaults
         to ``False``.
     :type rolled_back: z3.BoolRef, optional
+    :param start: Where the machine is when the cycle starts, which is what the
+        positions a call sees are folded from; ``None`` leaves the calls of the
+        step without positions; defaults to ``None``.
+    :type start: PositionSnapshot, optional
+    :param owned: The regions of every owner, by the owner's path, for the start
+        of a group; defaults to ``()`` (read as no owner).
+    :type owned: Tuple[Tuple[str, Tuple[str, ...]], ...], optional
+    :param state_ids: The id of every state by its path; defaults to ``()``.
+    :type state_ids: Tuple[Tuple[str, int], ...], optional
 
     Example::
 
@@ -367,6 +478,9 @@ class RegionStepRelation:
     constraints: Tuple[z3.BoolRef, ...]
     flushes: Tuple[RegionFlushRelation, ...] = ()
     rolled_back: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(False))
+    start: Optional[PositionSnapshot] = None
+    owned: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    state_ids: Tuple[Tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -534,10 +648,20 @@ def reported_call_state(
     """
     if not record.role.startswith("aspect_") or record.scope_path is None:
         return record.state_path, record.active_leaf_path
-    scope = record.scope_path
-    reported = record.state_path
+    reported = _wrapped_state(domain, record.scope_path, record.state_path)
+    return reported, reported
+
+
+def _wrapped_state(domain: BmcDomain, scope: str, state_path: str) -> str:
+    """Return the deepest state common to everything an aspect of ``scope`` wraps.
+
+    ``state_path`` is the state the aspect runs for: the leaf that does the during
+    work, or a state this function already returned.  On the way from ``scope``
+    down to it the first owner of at least two regions is the answer, because an
+    aspect above it wraps the whole group; without one the state itself is.
+    """
     chain: List[str] = []
-    entry = domain.state_by_path(record.state_path)
+    entry = domain.state_by_path(state_path)
     while True:
         chain.append(entry.path)
         if entry.region_path is not None:
@@ -555,9 +679,26 @@ def reported_call_state(
         if path != scope and not path.startswith(scope + "."):
             continue
         if len(_regions_of(domain, path)) >= 2:
-            reported = path
-            break
-    return reported, reported
+            return path
+    return state_path
+
+
+def _settled_states(domain: BmcDomain, scope: str) -> Tuple[str, ...]:
+    """Return every state the handler of an after action of ``scope`` can be told.
+
+    The action settles after a leaf below the scope did during work, and the
+    state it reports is the one that leaf determines, so the candidates are what
+    :func:`_wrapped_state` gives for the leaves below the scope, sorted.
+    """
+    return tuple(
+        sorted(
+            {
+                _wrapped_state(domain, scope, entry.path)
+                for entry in domain.states
+                if entry.is_stoppable and entry.path.startswith(scope + ".")
+            }
+        )
+    )
 
 
 def _in_region(domain: BmcDomain, path: str) -> bool:
@@ -823,10 +964,25 @@ class _StepBuilder:
             for state in prepared.model.walk_states()
             if state.regions and state.list_on_durings(aspect="before")
         )
+        # The handler of an abstract after action is told a state that the leaf
+        # which made the scope owe determines.  A scope where that can be more
+        # than one state keeps it in a slot next to its owed flag.
+        self.settled_states = {
+            scope: _settled_states(self.domain, scope) for scope in self.after_scopes
+        }
+        self.settled_keys = tuple(
+            "$w:%s" % scope
+            for scope in self.after_scopes
+            if len(self.settled_states[scope]) > 1
+            and any(
+                block.is_abstract
+                for block in units.flush(frozenset({scope})).cases[0].action_blocks
+            )
+        )
         self.ledger_keys = tuple(
             ["$b:%s" % path for path in self.before_scopes]
             + ["$o:%s" % path for path in self.after_scopes]
-        )
+        ) + self.settled_keys
         self.slots = self.persistent + self.ledger_keys
         region_paths = [region.path for region in self.domain.regions]
         # After flags of scopes inside a region are cleared when the branch of
@@ -885,7 +1041,8 @@ class _StepBuilder:
             if touch is not None and key not in touch:
                 env[key] = base[key]
                 continue
-            env[key] = z3.Bool(
+            sort = z3.Int if key in self.settled_keys else z3.Bool
+            env[key] = sort(
                 "R_%d_%d_%s_%s" % (self.step, self._counter, tag, _symbol("", key))
             )
         return env
@@ -899,7 +1056,11 @@ class _StepBuilder:
         expression it has in ``base``.
         """
         touch = set()
-        for prefix, scopes in (("$b:", self.before_scopes), ("$o:", self.after_scopes)):
+        for prefix, scopes in (
+            ("$b:", self.before_scopes),
+            ("$o:", self.after_scopes),
+            ("$w:", self.after_scopes),
+        ):
             for scope in scopes:
                 if _under(scope, region_path) or region_path.startswith(scope + "."):
                     touch.add(prefix + scope)
@@ -909,7 +1070,11 @@ class _StepBuilder:
         """Return the values at the start of a cycle: no aspect has run yet."""
         env: _Env = dict(frame_vars)
         for key in self.ledger_keys:
-            env[key] = z3.BoolVal(False)
+            # A settled state is only read while its scope owes, and the path
+            # that makes the scope owe writes it; any value will do before that.
+            env[key] = (
+                z3.IntVal(STATE_INIT_ID) if key in self.settled_keys else z3.BoolVal(False)
+            )
         return env
 
     def env_equal(
@@ -1146,9 +1311,21 @@ class _StepBuilder:
                     final_env[key] = z3.BoolVal(False)
                 else:
                     final_env[key] = env_in[key]
+            owed_leaves = dict(case.owed_leaves)
             for path in self.after_scopes:
                 key = "$o:%s" % path
                 final_env[key] = z3.BoolVal(True) if path in case.owed else env_in[key]
+                key = "$w:%s" % path
+                if key not in self.settled_keys:
+                    continue
+                if path in case.owed:
+                    final_env[key] = z3.IntVal(
+                        self.domain.state_path_to_id(
+                            _wrapped_state(self.domain, path, owed_leaves[path])
+                        )
+                    )
+                else:
+                    final_env[key] = env_in[key]
             entry = None
             terms: Dict[str, z3.BoolRef] = {}
             nested: Dict[str, Tuple[DomainConstraint, ...]] = {}
@@ -1469,13 +1646,13 @@ class _StepBuilder:
                 # Same owner on the same values: nothing can change, so this
                 # path is the loop the runtime rejects.
                 return _Entry(z3.BoolVal(False), out_pos, env_out, [], [])
-        if sum(1 for entered, _ in self._entering if entered == owner_path) >= (
-            GROUP_REENTRY_LIMIT
-        ):
+        limit = self.prepared.options.max_group_reentries
+        if sum(1 for entered, _ in self._entering if entered == owner_path) >= limit:
             raise BmcBuildError(
                 "state %r re-enters its own group more than %d times inside one "
-                "cycle, so the relation cannot be bounded."
-                % (owner_path, GROUP_REENTRY_LIMIT)
+                "cycle, so the relation cannot be bounded; raise "
+                "BmcOptions.max_group_reentries to unroll it deeper."
+                % (owner_path, limit)
             )
         self._entering.append((owner_path, env_in))
         outer_sink = self._flush_sink
@@ -1871,16 +2048,34 @@ class _StepBuilder:
             )
             order = self._unit_counter
             self._unit_counter += 1
-            self._flush_sink.append(
-                RegionFlushRelation(
-                    self.step,
-                    order,
-                    scope,
-                    prefix,
-                    z3.And(gate, owes),
-                    tuple(lowering.call_records),
+            # One settlement per state its handlers can be told; without a call
+            # the state does not matter and one settlement is enough.
+            told = self.settled_states[scope] if lowering.call_records else ()
+            for state_path in told or (None,):
+                condition = z3.And(gate, owes)
+                if "$w:%s" % scope in self.settled_keys:
+                    condition = z3.And(
+                        condition,
+                        env_in["$w:%s" % scope]
+                        == z3.IntVal(self.domain.state_path_to_id(state_path)),
+                    )
+                self._flush_sink.append(
+                    RegionFlushRelation(
+                        self.step,
+                        order,
+                        scope,
+                        prefix,
+                        condition,
+                        tuple(
+                            replace(
+                                record,
+                                state_path=state_path,
+                                active_leaf_path=state_path,
+                            )
+                            for record in lowering.call_records
+                        ),
+                    )
                 )
-            )
             out = self.fresh_env("%s_s%d" % (tag, index), env, frozenset())
             parts = [self.vars_equal(out, self.persistent_env(lowering.final_env))]
             if defs is not None:
@@ -2511,6 +2706,18 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
                 tuple(builder.constraints),
                 tuple(builder.flushes),
                 _or(builder.rollback_terms),
+                PositionSnapshot(
+                    symbols.frame_state(step_index),
+                    {
+                        region.path: symbols.region_position(step_index, region.path)
+                        for region in domain.regions
+                    },
+                ),
+                tuple(
+                    (owner, tuple(region.path for region in _regions_of(domain, owner)))
+                    for owner in sorted({item.owner_path for item in domain.regions})
+                ),
+                tuple((entry.path, entry.id) for entry in domain.states),
             )
         )
 
@@ -2590,6 +2797,7 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
 __all__ = [
     "RegionCaseRelation",
     "RegionFlushRelation",
+    "PositionSnapshot",
     "RegionOccurrence",
     "RegionStepRelation",
     "region_error_analysis",

@@ -40,7 +40,7 @@ RegionCase
 -----------------------------------------------------
 
 .. autoclass:: RegionCase
-    :members: kind,label,unit_id,target_kind,target_state_id,target_state_path,condition,action_blocks,used_events,guard_requirements,priority_exclusions,consumed_events,failed_conditions,before_done,owed,plain_pending_after,scope,public_label,home
+    :members: kind,label,unit_id,target_kind,target_state_id,target_state_path,condition,action_blocks,used_events,guard_requirements,priority_exclusions,consumed_events,failed_conditions,before_done,owed,plain_pending_after,scope,public_label,home,owed_leaves,transitions
 
 
 RegionUnitFormal

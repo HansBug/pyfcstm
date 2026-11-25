@@ -346,55 +346,6 @@ class _Machine:
         top = main_top if main_top is not None else self.main
         return self.node(top, cursor, cursor_top)
 
-    def settled_state(self, scope: str, tree: Dict[str, object]) -> str:
-        """Return the state the handler of a settling ``>> during after`` aspect is told.
-
-        The aspect settles at the end of a region's branch or of the cycle, and the
-        state it wraps is where the machine rests below ``scope`` at that moment.
-        The search follows the single active chain down from ``scope`` and stops
-        at the first state that owns several regions, or at the leaf; an owner of
-        one region is passed through, as the plain composite it behaves like.
-
-        :param scope: Path of the state or region that declares the aspect.
-        :param tree: Configuration tree at the moment of the call.
-        :return: The path the handler reports.
-        """
-        region = self.regions.get(scope)
-        if region is None:
-            node = next(
-                item
-                for item in _walk_nodes(tree)
-                if str(item["state"]) == scope or str(item["state"]).startswith(scope + ".")
-            )
-        else:
-            owner = next(
-                item
-                for item in _walk_nodes(tree)
-                if str(item["state"]) == region.owner_path
-            )
-            node = next(
-                item["configuration"]
-                for item in owner["regions"]  # type: ignore[union-attr]
-                if item["name"] == region.name
-            )
-        while True:
-            live = node["regions"]
-            # The branches of a group are all its declared regions, also the ones
-            # that have not started yet.
-            declared = len(self.owned.get(str(node["state"]), ()))
-            if declared == 1 and len(live) == 1 and live[0]["configuration"] is not None:  # type: ignore[index]
-                node = live[0]["configuration"]  # type: ignore[index]
-            else:
-                return str(node["state"])
-
-
-def _walk_nodes(node: Dict[str, object]):
-    """Yield a configuration node and every node below it, outermost first."""
-    yield node
-    for item in node["regions"]:  # type: ignore[union-attr]
-        if item["configuration"] is not None:
-            yield from _walk_nodes(item["configuration"])
-
 
 def _start_machine(
     core: BmcCoreFormula, model: z3.ModelRef, step_index: int
@@ -426,18 +377,9 @@ def _call(
     model: z3.ModelRef,
     machine: _Machine,
     tree: Dict[str, object],
-    settling: bool = False,
 ) -> RegionCall:
-    """Turn a lowered call record into the call a handler sees.
-
-    ``settling`` marks the call of an aspect that a flush settles: the handler is
-    told the state the machine rests in below the declaring scope at that moment,
-    which only the tree knows.
-    """
-    if settling:
-        state = leaf = machine.settled_state(str(record.scope_path), tree)
-    else:
-        state, leaf = reported_call_state(machine.domain, record)
+    """Turn a lowered call record into the call a handler sees."""
+    state, leaf = reported_call_state(machine.domain, record)
     return RegionCall(
         record.action_name,
         record.stage,
@@ -483,7 +425,7 @@ def _record_flush(
     """Replay one settlement: its calls see the tree as it is."""
     for record in relation.call_records:
         tree = machine.tree()
-        calls.append(_call(record, model, machine, tree, settling=True))
+        calls.append(_call(record, model, machine, tree))
 
 
 def trace_region_step(

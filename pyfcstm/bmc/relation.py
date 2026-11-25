@@ -90,6 +90,7 @@ from .domain import (
 )
 from .engine import BmcPreparedContext
 from .errors import BmcBuildError, UnsupportedBmcQuery
+from .region_pattern import active_over, parse_active_pattern, pattern_predicate
 from .expand import expand_macro_step_cases
 from .macro import (
     ActionBlock,
@@ -1300,6 +1301,14 @@ class BmcTraceSymbols:
             'Bool'
         """
         frame = self.frame_state(frame_index)
+        if "{" in state_path:
+            pattern = parse_active_pattern(self.domain, state_path)
+            return pattern_predicate(
+                self.domain,
+                pattern,
+                frame,
+                lambda path: self.region_position(frame_index, path),
+            )
         target = self.domain.state_by_path(state_path)
         if target.is_sentinel:
             return z3.BoolVal(False)
@@ -1328,46 +1337,16 @@ class BmcTraceSymbols:
     def _region_active_state(self, frame_index: int, target) -> z3.BoolRef:
         """Return the active predicate of a state of a model with regions.
 
-        A state is active when the state the machine rests in outside every region
-        is the state or one of its descendants, or when the position of a region is
-        the state or one of its descendants.  A state below a region is only ever
-        named by the position of the nearest region above it, so every state is
-        looked at once, for the symbol of the place it can be a position of.
+        See :func:`pyfcstm.bmc.region_pattern.active_over`, which is the one
+        definition of it over any positions; here the positions are the ones of a
+        frame.
         """
-        domain = self.domain
-        by_path = {entry.path: entry for entry in domain.states}
-
-        def below_target(entry) -> bool:
-            current = entry
-            while True:
-                if current.path == target.path:
-                    return True
-                if current.parent_path is None:
-                    return False
-                current = by_path[current.parent_path]
-
-        def nearest_region(entry):
-            current = entry
-            while current.region_path is None and current.parent_path is not None:
-                current = by_path[current.parent_path]
-            return current.region_path
-
-        terms: List[z3.BoolRef] = []
-        for entry in domain.states:
-            if entry.is_sentinel:
-                if entry.id == STATE_INIT_ID and target.is_root:
-                    terms.append(self.frame_state(frame_index) == z3.IntVal(entry.id))
-                continue
-            if not below_target(entry):
-                continue
-            region = nearest_region(entry)
-            symbol = (
-                self.frame_state(frame_index)
-                if region is None
-                else self.region_position(frame_index, region)
-            )
-            terms.append(symbol == z3.IntVal(entry.id))
-        return _or(terms)
+        return active_over(
+            self.domain,
+            target.path,
+            self.frame_state(frame_index),
+            lambda path: self.region_position(frame_index, path),
+        )
 
     def case_selector(self, step_index: int, label: str) -> z3.BoolRef:
         """Return a case-selector symbol for a step.

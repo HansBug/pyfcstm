@@ -441,11 +441,32 @@ def _human_compact_values(values: Tuple[str, ...]) -> str:
     return text
 
 
-def _human_local_case(case) -> str:
+def _human_local_case(case, main: Optional[str] = None) -> str:
     """Render one local case of a cycle of a model with regions as one line.
 
     Paths are shown relative to the scope the case ran in, and a region that
-    finished reads ``[done]``: ``Motion: Off -> On [transition]``.
+    finished reads ``[done]``: ``Motion: Off -> On [transition]``.  The scope
+    itself is shown relative to ``main``, the state the machine rests in outside
+    every region, so that regions with the same name below different owners
+    read differently: ``Inner.X: A -> B [transition]``; the owner itself reads as
+    its own name.
+
+    :param case: Local case of a witness step.
+    :type case: pyfcstm.bmc.witness.BmcWitnessLocalCase
+    :param main: Path of the state the machine rests in outside every region,
+        defaults to ``None`` for the full scope path.
+    :type main: str, optional
+    :return: One line of the human trace.
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.bmc.witness import BmcWitnessLocalCase
+        >>> case = BmcWitnessLocalCase('Root.Run.Motion', 'transition', 'Root.Run.Motion.Off::transition::Root.Run.Motion.On::0')
+        >>> _human_local_case(case, 'Root.Run')
+        'Motion: Off -> On [transition]'
+        >>> _human_local_case(case)
+        'Root.Run.Motion: Off -> On [transition]'
     """
     scope = case.scope
 
@@ -463,7 +484,11 @@ def _human_local_case(case) -> str:
     line = "%s -> %s [%s]" % (relative(case.source), relative(case.target), case.kind)
     if scope is None:
         return line
-    return "%s: %s" % (scope.rsplit(".", 1)[-1], line)
+    if main is not None and scope == main:
+        return "%s: %s" % (scope.rsplit(".", 1)[-1], line)
+    if main is not None and scope.startswith(main + "."):
+        return "%s: %s" % (scope[len(main) + 1 :], line)
+    return "%s: %s" % (scope, line)
 
 
 def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
@@ -502,7 +527,10 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
             "       -> %s [%s]"
             % (_human_frame_label(witness, step.target_frame), "; ".join(details))
         )
-        lines.extend("       %s" % _human_local_case(case) for case in step.local_cases)
+        main = witness.frames[step.target_frame].state
+        lines.extend(
+            "       %s" % _human_local_case(case, main) for case in step.local_cases
+        )
     if error is not None:
         if error["step"] is None:
             lines.append("  init: RUNTIME ERROR %s (%s)" % (error["kind"], error["location"]))

@@ -207,29 +207,196 @@ def test_an_aspect_below_the_group_is_called_in_the_leaf_it_wraps():
         assert solve(text, query).witness_found is found
 
 
-def test_the_call_of_an_after_aspect_cannot_be_selected_by_state():
-    from pyfcstm.bmc import UnsupportedBmcQuery
+AFTER_ASPECT_MOVES = """
+state Root {
+    event Go;
+    region A {
+        >> during after abstract ADone;
+        [*] -> P;
+        state P;
+        state P2;
+        P -> P2 : /Go;
+    }
+    region B { [*] -> Q; state Q { during abstract QWork; } }
+}
+"""
 
+
+@pytest.mark.parametrize(
+    "call, found",
+    [
+        # The handler of the after aspect is told the leaf the region rests in.
+        ('called("Root.A.ADone", state="Root.A.P")', True),
+        ('called("Root.A.ADone", state="Root.A.P2")', True),
+        ('called("Root.A.ADone", active_leaf="Root.A.P2")', True),
+        ('called("Root.A.ADone", state="Root.B.Q")', False),
+        ('called("Root.A.ADone", state="Root")', False),
+        # A state filter that names no action meets every call made in that state.
+        ('called(state="Root.B.Q")', True),
+        ('called(state="Root.A.P2")', True),
+        ('called(state="Root.A.P2", stage="enter")', False),
+    ],
+)
+def test_the_call_of_an_after_aspect_is_selected_by_the_state_its_handler_is_told(
+    call, found
+):
+    assert solve(AFTER_ASPECT_MOVES, "check reach <= 2: %s;" % call).witness_found is found
+
+
+def test_an_after_aspect_is_not_called_in_the_new_leaf_before_the_region_moves():
+    # Without the event the region stays in P, so no call is ever made in P2.
+    query = (
+        'assume event("Root.Go", *) == false;\n'
+        'check reach <= 3: called("Root.A.ADone", state="Root.A.P2");'
+    )
+    assert solve(AFTER_ASPECT_MOVES, query).witness_found is False
+
+
+@pytest.mark.parametrize(
+    "pattern, bound, found",
+    [
+        # A region that is left out is free.
+        ("Controller.Running{Motion: On}", 2, False),
+        ("Controller.Running{Motion: On}", 3, True),
+        ("Controller.Running{Safety: Watching}", 2, True),
+        ("Controller.Running{Safety: Watching, Motion: On}", 3, True),
+        ("Controller.Running{Safety: Watching, Motion: Off}", 2, True),
+        # Where a region has to be is where the text says.
+        ("Controller.Running{Safety: Watching, Motion: [done]}", 4, False),
+        ("Controller.Running{Safety: [init]}", 4, False),
+        # A plain path is the pattern that writes no region.
+        ("Controller.Running", 2, True),
+        ("Controller.Idle", 1, True),
+    ],
+)
+def test_a_configuration_pattern_matches_the_regions_it_writes_and_leaves_the_others_free(
+    pattern, bound, found
+):
+    query = 'check reach <= %d: active("%s");' % (bound, pattern)
+    assert solve(interlock(), query).witness_found is found
+
+
+def test_the_configuration_a_witness_prints_is_a_pattern_the_same_run_satisfies():
+    from pyfcstm.bmc import decode_bmc_result_trace
+
+    witness = decode_bmc_result_trace(
+        solve(interlock(), 'check reach <= 3: active("Controller.Running.Motion.On");')
+    )
+    seen = [frame.configuration for frame in witness.frames if frame.configuration]
+    assert seen
+    for index, text in enumerate(seen, start=1):
+        found = solve(interlock(), 'check reach <= %d: active("%s");' % (index, text))
+        assert found.witness_found is True, text
+
+
+def test_a_region_that_waits_for_its_start_matches_init_in_the_first_frame_of_a_hot_start():
+    base = (
+        'init state("Controller.Running{Motion: On}") havoc * where permit == 1 && motor == 1;\n'
+    )
+    found = solve(
+        interlock(), base + 'check reach <= 1: active("Controller.Running{Safety: [init]}");'
+    )
+    assert found.witness_found is True
+    # After the first cycle the region has started, wherever it began.
+    late = solve(
+        interlock(),
+        base
+        + 'assume at 0: !active("Controller.Running{Safety: [init]}");\n'
+        'check reach <= 1: active("Controller.Running{Safety: [init]}");',
+    )
+    assert late.witness_found is False
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "Controller.Running{Nowhere: On}",
+        "Controller.Running{Motion: Watching}",
+        "Controller.Running{Motion: On, Motion: Off}",
+        "Controller.Idle{Motion: On}",
+        "Controller.Running{Motion: On",
+        "Controller.Running{Motion On}",
+        "Controller.Nowhere{Motion: On}",
+    ],
+)
+def test_a_configuration_pattern_that_is_not_one_of_the_model_is_a_diagnostic(pattern):
+    with pytest.raises(InvalidBmcQuery) as refused:
+        solve(interlock(), 'check reach <= 1: active("%s");' % pattern)
+    assert refused.value.diagnostic.code == "invalid_active_pattern"
+
+
+def test_region_blocks_in_a_model_without_regions_are_a_diagnostic():
+    with pytest.raises(InvalidBmcQuery) as refused:
+        solve(
+            "state Root { [*] -> A; state A; }",
+            'check reach <= 1: active("Root{A: A}");',
+        )
+    assert refused.value.diagnostic.code == "invalid_active_pattern"
+
+
+CALL_TIME = """
+state Root {
+    event Go;
+    region A { [*] -> P; state P; state P2; P -> P2 :: Go; }
+    region B { [*] -> Q; state Q { during abstract QWork; } }
+}
+"""
+
+
+@pytest.mark.parametrize(
+    "where, found",
+    [
+        # Region A moved before region B runs, in the same cycle.
+        ('active("Root{A: P2}")', True),
+        ('active("Root{A: P}")', True),
+        ('active("Root{A: P2}") && active("Root{A: P}")', False),
+        ('active("Root.B.Q") && active("Root{B: Q}")', True),
+        ('active("Root{A: [init]}")', False),
+        ('active("Root{A: [done]}")', False),
+    ],
+)
+def test_a_call_filter_asks_where_the_machine_is_at_the_moment_of_the_call(where, found):
+    query = 'check reach <= 3: called("Root.B.Q.QWork", where %s);' % where
+    assert solve(CALL_TIME, query).witness_found is found
+
+
+ENTRY_CALLS = """
+state Root {
+    region A { [*] -> P; state P { enter abstract PEnter; } }
+    region B { [*] -> Q; state Q { enter abstract QEnter; } }
+}
+"""
+
+
+@pytest.mark.parametrize(
+    "call, where, found",
+    [
+        # Region A starts before region B: A's entry still sees B waiting, and B's
+        # entry sees A where it came to rest.
+        ("Root.A.P.PEnter", 'active("Root{B: [init]}")', True),
+        ("Root.A.P.PEnter", 'active("Root{A: P}")', True),
+        ("Root.B.Q.QEnter", 'active("Root{A: P}")', True),
+        ("Root.B.Q.QEnter", 'active("Root{A: P, B: Q}")', True),
+        ("Root.B.Q.QEnter", 'active("Root{A: [init]}")', False),
+        ("Root.B.Q.QEnter", 'active("Root{B: [init]}")', False),
+    ],
+)
+def test_the_entry_of_a_region_sees_the_regions_that_have_not_started_as_init(
+    call, where, found
+):
+    query = 'check reach <= 1: called("%s", where %s);' % (call, where)
+    assert solve(ENTRY_CALLS, query).witness_found is found
+
+
+def test_call_time_active_in_a_model_without_regions_is_the_state_the_action_runs_in():
     text = """
     state Root {
-        region A { >> during after abstract ADone; [*] -> P; state P; }
-        region B { [*] -> X; state X; }
+        [*] -> A;
+        state A { during abstract Hook; }
+        state B;
+        A -> B;
     }
     """
-    assert solve(text, 'check reach <= 2: called("Root.A.ADone");').witness_found is True
-    with pytest.raises(UnsupportedBmcQuery, match="aspect in a model with regions"):
-        solve(text, 'check reach <= 2: called("Root.A.ADone", state="Root.A.P");')
-
-
-def test_a_state_filter_only_meets_the_aspect_calls_it_names_an_action_for():
-    text = """
-    state Root {
-        >> during before abstract RootPre;
-        region A { >> during after abstract ADone; [*] -> P; state P; }
-        region B { [*] -> X; state X; }
-    }
-    """
-    # The settlement of region A is never selected by this action, so the state
-    # filter does not have to be decided for it.
-    query = 'check reach <= 2: called("Root.RootPre", state="Root");'
-    assert solve(text, query).witness_found is True
+    assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root.A"));').witness_found is True
+    assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root"));').witness_found is True
+    assert solve(text, 'check reach <= 2: called("Root.A.Hook", where active("Root.B"));').witness_found is False

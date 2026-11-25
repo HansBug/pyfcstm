@@ -30,7 +30,7 @@ def _command_arguments(tmp_path, arguments):
 
 
 @pytest.mark.parametrize('arguments', [
-    ['generate'], ['bmc'],
+    ['generate'],
 ])
 def test_cli_refuses_a_model_with_regions(tmp_path, arguments):
     path = tmp_path / 'unsupported.fcstm'
@@ -87,6 +87,19 @@ def test_every_built_in_template_renders_a_model_with_regions(tmp_path, template
     assert result.exitcode == 0, output
     assert 'does not support region models yet' not in output
     assert any(output_dir.iterdir())
+
+
+def test_bmc_checks_a_model_with_regions(tmp_path):
+    """``pyfcstm bmc`` checks a model with regions; the command refuses nothing."""
+    path = tmp_path / 'regions.fcstm'
+    path.write_text(REGION_MODEL, encoding='utf-8')
+    query = tmp_path / 'query.fbmcq'
+    query.write_text('check reach <= 1: active("Root.Run.Safety.Watch");', encoding='utf-8')
+    result = simulate_entry(
+        pyfcstmcli, ['pyfcstm', 'bmc', '-i', str(path), '-q', str(query)]
+    )
+    assert result.exitcode == 0, result.stdout + result.stderr
+    assert 'does not support' not in result.stdout + result.stderr
 
 
 def test_simulate_runs_a_model_with_regions(tmp_path):

@@ -10,7 +10,6 @@ from pyfcstm.bmc import (
     STATE_TERMINATE_ID,
     BmcBuildError,
     BmcEngine,
-    UnsupportedBmcQuery,
     build_bmc_core_formula,
     check_runtime_safety,
     compile_bmc_query,
@@ -1201,31 +1200,22 @@ class TestScopeOfTheRelation:
             solver.add(core.core, relation.selector, z3.Not(relation.antecedent))
             assert solver.check() == z3.unsat
 
-    def test_a_hot_start_is_refused(self):
-        with pytest.raises(
-            UnsupportedBmcQuery, match="hot start of a model with regions"
-        ):
-            core_of(
-                self.TEXT, 1, 'init state("Root");\ncheck reach <= 1: terminated();'
-            )
-
-    def test_properties_and_the_runtime_safety_check_are_refused(self):
+    def test_a_property_over_a_model_with_regions_compiles(self):
         model = load_state_machine_from_text(self.TEXT)
-        with pytest.raises(
-            UnsupportedBmcQuery, match="property over a model with regions"
-        ):
-            compile_bmc_query(model, "check reach <= 1: terminated();")
-        core = core_of(self.TEXT, 1)
-        with pytest.raises(
-            UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
-        ):
-            check_runtime_safety(core)
+        compiled = compile_bmc_query(model, "check reach <= 1: terminated();")
+        assert compiled is not None
+
+    def test_a_model_with_regions_and_no_operation_that_can_raise_has_nothing_to_check(
+        self,
+    ):
         from pyfcstm.bmc.safety import runtime_error_formula
 
-        with pytest.raises(
-            UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
-        ):
-            runtime_error_formula(core)
+        core = core_of(self.TEXT, 1)
+        result = check_runtime_safety(core)
+        assert (result.status, result.sites) == ("not_applicable", 0)
+        formula, sites = runtime_error_formula(core)
+        assert z3.is_false(formula)
+        assert sites == ()
 
     def test_an_owner_before_action_over_empty_regions_keeps_the_formula_satisfiable(
         self,

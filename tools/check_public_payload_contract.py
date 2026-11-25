@@ -122,6 +122,28 @@ def main() -> int:
             json_output=True,
         )
         _assert_clean(json.loads(bmc_text), "pyfcstm bmc payload")
+        region_path = temp / "regions.fcstm"
+        region_path.write_text(
+            "def int n = 0;\n"
+            "state Root {\n"
+            "    region A { [*] -> P; state P { during { n = n + 1; } } }\n"
+            "    region B { [*] -> Q; state Q { during abstract Work; } }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        region_query_path = temp / "regions.fbmcq"
+        region_query_path.write_text(
+            "check reach <= 2: n == 2;\n",
+            encoding="utf-8",
+        )
+        region_text, region_exit = build_bmc_output(
+            str(region_path),
+            str(region_query_path),
+            json_output=True,
+        )
+        if region_exit != 0:
+            raise SystemExit("pyfcstm bmc refused a model with regions")
+        _assert_clean(json.loads(region_text), "pyfcstm bmc region payload")
     print("public inspect/BMC payload contract has no version markers")
     return 0
 

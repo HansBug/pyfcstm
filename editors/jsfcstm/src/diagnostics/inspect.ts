@@ -599,7 +599,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             );
         }
     }
-    const { graph: reachabilityGraph, neverCompleting } = buildReachabilityGraph(states, transitions, historyDefaults);
+    const { graph: reachabilityGraph, neverCompleting } = buildReachabilityGraph(states, transitions, historyDefaults, forcedTransitions);
     const diagnostics = collectDesignHealthWarnings(
         states,
         transitions,
@@ -2413,6 +2413,7 @@ function buildReachabilityGraph(
     states: StateInfo[],
     transitions: TransitionInfo[],
     historyDefaults: ReadonlyMap<string, string[]> = new Map(),
+    forcedTransitions: readonly ForcedTransitionInfo[] = [],
 ): { graph: Record<string, string[]>; neverCompleting: Set<string> } {
     // A composite state is its own one branch: it takes its ordinary outgoing
     // transitions once a child of it can leave through ``[*]``, so a composite
@@ -2424,7 +2425,8 @@ function buildReachabilityGraph(
         const graph = buildReachabilityPass(states, transitions, historyDefaults, composites, completable);
         const grown = Array.from(composites).filter(path =>
             !completable.has(path)
-            && branchCanFinish(states, transitions, graph, composites, completable, path, historyDefaults));
+            && branchCanFinish(
+                states, transitions, graph, composites, completable, path, historyDefaults, forcedTransitions));
         if (grown.length === 0) {
             return { graph, neverCompleting: new Set([...composites].filter(path => !completable.has(path))) };
         }
@@ -2441,6 +2443,7 @@ function branchCanFinish(
     completable: ReadonlySet<string>,
     path: string,
     historyDefaults: ReadonlyMap<string, string[]>,
+    forcedTransitions: readonly ForcedTransitionInfo[],
 ): boolean {
     const owner = states.find(s => s.path === path)!;
     const entries = owner.initial_targets
@@ -2463,15 +2466,16 @@ function branchCanFinish(
     // The expansion of ``!S -> T`` lets every state below ``S`` leave through
     // ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
     // hand the machine to that forced transition, so they do not let ``S`` go on
-    // through its ordinary transitions.
-    const forcedSources = new Set(transitions
-        .filter(t => t.is_forced)
-        .map(t => JSON.stringify([t.forced_origin, t.from_path])));
+    // through its ordinary transitions. A forced exit counts only where a
+    // declaration written in this very scope has ``[*]`` as its target.
+    const authoredExits = new Set(forcedTransitions
+        .filter(item => item.to_path === EXIT_MARK)
+        .map(item => JSON.stringify([item.state_path, item.original_raw])));
     return transitions.some(t =>
         t.to_path === EXIT_MARK
         && t.from_path !== INIT_MARK
         && t.from_path.slice(0, t.from_path.lastIndexOf('.')) === path
-        && !(t.is_forced && forcedSources.has(JSON.stringify([t.forced_origin, path])))
+        && !(t.is_forced && !authoredExits.has(JSON.stringify([path, t.forced_origin])))
         && reachable.has(t.from_path)
         && (!composites.has(t.from_path) || t.is_forced || completable.has(t.from_path)));
 }

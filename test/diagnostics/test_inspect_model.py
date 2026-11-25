@@ -540,6 +540,26 @@ class TestInspectModelViews:
             'owner_never_completes': 1,
         }
 
+    def test_the_same_forced_declaration_written_in_two_scopes_keeps_the_inner_exit(self):
+        # The inner ``!* -> [*]`` is a real exit of ``S2`` although the outer one
+        # has the same text and expands to an exit below ``S2`` as well.
+        dsl = """
+        state Root {
+            event Eb;
+            [*] -> S2;
+            state S1 { [*] -> S0; state S0; }
+            state S2 { [*] -> S0; state S0; !* -> [*] :: Eb; }
+            S2 -> S1;
+            !* -> [*] :: Eb;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE' for diag in report.diagnostics
+        )
+
     def test_an_authored_forced_exit_lets_the_composite_state_go_on(self):
         dsl = """
         state Root {

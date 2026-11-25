@@ -2785,6 +2785,7 @@ def _build_reachability_graph(
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
         regions: Sequence[RegionInfo] = (),
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
 ) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
     """Return the default inspect reachability graph and the owners that never complete.
 
@@ -2845,7 +2846,9 @@ def _build_reachability_graph(
         >>> sorted(never_completing)
         ['Root']
     """
-    return _reachability_with_completion(states, transitions, history_defaults, regions)
+    return _reachability_with_completion(
+        states, transitions, history_defaults, regions, forced_transitions,
+    )
 
 
 def _reachability_with_completion(
@@ -2853,6 +2856,7 @@ def _reachability_with_completion(
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]],
         regions: Sequence[RegionInfo],
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
 ) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
     """Compute the reachability graph and the owners that can never complete.
 
@@ -2884,6 +2888,7 @@ def _reachability_with_completion(
             and all(
                 _region_can_finish(
                     branch, transitions, graph, owners, completable, history_defaults,
+                    forced_transitions,
                 )
                 for branch in branches_of[owner]
             )
@@ -2895,6 +2900,7 @@ def _reachability_with_completion(
 
 def _region_can_finish(
         region, transitions, graph, owners, completable, history_defaults=None,
+        forced_transitions=(),
 ) -> bool:
     """Whether some state of ``region`` that is reachable can reach ``[*]``."""
     mapping, region_entries = graph
@@ -2919,17 +2925,18 @@ def _region_can_finish(
     # The expansion of ``!S -> T`` lets every state below ``S`` leave through
     # ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
     # hand the machine to that forced transition, so they do not let ``S`` go on
-    # through its ordinary transitions.
-    forced_sources = {
-        (transition.forced_origin, transition.from_path)
-        for transition in transitions if transition.is_forced
+    # through its ordinary transitions. A forced exit counts only where a
+    # declaration written in this very scope has ``[*]`` as its target.
+    authored_exits = {
+        (declaration.state_path, declaration.original_raw)
+        for declaration in forced_transitions if declaration.to_path == _EXIT_MARK
     }
     for transition in transitions:
         if transition.to_path != _EXIT_MARK or transition.from_path == _INIT_MARK:
             continue
         if transition.from_path.rsplit('.', 1)[0] != region.path:
             continue
-        if transition.is_forced and (transition.forced_origin, region.path) in forced_sources:
+        if transition.is_forced and (region.path, transition.forced_origin) not in authored_exits:
             continue
         if transition.from_path not in reachable:
             continue
@@ -4959,6 +4966,7 @@ def _inspect_pass(
             for kind, path in owner.defaults.items()
         },
         regions,
+        forced_transitions,
     )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect

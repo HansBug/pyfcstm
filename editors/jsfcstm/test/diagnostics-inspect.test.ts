@@ -892,6 +892,20 @@ state Root {
             });
         });
 
+        it('keeps the inner exit when the same forced declaration is written in two scopes', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Eb;
+    [*] -> S2;
+    state S1 { [*] -> S0; state S0; }
+    state S2 { [*] -> S0; state S0; !* -> [*] :: Eb; }
+    S2 -> S1;
+    !* -> [*] :: Eb;
+}
+`));
+            assert.ok(!report.diagnostics.some((diag) => diag.code === 'W_UNREACHABLE_STATE'));
+        });
+
         it('lets an authored forced exit complete a composite', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

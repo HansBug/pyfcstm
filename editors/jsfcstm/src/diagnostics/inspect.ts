@@ -2423,7 +2423,8 @@ function buildReachabilityGraph(
     for (;;) {
         const graph = buildReachabilityPass(states, transitions, historyDefaults, composites, completable);
         const grown = Array.from(composites).filter(path =>
-            !completable.has(path) && branchCanFinish(states, transitions, graph, composites, completable, path));
+            !completable.has(path)
+            && branchCanFinish(states, transitions, graph, composites, completable, path, historyDefaults));
         if (grown.length === 0) {
             return { graph, neverCompleting: new Set([...composites].filter(path => !completable.has(path))) };
         }
@@ -2439,13 +2440,25 @@ function branchCanFinish(
     composites: ReadonlySet<string>,
     completable: ReadonlySet<string>,
     path: string,
+    historyDefaults: ReadonlyMap<string, string[]>,
 ): boolean {
     const owner = states.find(s => s.path === path)!;
+    const entries = owner.initial_targets
+        .filter(it => it.target !== EXIT_MARK)
+        .map(it => it.target);
+    // The child a history default restores is an entry of the branch too, when
+    // some transition enters the composite state through that history.
+    for (const kind of ['shallow', 'deep']) {
+        const restored = historyDefaults.get(JSON.stringify([path, kind]));
+        if (restored !== undefined && restored.length > 0
+            && transitions.some(t => t.to_path === path && t.target_history === kind)) {
+            entries.push(restored[0]);
+        }
+    }
     const reachable = new Set<string>();
-    for (const it of owner.initial_targets) {
-        if (it.target === EXIT_MARK) continue;
-        reachable.add(it.target);
-        (graph[it.target] ?? []).forEach(next => reachable.add(next));
+    for (const entry of entries) {
+        reachable.add(entry);
+        (graph[entry] ?? []).forEach(next => reachable.add(next));
     }
     return transitions.some(t =>
         t.to_path === EXIT_MARK

@@ -514,6 +514,60 @@ class TestInspectModelViews:
             'owner_never_completes': 1,
         }
 
+    def test_a_history_default_is_an_entry_of_the_composite_state_that_can_complete(self):
+        # ``Off -> C.[H]`` restores ``B`` (the default of the history), and ``B``
+        # leaves, so ``C`` can be over although its initial child ``A`` cannot.
+        dsl = """
+        state Root {
+            event Go;
+            [*] -> Off;
+            state Off;
+            state C {
+                [*] -> A;
+                [H] -> B;
+                state A;
+                state B;
+                B -> [*];
+            }
+            state Fin;
+            Off -> C.[H] :: Go;
+            C -> Fin;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Fin'
+            for diag in report.diagnostics
+        )
+        assert report.structure_statistics.unreachable_transition_reasons == {}
+
+    def test_a_history_default_nothing_enters_does_not_let_the_composite_state_complete(self):
+        dsl = """
+        state Root {
+            [*] -> C;
+            state C {
+                [*] -> A;
+                [H] -> B;
+                state A;
+                state B;
+                B -> [*];
+            }
+            state Fin;
+            C -> Fin;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Fin'
+            for diag in report.diagnostics
+        )
+
     def test_a_forced_transition_leaves_a_composite_state_that_cannot_complete(self):
         dsl = """
         state Root {

@@ -2882,7 +2882,9 @@ def _reachability_with_completion(
             owner for owner in owners
             if owner not in completable
             and all(
-                _region_can_finish(branch, transitions, graph, owners, completable)
+                _region_can_finish(
+                    branch, transitions, graph, owners, completable, history_defaults,
+                )
                 for branch in branches_of[owner]
             )
         }
@@ -2891,16 +2893,26 @@ def _reachability_with_completion(
         completable |= grown
 
 
-def _region_can_finish(region, transitions, graph, owners, completable) -> bool:
+def _region_can_finish(
+        region, transitions, graph, owners, completable, history_defaults=None,
+) -> bool:
     """Whether some state of ``region`` that is reachable can reach ``[*]``."""
     mapping, region_entries = graph
     entries = region_entries.get(region.path)
     if entries is None:
-        # A composite state without regions: its branch starts at its own initial targets.
+        # A composite state without regions: its branch starts at its own initial
+        # targets, and at the child a history default restores when some
+        # transition enters the composite state through that history.
         entries = {
             item['target'] for item in region.initial_targets
             if item['target'] != _EXIT_MARK
         }
+        for (owner, kind), path in (history_defaults or {}).items():
+            if owner == region.path and any(
+                    transition.to_path == owner and transition.target_history == kind
+                    for transition in transitions
+            ):
+                entries.add(path[0])
     reachable = set(entries)
     for start in tuple(reachable):
         reachable |= set(mapping.get(start, ()))

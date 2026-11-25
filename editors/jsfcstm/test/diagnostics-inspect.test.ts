@@ -871,6 +871,50 @@ state Root {
             });
         });
 
+        it('treats a history default as an entry of a composite that can complete', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Go;
+    [*] -> Off;
+    state Off;
+    state C {
+        [*] -> A;
+        [H] -> B;
+        state A;
+        state B;
+        B -> [*];
+    }
+    state Fin;
+    Off -> C.[H] :: Go;
+    C -> Fin;
+}
+`));
+            assert.ok(!report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Fin',
+            ));
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});
+        });
+
+        it('does not let a history default nothing enters complete a composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    [*] -> C;
+    state C {
+        [*] -> A;
+        [H] -> B;
+        state A;
+        state B;
+        B -> [*];
+    }
+    state Fin;
+    C -> Fin;
+}
+`));
+            assert.ok(report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Fin',
+            ));
+        });
+
         it('lets a forced transition leave a composite that cannot complete', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

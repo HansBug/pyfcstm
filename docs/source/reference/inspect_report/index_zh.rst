@@ -217,7 +217,7 @@ Inspect 报告参考
 
 可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
 
-带 ``--enable-verify`` 时，对含区域的模型，依赖单一活动路径的拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）报告为 ``not_run``，``reason_code`` 为 ``requires_single_active_path``。求解器局部算法会在区域内运行，区域内状态的生命周期检查则被跳过。
+带 ``--enable-verify`` 时，拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）对含区域的模型与对其他模型一样运行：每个拥有区域的状态以及每个普通复合状态，都按“分支”理解，即所有分支都结束之后这个状态才继续往下走。没有任何可达位置包含的状态是不可达的；围绕某个叶子的分支不能全部结束时，这个叶子没有出路（报告里称为死锁）；可达位置里存在可以重复或者动不了的位置时，拓扑是非终止的。求解器局部算法会在区域内运行，区域内状态的生命周期检查则被跳过。
 
 发现按哪台机器判断
 ----------------------------------------

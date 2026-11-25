@@ -460,6 +460,7 @@ class TestInspectModelViews:
             state Working {
                 state Idle;
                 [*] -> Idle;
+                Idle -> [*];
             }
             state Done;
             [*] -> Working;
@@ -479,6 +480,55 @@ class TestInspectModelViews:
             'Root.Working.Idle',
         )
         assert report.reachability_graph['Root.Working.Idle'] == tuple()
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Done'
+            for diag in report.diagnostics
+        )
+
+    def test_a_composite_state_whose_children_cannot_leave_never_takes_its_transitions(self):
+        # The composite state is its own one branch: it goes on only when a child
+        # of it takes ``-> [*]``, so ``Done`` cannot be entered.
+        dsl = """
+        state Root {
+            state Working {
+                state Idle;
+                [*] -> Idle;
+            }
+            state Done;
+            [*] -> Working;
+            Working -> Done;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert report.reachability_graph['Root'] == ('Root.Working', 'Root.Working.Idle')
+        assert report.reachability_graph['Root.Working'] == ('Root.Working.Idle',)
+        assert any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Done'
+            for diag in report.diagnostics
+        )
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'owner_never_completes': 1,
+        }
+
+    def test_a_forced_transition_leaves_a_composite_state_that_cannot_complete(self):
+        dsl = """
+        state Root {
+            state Working {
+                state Idle;
+                [*] -> Idle;
+            }
+            state Done;
+            [*] -> Working;
+            !Working -> Done :: Stop;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
         assert not any(
             diag.code == 'W_UNREACHABLE_STATE'
             and diag.refs['state_path'] == 'Root.Done'
@@ -1003,6 +1053,7 @@ state Root {
                 state Orphan {
                     state A;
                     [*] -> A;
+                    A -> [*];
                 }
                 state Live;
                 [*] -> Live;
@@ -1010,9 +1061,10 @@ state Root {
             }
             """
         ))
-        assert report.structure_statistics.unreachable_transitions == 1
+        # Both the composite state's transition and the exit of its child.
+        assert report.structure_statistics.unreachable_transitions == 2
         assert report.structure_statistics.unreachable_transition_reasons == {
-            "unreachable_source_state": 1,
+            "unreachable_source_state": 2,
         }
 
     def test_structure_statistics_count_zero_expansion_forced_declaration(self):

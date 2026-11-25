@@ -39,13 +39,11 @@ def test_renderer_refusal_preserves_existing_output(tmp_path, single_file):
     'strongly_connected_components', 'topological_finite',
     'topological_inevitable_terminator', 'event_emission_to_consumer_reachable',
 ])
-def test_topology_refuses_unsupported_parallel_projection(name):
+def test_topology_algorithms_accept_a_model_with_regions(name):
     from pyfcstm.verify import topology
 
     model = load_state_machine_from_text(SOURCE)
-    with pytest.raises(ModelValidationError) as caught:
-        getattr(topology, name)(model)
-    assert caught.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
+    getattr(topology, name)(model)
 
 
 @pytest.mark.parametrize('kind', ['H', 'H*'])

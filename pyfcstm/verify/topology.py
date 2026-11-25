@@ -24,6 +24,21 @@ The module contains:
 * :func:`event_emission_to_consumer_reachable` - Detect events whose consumers
   are all unreachable.
 
+Regions
+-------
+
+A composite state runs one *branch* for every region it declares, and a plain
+composite state, which declares none, is its one branch.  Entering a composite
+state enters every branch.  A branch is over when a state it can reach takes
+``-> [*]``, and the composite state takes its own outgoing transitions once every
+branch can be over.  A plain composite state is the case of one branch, so the
+analysis of a model without regions is the special case of this one.  A forced
+transition takes a group away without waiting for its branches.  The answers are
+the ones of the configuration graph of the machine when every transition can be
+taken: a state is unreachable when no reachable position holds it, a leaf has
+no way out when the branches around it cannot all finish, and the topology is
+non-terminating when some reachable position can repeat or cannot move.
+
 .. note::
    The graph projection is independent from the diagnostics package.
    Diagnostic integration is expected to wrap these functions and translate
@@ -241,6 +256,126 @@ def _leaf_states(machine: StateMachine) -> Tuple[State, ...]:
     return tuple(state for state in machine.walk_states() if state.is_leaf_state)
 
 
+def _exit_boundary(scope: Optional[object]) -> Optional[State]:
+    """Return the composite state whose boundary is reached when ``scope`` is left through ``[*]``.
+
+    :param scope: The state or region that the exiting transition belongs to, or
+        ``None``.
+    :type scope: object, optional
+    :return: The composite state, or ``None`` when the exit leaves the root, or
+        when another branch of the composite cannot be over, so that it does not
+        go on.
+    :rtype: State, optional
+    """
+    if scope is None:
+        return None
+    composite = _composite_of(scope)
+    if composite is None or composite.is_root_state:
+        return None
+    if not all(
+        _can_finish(branch) for branch in _branches(composite) if branch is not scope
+    ):
+        return None
+    return composite
+
+
+def _leaf_states_below(state: State) -> Tuple[State, ...]:
+    """Return every leaf state below ``state``, regions included."""
+    return tuple(
+        item
+        for item in state.walk_states()
+        if item.is_leaf_state and item is not state
+    )
+
+
+def _branches(state: State) -> Tuple[object, ...]:
+    """Return the branches of a composite state.
+
+    A composite state runs one branch for every region it declares, and a plain
+    composite state, which declares none, is its one branch.  Entering the state
+    enters every branch, and the state takes its own outgoing transitions once
+    every branch is over, so a plain composite state is the case of one branch
+    and needs no rule of its own.
+
+    :param state: Composite state.
+    :type state: State
+    :return: The regions of the state in declaration order, or the state itself.
+    :rtype: Tuple[object, ...]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region A { [*] -> P; state P; } region B { [*] -> Q; state Q; } }'
+        ... )
+        >>> [branch.name for branch in _branches(machine.root_state)]
+        ['A', 'B']
+        >>> plain = load_state_machine_from_text('state Root { [*] -> A; state A; }')
+        >>> _branches(plain.root_state) == (plain.root_state,)
+        True
+    """
+    return tuple(state.regions.values()) if state.regions else (state,)
+
+
+def _composite_of(scope: object) -> State:
+    """Return the composite state a scope belongs to: a region's owner, or the state itself."""
+    # The model package is imported here and not at the top of the module so that
+    # importing the verify registry stays independent of it.
+    from ..model.region import Region
+
+    return scope.parent if isinstance(scope, Region) else scope
+
+
+def _is_completable(state: State) -> bool:
+    """Return whether a state can be over: a leaf always, a composite when every branch can finish."""
+    return state.is_leaf_state or all(_can_finish(branch) for branch in _branches(state))
+
+
+def _can_finish(scope: object) -> bool:
+    """Return whether a branch can be over.
+
+    A branch is over when a state it can reach takes ``-> [*]``.  A composite state
+    in the way takes its own ordinary transitions only when it can be over itself,
+    while a forced transition leaves it regardless.
+
+    :param scope: A region, or a plain composite state (its own one branch).
+    :type scope: object
+    :return: ``True`` when some ``-> [*]`` of the branch can be reached.
+    :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region A { [*] -> P; state P; P -> [*]; } region B { [*] -> Q; state Q; } }'
+        ... )
+        >>> [_can_finish(branch) for branch in _branches(machine.root_state)]
+        [True, False]
+    """
+    seen = set()
+    pending = [
+        transition.to_state
+        for transition in scope.init_transitions
+        if transition.to_state is not EXIT_STATE
+    ]
+    while pending:
+        name = pending.pop()
+        if name in seen or name not in scope.substates:
+            continue
+        seen.add(name)
+        child = scope.substates[name]
+        completable = _is_completable(child)
+        for transition in scope.transitions:
+            if transition.from_state != name:
+                continue
+            if not completable and not transition.is_forced:
+                continue
+            if transition.to_state is EXIT_STATE:
+                return True
+            pending.append(transition.to_state)
+    return False
+
+
 def _dedupe_sorted(items: Iterable[str]) -> Tuple[str, ...]:
     """Return unique strings in deterministic sorted order.
 
@@ -315,13 +450,21 @@ def _project_target(
         ('Root.B',)
     """
     if target is EXIT_STATE:
-        if parent_state.is_root_state:
+        # The composite state goes on only once every other branch can be over too.
+        composite = _composite_of(parent_state)
+        if not all(
+            _can_finish(branch)
+            for branch in _branches(composite)
+            if branch is not parent_state
+        ):
+            return ()
+        if composite.is_root_state:
             return (EXIT_ROOT_SINK,)
 
-        parent_parent = parent_state.parent
+        parent_parent = composite.parent
         assert parent_parent is not None
         projected: List[str] = []
-        for transition in parent_state.transitions_from:
+        for transition in composite.transitions_from:
             projected.extend(_project_entry(parent_parent, transition, history))
         return _dedupe_sorted(projected)
 
@@ -375,10 +518,11 @@ def _initial_leaf_targets(
         return (_state_path(state),)
 
     projected: List[str] = []
-    for transition in state.init_transitions:
-        if history is not None and transition.history_role == "route":
-            continue
-        projected.extend(_project_entry(state, transition, history))
+    for branch in _branches(state):
+        for transition in branch.init_transitions:
+            if history is not None and transition.history_role == "route":
+                continue
+            projected.extend(_project_entry(branch, transition, history))
     return _dedupe_sorted(projected)
 
 
@@ -553,8 +697,6 @@ def _history_projection(machine: StateMachine) -> Optional[_HistoryProjection]:
         >>> _history_projection(plain) is None
         True
     """
-    from pyfcstm.model.support import require_supported_model
-    require_supported_model(machine, 'verify')
     if not machine.history_owners:
         return None
     base = _HistoryProjection({".".join(o.owner_path): o for o in machine.history_owners})
@@ -580,7 +722,9 @@ def _macro_graph(
     nodes = tuple(sorted(_state_path(state) for state in leaves))
     edge_sets: Dict[str, Set[str]] = {node: set() for node in nodes}
 
-    for parent_state in machine.walk_states():
+    from ..model.region import walk_namespaces
+
+    for parent_state in walk_namespaces(machine.root_state):
         for transition in parent_state.transitions:
             if transition.from_state is INIT_STATE:
                 continue
@@ -601,6 +745,12 @@ def _macro_graph(
                 # no source node to attach one to.
                 continue
             if not source_state.is_leaf_state:
+                if transition.is_forced and source_state.regions:
+                    # A forced transition takes the whole group away without
+                    # waiting for its regions, so it leaves from every leaf below.
+                    projected = _project_entry(parent_state, transition, history)
+                    for leaf in _leaf_states_below(source_state):
+                        edge_sets.setdefault(_state_path(leaf), set()).update(projected)
                 continue
 
             source_path = _state_path(source_state)
@@ -1198,9 +1348,9 @@ def _root_reachable_boundary_state_paths(
         if not any(transition.to_state is EXIT_STATE for transition in leaf.transitions_from):
             continue
 
-        parent = leaf.parent
-        if parent is not None and not parent.is_root_state:
-            add_boundary(parent)
+        boundary = _exit_boundary(leaf.parent)
+        if boundary is not None:
+            add_boundary(boundary)
 
     while queue:
         state = queue.popleft()
@@ -1208,9 +1358,9 @@ def _root_reachable_boundary_state_paths(
             if transition.to_state is not EXIT_STATE:
                 continue
 
-            parent = state.parent
-            if parent is not None and not parent.is_root_state:
-                add_boundary(parent)
+            boundary = _exit_boundary(state.parent)
+            if boundary is not None:
+                add_boundary(boundary)
 
     return boundary_paths
 
@@ -1261,8 +1411,11 @@ def _event_consumer_reachability(
     boundary_sources = _root_reachable_boundary_state_paths(machine, graph, history)
     consumers: Dict[str, List[bool]] = {}
 
-    for parent_state in machine.walk_states():
-        parent_path = _state_path(parent_state)
+    from ..model.region import walk_namespaces
+
+    for parent_state in walk_namespaces(machine.root_state):
+        # The initial transitions of a region run when its owner is entered.
+        parent_path = _state_path(_composite_of(parent_state))
         for transition in parent_state.transitions:
             event = transition.event
             if event is None:

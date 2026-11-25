@@ -180,5 +180,43 @@
       "behavior_transitions": 0,
       "eventless_unconditional_rate": null
     }
+  },
+  {
+    "name": "composite-never-completes",
+    "dsl": "state Root {\n    state Working {\n        state Idle;\n        [*] -> Idle;\n    }\n    state Done;\n    [*] -> Working;\n    Working -> Done;\n}\n",
+    "policy": null,
+    "expected": {
+      "state_count": 4,
+      "leaf_state_count": 2,
+      "composite_state_count": 2,
+      "authored_transition_count": 1,
+      "transitions_per_state": 0.25,
+      "states_per_transition": 4.0,
+      "unreachable_leaf_states": 1,
+      "unreachable_leaf_state_rate": 0.5,
+      "unreachable_transitions": 1,
+      "unreachable_transition_rate": 1.0,
+      "unreachable_transition_reasons": {
+        "owner_never_completes": 1
+      },
+      "thresholds": {
+        "max_transitions_per_state": 6.0,
+        "max_unreachable_leaf_state_rate": 0.1,
+        "max_unreachable_transition_rate": 0.1
+      },
+      "exceeded_thresholds": [
+        "unreachable_leaf_state_rate",
+        "unreachable_transition_rate"
+      ],
+      "unguarded_transitions": 1,
+      "guard_eligible_transitions": 1,
+      "unguarded_rate": 1.0,
+      "missing_effect_transitions": 1,
+      "effect_eligible_transitions": 1,
+      "missing_effect_rate": 1.0,
+      "eventless_unconditional_transitions": 1,
+      "behavior_transitions": 1,
+      "eventless_unconditional_rate": 1.0
+    }
   }
 ]

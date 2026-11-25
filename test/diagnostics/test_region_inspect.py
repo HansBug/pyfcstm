@@ -565,7 +565,7 @@ def test_data_flow_checks_see_variables_used_only_inside_regions():
 
 # ------------------------------------------------------------ verify bridge
 
-def test_verify_excludes_single_path_algorithms_with_an_explicit_reason():
+def test_verify_runs_the_topology_algorithms_on_a_model_with_regions():
     report = inspect_text(
         PLANT, enable_verify=True, max_complexity_tier='smt_undecidable_heuristic',
         max_call_count_scaling='quadratic_in_states', smt_timeout_ms=5000,
@@ -574,8 +574,7 @@ def test_verify_excludes_single_path_algorithms_with_an_explicit_reason():
     for name in ('topological_reachable_set', 'unreachable_states', 'strongly_connected_components',
                  'topological_finite', 'topological_inevitable_terminator',
                  'event_emission_to_consumer_reachable'):
-        assert by_name[name].result_kind == 'not_run'
-        assert by_name[name].reason_code == 'requires_single_active_path'
+        assert by_name[name].result_kind != 'not_run', name
     assert by_name['dead_guard'].result_kind != 'not_run'
     assert by_name['enter_postcondition_implies_during_precondition'].result_kind == 'undecidable_skip'
     assert 'region' in by_name['enter_postcondition_implies_during_precondition'].reason
@@ -624,8 +623,9 @@ def test_initial_guard_gap_inside_a_region_is_found_by_the_solver():
 
 def test_models_without_regions_keep_their_verification_report():
     report = inspect_text('state Root { state A; [*] -> A; A -> [*]; }', enable_verify=True)
-    assert all(item.reason_code != 'requires_single_active_path'
-               for item in report.verification.algorithms)
+    assert all(item.result_kind != 'not_run'
+               for item in report.verification.algorithms
+               if item.algorithm_name.startswith('topological'))
 
 
 # ---------------------------------------------------------------------- CLI

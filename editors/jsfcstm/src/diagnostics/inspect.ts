@@ -599,7 +599,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             );
         }
     }
-    const reachabilityGraph = buildReachabilityGraph(states, transitions, historyDefaults);
+    const { graph: reachabilityGraph, neverCompleting } = buildReachabilityGraph(states, transitions, historyDefaults);
     const diagnostics = collectDesignHealthWarnings(
         states,
         transitions,
@@ -622,6 +622,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         transitions,
         diagnostics,
         forcedTransitions,
+        neverCompleting,
     ));
     return {
         root_state_path: rootStatePath,
@@ -640,6 +641,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             diagnostics,
             forcedTransitions,
             structureStatisticsPolicy,
+            neverCompleting,
         ),
         reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
@@ -1823,6 +1825,7 @@ function buildUnreachableTransitionDiagnostics(
     transitions: TransitionInfo[],
     diagnostics: ModelDiagnosticJson[],
     forcedTransitions: InternalForcedTransitionInfo[],
+    neverCompleting: ReadonlySet<string>,
 ): ModelDiagnosticJson[] {
     const authored = authoredTransitionEntries(transitions, forcedTransitions);
     const authoredByKey = new Map(authored);
@@ -1911,6 +1914,11 @@ function buildUnreachableTransitionDiagnostics(
         } else if (sourceIsUnreachable(transition.from_path)) {
             addReason(key, 'unreachable_source_state');
             addVerificationSources(key, sourceVerificationSources(transition.from_path));
+        }
+    });
+    authored.forEach(([key, transition]) => {
+        if (!key.startsWith('forced:') && !transition.is_forced && neverCompleting.has(transition.from_path)) {
+            addReason(key, 'owner_never_completes');
         }
     });
     const eventNames = new Set(diagnostics
@@ -2064,6 +2072,7 @@ function buildStructureStatistics(
     diagnostics: ModelDiagnosticJson[],
     forcedTransitions: InternalForcedTransitionInfo[],
     policy: StructureStatisticsPolicy,
+    neverCompleting: ReadonlySet<string>,
 ): StructureStatistics {
     const representatives = new Map<string, TransitionInfo>();
     const comboGroups = new Map<string, TransitionInfo[]>();
@@ -2315,6 +2324,14 @@ function buildStructureStatistics(
         keys.forEach(key => bucket.add(key));
         reasonKeys.set(reason, bucket);
     }
+    const neverCompletingKeys = authoredEntries
+        .filter(([key, item]) => !key.startsWith('forced:') && !item.is_forced && neverCompleting.has(item.from_path))
+        .map(([key]) => key);
+    if (neverCompletingKeys.length > 0) {
+        const bucket = reasonKeys.get('owner_never_completes') ?? new Set<string>();
+        neverCompletingKeys.forEach(key => bucket.add(key));
+        reasonKeys.set('owner_never_completes', bucket);
+    }
     const reasons: Record<string, number> = {};
     if (sourceUnreachableKeys.size > 0) reasons.unreachable_source_state = sourceUnreachableKeys.size;
     if (eventUnreachableKeys.size > 0) reasons.unreachable_event_consumer = eventUnreachableKeys.size;
@@ -2396,6 +2413,54 @@ function buildReachabilityGraph(
     states: StateInfo[],
     transitions: TransitionInfo[],
     historyDefaults: ReadonlyMap<string, string[]> = new Map(),
+): { graph: Record<string, string[]>; neverCompleting: Set<string> } {
+    // A composite state is its own one branch: it takes its ordinary outgoing
+    // transitions once a child of it can leave through ``[*]``, so a composite
+    // state whose children cannot never gets past itself. A forced transition
+    // leaves regardless.
+    const composites = new Set(states.filter(s => s.is_composite).map(s => s.path));
+    const completable = new Set<string>();
+    for (;;) {
+        const graph = buildReachabilityPass(states, transitions, historyDefaults, composites, completable);
+        const grown = Array.from(composites).filter(path =>
+            !completable.has(path) && branchCanFinish(states, transitions, graph, composites, completable, path));
+        if (grown.length === 0) {
+            return { graph, neverCompleting: new Set([...composites].filter(path => !completable.has(path))) };
+        }
+        grown.forEach(path => completable.add(path));
+    }
+}
+
+/** Whether a child of the composite state at ``path`` that can be reached takes ``[*]``. */
+function branchCanFinish(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    graph: Record<string, string[]>,
+    composites: ReadonlySet<string>,
+    completable: ReadonlySet<string>,
+    path: string,
+): boolean {
+    const owner = states.find(s => s.path === path)!;
+    const reachable = new Set<string>();
+    for (const it of owner.initial_targets) {
+        if (it.target === EXIT_MARK) continue;
+        reachable.add(it.target);
+        (graph[it.target] ?? []).forEach(next => reachable.add(next));
+    }
+    return transitions.some(t =>
+        t.to_path === EXIT_MARK
+        && t.from_path !== INIT_MARK
+        && t.from_path.slice(0, t.from_path.lastIndexOf('.')) === path
+        && reachable.has(t.from_path)
+        && (!composites.has(t.from_path) || t.is_forced || completable.has(t.from_path)));
+}
+
+function buildReachabilityPass(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    historyDefaults: ReadonlyMap<string, string[]>,
+    composites: ReadonlySet<string>,
+    completable: ReadonlySet<string>,
 ): Record<string, string[]> {
     const adjacency: Record<string, Set<string>> = {};
     const initialEdges: Record<string, Set<string>> = {};
@@ -2405,6 +2470,8 @@ function buildReachabilityGraph(
     }
     for (const t of transitions) {
         if (t.from_path === INIT_MARK || t.to_path === EXIT_MARK) continue;
+        // A composite state takes its ordinary transitions only once it can be over.
+        if (composites.has(t.from_path) && !t.is_forced && !completable.has(t.from_path)) continue;
         adjacency[t.from_path]?.add(t.to_path);
     }
     for (const s of states) {

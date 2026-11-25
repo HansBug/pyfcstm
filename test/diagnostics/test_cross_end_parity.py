@@ -1107,6 +1107,20 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'reasons': ['owner_never_completes'],
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'reasons': ['unreachable_source_state'],
+                },
+            },
+            {
                 'code': 'W_UNREFERENCED_VAR',
                 'severity': 'warning',
                 'refs': {

@@ -838,16 +838,54 @@ state Root {
     state Orphan {
         state A;
         [*] -> A;
+        A -> [*];
     }
     state Live;
     [*] -> Live;
     Orphan -> Live;
 }
 `));
-            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
             assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
-                unreachable_source_state: 1,
+                unreachable_source_state: 2,
             });
+        });
+
+        it('treats a composite whose children cannot leave as never taking its transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Working {
+        state Idle;
+        [*] -> Idle;
+    }
+    state Done;
+    [*] -> Working;
+    Working -> Done;
+}
+`));
+            assert.ok(report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Done',
+            ));
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                owner_never_completes: 1,
+            });
+        });
+
+        it('lets a forced transition leave a composite that cannot complete', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Working {
+        state Idle;
+        [*] -> Idle;
+    }
+    state Done;
+    [*] -> Working;
+    !Working -> Done :: Stop;
+}
+`));
+            assert.ok(!report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Done',
+            ));
         });
 
         it('does not count excluded event-bearing initial edges', async () => {

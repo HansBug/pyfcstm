@@ -961,3 +961,45 @@ def test_a_write_in_a_nested_branch_does_not_hide_a_later_read_of_the_old_value(
     source = two_regions(
         'state B { during { if [y > 0] { if [z > 0] { x = 2; } } else { x = 3; } z = x; } } [*] -> B;')
     assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(source))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        """
+        state Root {
+            [*] -> S1;
+            state S1 {
+                region A { [*] -> X; state X; }
+                region B { [*] -> Y; state Y; }
+            }
+            state S3;
+            !S1 -> S3 : /E2;
+        }
+        """,
+        """
+        state Root {
+            [*] -> S1;
+            state S1 {
+                [*] -> S4;
+                state S4 {
+                    region A { [*] -> X; state X; }
+                    region B { [*] -> Y; state Y; }
+                }
+            }
+            state S3;
+            !S1 -> S3 : /E2;
+        }
+        """,
+    ],
+)
+def test_a_forced_transition_out_of_a_composite_with_regions_below_it_has_a_consumer(text):
+    # The simulator takes ``!S1 -> S3`` on ``/E2`` from the resting group, so no
+    # report, with or without the verify findings, calls it unreachable.
+    for enable_verify in (False, True):
+        report = inspect_model(load_state_machine_from_text(text), enable_verify=enable_verify)
+        assert not any(
+            item.code in ("W_UNREACHABLE_TRANSITION", "W_EVENT_UNREACHABLE_EMIT")
+            for item in report.diagnostics
+        ), enable_verify
+        assert report.structure_statistics.unreachable_transitions == 0

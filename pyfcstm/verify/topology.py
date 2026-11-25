@@ -1434,7 +1434,15 @@ def _event_consumer_reachability(
                     if source_state.is_leaf_state:
                         reachable = source_path in active_leaves
                     else:
-                        reachable = source_path in boundary_sources
+                        # A forced transition leaves from every leaf below its
+                        # source, so it is selectable wherever one of them is.
+                        reachable = source_path in boundary_sources or (
+                            transition.is_forced
+                            and any(
+                                leaf.startswith(source_path + ".")
+                                for leaf in active_leaves
+                            )
+                        )
             else:
                 raise TypeError(  # pragma: no cover
                     # Grammar-produced non-init transition sources are strings.

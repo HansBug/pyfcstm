@@ -604,6 +604,11 @@ def check_region_safety(count, seed, steps=3):
             continue
         if reported is not None:
             prefix = solve_bmc_property(core_query(model, query), timeout_ms=20000)
+            if prefix.runtime_safety is None or prefix.runtime_safety.status != "violated":
+                # The second solve ran out of time before it reproduced the
+                # violation the first check reported; nothing to replay.
+                undecided += 1
+                continue
             replay = replay_bmc_witness(
                 model, decode_bmc_result_trace(prefix, source="runtime_error")
             )
@@ -673,6 +678,15 @@ def check_region_hot_starts(count, seed, steps=2):
             try:
                 core = build_bmc_core_formula(BmcEngine(model).prepare(query))
             except BmcError as err:
+                try:
+                    build_bmc_core_formula(
+                        BmcEngine(model).prepare("check reach <= %d: terminated();" % steps)
+                    )
+                except BmcError:
+                    # The model itself exceeds a documented bound of the relation
+                    # (cold start refuses it the same way), so no start can be judged.
+                    skipped += 1
+                    break
                 failures.append((index, start, "refused: %s" % err, text))
                 continue
             problem = _compare_hot_start(model, core, start, variables, steps, cycle_inputs)

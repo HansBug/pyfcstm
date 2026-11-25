@@ -40,14 +40,14 @@ RegionCase
 -----------------------------------------------------
 
 .. autoclass:: RegionCase
-    :members: kind,label,unit_id,target_kind,target_state_id,target_state_path,condition,action_blocks,used_events,guard_requirements,priority_exclusions,consumed_events,failed_conditions,before_done,owed,plain_pending_after
+    :members: kind,label,unit_id,target_kind,target_state_id,target_state_path,condition,action_blocks,used_events,guard_requirements,priority_exclusions,consumed_events,failed_conditions,before_done,owed,plain_pending_after,scope,public_label,home
 
 
 RegionUnitFormal
 -----------------------------------------------------
 
 .. autoclass:: RegionUnitFormal
-    :members: unit_id,kind,cases,failed
+    :members: unit_id,kind,cases,failed,evaluation_points
 
 
 expand\_leaf\_unit
@@ -72,6 +72,12 @@ expand\_cold\_unit
 -----------------------------------------------------
 
 .. autofunction:: expand_cold_unit
+
+
+expand\_wait\_unit
+-----------------------------------------------------
+
+.. autofunction:: expand_wait_unit
 
 
 expand\_flush\_unit

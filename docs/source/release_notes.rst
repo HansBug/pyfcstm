@@ -129,11 +129,28 @@ with the sum of the regions instead of the product of their paths:
 - ``>> during`` aspects and the plain ``during before`` of a state that owns
   regions are encoded the way the simulator runs them.
 
-Only a cold start is supported for such a model. A hot start,
-:func:`pyfcstm.bmc.compile_bmc_property` and
-:func:`pyfcstm.bmc.check_runtime_safety` raise
-:class:`pyfcstm.bmc.UnsupportedBmcQuery` for it, and ``pyfcstm bmc`` still
-refuses such a model.
+A hot start, :func:`pyfcstm.bmc.compile_bmc_property`,
+:func:`pyfcstm.bmc.check_runtime_safety` and ``pyfcstm bmc`` accept such a model
+too:
+
+- ``init state("...")`` takes a configuration text such as
+  ``Controller.Running{Safety: Watching, Motion: On}``, the path of a state
+  inside a region, or the path of an owner alone. A region that is left out, or
+  written ``[init]``, waits for its start in the first cycle
+  (``REGION_PENDING_ID``). A start that leaves every region of an owner done is
+  refused with ``invalid_start_position``;
+- ``called`` and ``call_count`` count the abstract calls of regions, runtime
+  safety checks the operations of every region, including the probes of
+  candidates that were not chosen, and a region that cannot start makes the
+  whole cycle a Delta that keeps positions and variables;
+- witness frames carry an optional ``configuration`` text, region steps carry
+  ``local_cases`` (``scope``, ``kind`` and ``label``) and a ``null``
+  ``case_label``, and abstract calls carry the configuration of the whole
+  machine at the moment of the call. Replay compares configurations, variables,
+  events, inputs and calls; local cases are not compared. The human report
+  prints one line per region step. The new JSON fields are optional and absent
+  for models without regions.
+
 A group that re-enters itself on changing values is unrolled to a fixed depth;
 a model that needs more raises :class:`pyfcstm.bmc.BmcBuildError` instead of
 being approximated. Models without regions produce the same formulas as before.

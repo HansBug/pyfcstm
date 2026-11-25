@@ -62,13 +62,14 @@ import z3
 from .domain import (
     REGION_DONE_ID,
     REGION_INACTIVE_ID,
+    REGION_PENDING_ID,
     STATE_INIT_ID,
     STATE_TERMINATE_ID,
     BmcDomain,
     RegionDomainEntry,
 )
 from .engine import BmcPreparedContext
-from .errors import BmcBuildError, UnsupportedBmcQuery
+from .errors import BmcBuildError
 from pyfcstm.model.region import walk_namespaces
 from .region_expand import (
     ATOM_REGION_DONE,
@@ -80,23 +81,32 @@ from .region_expand import (
     expand_flush_unit,
     expand_init_unit,
     expand_leaf_unit,
+    expand_wait_unit,
 )
+from .region_start import DONE as START_DONE
+from .region_start import PENDING as START_PENDING
 from .relation import (
+    BmcAbstractCallRecord,
     BmcCoreFormula,
+    BmcRuntimeErrorSite,
     BmcStepRelation,
     BmcTraceSymbols,
+    _CaseLowering,
     _LoweredBoolTemplate,
     _and,
     _append_tracked_group,
     _build_domain_formula,
     _build_environment_formula,
     _build_initial_formula,
+    _error_site,
+    _execute_action_block,
     _expect_arith,
     _guarded_domain_constraints,
     _formula_from_groups,
     _initial_source,
     _internal_bmc_error,
     _lower_bool_template,
+    _lower_guard_requirement,
     _or,
     _prepare_case_lowering,
     _relation_frame_domain,
@@ -133,6 +143,25 @@ class RegionCaseRelation:
     :type consequent: z3.BoolRef
     :param implication: ``z3.Implies(antecedent, consequent)``.
     :type implication: z3.BoolRef
+    :param order: Rank of the unit this path belongs to among the units lowered
+        in the step.  Units are lowered in the order the runtime runs them, so
+        sorting the paths a model selected by ``order`` lists them in execution
+        order; every copy of one unit shares its rank, defaults to ``0``.
+    :type order: int, optional
+    :param children: Paths of the units that this path starts when it enters a
+        state that owns regions: the start of each region in order, and the
+        continuation of the owner when every region finished right away.  A
+        child is only part of the run when this path is, and its ``selector``
+        is the condition expression of the path itself rather than a symbol, so
+        building it adds nothing to the formula; defaults to ``()``.
+    :type children: Tuple[RegionCaseRelation, ...], optional
+    :param call_records: Abstract actions the path calls, in call order, with the
+        values the variables had at the moment of the call; defaults to ``()``.
+    :type call_records: Tuple[pyfcstm.bmc.relation.BmcAbstractCallRecord, ...], optional
+    :param flushes: Settlements of ``>> during after`` actions that the start of
+        a group runs when one of its regions ends its branch right away, in
+        execution order; defaults to ``()``.
+    :type flushes: Tuple[RegionFlushRelation, ...], optional
 
     Example::
 
@@ -144,6 +173,8 @@ class RegionCaseRelation:
         >>> t = z3.BoolVal(True)
         >>> RegionCaseRelation(0, case, t, t, t, t).case.kind
         'fallback'
+        >>> RegionCaseRelation(0, case, t, t, t, t, 2).order
+        2
     """
 
     step_index: int
@@ -152,6 +183,157 @@ class RegionCaseRelation:
     antecedent: z3.BoolRef
     consequent: z3.BoolRef
     implication: z3.BoolRef
+    order: int = 0
+    children: Tuple["RegionCaseRelation", ...] = ()
+    call_records: Tuple[BmcAbstractCallRecord, ...] = ()
+    flushes: Tuple["RegionFlushRelation", ...] = ()
+
+
+@dataclass(frozen=True)
+class RegionFlushRelation:
+    """The ``>> during after`` actions one scope runs when a flush settles it.
+
+    A flush runs at the end of a region's branch and at the end of the cycle.
+    It settles the scopes that owe their after actions one at a time, innermost
+    first, so each scope is a unit of its own.
+
+    :param step_index: Step index owning this flush.
+    :type step_index: int
+    :param order: Rank of the flush among the units lowered in the step, in the
+        same ranking as :attr:`RegionCaseRelation.order`.
+    :type order: int
+    :param scope: Path of the scope that is settled.
+    :type scope: str
+    :param prefix: Path of the region whose branch just ended, or ``''`` for the
+        flush that ends the cycle.
+    :type prefix: str
+    :param condition: Condition under which the scope owes its after actions and
+        the flush runs.
+    :type condition: z3.BoolRef
+    :param call_records: Abstract actions the settlement calls, in call order.
+    :type call_records: Tuple[pyfcstm.bmc.relation.BmcAbstractCallRecord, ...]
+
+    Example::
+
+        >>> import z3
+        >>> flush = RegionFlushRelation(0, 3, 'Root', '', z3.BoolVal(True), ())
+        >>> (flush.scope, flush.prefix)
+        ('Root', '')
+    """
+
+    step_index: int
+    order: int
+    scope: str
+    prefix: str
+    condition: z3.BoolRef
+    call_records: Tuple[BmcAbstractCallRecord, ...]
+
+
+@dataclass(frozen=True)
+class RegionOccurrence:
+    """One path or settlement of a step together with the condition it runs under.
+
+    A path that a group start runs only runs when the path that started the group
+    does, so its own selector is not enough; the condition of an occurrence is the
+    conjunction along the way from the path that runs unconditionally.
+
+    :param order: Rank of the unit in the step, see :attr:`RegionCaseRelation.order`.
+    :type order: int
+    :param condition: Condition under which the occurrence is part of the cycle.
+    :type condition: z3.BoolRef
+    :param case: The path, or ``None`` for a settlement.
+    :type case: RegionCaseRelation, optional
+    :param flush: The settlement, or ``None`` for a path.
+    :type flush: RegionFlushRelation, optional
+
+    Example::
+
+        >>> import z3
+        >>> flush = RegionFlushRelation(0, 3, 'Root', '', z3.BoolVal(True), ())
+        >>> RegionOccurrence(3, z3.BoolVal(True), None, flush).call_records
+        ()
+    """
+
+    order: int
+    condition: z3.BoolRef
+    case: Optional[RegionCaseRelation]
+    flush: Optional[RegionFlushRelation]
+
+    @property
+    def call_records(self) -> Tuple[BmcAbstractCallRecord, ...]:
+        """Return the abstract calls the occurrence makes, in call order.
+
+        :return: The call records of the path or of the settlement.
+        :rtype: Tuple[pyfcstm.bmc.relation.BmcAbstractCallRecord, ...]
+
+        Example::
+
+            >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     region A { [*] -> P; state P { during abstract Work; } }
+            ... }
+            ... ''')
+            >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: terminated();'))
+            >>> [len(item.call_records) for item in region_occurrences(core.region_steps[0])]
+            [0, 1]
+        """
+        item = self.case if self.case is not None else self.flush
+        return item.call_records
+
+
+def region_occurrences(step: "RegionStepRelation") -> Tuple[RegionOccurrence, ...]:
+    """List every path and settlement of a step with the condition it runs under.
+
+    The occurrences come in execution order.  A path that was lowered for a
+    group start, which no solved model selected on its own, is listed under the
+    path that starts the group.
+
+    :param step: Paths of one step of a model with regions.
+    :type step: RegionStepRelation
+    :return: Occurrences sorted by the rank of their unit.
+    :rtype: Tuple[RegionOccurrence, ...]
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: terminated();'))
+        >>> [item.case.case.public_label for item in region_occurrences(core.region_steps[0])]
+        ['__init__::initial::Root::0', 'Root::initial::Root.A.P::0', 'Root::initial::Root.B.Q::0']
+    """
+    found: List[RegionOccurrence] = []
+
+    def walk_cases(relations, ancestors) -> None:
+        for relation in relations:
+            condition = _and(tuple(ancestors) + (relation.selector,))
+            found.append(RegionOccurrence(relation.order, condition, relation, None))
+            walk_cases(relation.children, tuple(ancestors) + (relation.selector,))
+            for flush in relation.flushes:
+                found.append(
+                    RegionOccurrence(
+                        flush.order,
+                        _and(tuple(ancestors) + (relation.selector, flush.condition)),
+                        None,
+                        flush,
+                    )
+                )
+
+    # A step that cannot be rolled back adds nothing to the conditions.
+    ran = () if z3.is_false(step.rolled_back) else (z3.Not(step.rolled_back),)
+    walk_cases(step.cases, ran)
+    for flush in step.flushes:
+        found.append(
+            RegionOccurrence(flush.order, _and(ran + (flush.condition,)), None, flush)
+        )
+    return tuple(sorted(found, key=lambda item: item.order))
 
 
 @dataclass(frozen=True)
@@ -165,6 +347,14 @@ class RegionStepRelation:
     :param constraints: Every constraint of the step: path implications,
         intermediate-symbol definitions and frame facts.
     :type constraints: Tuple[z3.BoolRef, ...]
+    :param flushes: Settlements of ``>> during after`` actions that run in the
+        step outside a group start, in execution order; defaults to ``()``.
+    :type flushes: Tuple[RegionFlushRelation, ...], optional
+    :param rolled_back: Condition under which the whole cycle is rolled back
+        after its paths were lowered: a hot start whose waiting region cannot
+        start.  The cycle is then a Delta, so none of its paths ran; defaults
+        to ``False``.
+    :type rolled_back: z3.BoolRef, optional
 
     Example::
 
@@ -175,6 +365,8 @@ class RegionStepRelation:
     step_index: int
     cases: Tuple[RegionCaseRelation, ...]
     constraints: Tuple[z3.BoolRef, ...]
+    flushes: Tuple[RegionFlushRelation, ...] = ()
+    rolled_back: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(False))
 
 
 @dataclass(frozen=True)
@@ -194,12 +386,15 @@ class _UnitResult:
     :ivar facts: Frame position assignments, each guarded by the path that makes it.
     :ivar defs: Definedness requirements of the paths, each guarded by its path.
     :ivar fallback: Condition under which the applying path only ran during actions.
+    :ivar cases: Lowered paths kept for inspection: every path of a unit that runs in
+        the step, or of a unit that a group start runs, in the order of its variants.
     """
 
     ok: z3.BoolRef
     facts: List[_Fact] = field(default_factory=list)
     defs: List[Tuple[z3.BoolRef, DomainConstraint]] = field(default_factory=list)
     fallback: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(False))
+    cases: List[RegionCaseRelation] = field(default_factory=list)
 
 
 @dataclass
@@ -211,6 +406,8 @@ class _Entry:
     :ivar env_out: Values after the start.
     :ivar facts: Frame position assignments of the started regions.
     :ivar defs: Definedness requirements of the start paths.
+    :ivar cases: Lowered paths of the units the start runs, in execution order.
+    :ivar flushes: Settlements the start runs, in execution order.
     """
 
     ok: z3.BoolRef
@@ -218,6 +415,8 @@ class _Entry:
     env_out: _Env
     facts: List[_Fact]
     defs: List[Tuple[z3.BoolRef, DomainConstraint]]
+    cases: List[RegionCaseRelation] = field(default_factory=list)
+    flushes: List[RegionFlushRelation] = field(default_factory=list)
 
 
 class _Units:
@@ -252,6 +451,8 @@ class _Units:
                 )
             elif kind == "cont":
                 unit = expand_continue_unit(self._domain, path, before_done=before_done)
+            elif kind == "wait":
+                unit = expand_wait_unit(self._domain, path, before_done=before_done)
             else:
                 unit = expand_cold_unit(self._domain, before_done=before_done)
             self._cache[key] = unit
@@ -294,6 +495,71 @@ def _owner_resting(
     )
 
 
+def reported_call_state(
+    domain: BmcDomain, record: BmcAbstractCallRecord
+) -> Tuple[str, str]:
+    """Return the state and the active leaf a handler is told for a call.
+
+    A call of a plain action reports the state that owns it.  A ``>> during``
+    aspect declared above a group of regions wraps the whole group: the handler
+    is told the state of the first owner of at least two regions on the way from
+    the scope that declares the aspect down to the state the call belongs to, and
+    the state itself when no such owner is on the way.  An owner of one region
+    is passed through, as the plain composite it behaves like.  It describes the
+    calls a unit of work makes; the call of an aspect that a flush settles is
+    told the state the machine rests in at that moment, which no record knows.
+
+    :param domain: Domain of a model that declares regions.
+    :type domain: pyfcstm.bmc.domain.BmcDomain
+    :param record: A lowered call record.
+    :type record: pyfcstm.bmc.relation.BmcAbstractCallRecord
+    :return: The reported state and the reported active leaf.
+    :rtype: Tuple[str, str]
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     >> during before abstract Tick;
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: terminated();'))
+        >>> occurrence = [item for item in region_occurrences(core.region_steps[0]) if item.call_records][0]
+        >>> reported_call_state(core.context.domain, occurrence.call_records[0])
+        ('Root', 'Root')
+    """
+    if not record.role.startswith("aspect_") or record.scope_path is None:
+        return record.state_path, record.active_leaf_path
+    scope = record.scope_path
+    reported = record.state_path
+    chain: List[str] = []
+    entry = domain.state_by_path(record.state_path)
+    while True:
+        chain.append(entry.path)
+        if entry.region_path is not None:
+            # A state in a region has the region, not the owner, as its parent
+            # path; the owner is the next state up.
+            above = next(
+                item.owner_path for item in domain.regions if item.path == entry.region_path
+            )
+        elif entry.parent_path is not None:
+            above = entry.parent_path
+        else:
+            break
+        entry = domain.state_by_path(above)
+    for path in reversed(chain):
+        if path != scope and not path.startswith(scope + "."):
+            continue
+        if len(_regions_of(domain, path)) >= 2:
+            reported = path
+            break
+    return reported, reported
+
+
 def _in_region(domain: BmcDomain, path: str) -> bool:
     """Return whether the state at ``path`` sits inside a region, at any depth."""
     current = domain.state_by_path(path)
@@ -308,8 +574,69 @@ def _in_region(domain: BmcDomain, path: str) -> bool:
     return False
 
 
+def start_position_ids(
+    domain: BmcDomain, start
+) -> Tuple[int, Dict[str, int]]:
+    """Return the ids of the position a hot start of a model with regions begins in.
+
+    :param domain: Region-aware domain of the model.
+    :type domain: pyfcstm.bmc.domain.BmcDomain
+    :param start: Where every region rests, as read by
+        :func:`pyfcstm.bmc.region_start.resolve_region_start`.
+    :type start: pyfcstm.bmc.region_start.RegionStart
+    :return: The id of the state the machine rests in outside every region, and for
+        every region of a resting owner the id of its position: a state id,
+        :data:`pyfcstm.bmc.domain.REGION_DONE_ID` or
+        :data:`pyfcstm.bmc.domain.REGION_PENDING_ID`.
+    :rtype: Tuple[int, Dict[str, int]]
+
+    Example::
+
+        >>> from pyfcstm.bmc.domain import REGION_PENDING_ID, build_bmc_domain
+        >>> from pyfcstm.bmc.region_start import resolve_region_start
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> domain = build_bmc_domain(model, 1)
+        >>> main, ids = start_position_ids(domain, resolve_region_start(domain, 'Root{A: P}'))
+        >>> (main == domain.state_path_to_id('Root'), ids['Root.B'] == REGION_PENDING_ID)
+        (True, True)
+    """
+    ids: Dict[str, int] = {}
+    for path, value in start.positions.items():
+        if value == START_PENDING:
+            ids[path] = REGION_PENDING_ID
+        elif value == START_DONE:
+            ids[path] = REGION_DONE_ID
+        else:
+            ids[path] = domain.state_path_to_id(value)
+    return domain.state_path_to_id(start.main), ids
+
+
+def _outside_stable_positions(
+    domain: BmcDomain, ids: Mapping[str, int]
+) -> Dict[str, int]:
+    """Return the positions of a start that a frame only holds right at the start.
+
+    A region that waits for initialization, or a branch that rests in a state only a
+    cycle can leave, is a position no frame has once the machine has made progress.
+    """
+    stable = {item.path: set(item.position_state_ids) for item in domain.regions}
+    return {
+        path: value
+        for path, value in ids.items()
+        if value != REGION_DONE_ID and value not in stable[path]
+    }
+
+
 def region_frame_constraints(
-    symbols: BmcTraceSymbols, frame_index: int
+    symbols: BmcTraceSymbols,
+    frame_index: int,
+    start: Optional[Tuple[int, Mapping[str, int]]] = None,
 ) -> Tuple[z3.BoolRef, ...]:
     """Return the position invariants of one frame.
 
@@ -323,6 +650,13 @@ def region_frame_constraints(
     :type symbols: pyfcstm.bmc.relation.BmcTraceSymbols
     :param frame_index: Frame index in ``0..N``.
     :type frame_index: int
+    :param start: For a hot start, the id of the state the machine rests in outside
+        every region and the position ids of the regions, see
+        :func:`start_position_ids`.  A frame may hold a position that a hot start
+        begins in but that no frame holds after progress, such as a region that
+        waits for initialization, only when it holds the whole start position:
+        that is the frame of a cycle that made no progress.  Defaults to ``None``.
+    :type start: Tuple[int, Mapping[str, int]], optional
     :return: Constraints that every frame of a trace satisfies.
     :rtype: Tuple[z3.BoolRef, ...]
     :raises pyfcstm.bmc.errors.BmcBuildError: If ``frame_index`` is invalid.
@@ -352,6 +686,11 @@ def region_frame_constraints(
         and (entry.is_stoppable or entry.owns_regions)
         and not _in_region(domain, entry.path)
     ]
+    if start is not None and start[0] not in main_ids:
+        # A hot start can begin in a state the machine does not rest in, a plain
+        # composite state or a pseudo state; only the cycle that leaves it is
+        # left, or a cycle that found no way on and so stayed there.
+        main_ids.append(start[0])
     constraints.append(
         _or(
             state == z3.IntVal(item)
@@ -364,9 +703,20 @@ def region_frame_constraints(
         regions = _regions_of(domain, owner_path)
         for region in regions:
             position = symbols.region_position(frame_index, region.path)
+            extra = (
+                ()
+                if start is None
+                else tuple(
+                    value
+                    for path, value in _outside_stable_positions(
+                        domain, start[1]
+                    ).items()
+                    if path == region.path
+                )
+            )
             allowed = _or(
                 position == z3.IntVal(item)
-                for item in tuple(region.position_state_ids) + (REGION_DONE_ID,)
+                for item in tuple(region.position_state_ids) + (REGION_DONE_ID,) + extra
             )
             constraints.append(z3.Implies(resting, allowed))
             constraints.append(
@@ -382,7 +732,30 @@ def region_frame_constraints(
                 ),
             )
         )
+    if start is not None:
+        main_id, ids = start
+        at_start = _at_start(symbols, frame_index, main_id, ids)
+        for path, value in _outside_stable_positions(domain, ids).items():
+            constraints.append(
+                z3.Implies(
+                    symbols.region_position(frame_index, path) == z3.IntVal(value),
+                    at_start,
+                )
+            )
     return tuple(constraints)
+
+
+def _at_start(
+    symbols: BmcTraceSymbols, frame_index: int, main_id: int, ids: Mapping[str, int]
+) -> z3.BoolRef:
+    """Return the condition that a frame holds the position a hot start began in."""
+    return _and(
+        [symbols.frame_state(frame_index) == z3.IntVal(main_id)]
+        + [
+            symbols.region_position(frame_index, path) == z3.IntVal(value)
+            for path, value in sorted(ids.items())
+        ]
+    )
 
 
 class _StepBuilder:
@@ -394,18 +767,46 @@ class _StepBuilder:
         symbols: BmcTraceSymbols,
         units: _Units,
         step_index: int,
+        analysis: bool = False,
     ) -> None:
         """Collect what one step needs: symbols, units, aspect scopes and value slots.
 
         The values that flow from unit to unit are the persistent variables plus, for
         every scope that declares aspects, a flag for its before actions and a flag for
         its after actions.
+
+        With ``analysis`` the step is lowered to locate runtime errors instead of to
+        describe the cycle: nothing is required to be defined, so an operation that
+        raises can still be part of a model, and every operation the runtime
+        evaluates, also on a candidate that dead-ends or loses to a higher
+        priority, becomes a requirement kept in :attr:`requirements`.
         """
+        self.analysis = analysis
+        # Operations that make a hot start of a model with regions fail in a cycle:
+        # the start of a region that waits, and the cycle of a branch that rests in
+        # a state only a cycle can leave.  Any one of them makes the whole cycle a
+        # Delta.
+        self._hot_fail: List[z3.BoolRef] = []
+        # Under which condition each operation of the step has to be defined; only
+        # filled by an analysis.
+        self.requirements: List[Tuple[z3.BoolRef, DomainConstraint]] = []
         self.prepared = prepared
         self.symbols = symbols
         self.units = units
         self.step = step_index
         self.domain = prepared.domain
+        start = prepared.bound_query.initial.resolved_start
+        # The position a hot start begins in, as ids; ``start_waits`` says that
+        # some part of it needs a cycle of its own to be initialized.
+        self.main_id: Optional[int] = None
+        self.start_ids: Dict[str, int] = {}
+        self.start_waits = False
+        if start is not None:
+            self.main_id, self.start_ids = start_position_ids(self.domain, start)
+            main = self.domain.state_by_id(self.main_id)
+            self.start_waits = bool(
+                _outside_stable_positions(self.domain, self.start_ids)
+            ) or not (main.is_stoppable or main.owns_regions)
         self.persistent = tuple(self.domain.persistent_variable_names)
         frame_vars = symbols.frame_vars[step_index]
         self.int_names = tuple(
@@ -437,9 +838,16 @@ class _StepBuilder:
         )
         self.constraints: List[z3.BoolRef] = []
         self.cases: List[RegionCaseRelation] = []
+        # Where the settlements of the flush being lowered are kept: the step, or
+        # the group start that is being lowered.
+        self.flushes: List[RegionFlushRelation] = []
+        self._flush_sink: List[RegionFlushRelation] = self.flushes
         self.delta_terms: List[z3.BoolRef] = []
+        self.rollback_terms: List[z3.BoolRef] = []
         self.gamma_terms: List[z3.BoolRef] = []
         self._counter = 0
+        # Rank handed to the next unit that is lowered; see ``RegionCaseRelation.order``.
+        self._unit_counter = 0
         # Owners whose entry is being decided, with the values they were
         # entered on: re-entering one on the very same values is the loop the
         # runtime reports, and re-entering on other values may still end.
@@ -513,16 +921,28 @@ class _StepBuilder:
         constraint, which is what a flag that was handed on unchanged looks like.
         """
         return _and(
-            left[name] == right[name]
+            self._same(left[name], right[name])
             for name in self.slots
             if not left[name].eq(right[name])
         )
+
+    def _same(self, left: z3.ArithRef, right: z3.ArithRef) -> z3.BoolRef:
+        """Return the constraint that one slot holds a value.
+
+        An analysis does not require a value written to an ``int`` variable to be
+        integral, since that is what it looks for; the variable then takes the
+        integer part of what was written, so that the rest of the cycle, whose
+        values the analysis fixes, still has a solution.
+        """
+        if self.analysis and z3.is_int(left) and not z3.is_int(right):
+            return left == z3.ToInt(right)
+        return left == right
 
     def vars_equal(
         self, left: Mapping[str, z3.ArithRef], right: Mapping[str, z3.ArithRef]
     ) -> z3.BoolRef:
         """Return the constraint that two sets of values agree in the persistent variables."""
-        return _and(left[name] == right[name] for name in self.persistent)
+        return _and(self._same(left[name], right[name]) for name in self.persistent)
 
     def persistent_env(self, env: Mapping[str, object]) -> _Env:
         """Return the persistent variables of ``env`` as arithmetic expressions."""
@@ -595,6 +1015,7 @@ class _StepBuilder:
         outputs: Optional[Tuple[z3.ArithRef, _Env]],
         record: bool,
         pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
+        capture: bool = False,
     ) -> _UnitResult:
         """Lower the paths of a unit that starts under ``gate`` on ``env_in``.
 
@@ -606,11 +1027,25 @@ class _StepBuilder:
         during-before of the owner is still pending, is lowered once for every
         combination those flags can take; see :meth:`flags` for which
         combinations that is.  ``pending_io`` holds the pending flag a start
-        unit reads and the symbol it writes.
+        unit reads and the symbol it writes.  ``capture`` keeps the lowered paths
+        of a unit that a group start runs, without constraining anything: they
+        describe what the path that starts the group did.
         """
+        order = self._unit_counter
+        self._unit_counter += 1
         if not self.has_aspects and pending_io is None:
             return self._lower_variant(
-                self.units.get(spec), gate, env_in, ns, tag, outputs, record, None
+                self.units.get(spec),
+                gate,
+                env_in,
+                ns,
+                tag,
+                outputs,
+                record,
+                None,
+                frozenset(),
+                capture,
+                order,
             )
         merged = _UnitResult(z3.BoolVal(False))
         oks = []
@@ -645,11 +1080,14 @@ class _StepBuilder:
                     record,
                     pending_io,
                     frozenset(scopes),
+                    capture,
+                    order,
                 )
                 oks.append(part.ok)
                 fallbacks.append(part.fallback)
                 merged.facts.extend(part.facts)
                 merged.defs.extend(part.defs)
+                merged.cases.extend(part.cases)
         merged.ok = _or(oks)
         merged.fallback = _or(fallbacks)
         return merged
@@ -681,6 +1119,8 @@ class _StepBuilder:
         record: bool,
         pending_io: Optional[Tuple[z3.BoolRef, z3.BoolRef]] = None,
         variant_scopes: FrozenSet[str] = frozenset(),
+        capture: bool = False,
+        order: int = 0,
     ) -> _UnitResult:
         """Lower the paths of one expansion variant of a unit; see :meth:`lower_unit`.
 
@@ -792,10 +1232,14 @@ class _StepBuilder:
         # whichever path ends up taken and also when none does: the runtime
         # raises as soon as a guard fails to evaluate.  The constraints of a
         # condition already hold each guard to what is evaluated before it.
+        if self.analysis:
+            result.defs.extend(
+                self._point_requirements(unit, gate, pre_env, accepted_lookup)
+            )
         for condition in condition_cache.values():
             for item in condition.definedness_constraints:
                 result.defs.append((gate, item))
-                if record:
+                if record and not self.analysis:
                     self.constraints.append(z3.Implies(gate, item.constraint))
         # A path that ends in a group start or in the check that a finished
         # region may stay finished has run its actions before that is decided,
@@ -827,7 +1271,7 @@ class _StepBuilder:
             )
             for item in lowering.definedness_constraints:
                 result.defs.append((reached, item))
-                if record:
+                if record and not self.analysis:
                     self.constraints.append(z3.Implies(reached, item.constraint))
             self.constraints.extend(
                 z3.Implies(reached, item) for item in started_here.get(case.label, ())
@@ -882,7 +1326,7 @@ class _StepBuilder:
                 result.defs.extend(
                     (z3.And(antecedent, cond), item) for cond, item in entry.defs
                 )
-            if record:
+            if record and not self.analysis:
                 parts.extend(
                     z3.Implies(antecedent, item.constraint) for item in definedness
                 )
@@ -897,14 +1341,112 @@ class _StepBuilder:
             if record:
                 selector = z3.Bool("C_%d_%s" % (self.step, _symbol(tag, case.label)))
                 self.constraints.append(selector == antecedent)
-                self.cases.append(
-                    RegionCaseRelation(
-                        self.step, case, selector, antecedent, consequent, implication
-                    )
-                )
+            else:
+                selector = antecedent
+            relation = RegionCaseRelation(
+                self.step,
+                case,
+                selector,
+                antecedent,
+                consequent,
+                implication,
+                order,
+                tuple(entry.cases) if entry is not None else (),
+                tuple(lowering.call_records),
+                tuple(entry.flushes) if entry is not None else (),
+            )
+            result.cases.append(relation)
+            if record:
+                self.cases.append(relation)
         result.ok = _or(antecedents)
         result.fallback = _or(fallback)
         return result
+
+    def _point_requirements(
+        self,
+        unit: RegionUnitFormal,
+        gate: z3.BoolRef,
+        pre_env: Mapping[str, object],
+        accepted_lookup,
+    ) -> List[Tuple[z3.BoolRef, DomainConstraint]]:
+        """Return what each operation the runtime evaluates in ``unit`` requires.
+
+        The runtime evaluates the guards and actions of a candidate before it
+        decides on the candidate, so an operation on a path that dead-ends or
+        that a higher priority wins over can raise as well.  Every such
+        operation is an evaluation point of the unit; each is lowered once, on
+        the values the point before it left, and is reached under ``gate`` and
+        the control condition recorded for it.
+
+        :param unit: Expansion variant being lowered.
+        :param gate: Condition under which the unit runs.
+        :param pre_env: Values the unit starts on.
+        :param accepted_lookup: Lowers the acceptance atoms of the unit's paths.
+        :return: Pairs of the condition an operation is reached under and what
+            has to be defined there, in evaluation order.
+        """
+        envs: Dict[int, Mapping[str, object]] = {}
+        terms: Dict[int, Mapping[str, z3.BoolRef]] = {}
+        found: List[Tuple[z3.BoolRef, DomainConstraint]] = []
+        relaxed = {
+            ATOM_REGION_ENTER: z3.BoolVal(True),
+            ATOM_REGION_DONE: z3.BoolVal(True),
+        }
+        for point in unit.evaluation_points:
+            env = pre_env if point.parent is None else envs[id(point.parent)]
+            guard_terms = {} if point.parent is None else terms[id(point.parent)]
+            if point.guard is not None:
+                term, own = _lower_guard_requirement(
+                    point.guard,
+                    env,
+                    (),
+                    "transition %s" % point.guard.transition_label,
+                )
+                guard_terms = dict(guard_terms, **{point.guard.requirement_id: term})
+            else:
+                block = point.block
+                env, own, _calls = _execute_action_block(
+                    block,
+                    env,
+                    "transition %s" % block.transition_label
+                    if block.transition_label is not None
+                    else "state %s" % block.owner_state_path,
+                    self.domain.persistent_variable_names,
+                    None,
+                    self.int_names,
+                )
+            envs[id(point)] = env
+            terms[id(point)] = guard_terms
+            if not own:
+                continue
+            reached = _lower_bool_template(
+                point.condition,
+                _CaseLowering(
+                    None,
+                    guard_terms,
+                    {key: () for key in guard_terms},
+                    env,
+                    (),
+                    region_terms=relaxed,
+                ),
+                accepted_lookup,
+                set(),
+                self.symbols,
+                self.step,
+            ).expr
+            found.extend((_and((gate, reached)), item) for item in own)
+        return found
+
+    def sites(self) -> Tuple[BmcRuntimeErrorSite, ...]:
+        """Return the runtime-error sites of the step, in evaluation order.
+
+        Only an analysis collects requirements; a site holds where an operation
+        is reached and what it needs to be defined does not hold.
+        """
+        return tuple(
+            _error_site(self.step, item, _and((cond, z3.Not(item.constraint))))
+            for cond, item in self.requirements
+        )
 
     # ------------------------------------------------------------------
     # entering a state that owns regions, and finishing a region
@@ -936,6 +1478,9 @@ class _StepBuilder:
                 % (owner_path, GROUP_REENTRY_LIMIT)
             )
         self._entering.append((owner_path, env_in))
+        outer_sink = self._flush_sink
+        entry_flushes: List[RegionFlushRelation] = []
+        self._flush_sink = entry_flushes
         try:
             regions = _regions_of(self.domain, owner_path)
             env = env_in
@@ -944,6 +1489,7 @@ class _StepBuilder:
             facts: List[_Fact] = []
             defs: List[Tuple[z3.BoolRef, DomainConstraint]] = []
             nested_facts: List[_Fact] = []
+            begun: List[RegionCaseRelation] = []
             pending = z3.BoolVal(True) if owner_path in self.pending_owners else None
             for index, region in enumerate(regions):
                 position = self.fresh_int("%s_r%d" % (tag, index))
@@ -982,7 +1528,9 @@ class _StepBuilder:
                     (position, env_next),
                     record=False,
                     pending_io=pending_io,
+                    capture=True,
                 )
+                begun.extend(result.cases)
                 # A region is only started when the ones before it started, so
                 # what its start says about the values holds only there.
                 reached = _and(ok_terms)
@@ -1055,7 +1603,9 @@ class _StepBuilder:
                     "%s_c" % tag,
                     (out_pos, env_out),
                     record=False,
+                    capture=True,
                 )
+                begun.extend(cont.cases)
             else:
                 cont = _UnitResult(z3.BoolVal(False))
             resting = out_pos == z3.IntVal(owner.id)
@@ -1069,8 +1619,9 @@ class _StepBuilder:
             facts.extend(cont.facts)
             defs.extend(cont.defs)
             ok = z3.And(_and(ok_terms), z3.Or(z3.Not(all_done), cont.ok))
-            return _Entry(ok, out_pos, env_out, facts, defs)
+            return _Entry(ok, out_pos, env_out, facts, defs, begun, entry_flushes)
         finally:
+            self._flush_sink = outer_sink
             self._entering.pop()
 
     def done_viable(
@@ -1113,12 +1664,24 @@ class _StepBuilder:
         env_in: _Env,
         ns: Optional[_Namespace],
         tag: str,
+        static: Optional[Mapping[str, int]] = None,
     ):
-        """Advance every working region of a resting owner, in order."""
+        """Advance every working region of a resting owner, in order.
+
+        With ``static`` the position of every region is known, because the group
+        rests in the position a hot start began in: ``static`` maps each region path
+        to its position id and only the unit of that position is lowered.  A region
+        that waits for initialization then runs its start, and a branch that rests
+        in a state only a cycle can leave runs the cycle that leaves it; neither can
+        be sure to succeed, and their failure is kept in ``_hot_fail``.
+        """
         regions = _regions_of(self.domain, owner_path)
         env = env_in
         after: Dict[str, z3.ArithRef] = {}
         fallback_terms: List[z3.BoolRef] = []
+        # A hot start does not enter the owner, so the plain ``during before`` that
+        # waits for the first real child of a group being entered never runs, not
+        # even when every region of the owner waits for its start.
         for index, region in enumerate(regions):
             position_in = self.position_in(region)
             live = z3.And(
@@ -1148,16 +1711,45 @@ class _StepBuilder:
                 )
             )
             region_fallback: List[z3.BoolRef] = []
-            for position_id in region.position_state_ids:
-                entry = self.domain.state_by_id(position_id)
-                unit_gate = z3.And(gate, position_in == z3.IntVal(position_id))
+            if static is None:
+                positions = tuple(region.position_state_ids)
+            elif static[region.path] == REGION_DONE_ID:
+                positions = ()
+            else:
+                positions = (static[region.path],)
+            for position_id in positions:
+                # A start that failed in an earlier unit made the cycle a Delta, so
+                # this unit does not run: none of its operations is evaluated and
+                # none of them has to be defined.
+                ran = self._ran_so_far()
+                unit_gate = z3.And(
+                    gate,
+                    *([] if ran is None else [ran]),
+                    position_in == z3.IntVal(position_id),
+                )
                 unit_tag = "%s_w%d_%d" % (tag, index, position_id)
+                if position_id == REGION_PENDING_ID:
+                    # The region has not been initialized: its turn starts it.
+                    result = self.lower_unit(
+                        ("init", region.path),
+                        unit_gate,
+                        env,
+                        region_ns,
+                        unit_tag,
+                        (q, env_out),
+                        record=True,
+                    )
+                    self._hot_fail.append(z3.And(unit_gate, z3.Not(result.ok)))
+                    self._emit_facts(result)
+                    region_fallback.append(result.fallback)
+                    continue
+                entry = self.domain.state_by_id(position_id)
                 if entry.owns_regions:
                     # The branch rests in a state that owns regions of its own:
                     # its regions advance first, and once they all finished
                     # the state continues inside this region.
                     sub_env, sub_after, sub_done, sub_fallback = self.advance_group(
-                        entry.path, unit_gate, env, region_ns, unit_tag
+                        entry.path, unit_gate, env, region_ns, unit_tag, static
                     )
                     keep = z3.And(unit_gate, z3.Not(sub_done))
                     self.constraints.append(
@@ -1183,6 +1775,19 @@ class _StepBuilder:
                     # here: for any other position the group below it is not
                     # running, and its terms hold vacuously.
                     result.fallback = z3.And(unit_gate, z3.Not(sub_done), sub_fallback)
+                elif not entry.is_stoppable:
+                    # The branch rests in a plain composite state that waits for its
+                    # initial transition, or in a pseudo state: a cycle has to leave it.
+                    result = self.lower_unit(
+                        ("wait", entry.path),
+                        unit_gate,
+                        env,
+                        region_ns,
+                        unit_tag,
+                        (q, env_out),
+                        record=True,
+                    )
+                    self._hot_fail.append(z3.And(unit_gate, z3.Not(result.ok)))
                 else:
                     result = self.lower_unit(
                         ("leaf", entry.path),
@@ -1264,14 +1869,31 @@ class _StepBuilder:
             lowering = _prepare_case_lowering(
                 case, self.pre_env(env), self.persistent, None, self.int_names
             )
+            order = self._unit_counter
+            self._unit_counter += 1
+            self._flush_sink.append(
+                RegionFlushRelation(
+                    self.step,
+                    order,
+                    scope,
+                    prefix,
+                    z3.And(gate, owes),
+                    tuple(lowering.call_records),
+                )
+            )
             out = self.fresh_env("%s_s%d" % (tag, index), env, frozenset())
             parts = [self.vars_equal(out, self.persistent_env(lowering.final_env))]
-            if defs is None:
+            if defs is not None:
+                defs.extend((owes, item) for item in lowering.definedness_constraints)
+            elif self.analysis:
+                self.requirements.extend(
+                    (z3.And(gate, owes), item)
+                    for item in lowering.definedness_constraints
+                )
+            else:
                 parts.extend(
                     item.constraint for item in lowering.definedness_constraints
                 )
-            else:
-                defs.extend((owes, item) for item in lowering.definedness_constraints)
             self.constraints.append(z3.Implies(z3.And(gate, owes), _and(parts)))
             self.constraints.append(
                 z3.Implies(z3.And(gate, z3.Not(owes)), self.vars_equal(out, env))
@@ -1329,14 +1951,22 @@ class _StepBuilder:
         self.finish_step(gate, env_mid)
         self.gamma_terms.append(z3.And(gate, result.fallback))
 
-    def build_owner_source(self, state_id: int) -> None:
+    def at_start(self) -> z3.BoolRef:
+        """Return the condition that the frame of this step holds the start position."""
+        return _at_start(self.symbols, self.step, self.main_id, self.start_ids)
+
+    def build_owner_source(self, state_id: int, apart_from_start: bool = False) -> None:
         """Lower the step of a frame that rests in a state that owns regions.
 
         The regions advance in order; if all finished the continuation of the owner
-        runs in the same step, otherwise the owner keeps resting.
+        runs in the same step, otherwise the owner keeps resting.  A frame that holds
+        the start position of a hot start that waits is the business of
+        :meth:`build_hot_owner_source`, and ``apart_from_start`` leaves it out.
         """
         entry = self.domain.state_by_id(state_id)
         gate = self.symbols.frame_state(self.step) == z3.IntVal(state_id)
+        if apart_from_start:
+            gate = z3.And(gate, z3.Not(self.at_start()))
         tag = "g%d" % state_id
         env_after, after, all_done, fallback = self.advance_group(
             entry.path,
@@ -1369,6 +1999,135 @@ class _StepBuilder:
         self._emit_facts(result)
         self.finish_step(gate, next_vars)
         self.gamma_terms.append(z3.And(gate, z3.Not(all_done), fallback))
+
+    def build_hot_owner_source(self, state_id: int) -> None:
+        """Lower the step of the frame that holds the position of a hot start that waits.
+
+        The position is known, so only the units of that position are lowered: a
+        region that waits runs its start, a branch in a state only a cycle can leave
+        runs the cycle that leaves it, and the other regions work as they do in any
+        cycle.  The start of a waiting region may fail, and then the whole cycle is a
+        Delta: the machine keeps the start position and the variables.
+        """
+        entry = self.domain.state_by_id(state_id)
+        gate = z3.And(
+            self.symbols.frame_state(self.step) == z3.IntVal(state_id),
+            self.at_start(),
+        )
+        tag = "h%d" % state_id
+        first_constraint = len(self.constraints)
+        first_failure = len(self._hot_fail)
+        env_after, after, all_done, fallback = self.advance_group(
+            entry.path,
+            gate,
+            self.start_env(self.symbols.frame_vars[self.step]),
+            None,
+            tag,
+            self.start_ids,
+        )
+        next_vars = self.next_env("%s_n" % tag)
+        keep = z3.And(gate, z3.Not(all_done))
+        self.constraints.append(
+            z3.Implies(
+                keep,
+                z3.And(
+                    self.symbols.frame_state(self.step + 1) == z3.IntVal(state_id),
+                    self.env_equal(next_vars, env_after),
+                ),
+            )
+        )
+        self.assert_positions_next(entry.path, keep, after)
+        ran = self._ran_so_far()
+        result = self.lower_unit(
+            ("cont", entry.path),
+            z3.And(gate, all_done, *([] if ran is None else [ran])),
+            env_after,
+            None,
+            "%s_c" % tag,
+            (self.symbols.frame_state(self.step + 1), next_vars),
+            record=True,
+        )
+        self._emit_facts(result)
+        failed = _or(self._hot_fail[first_failure:])
+        # A cycle that fails rolls back as a whole: nothing the units say about the
+        # next frame holds, and the next frame is this one again.  What the units
+        # say about the values that flow inside the cycle stays, because whether
+        # a start fails is decided by those values.
+        next_frame = {
+            symbol.get_id()
+            for symbol in (
+                [self.symbols.frame_state(self.step + 1)]
+                + [
+                    self.symbols.region_position(self.step + 1, region.path)
+                    for region in self.domain.regions
+                ]
+                + list(self.symbols.frame_vars[self.step + 1].values())
+            )
+        }
+        self.constraints[first_constraint:] = [
+            z3.Implies(z3.Not(failed), item) if _mentions(item, next_frame) else item
+            for item in self.constraints[first_constraint:]
+        ]
+        self.finish_step(z3.And(gate, z3.Not(failed)), next_vars)
+        delta = z3.And(gate, failed)
+        self.delta_terms.append(delta)
+        # The paths that were lowered for the cycle did not run: it is a Delta.
+        self.rollback_terms.append(delta)
+        self.constraints.append(
+            z3.Implies(
+                delta,
+                z3.And(
+                    self.symbols.frame_state(self.step + 1) == z3.IntVal(state_id),
+                    self.vars_equal(
+                        dict(self.symbols.frame_vars[self.step + 1]),
+                        dict(self.symbols.frame_vars[self.step]),
+                    ),
+                    *[
+                        self.symbols.region_position(self.step + 1, path)
+                        == z3.IntVal(value)
+                        for path, value in sorted(self.start_ids.items())
+                    ],
+                ),
+            )
+        )
+        self.gamma_terms.append(z3.And(gate, z3.Not(failed), z3.Not(all_done), fallback))
+
+    def build_wait_source(self, state_id: int) -> None:
+        """Lower the step of a frame that rests in a state only a cycle can leave.
+
+        A hot start can name a plain composite state, which waits for its initial
+        transition, or a pseudo state.  Like the cold start, the cycle may find no
+        way on, and then it is a Delta that keeps the machine where it is.
+        """
+        entry = self.domain.state_by_id(state_id)
+        gate = self.symbols.frame_state(self.step) == z3.IntVal(state_id)
+        tag = "w%d" % state_id
+        env_mid = self.next_env(tag)
+        result = self.lower_unit(
+            ("wait", entry.path),
+            gate,
+            self.start_env(self.symbols.frame_vars[self.step]),
+            None,
+            tag,
+            (self.symbols.frame_state(self.step + 1), env_mid),
+            record=True,
+        )
+        self._emit_facts(result)
+        self.finish_step(z3.And(gate, result.ok), env_mid)
+        delta = z3.And(gate, z3.Not(result.ok))
+        self.delta_terms.append(delta)
+        self.constraints.append(
+            z3.Implies(
+                delta,
+                z3.And(
+                    self.symbols.frame_state(self.step + 1) == z3.IntVal(state_id),
+                    self.vars_equal(
+                        dict(self.symbols.frame_vars[self.step + 1]),
+                        dict(self.symbols.frame_vars[self.step]),
+                    ),
+                ),
+            )
+        )
 
     def initial_env(self) -> _Env:
         """Return the values of frame 0 with the declared initializers filled in.
@@ -1454,11 +2213,28 @@ class _StepBuilder:
             )
         )
 
+    def _ran_so_far(self) -> Optional[z3.BoolRef]:
+        """Return the condition that no unit of the step has failed to start yet.
+
+        ``None`` when no unit can fail, which is every step except a hot start.
+        """
+        if not self._hot_fail:
+            return None
+        return z3.Not(_or(self._hot_fail))
+
     def _emit_facts(self, result: _UnitResult) -> None:
-        """Constrain the frame positions that the paths of a unit assign."""
+        """Constrain the frame positions that the paths of a unit assign.
+
+        The unit is one that runs in the step, so an analysis also takes the
+        requirements it collected.
+
+        :param result: Lowered unit.
+        """
         self.constraints.extend(
             z3.Implies(cond, sym == value) for cond, sym, value in result.facts
         )
+        if self.analysis:
+            self.requirements.extend(result.defs)
 
     def finish(self) -> Tuple[z3.BoolRef, z3.BoolRef, z3.BoolRef]:
         """Return the constraints that tie Delta and Gamma of the step to its paths."""
@@ -1468,6 +2244,22 @@ class _StepBuilder:
         gamma_constraint = gamma_flag == _or(self.gamma_terms)
         mutex = z3.Not(z3.And(delta_flag, gamma_flag))
         return delta_constraint, gamma_constraint, mutex
+
+
+def _mentions(expr: z3.ExprRef, targets: Set[int]) -> bool:
+    """Return whether ``expr`` contains one of the terms with the ids in ``targets``."""
+    seen: Set[int] = set()
+    pending = [expr]
+    while pending:
+        term = pending.pop()
+        key = term.get_id()
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in targets:
+            return True
+        pending.extend(term.children())
+    return False
 
 
 def _implied(
@@ -1551,16 +2343,105 @@ def _symbol(tag: str, label: str) -> str:
     return _safe_symbol_fragment("%s::%s" % (tag, label))
 
 
-def _check_supported(prepared: BmcPreparedContext) -> None:
-    """Refuse what the region relation does not support yet.
+def _build_step(
+    prepared: BmcPreparedContext,
+    symbols: BmcTraceSymbols,
+    units: _Units,
+    frame_domain,
+    step_index: int,
+    analysis: bool = False,
+) -> _StepBuilder:
+    """Lower every source a step can start from.
 
-    :raises UnsupportedBmcQuery: For a hot start of a model with regions.
+    :param prepared: Prepared context of a model with regions.
+    :param symbols: Symbols of the trace.
+    :param units: Unit expansions shared by the steps being built.
+    :param frame_domain: States a frame can rest in.
+    :param step_index: Zero-based step to lower.
+    :param analysis: Lower the step to locate runtime errors instead of to
+        describe the cycle, see :class:`_StepBuilder`; defaults to ``False``.
+    :return: The builder holding the constraints, paths and flags of the step.
     """
-    if prepared.bound_query.initial.mode == "state":
-        raise UnsupportedBmcQuery(
-            "a hot start of a model with regions is not supported by the BMC "
-            "relation yet."
+    domain = prepared.domain
+    builder = _StepBuilder(prepared, symbols, units, step_index, analysis)
+    if step_index == 0:
+        source = _initial_source(prepared)
+        source_ids = (source.source_state_id,)
+    else:
+        source_ids = frame_domain.recurrence_state_ids
+    for state_id in source_ids:
+        if state_id == STATE_INIT_ID:
+            builder.build_cold_source()
+        elif state_id == STATE_TERMINATE_ID:
+            builder.build_absorb_source()
+        elif domain.state_by_id(state_id).owns_regions:
+            if not _in_region(domain, domain.state_by_id(state_id).path):
+                if builder.start_waits and state_id == builder.main_id:
+                    builder.build_hot_owner_source(state_id)
+                    builder.build_owner_source(state_id, apart_from_start=True)
+                else:
+                    builder.build_owner_source(state_id)
+        elif not _in_region(domain, domain.state_by_id(state_id).path):
+            if domain.state_by_id(state_id).is_stoppable:
+                builder.build_leaf_source(state_id)
+            else:
+                builder.build_wait_source(state_id)
+    return builder
+
+
+def region_error_analysis(
+    core: BmcCoreFormula,
+) -> Tuple[Tuple[z3.BoolRef, Tuple[BmcRuntimeErrorSite, ...]], ...]:
+    """Locate the runtime errors of every cycle of a model with regions.
+
+    The relation of a cycle requires every operation it runs to be defined, so a
+    cycle in which the runtime raises has no solution there.  This builds each
+    cycle a second time without that requirement and keeps what it would have
+    required as error sites: an operation is a site when the runtime evaluates
+    it, also on a candidate that dead-ends or loses to a higher priority, and a
+    model that holds a site with the skeleton of its cycle is a cycle in which
+    that operation raises.
+
+    :param core: Core formula of a model with regions.
+    :type core: pyfcstm.bmc.relation.BmcCoreFormula
+    :return: For every cycle the skeleton, which fixes the values of the cycle
+        and nothing else, and the sites of the cycle in evaluation order.
+    :rtype: Tuple[Tuple[z3.BoolRef, Tuple[pyfcstm.bmc.relation.BmcRuntimeErrorSite, ...]], ...]
+    :raises pyfcstm.bmc.errors.BmcBuildError: If ``core`` has no regions.
+
+    Example::
+
+        >>> from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+        >>> from pyfcstm.bmc.region_relation import region_error_analysis
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... input int d;
+        ... def int x = 0;
+        ... state Root {
+        ...     region A { [*] -> P; state P { during { x = 10 % d; } } }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: terminated();'))
+        >>> [(len(sites) > 0) for _, sites in region_error_analysis(core)]
+        [True]
+    """
+    if not core.region_steps:
+        raise BmcBuildError("the core formula has no regions.")
+    prepared = core.context
+    frame_domain = _relation_frame_domain(prepared)
+    units = _Units(prepared.domain)
+    found = []
+    for step_index in range(prepared.domain.bound):
+        builder = _build_step(
+            prepared, core.symbols, units, frame_domain, step_index, analysis=True
         )
+        delta_constraint, gamma_constraint, mutex = builder.finish()
+        skeleton = _and(
+            tuple(builder.constraints) + (delta_constraint, gamma_constraint, mutex)
+        )
+        found.append((skeleton, builder.sites()))
+    return tuple(found)
 
 
 def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
@@ -1597,7 +2478,6 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     prepared = _require_context(context)
     if not prepared.domain.regions:
         raise BmcBuildError("the region relation needs a model with regions.")
-    _check_supported(prepared)
     frame_domain = _relation_frame_domain(prepared)
     symbols = BmcTraceSymbols.allocate(prepared.domain)
     units = _Units(prepared.domain)
@@ -1608,22 +2488,7 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     steps = []
     region_steps = []
     for step_index in range(domain.bound):
-        builder = _StepBuilder(prepared, symbols, units, step_index)
-        if step_index == 0:
-            source = _initial_source(prepared)
-            source_ids = (source.source_state_id,)
-        else:
-            source_ids = frame_domain.recurrence_state_ids
-        for state_id in source_ids:
-            if state_id == STATE_INIT_ID:
-                builder.build_cold_source()
-            elif state_id == STATE_TERMINATE_ID:
-                builder.build_absorb_source()
-            elif domain.state_by_id(state_id).owns_regions:
-                if not _in_region(domain, domain.state_by_id(state_id).path):
-                    builder.build_owner_source(state_id)
-            elif not _in_region(domain, domain.state_by_id(state_id).path):
-                builder.build_leaf_source(state_id)
+        builder = _build_step(prepared, symbols, units, frame_domain, step_index)
         delta_constraint, gamma_constraint, mutex = builder.finish()
         formula = _and(
             tuple(builder.constraints) + (delta_constraint, gamma_constraint, mutex)
@@ -1641,10 +2506,16 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         )
         region_steps.append(
             RegionStepRelation(
-                step_index, tuple(builder.cases), tuple(builder.constraints)
+                step_index,
+                tuple(builder.cases),
+                tuple(builder.constraints),
+                tuple(builder.flushes),
+                _or(builder.rollback_terms),
             )
         )
 
+    start = prepared.bound_query.initial.resolved_start
+    start_ids = None if start is None else start_position_ids(domain, start)
     domain_start = len(groups)
     _build_domain_formula(symbols, frame_domain, groups, lambda: generated_ref)
     for frame_index in range(domain.bound + 1):
@@ -1653,7 +2524,7 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
             stable_id="domain.frame.%04d.regions" % frame_index,
             stage="kernel",
             category="domain.frame_state",
-            expressions=region_frame_constraints(symbols, frame_index),
+            expressions=region_frame_constraints(symbols, frame_index, start_ids),
             source_ref=generated_ref,
             refs={"frame": frame_index, "kind": "regions"},
         )
@@ -1662,6 +2533,21 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     initial_start = len(groups)
     initial_error_sites: list = []
     _build_initial_formula(prepared, symbols, groups, initial_error_sites)
+    if start_ids is not None and start_ids[1]:
+        _append_tracked_group(
+            groups,
+            stable_id="initial.positions",
+            stage="initialization",
+            category="initial.target",
+            expressions=tuple(
+                symbols.region_position(0, path) == z3.IntVal(value)
+                for path, value in sorted(start_ids[1].items())
+            ),
+            source_ref=prepared._source_registry.query_reference(
+                prepared.query, prepared.query.initial
+            ),
+            refs={"frame": 0, "target": start_ids[0]},
+        )
     initial_formula = _formula_from_groups(groups[initial_start:])
 
     transition_start = len(groups)
@@ -1703,7 +2589,12 @@ def build_region_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
 
 __all__ = [
     "RegionCaseRelation",
+    "RegionFlushRelation",
+    "RegionOccurrence",
     "RegionStepRelation",
+    "region_error_analysis",
+    "region_occurrences",
+    "reported_call_state",
     "region_frame_constraints",
     "build_region_core_formula",
 ]

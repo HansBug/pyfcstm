@@ -88,6 +88,7 @@ from .explanation import (
 )
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
+from .region_witness import frame_configuration, summarize_region_step
 from .relation import BmcCaseRelation, _assumption_input_names
 from .safety import BmcRuntimeSafetyResult, _check_runtime_safety
 from .slicing import ConeSlice
@@ -102,6 +103,7 @@ from .solver import (
 )
 from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine
+from pyfcstm.model.region import Region, walk_namespaces
 from pyfcstm.simulate import (
     ReadOnlyExecutionContext,
     SimulationRuntime,
@@ -3850,6 +3852,11 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
     :param snapshot: Persistent variable snapshot before the handler call,
         defaults to ``{}``.
     :type snapshot: Mapping[str, object], optional
+    :param configuration: For a model with regions, the configuration text of the
+        whole machine at the moment of the call, as the handler's context shows
+        it; ``None`` for a model without regions and then left out of the
+        canonical form, defaults to ``None``.
+    :type configuration: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the call-record payload is
         malformed.
 
@@ -3858,6 +3865,11 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
         >>> rec = BmcWitnessCallRecord(0, 'Root.A.Hook', 'during', 'leaf_during', 'Root.A', 'Root.A')
         >>> rec.to_canonical()['ordinal']
         0
+        >>> 'configuration' in rec.to_canonical()
+        False
+        >>> BmcWitnessCallRecord(0, 'Root.A.Hook', 'during', 'leaf_during', 'Root.A', 'Root.A',
+        ...                      configuration='Root{A: P}').to_canonical()['configuration']
+        'Root{A: P}'
     """
 
     ordinal: int
@@ -3868,6 +3880,7 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
     active_leaf: str
     named_ref: Optional[str] = None
     snapshot: Mapping[str, Any] = field(default_factory=dict)
+    configuration: Optional[str] = None
 
     def __post_init__(self) -> None:
         if (
@@ -3884,6 +3897,10 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
             not isinstance(self.named_ref, str) or not self.named_ref
         ):
             raise BmcBuildError("named_ref must be a non-empty string or None.")
+        if self.configuration is not None and (
+            not isinstance(self.configuration, str) or not self.configuration
+        ):
+            raise BmcBuildError("configuration must be a non-empty string or None.")
         object.__setattr__(
             self, "snapshot", _coerce_public_value_mapping("snapshot", self.snapshot)
         )
@@ -3899,7 +3916,7 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
             >>> BmcWitnessCallRecord(0, 'Root.A.Hook', 'during', 'leaf_during', 'Root.A', 'Root.A').to_canonical()['action_name']
             'Root.A.Hook'
         """
-        return {
+        canonical = {
             "ordinal": self.ordinal,
             "action_name": self.action_name,
             "stage": self.stage,
@@ -3909,6 +3926,96 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
             "named_ref": self.named_ref,
             "snapshot": _canonical_public_value_mapping("snapshot", self.snapshot),
         }
+        if self.configuration is not None:
+            canonical["configuration"] = self.configuration
+        return canonical
+
+
+@dataclass(frozen=True)
+class BmcWitnessLocalCase(_PrettyPrintableMixin):
+    """One local case a region took in a cycle of a model with regions.
+
+    A cycle of such a model is not one case but the local cases of the regions it
+    advanced, in the order the runtime advanced them: what each region did, and
+    what the state that owns the regions did when it started them or continued
+    after they all finished.  The label is the one ``case("...")`` takes.
+
+    :param scope: Path of the region the case ran in, of the owner for the start
+        of its regions and for its continuation, or ``None`` for a case outside
+        every region.
+    :type scope: str, optional
+    :param kind: ``"initial"``, ``"transition"`` or ``"fallback"``.
+    :type kind: str
+    :param label: Label of the case, ``source::kind::target::ordinal``.
+    :type label: str
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the payload is malformed.
+
+    Example::
+
+        >>> case = BmcWitnessLocalCase('Root.A', 'fallback', 'Root.A.P::fallback::Root.A.P::0')
+        >>> case.to_canonical()['kind']
+        'fallback'
+        >>> case.source, case.target
+        ('Root.A.P', 'Root.A.P')
+    """
+
+    scope: Optional[str]
+    kind: str
+    label: str
+
+    def __post_init__(self) -> None:
+        if self.scope is not None and (
+            not isinstance(self.scope, str) or not self.scope
+        ):
+            raise BmcBuildError("scope must be a non-empty string or None.")
+        for field_name in ("kind", "label"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value:
+                raise BmcBuildError("%s must be a non-empty string." % field_name)
+        if len(self.label.split("::")) != 4:
+            raise BmcBuildError("label must be source::kind::target::ordinal.")
+
+    @property
+    def source(self) -> str:
+        """Return the path the case starts from, as its label says.
+
+        :return: A leaf, an owner or the cold-start marker.
+        :rtype: str
+
+        Example::
+
+            >>> BmcWitnessLocalCase('Root.A', 'fallback', 'Root.A.P::fallback::Root.A.P::0').source
+            'Root.A.P'
+        """
+        return self.label.split("::")[0]
+
+    @property
+    def target(self) -> str:
+        """Return the path the case ends in, as its label says.
+
+        :return: A state path, ``__region_done__`` for a region that finished, or
+            the terminate marker.
+        :rtype: str
+
+        Example::
+
+            >>> BmcWitnessLocalCase(None, 'initial', '__init__::initial::Root.Idle::0').target
+            'Root.Idle'
+        """
+        return self.label.split("::")[2]
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable local case.
+
+        :return: Canonical local case.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> BmcWitnessLocalCase(None, 'initial', '__init__::initial::Root::0').to_canonical()
+            {'scope': None, 'kind': 'initial', 'label': '__init__::initial::Root::0'}
+        """
+        return {"scope": self.scope, "kind": self.kind, "label": self.label}
 
 
 @dataclass(frozen=True)
@@ -3927,6 +4034,12 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
     :type terminated: bool
     :param vars: Persistent variable values.
     :type vars: Mapping[str, object]
+    :param configuration: For a model with regions, the configuration text of the
+        whole machine in this frame; ``state`` is then the state the machine rests
+        in outside every region.  ``None`` for a model without regions and for a
+        sentinel frame, and then left out of the canonical form, defaults to
+        ``None``.
+    :type configuration: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the frame payload is
         malformed.
 
@@ -3934,6 +4047,8 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
 
         >>> BmcWitnessFrame(0, None, None, 'init', False, {}).to_canonical()['sentinel']
         'init'
+        >>> BmcWitnessFrame(1, 3, 'Root', None, False, {}, 'Root{A: P}').to_canonical()['configuration']
+        'Root{A: P}'
     """
 
     index: int
@@ -3942,6 +4057,7 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
     sentinel: Optional[str]
     terminated: bool
     vars: Mapping[str, Any]
+    configuration: Optional[str] = None
 
     def __post_init__(self) -> None:
         if (
@@ -3970,6 +4086,14 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             raise BmcBuildError("init sentinel frames must not be terminated.")
         if self.sentinel == "terminated" and not self.terminated:
             raise BmcBuildError("terminated sentinel frames must be terminated.")
+        if self.configuration is not None and (
+            not isinstance(self.configuration, str)
+            or not self.configuration
+            or self.sentinel is not None
+        ):
+            raise BmcBuildError(
+                "configuration must be a non-empty string on a frame that is not a sentinel."
+            )
         object.__setattr__(
             self, "vars", _coerce_public_value_mapping("vars", self.vars)
         )
@@ -3985,7 +4109,7 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             >>> BmcWitnessFrame(0, None, None, 'init', False, {}).to_canonical()['state'] is None
             True
         """
-        return {
+        canonical = {
             "index": self.index,
             "state_id": self.state_id,
             "state": self.state,
@@ -3993,6 +4117,9 @@ class BmcWitnessFrame(_PrettyPrintableMixin):
             "terminated": self.terminated,
             "vars": _canonical_public_value_mapping("vars", self.vars),
         }
+        if self.configuration is not None:
+            canonical["configuration"] = self.configuration
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -4049,6 +4176,12 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         performed, not a claim that replay independently verified the read
         set, defaults to ``None`` (coerced to an empty tuple).
     :type input_reads: Sequence[str], optional
+    :param local_cases: For a model with regions, the local cases the cycle took,
+        in the order the runtime ran them; ``case_label`` is then ``None`` because
+        the cycle is not one case, and ``case_kind`` sums it up.  ``None`` for a
+        model without regions, and then left out of the canonical form, defaults
+        to ``None``.
+    :type local_cases: Sequence[BmcWitnessLocalCase], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
         malformed
 
@@ -4059,12 +4192,18 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         'fallback_gamma'
         >>> step.to_canonical()['inputs']
         {}
+        >>> 'local_cases' in step.to_canonical()
+        False
+        >>> regional = BmcWitnessStep(0, 0, 1, None, 'fallback', 'fallback_gamma', 'Root', 'Root', False, True,
+        ...                           local_cases=[BmcWitnessLocalCase('Root.A', 'fallback', 'Root.A.P::fallback::Root.A.P::0')])
+        >>> regional.to_canonical()['local_cases'][0]['scope']
+        'Root.A'
     """
 
     index: int
     source_frame: int
     target_frame: int
-    case_label: str
+    case_label: Optional[str]
     case_kind: str
     progress: str
     source_state: Optional[str]
@@ -4078,14 +4217,35 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     unconsumed_events: Optional[Sequence[str]] = None
     inputs: Mapping[str, Union[int, float]] = None
     input_reads: Sequence[str] = None
+    local_cases: Optional[Sequence[BmcWitnessLocalCase]] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise BmcBuildError("%s must be a non-negative integer." % field_name)
+        if self.local_cases is not None:
+            object.__setattr__(
+                self,
+                "local_cases",
+                _coerce_public_sequence(
+                    "local_cases",
+                    self.local_cases,
+                    BmcWitnessLocalCase,
+                    "BmcWitnessLocalCase objects",
+                ),
+            )
+        if self.case_label is None:
+            if self.local_cases is None:
+                raise BmcBuildError(
+                    "case_label may only be None on a step with local_cases."
+                )
+        elif self.local_cases is not None:
+            raise BmcBuildError("a step with local_cases has no case_label.")
         for field_name in ("case_label", "case_kind", "progress"):
             value = getattr(self, field_name)
+            if field_name == "case_label" and value is None:
+                continue
             if not isinstance(value, str) or not value:
                 raise BmcBuildError("%s must be a non-empty string." % field_name)
         for field_name in ("source_state", "target_state"):
@@ -4225,7 +4385,7 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             >>> step.to_canonical()['delta']
             False
         """
-        return {
+        canonical = {
             "index": self.index,
             "source_frame": self.source_frame,
             "target_frame": self.target_frame,
@@ -4244,6 +4404,9 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             "inputs": dict(self.inputs),
             "input_reads": list(self.input_reads),
         }
+        if self.local_cases is not None:
+            canonical["local_cases"] = [item.to_canonical() for item in self.local_cases]
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -4442,6 +4605,11 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
     :type terminated: bool
     :param vars: Persistent runtime variables.
     :type vars: Mapping[str, object]
+    :param configuration: For a model with regions, the configuration text the
+        runtime rests in; ``state`` is then the state it rests in outside every
+        region.  ``None`` for a model without regions and once it ended, and then
+        left out of the canonical form, defaults to ``None``.
+    :type configuration: str, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-frame payload is
         malformed.
 
@@ -4449,12 +4617,15 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
 
         >>> BmcRuntimeFrame(0, 'Root', False, {}).to_canonical()['state']
         'Root'
+        >>> BmcRuntimeFrame(0, 'Root', False, {}, 'Root{A: P}').to_canonical()['configuration']
+        'Root{A: P}'
     """
 
     index: int
     state: Optional[str]
     terminated: bool
     vars: Mapping[str, Any]
+    configuration: Optional[str] = None
 
     def __post_init__(self) -> None:
         if (
@@ -4471,6 +4642,12 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
             )
         if not isinstance(self.terminated, bool):
             raise BmcBuildError("runtime frame terminated must be bool.")
+        if self.configuration is not None and (
+            not isinstance(self.configuration, str) or not self.configuration
+        ):
+            raise BmcBuildError(
+                "runtime frame configuration must be a non-empty string or None."
+            )
         object.__setattr__(
             self,
             "vars",
@@ -4488,12 +4665,15 @@ class BmcRuntimeFrame(_PrettyPrintableMixin):
             >>> BmcRuntimeFrame(0, None, True, {}).to_canonical()['terminated']
             True
         """
-        return {
+        canonical = {
             "index": self.index,
             "state": self.state,
             "terminated": self.terminated,
             "vars": _canonical_public_value_mapping("runtime frame vars", self.vars),
         }
+        if self.configuration is not None:
+            canonical["configuration"] = self.configuration
+        return canonical
 
 
 @dataclass(frozen=True)
@@ -4829,8 +5009,12 @@ class BmcReplayResult(_PrettyPrintableMixin):
 
 
 class _HandlerCallRecorder:
-    def __init__(self, role_resolver: "_AbstractCallRoleResolver") -> None:
+    def __init__(
+        self, role_resolver: "_AbstractCallRoleResolver", with_configuration: bool = False
+    ) -> None:
         self.role_resolver = role_resolver
+        # A model with regions also records the configuration a handler is shown.
+        self.with_configuration = with_configuration
         self.calls: list[BmcWitnessCallRecord] = []
         self._context_call_counts: Dict[Tuple[str, str, str], int] = {}
 
@@ -4855,6 +5039,7 @@ class _HandlerCallRecorder:
                 active_leaf=".".join(ctx.active_leaf or ctx.state_path),
                 named_ref=ctx.named_ref,
                 snapshot=dict(ctx.vars),
+                configuration=str(ctx.configuration) if self.with_configuration else None,
             )
         )
 
@@ -4913,6 +5098,10 @@ def _iter_actions(state_machine: StateMachine) -> Iterable[object]:
             "on_during_aspects",
         ):
             for action in getattr(state, attr_name, ()) or ():
+                yield action
+        # A ``>> during`` aspect can also be declared in the body of a region.
+        for region in (getattr(state, "regions", None) or {}).values():
+            for action in region.on_during_aspects:
                 yield action
 
 
@@ -5827,7 +6016,12 @@ def _frame_for_index(
     if state_id == STATE_TERMINATE_ID:
         return BmcWitnessFrame(index, None, None, "terminated", True, variables)
     entry = core.context.domain.state_by_id(state_id)
-    return BmcWitnessFrame(index, state_id, entry.path, None, False, variables)
+    configuration = (
+        frame_configuration(core, model, index) if core.region_steps else None
+    )
+    return BmcWitnessFrame(
+        index, state_id, entry.path, None, False, variables, configuration
+    )
 
 
 def _selected_relation(
@@ -6141,6 +6335,58 @@ def _case_input_reads(
     return tuple(name for name in input_names if name in found)
 
 
+def _decode_step_inputs(
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    step_index: int,
+    source: BmcWitnessFrame,
+    case: Any,
+    antecedent: z3.BoolRef,
+) -> Tuple[Dict[str, Union[int, float]], Tuple[str, ...]]:
+    """Decode the inputs a step sampled and the ones its case read.
+
+    :param formula: Compiled property formula.
+    :param model: Solved model.
+    :param step_index: Zero-based step.
+    :param source: Frame the step starts from.
+    :param case: The case that ran, or for a cycle of a model with regions the
+        paths together; it needs ``guard_requirements`` and ``action_blocks``.
+    :param antecedent: Condition under which the case ran.
+    :return: The complete input snapshot of the step, and the names of the inputs
+        its guards, actions and conditions refer to, in declaration order.
+    """
+    domain = formula.core.context.domain
+    input_names = domain.input_names
+    if source.terminated:
+        # No environment sampling happens once the machine has terminated;
+        # post-termination absorb steps carry empty inputs.
+        return {}, ()
+    declared_types = {var.name: var.declared_type for var in domain.variables}
+    step_inputs = {
+        name: _z3_number_value(
+            model,
+            formula.core.symbols.step_input(step_index, name),
+            declared_types[name],
+        )
+        for name in input_names
+    }
+    reads = set(_case_input_reads(case, input_names))
+    # Fallback/Delta conditions also read guards of rejected candidates;
+    # those guards live in the lowered acceptance dependency formula.
+    condition_symbols = {symbol.get_id() for symbol in _free_symbols(antecedent)}
+    reads.update(
+        name
+        for name, symbol in formula.core.symbols.step_inputs[step_index].items()
+        if symbol.get_id() in condition_symbols
+    )
+    for index, assumption in enumerate(formula.core.context.bound_query.assumptions):
+        if assumption.kind == "frame" and (
+            assumption.source.kind == "always" or assumption.frame == step_index
+        ):
+            reads.update(_assumption_input_names(formula.core.context, index))
+    return step_inputs, tuple(name for name in input_names if name in reads)
+
+
 def _decode_step(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -6148,6 +6394,8 @@ def _decode_step(
     frames: Sequence[BmcWitnessFrame],
     event_policy: BmcEventDecodePolicy,
 ) -> BmcWitnessStep:
+    if formula.core.region_steps:
+        return _decode_region_step(formula, model, step_index, frames, event_policy)
     step_relation = formula.core.steps[step_index]
     relation = _selected_relation(model, step_relation.case_relations, step_index)
     delta = _z3_bool_value(model, formula.core.symbols.delta_flag(step_index))
@@ -6161,42 +6409,9 @@ def _decode_step(
     )
     source = frames[step_index]
     target = frames[step_index + 1]
-    domain = formula.core.context.domain
-    input_names = domain.input_names
-    if source.terminated:
-        # No environment sampling happens once the machine has terminated;
-        # post-termination absorb steps carry empty inputs.
-        step_inputs: Dict[str, Union[int, float]] = {}
-        input_reads: Tuple[str, ...] = ()
-    else:
-        declared_types = {var.name: var.declared_type for var in domain.variables}
-        step_inputs = {
-            name: _z3_number_value(
-                model,
-                formula.core.symbols.step_input(step_index, name),
-                declared_types[name],
-            )
-            for name in input_names
-        }
-        reads = set(_case_input_reads(relation.case, input_names))
-        # Fallback/Delta conditions also read guards of rejected candidates;
-        # those guards live in the lowered acceptance dependency formula.
-        condition_symbols = {
-            symbol.get_id() for symbol in _free_symbols(relation.antecedent)
-        }
-        reads.update(
-            name
-            for name, symbol in formula.core.symbols.step_inputs[step_index].items()
-            if symbol.get_id() in condition_symbols
-        )
-        for index, assumption in enumerate(
-            formula.core.context.bound_query.assumptions
-        ):
-            if assumption.kind == "frame" and (
-                assumption.source.kind == "always" or assumption.frame == step_index
-            ):
-                reads.update(_assumption_input_names(formula.core.context, index))
-        input_reads = tuple(name for name in input_names if name in reads)
+    step_inputs, input_reads = _decode_step_inputs(
+        formula, model, step_index, source, relation.case, relation.antecedent
+    )
     return BmcWitnessStep(
         index=step_index,
         source_frame=step_index,
@@ -6218,6 +6433,80 @@ def _decode_step(
     )
 
 
+def _decode_region_step(
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    step_index: int,
+    frames: Sequence[BmcWitnessFrame],
+    event_policy: BmcEventDecodePolicy,
+) -> BmcWitnessStep:
+    """Decode one cycle of a model with regions.
+
+    The cycle is the paths of every unit that ran: ``local_cases`` lists them in
+    the order the runtime ran them, and what a single case gives a step of a
+    model without regions, the events it uses and consumes, is the union over those
+    paths.
+    """
+    summary = summarize_region_step(formula.core, model, step_index)
+    delta = _z3_bool_value(model, formula.core.symbols.delta_flag(step_index))
+    gamma = _z3_bool_value(model, formula.core.symbols.gamma_flag(step_index))
+    input_events, event_reads = _event_inputs_for_step(
+        formula, model, summary, event_policy
+    )
+    consumed_events = tuple(summary.consumed_events)
+    unconsumed_events = _unconsumed_event_paths(
+        tuple(item.path for item in input_events), consumed_events
+    )
+    source = frames[step_index]
+    target = frames[step_index + 1]
+    step_inputs, input_reads = _decode_step_inputs(
+        formula, model, step_index, source, summary.case, summary.antecedent
+    )
+    kind = summary.kind(delta, gamma, source.terminated)
+    progress = {
+        "absorb": "terminated_absorb",
+        "delta": "semantic_delta",
+        "fallback": "fallback_gamma",
+    }.get(kind, kind)
+    calls = tuple(
+        BmcWitnessCallRecord(
+            ordinal=ordinal,
+            action_name=call.action_name,
+            stage=call.stage,
+            role=call.role,
+            state=call.state,
+            active_leaf=call.active_leaf,
+            named_ref=call.named_ref,
+            snapshot=dict(call.snapshot),
+            configuration=call.configuration,
+        )
+        for ordinal, call in enumerate(summary.trace.calls)
+    )
+    return BmcWitnessStep(
+        index=step_index,
+        source_frame=step_index,
+        target_frame=step_index + 1,
+        case_label=None,
+        case_kind=kind,
+        progress=progress,
+        source_state=source.state,
+        target_state=target.state,
+        delta=delta,
+        gamma=gamma,
+        input_events=input_events,
+        event_reads=event_reads,
+        abstract_calls=calls,
+        consumed_events=consumed_events,
+        unconsumed_events=unconsumed_events,
+        inputs=step_inputs,
+        input_reads=input_reads,
+        local_cases=tuple(
+            BmcWitnessLocalCase(scope, case_kind, label)
+            for scope, case_kind, label in summary.local_cases
+        ),
+    )
+
+
 def _initial_metadata(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -6234,13 +6523,16 @@ def _initial_metadata(
         parameters[var.name] = _z3_number_value(
             model, formula.core.symbols.parameter(var.name), var.declared_type
         )
-    return {
+    metadata = {
         "mode": initial.mode,
         "state": first.state,
         "sentinel": first.sentinel,
         "vars": dict(sorted(first.vars.items())),
         "parameters": dict(sorted(parameters.items())),
     }
+    if first.configuration is not None:
+        metadata["configuration"] = first.configuration
+    return metadata
 
 
 def _decode_witness_trace(
@@ -6627,9 +6919,26 @@ def _decode_runtime_error_trace(
     )
 
 
+def _machine_has_regions(state_machine: StateMachine) -> bool:
+    """Return whether a state machine declares regions."""
+    return any(
+        isinstance(namespace, Region)
+        for namespace in walk_namespaces(state_machine.root_state)
+    )
+
+
+def _has_regions(runtime: SimulationRuntime) -> bool:
+    """Return whether the machine of a runtime declares regions."""
+    return _machine_has_regions(runtime.state_machine)
+
+
 def _runtime_state(runtime: SimulationRuntime) -> Optional[str]:
     if runtime.is_ended:
         return None
+    if _has_regions(runtime):
+        # The state of a model with regions is a whole configuration; the state
+        # a frame reports is the one the machine rests in outside every region.
+        return str(runtime.configuration.to_dict()["state"])
     return ".".join(runtime.current_state.path)
 
 
@@ -6639,6 +6948,11 @@ def _runtime_frame(runtime: SimulationRuntime, index: int) -> BmcRuntimeFrame:
         state=_runtime_state(runtime),
         terminated=runtime.is_ended,
         vars=dict(runtime.vars),
+        configuration=(
+            str(runtime.configuration)
+            if not runtime.is_ended and _has_regions(runtime)
+            else None
+        ),
     )
 
 
@@ -6779,6 +7093,15 @@ def _compare_frame(
                 "state mismatch",
             )
         )
+    if witness.configuration != runtime.configuration:
+        mismatches.append(
+            BmcReplayMismatch(
+                "frames[%d].configuration" % witness.index,
+                witness.configuration,
+                runtime.configuration,
+                "configuration mismatch",
+            )
+        )
     if witness.terminated != runtime.terminated:
         mismatches.append(
             BmcReplayMismatch(
@@ -6823,13 +7146,14 @@ def _compare_calls(
             "state",
             "active_leaf",
             "named_ref",
+            "configuration",
         ):
-            if left_canon[key] != right_canon[key]:
+            if left_canon.get(key) != right_canon.get(key):
                 mismatches.append(
                     BmcReplayMismatch(
                         "steps[%d].abstract_calls[%d].%s" % (index, call_index, key),
-                        left_canon[key],
-                        right_canon[key],
+                        left_canon.get(key),
+                        right_canon.get(key),
                         "abstract call metadata mismatch",
                     )
                 )
@@ -7006,8 +7330,11 @@ def _initial_runtime(
     if first is not None and first.sentinel == "terminated":
         return None
     initial_vars = dict(first.vars) if first is not None else None
+    # A model with regions starts from the whole position, not from one state.
     initial_state = (
-        first.state if first is not None and first.sentinel is None else None
+        (first.configuration or first.state)
+        if first is not None and first.sentinel is None
+        else None
     )
     # Witness-decoded parameters are always complete for role-aware models;
     # hot start requires the full mapping while cold start fills defaults.
@@ -7156,7 +7483,10 @@ def replay_bmc_witness(
     if error is not None and error["step"] is None:
         return _replay_initialization_error(state_machine, witness, error)
     runtime = _initial_runtime(state_machine, witness)
-    recorder = _HandlerCallRecorder(_abstract_call_role_resolver(state_machine))
+    recorder = _HandlerCallRecorder(
+        _abstract_call_role_resolver(state_machine),
+        with_configuration=_machine_has_regions(state_machine),
+    )
     frames = []
     steps = []
     mismatches: list[BmcReplayMismatch] = []
@@ -7201,6 +7531,7 @@ def replay_bmc_witness(
                 active_leaf=call.active_leaf,
                 named_ref=call.named_ref,
                 snapshot=call.snapshot,
+                configuration=call.configuration,
             )
             for idx, call in enumerate(recorder.calls[call_start:])
         )
@@ -7269,6 +7600,7 @@ __all__ = [
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
     "BmcWitnessFrame",
+    "BmcWitnessLocalCase",
     "BmcWitnessStep",
     "BmcWitnessTrace",
     "BmcRuntimeFrame",

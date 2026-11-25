@@ -16,7 +16,7 @@ BmcAbstractCallRecord
 -----------------------------------------------------
 
 .. autoclass:: BmcAbstractCallRecord
-    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot
+    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot,scope_path,stack_states
 
 
 BmcTraceSymbols

@@ -30,6 +30,12 @@ REGION\_INACTIVE\_ID
 .. autodata:: REGION_INACTIVE_ID
 
 
+REGION\_PENDING\_ID
+-----------------------------------------------------
+
+.. autodata:: REGION_PENDING_ID
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

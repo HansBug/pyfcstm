@@ -59,9 +59,11 @@ STATE_INIT_ID = -3
 STATE_TERMINATE_ID = -1
 # Position values of a region symbol that are not model states. A region that
 # finished through ``[*]`` is done; a region whose owner is not resting in the
-# frame is inactive. Neither value is a state entry of the domain.
+# frame is inactive; a region of a hot start that has not been initialized yet is
+# pending. None of these values is a state entry of the domain.
 REGION_DONE_ID = -4
 REGION_INACTIVE_ID = -5
+REGION_PENDING_ID = -6
 _STATE_INIT_PATH = "$STATE_INIT"
 _STATE_TERMINATE_PATH = "$STATE_TERMINATE"
 
@@ -1840,6 +1842,7 @@ __all__ = [
     "STATE_TERMINATE_ID",
     "REGION_DONE_ID",
     "REGION_INACTIVE_ID",
+    "REGION_PENDING_ID",
     "RegionDomainEntry",
     "StateDomainEntry",
     "EventDomainEntry",

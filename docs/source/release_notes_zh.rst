@@ -46,7 +46,12 @@ PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展
 - 最后一个区域只有在拥有者能在同一周期继续时才可以结束；
 - ``>> during`` 切面和拥有区域的状态上的普通 ``during before``\ ，按仿真器运行它们的方式编码。
 
-这类模型目前只支持冷启动。热启动、\ :func:`pyfcstm.bmc.compile_bmc_property`\ 和 :func:`pyfcstm.bmc.check_runtime_safety`\ 对它抛出 :class:`pyfcstm.bmc.UnsupportedBmcQuery`\ ，\ ``pyfcstm bmc`` 仍然拒绝这样的模型。在变化的取值上重入自身的组会被展开到固定深度，需要更深时抛出 :class:`pyfcstm.bmc.BmcBuildError`\ ，而不是被近似。不含区域的模型生成的公式与以前相同。
+热启动、\ :func:`pyfcstm.bmc.compile_bmc_property`\ 、\ :func:`pyfcstm.bmc.check_runtime_safety`\ 和 ``pyfcstm bmc`` 现在也接受这类模型：
+
+- ``init state("...")`` 可以写配置文本，例如 ``Controller.Running{Safety: Watching, Motion: On}``\ ，也可以写区域内某个状态的路径，或者只写拥有者的路径。省略的区域，或者写成 ``[init]`` 的区域，在第一个周期里等待启动（\ ``REGION_PENDING_ID``\ ）。让某个拥有者的全部区域都处于完成状态的起点会被 ``invalid_start_position`` 拒绝；
+- ``called`` 与 ``call_count`` 统计各区域的抽象调用；运行时安全检查覆盖每个区域的运算，包括没有被选中的候选的探测；起不来的区域让整个周期成为 Delta，位置与变量保持不变；
+- 见证帧带有可选的 ``configuration`` 文本，区域步带有 ``local_cases``\ （\ ``scope``\ 、\ ``kind`` 与 ``label``\ ）以及取值为 ``null`` 的 ``case_label``\ ，抽象调用带有调用时刻整台机器的配置。回放比较配置、变量、事件、输入和调用，不比较局部分支。人类可读报告里每个区域步占一行。新增的 JSON 字段都是可选的，不含区域的模型不会出现。
+在变化的取值上重入自身的组会被展开到固定深度，需要更深时抛出 :class:`pyfcstm.bmc.BmcBuildError`\ ，而不是被近似。不含区域的模型生成的公式与以前相同。
 
 历史与 ``active()``
 ~~~~~~~~~~~~~~~~~~~~

@@ -41,7 +41,7 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 from .ast import (
     Active,
@@ -83,6 +83,9 @@ from .query import (
     InitialVariablePolicy,
     InitialSpec,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - only names a type
+    from .region_start import RegionStart
 
 _CanonicalDict = Dict[str, Any]
 _INITIAL_MODES = {"cold", "terminated", "state"}
@@ -269,6 +272,11 @@ class BoundInitialSpec:
         declaration initializers are skipped, or ``None`` when no domain was
         supplied, defaults to ``None``.
     :type resolved_havoc_variables: Tuple[str, ...], optional
+    :param resolved_start: For a hot start of a model with regions, where every
+        region rests when the trace begins; ``resolved_state_id`` is then the id
+        of the state the machine rests in outside every region.  ``None`` for any
+        other start, defaults to ``None``.
+    :type resolved_start: pyfcstm.bmc.region_start.RegionStart, optional
 
     Example::
 
@@ -279,6 +287,7 @@ class BoundInitialSpec:
     source: InitialSpec
     resolved_state_id: Optional[int] = None
     resolved_havoc_variables: Optional[Tuple[str, ...]] = None
+    resolved_start: Optional["RegionStart"] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, InitialSpec):
@@ -373,6 +382,11 @@ class BoundInitialSpec:
                 ),
             }
         )
+        if self.resolved_start is not None:
+            result["resolved_start"] = {
+                "main": self.resolved_start.main,
+                "positions": dict(sorted(self.resolved_start.positions.items())),
+            }
         return result
 
 
@@ -1005,6 +1019,9 @@ def _iter_model_actions(model: object):
             "on_during_aspects",
         ):
             actions.extend(getattr(state, attr_name, ()) or ())
+        # A ``>> during`` aspect can also be declared in the body of a region.
+        for region in (getattr(state, "regions", None) or {}).values():
+            actions.extend(region.on_during_aspects)
     return tuple(actions)
 
 
@@ -1439,12 +1456,49 @@ def _bind_initial_variable_policy(
     return tuple(sorted(resolved, key=lambda name: domain_order[name]))
 
 
+def _resolve_region_start(
+    ctx: _BindingContext, start: str, path: str, spelling: str
+) -> Tuple[int, "RegionStart"]:
+    """Resolve the start position of a hot start of a model with regions.
+
+    The start may be a configuration text or a dotted state path that passes
+    through regions; see :func:`pyfcstm.bmc.region_start.resolve_region_start`.
+
+    :raises InvalidBmcQuery: With code ``unknown_state`` for a path that names no
+        state, and ``invalid_start_position`` for text that is not a position of
+        the model or leaves every region of an owner done.
+    """
+    _require_non_empty_field(start, path, "state path")
+    # The binding layer does not import the model package; reading a start position
+    # of a model with regions is the one place that needs it.
+    from .region_start import resolve_region_start
+
+    try:
+        resolved = resolve_region_start(ctx.domain, start)
+    except InvalidBmcQuery as err:
+        # InvalidBmcQuery: the start is not a position of this model, names a
+        # state that does not exist, or leaves every region of an owner done.
+        unknown = "{" not in start and "all regions" not in str(err)
+        _raise_binding_error(
+            "unknown_state" if unknown else "invalid_start_position", path, str(err)
+        )
+    entry = ctx.domain.state_by_path(resolved.main)
+    ctx.add_reference("state", start, path, spelling, entry.id)
+    return entry.id, resolved
+
+
 def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpec:
     resolved_state_id = None
+    resolved_start = None
     if initial.mode == "state":
-        resolved_state_id = _resolve_state(
-            ctx, initial.state_path or "", "initial.state_path", "state_path"
-        )
+        if ctx.has_domain and ctx.domain.regions:
+            resolved_state_id, resolved_start = _resolve_region_start(
+                ctx, initial.state_path or "", "initial.state_path", "state_path"
+            )
+        else:
+            resolved_state_id = _resolve_state(
+                ctx, initial.state_path or "", "initial.state_path", "state_path"
+            )
     resolved_havoc_variables = _bind_initial_variable_policy(
         ctx, initial.variable_policy
     )
@@ -1455,7 +1509,9 @@ def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpe
             "initial.predicate",
             _ConditionRules.frame_local(allow_cycle=False),
         )
-    return BoundInitialSpec(initial, resolved_state_id, resolved_havoc_variables)
+    return BoundInitialSpec(
+        initial, resolved_state_id, resolved_havoc_variables, resolved_start
+    )
 
 
 def _bind_frame_assumption(

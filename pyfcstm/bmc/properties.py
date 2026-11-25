@@ -62,6 +62,7 @@ from .ast import (
 )
 from .errors import BmcBuildError, InvalidBmcQuery, UnsupportedBmcQuery
 from .query import BmcProperty
+from .region_relation import region_occurrences, reported_call_state
 from .relation import (
     BmcCoreFormula,
     _lower_bmc_cond_expr,
@@ -587,12 +588,26 @@ def _snapshot_cond_expr(
     return z3.And(_require_bool(lowered.expr, label), definedness)
 
 
+def _reported_state(core: BmcCoreFormula, relation, record) -> Optional[Tuple[str, str]]:
+    """Return the state and active leaf a handler is told for a call.
+
+    ``None`` for the call of an aspect that a flush settles in a model with
+    regions: the state it is told is where the machine rests at that moment.
+    """
+    if not core.region_steps:
+        return record.state_path, record.active_leaf_path
+    if relation.settles:
+        return None
+    return reported_call_state(core.context.domain, record)
+
+
 def _call_match_expr(
     relation,
     record,
     filter_node: CallFilter,
     step_index: int,
     parameters: Mapping[str, z3.ArithRef],
+    reported: Optional[Tuple[str, str]],
 ) -> z3.BoolRef:
     terms = [relation.selector]
     if filter_node.action is not None:
@@ -601,10 +616,21 @@ def _call_match_expr(
         terms.append(z3.BoolVal(record.stage == filter_node.stage))
     if filter_node.role is not None:
         terms.append(z3.BoolVal(record.role == filter_node.role))
+    if reported is None and (
+        filter_node.state is not None or filter_node.active_leaf is not None
+    ):
+        if not any(z3.is_false(term) for term in terms):
+            raise UnsupportedBmcQuery(
+                "state and active_leaf filters cannot select the call of a "
+                "``>> during after`` aspect in a model with regions: the state the "
+                "handler is told depends on where the machine rests when the aspect "
+                "settles."
+            )
+        return z3.BoolVal(False)
     if filter_node.state is not None:
-        terms.append(z3.BoolVal(record.state_path == filter_node.state))
+        terms.append(z3.BoolVal(reported[0] == filter_node.state))
     if filter_node.active_leaf is not None:
-        terms.append(z3.BoolVal(record.active_leaf_path == filter_node.active_leaf))
+        terms.append(z3.BoolVal(reported[1] == filter_node.active_leaf))
     if filter_node.named_ref_is_null:
         terms.append(z3.BoolVal(record.named_ref is None))
     elif filter_node.named_ref is not None:
@@ -630,7 +656,20 @@ def _lower_call_count(
     )
     items = []
     for selected_step in selected_steps:
-        for relation in core.steps[selected_step].case_relations:
+        if core.region_steps:
+            # The calls of a cycle of a model with regions are the calls of every
+            # path and settlement that is part of it, each under its own condition.
+            sources = [
+                _Occurrence(
+                    occurrence.condition,
+                    occurrence.call_records,
+                    occurrence.flush is not None,
+                )
+                for occurrence in region_occurrences(core.region_steps[selected_step])
+            ]
+        else:
+            sources = list(core.steps[selected_step].case_relations)
+        for relation in sources:
             for record in relation.call_records:
                 items.append(
                     z3.If(
@@ -640,6 +679,7 @@ def _lower_call_count(
                             expr.filter,
                             selected_step,
                             core.symbols.parameters,
+                            _reported_state(core, relation, record),
                         ),
                         z3.IntVal(1),
                         z3.IntVal(0),
@@ -708,17 +748,42 @@ def _validate_cover_label_schema(label: str) -> str:
     return case_kind
 
 
+@dataclass(frozen=True)
+class _Occurrence:
+    """The calls one path or settlement of a cycle makes and the condition it runs under."""
+
+    selector: z3.BoolRef
+    call_records: Tuple[Any, ...]
+    settles: bool = False
+
+
 def _cover_selectors(core: BmcCoreFormula, label: str) -> Tuple[z3.BoolRef, ...]:
     label_kind = _validate_cover_label_schema(label)
-    relations = tuple(
-        relation
-        for step in core.steps
-        for relation in step.case_relations
-        if relation.case.label == label
-    )
+    if core.region_steps:
+        # A local case is named by its public label, which every path of every
+        # unit that takes it shares, and it is taken when its path is part of the
+        # cycle; the paths of a group start only count under the path that starts it.
+        found = tuple(
+            (occurrence.case.case.kind, occurrence.condition)
+            for step in core.region_steps
+            for occurrence in region_occurrences(step)
+            if occurrence.case is not None
+            and occurrence.case.case.public_label == label
+        )
+        relations = tuple(kind for kind, _ in found)
+        selectors = tuple(condition for _, condition in found)
+    else:
+        found_relations = tuple(
+            relation
+            for step in core.steps
+            for relation in step.case_relations
+            if relation.case.label == label
+        )
+        relations = tuple(relation.case.kind for relation in found_relations)
+        selectors = tuple(relation.selector for relation in found_relations)
     if not relations:
         raise InvalidBmcQuery("cover case label is unknown: %r." % label)
-    kinds = {relation.case.kind for relation in relations}
+    kinds = set(relations)
     if kinds != {
         label_kind
     }:  # pragma: no cover - relation labels are internally canonical.
@@ -728,7 +793,7 @@ def _cover_selectors(core: BmcCoreFormula, label: str) -> Tuple[z3.BoolRef, ...]
             "cover case label is not coverable: %r has kind %s."
             % (label, sorted(kinds)[0])
         )
-    return tuple(relation.selector for relation in relations)
+    return selectors
 
 
 def _compile_cover(core: BmcCoreFormula, prop: BmcProperty) -> Tuple[z3.BoolRef, str]:
@@ -817,8 +882,7 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         property shape is invalid for property compilation.
     :raises pyfcstm.bmc.errors.UnsupportedBmcQuery: If the property uses a
         parsed but unsupported expression shape or unsupported arithmetic
-        operation, or if ``core`` belongs to a model with regions, whose
-        properties are not supported yet.
+        operation.
 
     Example::
 
@@ -835,18 +899,11 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         ... }
         ... ''')
         >>> core = build_bmc_core_formula(
-        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();'))
-        >>> compile_bmc_property(core)
-        Traceback (most recent call last):
-            ...
-        pyfcstm.bmc.errors.UnsupportedBmcQuery: a property over a model with regions is not supported yet; the core trace relation is available from build_bmc_core_formula.
+        ...     BmcEngine(regional).prepare('check reach <= 1: active("Root.A.P");'))
+        >>> compile_bmc_property(core).kind
+        'reach'
     """
     checked_core = _require_core(core)
-    if checked_core.region_steps:
-        raise UnsupportedBmcQuery(
-            "a property over a model with regions is not supported yet; the "
-            "core trace relation is available from build_bmc_core_formula."
-        )
     prop = _property_source(checked_core)
     kind = prop.kind
     case_label = None

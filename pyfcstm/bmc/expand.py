@@ -972,12 +972,22 @@ class _MacroExpander:
             active_leaf_path=self._active_leaf_path(frontier, runtime_state_path),
             execution_state_path=runtime_state_path,
             named_ref=named_ref,
+            stack_states=self._stack_states(frontier),
         )
         return self._replace_frontier(
             frontier,
             action_blocks=frontier.action_blocks + (block,),
             last_point=self._record_point(frontier, frontier.condition, block=block),
         )
+
+    def _stack_states(self, frontier: _MacroFrontier) -> Optional[Tuple[str, ...]]:
+        """Return the states on the stack to record with an action block.
+
+        :param frontier: Frontier whose stack is running the block.
+        :return: ``None``: a model without regions never needs more than the
+            path of the leaf the block runs in, which is already recorded.
+        """
+        return None
 
     def _record_point(
         self,

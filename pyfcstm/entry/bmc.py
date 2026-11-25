@@ -195,10 +195,7 @@ def _load_model(input_code_file: str) -> StateMachine:
         reason (``Failed to read``).
     """
     try:
-        from pyfcstm.model.support import require_supported_model
-        model = load_state_machine_from_file(input_code_file)
-        require_supported_model(model, 'bmc')
-        return model
+        return load_state_machine_from_file(input_code_file)
     except FileNotFoundError:
         # load_state_machine_from_file raises FileNotFoundError for a missing
         # primary FCSTM input.
@@ -212,7 +209,7 @@ def _load_model(input_code_file: str) -> StateMachine:
         raise ClickErrorException("Failed to parse FCSTM model: %s" % err)
     except ModelValidationError as err:
         # Model construction raises ModelValidationError for semantic model
-        # errors after parsing; the support check rejects unsupported BMC features.
+        # errors after parsing.
         raise ClickErrorException("Invalid FCSTM model: %s" % err)
     except OSError as err:
         # The loader raises OSError subclasses for primary/imported file access
@@ -427,6 +424,8 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
 
 def _human_frame_label(witness: BmcWitnessTrace, frame_index: int) -> str:
     frame = witness.frames[frame_index]
+    if frame.configuration is not None:
+        return frame.configuration
     if frame.state is not None:
         return frame.state
     if frame.sentinel is not None:
@@ -440,6 +439,31 @@ def _human_compact_values(values: Tuple[str, ...]) -> str:
     if len(values) > len(visible):
         text += ",+%d more" % (len(values) - len(visible))
     return text
+
+
+def _human_local_case(case) -> str:
+    """Render one local case of a cycle of a model with regions as one line.
+
+    Paths are shown relative to the scope the case ran in, and a region that
+    finished reads ``[done]``: ``Motion: Off -> On [transition]``.
+    """
+    scope = case.scope
+
+    def relative(path: str) -> str:
+        if path == "__region_done__":
+            return "[done]"
+        if path == "__init__":
+            return "[start]"
+        if scope is not None and path == scope:
+            return "[start]"
+        if scope is not None and path.startswith(scope + "."):
+            return path[len(scope) + 1 :]
+        return path
+
+    line = "%s -> %s [%s]" % (relative(case.source), relative(case.target), case.kind)
+    if scope is None:
+        return line
+    return "%s: %s" % (scope.rsplit(".", 1)[-1], line)
 
 
 def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
@@ -460,15 +484,25 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
             details.append("events=%s" % _human_compact_values(event_paths))
         if call_names:
             details.append("calls=%s" % _human_compact_values(call_names))
-        lines.append(
-            "  %d: %s -> %s [%s]"
-            % (
-                step.index,
-                _human_frame_label(witness, step.source_frame),
-                _human_frame_label(witness, step.target_frame),
-                "; ".join(details),
+        if step.local_cases is None:
+            lines.append(
+                "  %d: %s -> %s [%s]"
+                % (
+                    step.index,
+                    _human_frame_label(witness, step.source_frame),
+                    _human_frame_label(witness, step.target_frame),
+                    "; ".join(details),
+                )
             )
+            continue
+        # A cycle of a model with regions is the local cases of its regions, one
+        # line each, below the frames it goes from and to.
+        lines.append("  %d: %s" % (step.index, _human_frame_label(witness, step.source_frame)))
+        lines.append(
+            "       -> %s [%s]"
+            % (_human_frame_label(witness, step.target_frame), "; ".join(details))
         )
+        lines.extend("       %s" % _human_local_case(case) for case in step.local_cases)
     if error is not None:
         if error["step"] is None:
             lines.append("  init: RUNTIME ERROR %s (%s)" % (error["kind"], error["location"]))

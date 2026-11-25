@@ -360,19 +360,17 @@ def _can_finish(scope: object) -> bool:
     ]
     while pending:
         name = pending.pop()
-        if name in seen or name not in scope.substates:
-            continue
-        seen.add(name)
-        child = scope.substates[name]
-        completable = _is_completable(child)
-        for transition in scope.transitions:
-            if transition.from_state != name:
-                continue
-            if not completable and not transition.is_forced:
-                continue
-            if transition.to_state is EXIT_STATE:
-                return True
-            pending.append(transition.to_state)
+        if name not in seen:
+            seen.add(name)
+            completable = _is_completable(scope.substates[name])
+            for transition in scope.transitions:
+                if transition.from_state != name:
+                    continue
+                if not completable and not transition.is_forced:
+                    continue
+                if transition.to_state is EXIT_STATE:
+                    return True
+                pending.append(transition.to_state)
     return False
 
 

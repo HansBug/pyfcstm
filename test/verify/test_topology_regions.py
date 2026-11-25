@@ -197,3 +197,26 @@ def test_a_plain_composite_state_is_the_case_of_one_region(body):
         ["Only"],
     ) == tuple(sorted(sum(strongly_connected_components(plain), ())))
     assert event_emission_to_consumer_reachable(regional) == event_emission_to_consumer_reachable(plain)
+
+
+def test_an_owner_does_not_go_on_while_another_region_only_cycles():
+    model = machine(
+        """
+        state Root {
+            event Go; event Back;
+            [*] -> Owner;
+            state Owner {
+                region R { [*] -> X; state X; X -> [*]; }
+                region S {
+                    [*] -> P;
+                    state P; state Q;
+                    P -> Q :: Go;
+                    Q -> P :: Back;
+                }
+            }
+            state After;
+            Owner -> After;
+        }
+        """
+    )
+    assert unreachable_states(model) == ("Root.After",)

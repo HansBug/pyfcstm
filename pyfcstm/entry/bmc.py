@@ -58,7 +58,7 @@ import pathlib
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 
 import click
 
@@ -441,6 +441,33 @@ def _human_compact_values(values: Tuple[str, ...]) -> str:
     return text
 
 
+def _human_base(scope: Optional[str], states: Sequence[str]) -> Optional[str]:
+    """Return the first of ``states`` that is ``scope`` or contains it, else ``None``.
+
+    :param scope: Path of the owner or region a local case ran in, or ``None``.
+    :type scope: str, optional
+    :param states: Candidate states, in order of preference.
+    :type states: Sequence[str]
+    :return: The state the scope is written relative to.
+    :rtype: str, optional
+
+    Example::
+
+        >>> _human_base('Root.Run.A', ['Root.Idle', 'Root.Run'])
+        'Root.Run'
+        >>> _human_base('Root.Run.A', ['Root.Idle']) is None
+        True
+    """
+    return next(
+        (
+            state
+            for state in states
+            if scope is not None and (scope == state or scope.startswith(state + "."))
+        ),
+        None,
+    )
+
+
 def _human_local_case(case, main: Optional[str] = None) -> str:
     """Render one local case of a cycle of a model with regions as one line.
 
@@ -529,14 +556,20 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
             "       -> %s [%s]"
             % (_human_frame_label(witness, step.target_frame), "; ".join(details))
         )
-        # A cycle that terminates the machine ends in a frame without a state, so
-        # the scopes are written relative to the state it started from.
-        main = (
-            witness.frames[step.target_frame].state
-            or witness.frames[step.source_frame].state
+        # A cycle that leaves the group, or the machine, ends outside the state its
+        # local cases ran in, so a scope is written relative to whichever of the
+        # state it started from and the state it ends in contains it.
+        ends = tuple(
+            state
+            for state in (
+                witness.frames[step.target_frame].state,
+                witness.frames[step.source_frame].state,
+            )
+            if state is not None
         )
         lines.extend(
-            "       %s" % _human_local_case(case, main) for case in step.local_cases
+            "       %s" % _human_local_case(case, _human_base(case.scope, ends))
+            for case in step.local_cases
         )
     if error is not None:
         if error["step"] is None:

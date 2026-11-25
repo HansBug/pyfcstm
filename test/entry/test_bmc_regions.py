@@ -217,3 +217,27 @@ def test_the_human_trace_of_a_cycle_that_terminates_is_relative_to_the_state_it_
     lines = result.output.splitlines()
     assert "       A: P -> [done] [transition]" in lines
     assert "       B: X -> [done] [transition]" in lines
+
+
+def test_the_human_trace_of_a_cycle_that_leaves_the_group_is_relative_to_the_state_it_left(
+    tmp_path,
+):
+    text = (
+        "state Root {\n"
+        "    event Stop;\n"
+        "    [*] -> Run;\n"
+        "    state Idle;\n"
+        "    state Run {\n"
+        "        region A { state P; [*] -> P; }\n"
+        "        region B { state X; [*] -> X; }\n"
+        "    }\n"
+        "    !Run -> Idle :: Stop;\n"
+        "}\n"
+    )
+    result = run_bmc(
+        tmp_path, text, 'check reach <= 3: active("Root.Idle");', "--color", "never"
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert "       A: P -> [done] [transition]" in lines
+    assert not any(line.startswith("       Root.Run") for line in lines)

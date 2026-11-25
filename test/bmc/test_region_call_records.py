@@ -531,6 +531,24 @@ def test_a_cycle_is_summed_up_as_one_kind():
 
 
 
+REENTERED_OWNER = (
+    """
+    state Root {
+        event Fin;
+        [*] -> Run;
+        state Run {
+            enter abstract RunIn;
+            exit abstract RunOut;
+            region A { [*] -> P; state P; P -> [*] : /Fin; }
+            region B { [*] -> Q; state Q; Q -> [*] : /Fin; }
+        }
+        Run -> Run;
+    }
+    """,
+    ["Root.Run.RunIn", "Root.Run.RunOut"],
+    [[], ["Root.Fin"], []],
+)
+
 SCENARIOS = {
     "wrapped_scopes": WRAPPED_SCOPES,
     "after_aspects": AFTER_ASPECTS,
@@ -544,6 +562,7 @@ SCENARIOS = {
     "single_region_owner_below_aspect": SINGLE_REGION_OWNER_BELOW_ASPECT,
     "after_aspect_above_the_group": AFTER_ASPECT_ABOVE_THE_GROUP,
     "after_aspect_of_a_composite": AFTER_ASPECT_OF_A_COMPOSITE,
+    "reentered_owner": REENTERED_OWNER,
 }
 
 

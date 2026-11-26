@@ -47,7 +47,7 @@ Render it with the tutorial model:
 .. code-block:: bash
 
    pyfcstm generate \
-       -i docs/source/tutorials/generation/simple_machine.fcstm \
+       -i docs/source/_models/simple_machine.fcstm \
        -t my_template \
        -o /tmp/pyfcstm-template-check \
        --clear

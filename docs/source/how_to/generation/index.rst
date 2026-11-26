@@ -44,7 +44,7 @@ Prepare an input model
 
 The examples use the same small model as the first tutorial:
 
-.. literalinclude:: ../../tutorials/generation/simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 Generate each built-in template
@@ -241,23 +241,23 @@ and the first repair step.
      - Success signal
      - Side effect and first repair
    * - Generate the Python runtime.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
      - ``machine.py`` and generated README files exist; the README names the concrete class.
      - ``--clear`` replaces the scratch output. If it fails, confirm the input parses before inspecting the template.
    * - Generate explicit-event C output.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
      - ``machine.h`` and ``machine.c`` exist, and the README shows event ids.
      - A later compiler smoke must use the generated header. If event names are unclear, read the generated README rather than guessing ids.
    * - Generate polling C output.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
      - ``machine.h`` documents the event-check table shape.
      - Polling requires callbacks for event truth. If events never fire, inspect ``EventChecks`` before editing state-machine logic.
    * - Generate the C++ wrapper.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
      - ``machine.hpp`` and ``machine.cpp`` appear in addition to the C core.
      - User code should include ``machine.hpp``. If a build bypasses the wrapper, the smoke no longer proves the documented C++ surface.
    * - Generate the C++ polling wrapper.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
      - Wrapper files plus polling README guidance are emitted.
      - Install wrapper-facing event checks. If a transition stays inactive, verify the callback return values for that cycle.
    * - Re-render into a clean scratch directory.

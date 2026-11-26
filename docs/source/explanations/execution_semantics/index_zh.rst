@@ -72,16 +72,40 @@
 
 复合状态内部的子到子转换不同：它会退出源子状态，执行转换 effect，然后进入目标子状态。普通复合状态 ``during before`` 和 ``during after`` 不包裹普通子到子转换。
 
-下面的已检查 demo 展示了普通 ``during before`` 在复合进入时执行，而祖先切面和叶状态 during 工作会在后续活动周期运行：
+下面的例子展示了普通 ``during before`` 在复合进入时执行，而祖先切面和叶状态 during 工作会在后续活动周期运行：
 
-.. literalinclude:: ../../tutorials/simulation/hierarchy_execution.demo.py
-   :language: python
-   :caption: 层级进入和 during 执行
+.. testcode::
 
-输出：
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: ../../tutorials/simulation/hierarchy_execution.demo.py.txt
-   :language: text
+   model = load_state_machine_from_text("""
+   def int counter = 0;
+
+   state System {
+       >> during before { counter = counter + 1; }
+       [*] -> Parent;
+       state Parent {
+           during before { counter = counter + 100; }
+           state Child {
+               during { counter = counter + 10; }
+           }
+           [*] -> Child;
+       }
+   }
+   """)
+   runtime = SimulationRuntime(model)
+   for number in (1, 2, 3):
+       runtime.cycle()
+       print("cycle", number, "counter =", runtime.vars["counter"])
+
+.. testoutput::
+
+   cycle 1 counter = 111
+   cycle 2 counter = 122
+   cycle 3 counter = 133
+
+周期 1 增加 111：``Parent`` 的普通 ``during before``\ （100）在复合进入时运行，同时运行祖先切面（1）和 ``Child.during``\ （10）。周期 2 和 3 各增加 11：切面 ``>> during before``\ （1）加 ``Child.during``\ （10），复合状态自己的 ``during before`` 不再运行。
 
 生命周期和转换 effect
 ---------------------

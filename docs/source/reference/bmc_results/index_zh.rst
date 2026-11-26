@@ -1351,7 +1351,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 
 含 ``region`` 块的模型没有唯一的当前状态，一个宏步会按书写顺序运行多个分支。结果协议用一小组\ *可选*\ 字段描述这件事。这些字段在不含区域的模型里全部不出现，所以按旧形状写的消费方照常工作；模式文件里没有一个字段被标为必需。示例使用本页旁边的模型（``region_job.fcstm``、``controller.fcstm``、``region_calls.fcstm``、``region_nested.fcstm``、``region_safety.fcstm``、``region_reentry.fcstm`` 与 ``region_plain.fcstm``），每个例子都运行真实的命令或脚本。每个查询先用 ``echo`` 写进 ``.fbmcq`` 文件，JSON 结果保留在工作目录里，供后面的脚本读取。
 
-.. literalinclude:: region_job.fcstm
+.. literalinclude:: /_models/region_job.fcstm
    :language: fcstm
    :caption: region_job.fcstm，下面见证示例所用的模型
 

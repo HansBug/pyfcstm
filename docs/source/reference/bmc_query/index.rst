@@ -797,15 +797,15 @@ affected by anything in this section: every form below degrades to the plain
 state path described earlier.  The examples use four small models that sit next
 to this page, and every example runs the real command.
 
-.. literalinclude:: region_job.fcstm
+.. literalinclude:: /_models/region_job.fcstm
    :language: fcstm
    :caption: region_job.fcstm: two regions under ``Job.Run``; the owner continues to ``Next`` once both are done
 
-.. literalinclude:: region_nested.fcstm
+.. literalinclude:: /_models/region_nested.fcstm
    :language: fcstm
    :caption: region_nested.fcstm: a region ``Work`` whose state ``Inner`` is itself an owner
 
-.. literalinclude:: region_calls.fcstm
+.. literalinclude:: /_models/region_calls.fcstm
    :language: fcstm
    :caption: region_calls.fcstm: abstract actions on the owner, on both regions and a group-wide ``>> during after``
 

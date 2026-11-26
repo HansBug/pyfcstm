@@ -35,7 +35,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 示例使用第一次教程里的小模型：
 
-.. literalinclude:: ../../tutorials/generation/simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 生成每个内置模板
@@ -197,23 +197,23 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
      - 成功信号
      - 副作用和第一排查
    * - 生成 Python 运行时。
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
      - 出现 ``machine.py`` 和生成 README；README 写出具体类名。
      - ``--clear`` 会替换临时输出目录。若失败，先确认输入模型能解析，再看模板。
    * - 生成显式事件 C 输出。
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
      - 出现 ``machine.h`` 和 ``machine.c``，README 写出事件编号。
      - 后续编译冒烟检查必须使用生成头文件。事件名不清楚时，读生成 README，不要猜编号。
    * - 生成轮询 C 输出。
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
      - ``machine.h`` 记录事件检查表形状。
      - 轮询需要事件真值回调。若事件一直不触发，先检查 ``EventChecks``，再改状态机逻辑。
    * - 生成 C++ 包装层。
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
      - 除 C 核心外，还出现 ``machine.hpp`` 和 ``machine.cpp``。
      - 用户代码应包含 ``machine.hpp``。如果构建绕过包装层，冒烟检查就不能证明文档里的 C++ 集成面。
    * - 生成 C++ 轮询包装层。
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
+     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
      - 生成包装层文件和轮询 README 指引。
      - 安装包装层事件检查。若转换不激活，检查该周期的回调返回值。
    * - 重新渲染到干净临时目录。

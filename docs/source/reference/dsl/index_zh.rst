@@ -358,7 +358,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
 含两个区域的控制器，以及在拥有者自己的作用域里放事件与强制转换的写法（教程里的模型）：
 
-.. literalinclude:: ../../tutorials/regions/controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
 
 区域里含有带区域的状态（经 ``Cell`` 嵌套）、写在区域内的强制转换、区域内普通状态里的历史，以及经过两段区域名的活动查询：

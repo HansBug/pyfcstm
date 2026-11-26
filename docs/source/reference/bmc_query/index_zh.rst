@@ -730,15 +730,15 @@ BMC 原子及上下文合法性
 
 含 ``region`` 块的模型没有唯一的当前状态。查询里一切描述\ *机器在哪里*\ 的写法，因此都使用配置（configuration）的文本形式，也就是仿真器打印、见证记录的那种文本，例如 ``Job.Run{Prep: Ready, Work: Busy}``。不含区域的模型不受本节任何内容影响：下面每种写法都退化为前文所述的普通状态路径。示例使用本页旁边的四个小模型，每个例子都运行真实的命令。
 
-.. literalinclude:: region_job.fcstm
+.. literalinclude:: /_models/region_job.fcstm
    :language: fcstm
    :caption: region_job.fcstm：``Job.Run`` 下有两个区域；两者都完成后，拥有者继续前往 ``Next``
 
-.. literalinclude:: region_nested.fcstm
+.. literalinclude:: /_models/region_nested.fcstm
    :language: fcstm
    :caption: region_nested.fcstm：区域 ``Work`` 里的状态 ``Inner`` 本身又是拥有者
 
-.. literalinclude:: region_calls.fcstm
+.. literalinclude:: /_models/region_calls.fcstm
    :language: fcstm
    :caption: region_calls.fcstm：拥有者、两个区域上的抽象动作，以及整组的 ``>> during after``
 

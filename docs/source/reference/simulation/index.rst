@@ -238,7 +238,7 @@ Further rules:
 * ``consumed_events`` lists an event once for every transition that used it; an
   event shared by two regions appears twice.
 
-.. literalinclude:: event_names.fcstm
+.. literalinclude:: /_models/event_names.fcstm
    :language: fcstm
 
 .. testcode::

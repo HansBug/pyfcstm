@@ -116,7 +116,7 @@
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm --no-color
+   pyfcstm simulate -i docs/source/_models/simple_machine.fcstm --no-color
 
 然后逐条输入命令：
 
@@ -284,7 +284,7 @@
 一个紧凑调试循环是：
 
 1. 如果怀疑解析或诊断问题，先运行 ``pyfcstm inspect``。
-2. 用 ``pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm -e "cycle; events; current" --no-color``
+2. 用 ``pyfcstm simulate -i docs/source/_models/simple_machine.fcstm -e "cycle; events; current" --no-color``
    获得稳定转录。
 3. 每次只增加一个事件。
 4. 失败后使用 ``history`` 或 ``export``。

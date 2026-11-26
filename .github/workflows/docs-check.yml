@@ -549,6 +549,19 @@ jobs:
           def changed_file_exists(path):
               return Path(path).exists()
 
+          page_texts = None
+
+          def is_drawn(model_path):
+              # A model is drawn only when some page names its picture, as docs/source/fcstms.mk decides.
+              global page_texts
+              if page_texts is None:
+                  page_texts = '\n'.join(
+                      page.read_text(encoding='utf-8')
+                      for pattern in ('*.rst', '*.inc')
+                      for page in Path('docs/source').rglob(pattern)
+                  )
+              return (Path(model_path).name + '.puml.') in page_texts
+
           for changed_path in changed_paths:
               if changed_path.startswith('logos/'):
                   add_present('docs/source/_static/logos')
@@ -558,19 +571,22 @@ jobs:
               source_exists = changed_file_exists(changed_path)
               if changed_path.endswith('.full.fcstm'):
                   stem = changed_path[:-len('.full.fcstm')]
-                  add_for_source(stem + '.full.fcstm.puml', source_exists)
-                  add_for_source(stem + '.full.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.full.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.full.fcstm.puml', source_exists)
+                      add_for_source(stem + '.full.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.full.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.minimal.fcstm'):
                   stem = changed_path[:-len('.minimal.fcstm')]
-                  add_for_source(stem + '.minimal.fcstm.puml', source_exists)
-                  add_for_source(stem + '.minimal.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.minimal.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.minimal.fcstm.puml', source_exists)
+                      add_for_source(stem + '.minimal.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.minimal.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.fcstm'):
                   stem = changed_path[:-len('.fcstm')]
-                  add_for_source(stem + '.fcstm.puml', source_exists)
-                  add_for_source(stem + '.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.fcstm.puml', source_exists)
+                      add_for_source(stem + '.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.puml'):
                   add_for_source(changed_path + '.png', source_exists)
                   add_for_source(changed_path + '.svg', source_exists)

@@ -200,7 +200,7 @@
 * 同一周期里的每个名字各自解析。
 * ``consumed_events`` 对每条用到事件的转换各列一次；被两个区域共用的事件出现两次。
 
-.. literalinclude:: event_names.fcstm
+.. literalinclude:: /_models/event_names.fcstm
    :language: fcstm
 
 .. testcode::

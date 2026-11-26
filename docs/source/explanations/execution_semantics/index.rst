@@ -107,17 +107,41 @@ child, executes the transition effect, and enters the target child.  Plain
 composite ``during before`` and ``during after`` do not wrap ordinary
 child-to-child transitions.
 
-The checked demo below shows that plain ``during before`` runs during composite
+The example below shows that plain ``during before`` runs during composite
 entry, while ancestor aspect and leaf during work run on later active cycles:
 
-.. literalinclude:: ../../tutorials/simulation/hierarchy_execution.demo.py
-   :language: python
-   :caption: Hierarchical entry and during execution
+.. testcode::
 
-Output:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: ../../tutorials/simulation/hierarchy_execution.demo.py.txt
-   :language: text
+   model = load_state_machine_from_text("""
+   def int counter = 0;
+
+   state System {
+       >> during before { counter = counter + 1; }
+       [*] -> Parent;
+       state Parent {
+           during before { counter = counter + 100; }
+           state Child {
+               during { counter = counter + 10; }
+           }
+           [*] -> Child;
+       }
+   }
+   """)
+   runtime = SimulationRuntime(model)
+   for number in (1, 2, 3):
+       runtime.cycle()
+       print("cycle", number, "counter =", runtime.vars["counter"])
+
+.. testoutput::
+
+   cycle 1 counter = 111
+   cycle 2 counter = 122
+   cycle 3 counter = 133
+
+Cycle 1 adds 111: the plain ``Parent`` ``during before`` (100) runs during composite entry, together with the ancestor aspect (1) and ``Child.during`` (10). Cycles 2 and 3 each add 11: the aspect ``>> during before`` (1) and ``Child.during`` (10), because the composite's own ``during before`` no longer runs.
 
 Lifecycle and transition effects
 --------------------------------

@@ -1171,7 +1171,7 @@
 
 **论断**\ ：完整路径与从根开始的写法，在机器停在哪里都含义相同。依赖位置的名字对每个活动叶子各解析一次，结果只有三种：“都找不到”“同一个事件”“不同的事件”。裸名字从不向上查找。
 
-.. literalinclude:: event_names.fcstm
+.. literalinclude:: /_models/event_names.fcstm
    :language: fcstm
    :caption: ``event_names.fcstm``
 

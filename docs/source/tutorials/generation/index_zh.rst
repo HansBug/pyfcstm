@@ -10,7 +10,7 @@
 
 输入模型有三个叶状态和三条事件触发转换：
 
-.. literalinclude:: simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 生成 Python 代码

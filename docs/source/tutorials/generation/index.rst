@@ -15,7 +15,7 @@ What you will run
 
 The input model has three leaf states and three event-triggered transitions:
 
-.. literalinclude:: simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 Generate Python code

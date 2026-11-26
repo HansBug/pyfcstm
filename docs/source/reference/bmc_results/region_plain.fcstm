@@ -1,6 +1,0 @@
-state Root {
-    [*] -> Idle;
-    state Idle;
-    state Busy;
-    Idle -> Busy;
-}

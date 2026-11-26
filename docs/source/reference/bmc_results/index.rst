@@ -1564,7 +1564,7 @@ page (``region_job.fcstm``, ``controller.fcstm``, ``region_calls.fcstm``,
 ``region_nested.fcstm``, ``region_safety.fcstm``, ``region_reentry.fcstm`` and
 ``region_plain.fcstm``) and every example runs the real command or script. Each query is first written into a ``.fbmcq`` file with ``echo``, and the JSON results stay in the working directory for the scripts that follow.
 
-.. literalinclude:: region_job.fcstm
+.. literalinclude:: /_models/region_job.fcstm
    :language: fcstm
    :caption: region_job.fcstm, the model behind the witness examples
 

@@ -1481,7 +1481,7 @@ the machine rests. A name that depends on the position is resolved once for ever
 active leaf, and the three outcomes are "none found", "one event" and
 "different events". A bare name never searches upward.
 
-.. literalinclude:: event_names.fcstm
+.. literalinclude:: /_models/event_names.fcstm
    :language: fcstm
    :caption: ``event_names.fcstm``
 

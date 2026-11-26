@@ -390,7 +390,7 @@ names because only the lower-case words are reserved:
 A controller with two regions, and an owner whose own scope holds the event and
 the forced transition (the model of the tutorial):
 
-.. literalinclude:: ../../tutorials/regions/controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
 
 A region that contains a state with regions (nesting through ``Cell``), a

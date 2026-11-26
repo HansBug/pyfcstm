@@ -121,7 +121,7 @@ documentation checks, so this command is shown without being run:
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm --no-color
+   pyfcstm simulate -i docs/source/_models/simple_machine.fcstm --no-color
 
 Then type commands one at a time:
 
@@ -308,7 +308,7 @@ Debug a failing model
 A compact debugging loop is:
 
 1. Run ``pyfcstm inspect`` first if parsing or diagnostics are suspicious.
-2. Use ``pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm -e "cycle; events; current" --no-color``
+2. Use ``pyfcstm simulate -i docs/source/_models/simple_machine.fcstm -e "cycle; events; current" --no-color``
    to get a stable transcript.
 3. Add only one event at a time.
 4. Use ``history`` or ``export`` after the failure.

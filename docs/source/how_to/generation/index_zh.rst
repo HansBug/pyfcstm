@@ -332,3 +332,97 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 * 若引用生成 README，必须说明它是机器专属契约，不替代通用参考页。
 * 若新增输出片段，必须来自当前文档资源或重新生成后的记录。
+
+含区域模型的任务
+----------------
+
+每个内置模板（``python``、``c``、``c_poll``、``cpp`` 与 ``cpp_poll``）都能为含区域（region）的模型生成运行时。下面的任务卡使用
+``region_controller.fcstm``，也就是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器，并给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、
+\ **预期信号**\ 、\ **文件副作用**\ 、\ **失败时先查什么**\ 、\ **参考链接**\ 。生成的运行时与 :class:`pyfcstm.simulate.SimulationRuntime`
+逐周期一致；建模任务见 :doc:`/how_to/regions/index_zh`。
+
+生成五套运行时并运行 Python 的那一套
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``region_controller.fcstm`` 和 Python 3.7 及以上的解释器。生成的 ``machine.py`` 不依赖 ``pyfcstm``。程序 ``region_app.py``
+继承生成的类，实现两个输入读取方法，通过 ``configuration``、``leaves``、``is_active`` 与 ``region_status`` 读取位置；它还恢复一个热启动并发送事件。
+
+.. literalinclude:: region_app.py
+   :language: python
+   :caption: region_app.py
+
+**命令或代码。**
+
+.. literalinclude:: region_generate.demo.sh
+   :language: bash
+
+.. literalinclude:: region_generate.demo.sh.txt
+   :language: text
+
+**预期信号。** 前五行是各个模板生成的文件。程序把位置打印成文本（``Controller.Running{Safety: Watching, Motion: On}``）、活动叶子和变量。
+``fault`` 升高后，电机在同一个周期关断。热启动不执行任何 ``enter`` 动作就把两个区域就位，``initial_vars`` 像其他变量一样携带隐藏变量 ``__forced_0``。
+``/Stop`` 事件在一个周期里离开 ``Running``。
+
+**文件副作用。** ``pyfcstm generate`` 把上面的文件写入输出目录，使用 ``--clear`` 时先清空该目录。脚本写入临时目录，结束后删除。
+
+**失败时先查什么。** 程序抛出 ``SimulationRuntimeEventError`` 时读它的消息：依赖位置的名字会对每个活动叶子各解析一次，所以请写完整路径或 ``/名字``。
+类名或方法与预期不同时，读生成的 ``README.md``：它是按这个模型写的。
+
+**参考链接。** :doc:`/reference/builtin_templates/index_zh`。
+
+设定 C 运行时的容量宏
+~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** 同一个模型的 ``c`` 运行时、一个 C 编译器，以及 ``region_capacity_app.c``。机器的存储是静态预留的，``machine.h`` 里的两个宏决定其大小：
+``CONTROLLER_MACHINE_ARENA_CAPACITY``\ （一次决策所检查的配置与待办项数）和 ``CONTROLLER_MACHINE_TRAIL_CAPACITY``\ （嵌套检查的层数）。
+默认值按模型算出。只有周期以容量报错失败时才需要覆盖。覆盖后的值要对 ``machine.c`` 与每个包含 ``machine.h`` 的文件一致地定义。
+
+.. literalinclude:: region_capacity_app.c
+   :language: c
+   :caption: region_capacity_app.c
+
+**命令或代码。** 脚本把程序构建三次：用默认值、用太小的值（演示失败）、用更大的值：
+
+.. literalinclude:: region_capacity.demo.sh
+   :language: bash
+
+.. literalinclude:: region_capacity.demo.sh.txt
+   :language: text
+
+**预期信号。** 默认值够用：三个周期，退出码 0。``ARENA_CAPACITY=4`` 时第 2 个周期（进入区域的那个）以 ``Speculative search exceeded the capacity safety limit`` 失败，
+消息指出该宏；机器报告失败，而不是行为异常。更大的值同样成功，并让存储变大（``storage bytes``）。要确认选定的值够用，就用它运行你关心的场景：
+值太小会明确失败，所以干净的运行就是证据。存储大小依赖平台（上面的数字来自一次 64 位构建）。
+
+**文件副作用。** 脚本把生成的源文件和可执行文件写入临时目录，结束后删除。
+
+**失败时先查什么。** 读失败消息：它指出要调大的宏。程序只在某些构建里失败时，检查每个编译单元是否看到同一个 ``-D`` 值。
+
+**参考链接。** :doc:`/reference/builtin_templates/index_zh`。
+
+处理“模板没有声明 region”的拒绝
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``plain_template/``：一个自定义模板，它的 ``config.yaml`` 没有在 ``features`` 里列出 ``region``；以及一个含区域的模型。为单一活动路径写的模板
+会给区域生成错误的代码，所以 ``pyfcstm generate`` 在写任何文件之前就拒绝。这是负例。
+
+**命令或代码。**
+
+.. literalinclude:: region_refused.demox.sh
+   :language: bash
+
+.. literalinclude:: region_refused.demox.sh.err
+   :language: text
+
+退出码是 1（``region_refused.demox.sh.exitcode``）。消息里的路径被脚本缩短了；工具本身打印的是绝对路径。
+
+**预期信号。** 消息指出第一个区域，并给出两条出路：写模板的人，在模板确实能渲染区域之后才声明 ``features: [region]``（见 :doc:`/how_to/templates/index_zh`）；
+写模型的人，改用支持区域的模板。改用内置模板则成功：
+
+.. literalinclude:: region_refused_fixed.demo.sh.txt
+   :language: text
+
+**文件副作用。** 失败时没有：不会创建输出目录。
+
+**失败时先查什么。** 读以 ``If you write this template`` 或 ``If you write the model`` 开头的那一行，选适用的分支。
+
+**参考链接。** :doc:`/reference/template_config/index_zh`。

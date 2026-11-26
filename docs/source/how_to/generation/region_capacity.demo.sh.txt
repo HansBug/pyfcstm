@@ -1,0 +1,19 @@
+#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+-- cc 
+storage bytes: 14272
+cycle 1: Controller.Idle motor=0
+cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+exit 0
+-- cc -DCONTROLLER_MACHINE_ARENA_CAPACITY=4
+storage bytes: 3040
+cycle 1: Controller.Idle motor=0
+cycle 2 failed: Speculative search exceeded the capacity safety limit (4 configurations); define CONTROLLER_MACHINE_ARENA_CAPACITY to a larger value to allow a longer search.
+exit 2
+-- cc -DCONTROLLER_MACHINE_ARENA_CAPACITY=480 -DCONTROLLER_MACHINE_TRAIL_CAPACITY=96
+storage bytes: 55856
+cycle 1: Controller.Idle motor=0
+cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+exit 0

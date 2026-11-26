@@ -1,0 +1,22 @@
+python: README.md README_zh.md machine.py 
+c: README.md README_zh.md machine.c machine.h 
+c_poll: README.md README_zh.md machine.c machine.h 
+cpp: README.md README_zh.md machine.c machine.cpp machine.h machine.hpp 
+cpp_poll: README.md README_zh.md machine.c machine.cpp machine.h machine.hpp 
+after start: Controller.Running{Safety: Watching, Motion: On}
+  leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+  motor=1 permit=1
+is_active Running: True
+region_status Safety: live
+fault raised: Controller.Running{Safety: Watching, Motion: Off}
+  leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+  motor=0 permit=0
+hot start: Controller.Running{Safety: Watching, Motion: On}
+  leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+  motor=1 permit=1
+hot start, one cycle later: Controller.Running{Safety: Watching, Motion: Off}
+  leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+  motor=0 permit=0
+after /Stop: Controller.Idle
+  leaves ['Controller.Idle']
+  motor=0 permit=0

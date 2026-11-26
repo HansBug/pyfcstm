@@ -367,13 +367,49 @@ way, as a divided area of the owner, and not as a box of its own:
        dividers, with no border of their own and the same ``region N: Name``
        title.
 
-.. literalinclude:: region_plantuml.demo.sh
-   :language: bash
-   :caption: region_plantuml.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_plantuml.demo.sh.txt
-   :language: text
-   :caption: region_plantuml.demo.sh.txt
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "Off" as controller__running__motion__off
+           state "On" as controller__running__motion__on
+           [*] --> controller__running__motion__off
+           controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+           controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+       }
+   ...
+   $ pyfcstm plantuml -i controller_swapped.fcstm
+   ...
+               **region 1: Motion**
+   ...
+           --
+           note as controller__running__safety
+               **region 2: Safety**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "..." as controller__running__safety___collapsed_
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "..." as controller__running__motion___collapsed_
+       }
+   ...
 
 Read the three parts of the output in turn:
 
@@ -389,13 +425,43 @@ Read the three parts of the output in turn:
 
 The snapshot carries the same facts as data:
 
-.. literalinclude:: region_snapshot.demo.sh
-   :language: bash
-   :caption: region_snapshot.demo.sh
+.. testcode::
 
-.. literalinclude:: region_snapshot.demo.sh.txt
-   :language: text
-   :caption: region_snapshot.demo.sh.txt
+   from pyfcstm.model import load_state_machine_from_text
+
+
+   def outline(node, depth=0):
+       mark = "  region ordinal=%d" % node["ordinal"] if node.get("region") else ""
+       print("  " * depth + node["id"] + mark)
+       for child in node["children"]:
+           outline(child, depth + 1)
+
+
+   for name in ("controller", "controller_swapped"):
+       machine = load_state_machine_from_text(open(name + ".fcstm").read())
+       print("==", name)
+       outline(machine.diagram().to_dict()["rootState"])
+
+.. testoutput::
+
+   == controller
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Safety  region ordinal=1
+         Controller.Running.Safety.Watching
+       Controller.Running.Motion  region ordinal=2
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+   == controller_swapped
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Motion  region ordinal=1
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+       Controller.Running.Safety  region ordinal=2
+         Controller.Running.Safety.Watching
 
 The children of ``Controller.Running`` come out in writing order, and
 ``ordinal`` is one-based. The layout step below depends on exactly this field.
@@ -424,15 +490,24 @@ owner.
 
 What is deliberately **not** drawn is everything that exists only because of
 lowering. A guard written with ``active("...")`` keeps its full path, and the
-hidden flag variables and the automatic writes to them do not appear:
+hidden flag variables and the automatic writes to them do not appear.
 
-.. literalinclude:: region_active_display.demo.sh
-   :language: bash
-   :caption: region_active_display.demo.sh
+These commands are not run by the documentation check, because the model file belongs to the diagnostics page and not to this one. The text below is a selection of their recorded output: the legend and the guard lines of the PlantUML text, then the names of the variables and the guard labels of the snapshot.
 
-.. literalinclude:: region_active_display.demo.sh.txt
-   :language: text
-   :caption: region_active_display.demo.sh.txt
+.. code-block:: bash
+
+   pyfcstm plantuml -i region_written_vs_running.fcstm
+   pyfcstm diagram -i region_written_vs_running.fcstm
+
+.. code-block:: text
+
+   | go | int | N/A | input |
+   | lamp | int | 0 | output |
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed")
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")
+
+   variables: go, lamp
+   guards: active("Panel.Switch.Pressed"), active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed"), go != 0, go == 0
 
 The model is the one from :doc:`Diagnostics explanation </explanations/diagnostics/index>`.
 Neither the legend nor the snapshot's variable list shows an ``__active_*``

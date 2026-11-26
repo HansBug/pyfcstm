@@ -1,0 +1,50 @@
+$ pyfcstm plantuml -i region_single.fcstm
+state "Solo" as solo <<composite>> {
+    state "Only" as solo__only <<composite>> {
+        note as solo__only__lane
+            **region 1: Lane**
+        end note
+        state "Run" as solo__only__lane__run
+        [*] --> solo__only__lane__run
+    }
+    [*] --> solo__only
+}
+[*] --> solo
+solo --> [*]
+@enduml
+
+$ pyfcstm plantuml -i region_nested.fcstm
+state "Plant" as plant <<composite>> {
+    state "Cell" as plant__cell <<composite>> {
+        note as plant__cell__left
+            **region 1: Left**
+        end note
+        state "Idle" as plant__cell__left__idle
+        state "Pair" as plant__cell__left__pair <<composite>> {
+            note as plant__cell__left__pair__inner
+                **region 1: Inner**
+            end note
+            state "A" as plant__cell__left__pair__inner__a
+            [*] --> plant__cell__left__pair__inner__a
+            --
+            note as plant__cell__left__pair__outer
+                **region 2: Outer**
+            end note
+            state "B" as plant__cell__left__pair__outer__b
+            [*] --> plant__cell__left__pair__outer__b
+        }
+        [*] --> plant__cell__left__idle
+        plant__cell__left__idle --> plant__cell__left__pair : Merge
+        --
+        note as plant__cell__right
+            **region 2: Right**
+        end note
+        state "Idle" as plant__cell__right__idle
+        [*] --> plant__cell__right__idle
+    }
+    [*] --> plant__cell
+}
+[*] --> plant
+plant --> [*]
+@enduml
+

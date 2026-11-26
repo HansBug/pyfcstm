@@ -1,0 +1,1 @@
+state P { region Alpha { [*] -> X; state X; } region alpha { [*] -> X; state X; } }

@@ -1,0 +1,27 @@
+def int stage = 0;
+def int ready = 0;
+
+state Line {
+    event Go;
+    [*] -> Idle;
+    state Idle;
+    state Work {
+        >> during before { stage = stage + 1; }
+        region Intake {
+            event Fill;
+            >> during after { ready = 1; }
+            [*] -> Wait;
+            state Wait;
+            state Full;
+            Wait -> Full : Fill;
+            Full -> [*];
+        }
+        region Pack {
+            [*] -> Hold;
+            state Hold;
+            state Boxed;
+            Hold -> Boxed : if [active("Line.Work.Intake.Full") && ready == 1];
+        }
+    }
+    Idle -> Work : Go;
+}

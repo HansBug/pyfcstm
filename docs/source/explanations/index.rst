@@ -56,6 +56,12 @@ If you already know the subsystem, choose the question.
   :doc:`dsl_semantics/index`.
 * Why did a cycle produce this active-state and variable trace? Use
   :doc:`execution_semantics/index`.
+* How does one cycle run a state that owns regions, and why in that order? Use
+  :doc:`region_semantics/index` and :doc:`region_design/index`.
+* What do regions cost in a model, in simulation and in generated code? Use
+  :doc:`region_performance/index`.
+* How do regions enter the bounded search, and how does its cost grow? Use
+  :doc:`bmc_regions/index` and :doc:`bmc_scaling/index`.
 * What can inspect prove, warn about, or merely report? Use
   :doc:`diagnostics/index`.
 * Why does a diagram viewer weigh ~29 MB, block until its window closes, and live in
@@ -150,17 +156,42 @@ API field.
 Next step: use :doc:`/how_to/simulation/index` for operations and
 :doc:`/reference/simulation/index` for exact command/API facts.
 
+Regions: :doc:`region_semantics/index`, :doc:`region_design/index`, and :doc:`region_performance/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you have a model with regions, or you are deciding whether to
+write one, and need to know how a cycle runs it, why the rules are what they
+are, or what it costs.
+
+Outcome: you can explain the order in which the regions of one state run in a
+cycle, why a later region sees what an earlier one wrote, when a group of
+regions completes or is cut off together, and how FCSTM differs from other
+state-machine tools here. You can also estimate what regions cost in the model,
+in the simulator and in the generated runtimes.
+
+Non-goal: it does not list every region form or option, and it does not explain
+the bounded search; see :doc:`bmc_regions/index` for that.
+
+Next step: use :doc:`/tutorials/regions/index` for a first run,
+:doc:`/how_to/regions/index` for tasks, and :doc:`/reference/dsl/index` for exact
+forms.
+
 Bounded model checking: :doc:`bmc_semantics/index`,
-:doc:`bmc_properties/index`, and :doc:`bmc_solving/index`
+:doc:`bmc_properties/index`, :doc:`bmc_solving/index`,
+:doc:`bmc_regions/index`, and :doc:`bmc_scaling/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Prerequisites: you can read an FCSTM model and FBMCQ query but need to know why
 the bounded result, property polarity, witness, and replay have their current
 meaning.
 
-Outcome: the three pages take you from allocated trace symbols and the core
-transition relation, through definedness and all seven property objectives, to
-dual solver checks, verdict mapping, witness projection, and runtime replay.
+Outcome: the first three pages take you from allocated trace symbols and the
+core transition relation, through definedness and all seven property
+objectives, to dual solver checks, verdict mapping, witness projection, and
+runtime replay. :doc:`bmc_regions/index` shows how a state that owns regions
+enters the same relation, and :doc:`bmc_scaling/index` shows how the cost of a
+check grows with states, regions and the bound, and which parts of it can be
+computed in advance.
 
 Non-goal: they do not teach first use or serve as field catalogs.
 

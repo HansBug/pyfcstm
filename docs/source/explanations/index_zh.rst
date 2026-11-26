@@ -42,6 +42,9 @@
 * 这个行为属于包流水线的哪个层面？看 :doc:`architecture/index_zh`。
 * 这个语言构造在解析和导入之后是什么意思？看 :doc:`dsl_semantics/index_zh`。
 * 为什么某次周期产生这个活跃状态和变量轨迹？看 :doc:`execution_semantics/index_zh`。
+* 拥有区域的状态怎样执行一个周期，为什么按这个顺序？看 :doc:`region_semantics/index_zh` 与 :doc:`region_design/index_zh`。
+* 区域在模型、仿真和生成代码里的代价是多少？看 :doc:`region_performance/index_zh`。
+* 区域怎样进入有界搜索，它的代价怎样增长？看 :doc:`bmc_regions/index_zh` 与 :doc:`bmc_scaling/index_zh`。
 * 检查能证明什么、警告什么、只能描述什么？看 :doc:`diagnostics/index_zh`。
 * 为什么一个图查看器有约 29 MB、会阻塞到窗口关闭、并且住在一个自己的目录里？
   看 :doc:`visualization/index_zh`。
@@ -120,15 +123,27 @@
 下一步：操作任务看 :doc:`/how_to/simulation/index_zh`；
 精确命令和接口事实看 :doc:`/reference/simulation/index_zh`。
 
-有界模型检查：:doc:`bmc_semantics/index_zh`、
-:doc:`bmc_properties/index_zh` 与 :doc:`bmc_solving/index_zh`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+区域：:doc:`region_semantics/index_zh`、:doc:`region_design/index_zh` 与 :doc:`region_performance/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：你有一个含区域的模型，或者正在决定要不要写一个，需要理解一个周期怎样执行它、规则为什么是这样、它要花多少代价。
+
+读后能力：你能解释一个状态的各个区域在一个周期里按什么顺序运行，为什么后面的区域能看到前面区域写下的值，区域组什么时候一起完成或一起被打断，以及 FCSTM 在这些方面与其他状态机工具有什么不同；你还能估计区域在模型、仿真器和生成运行时里的代价。
+
+不负责内容：它们不列出每个区域写法或选项，也不解释有界搜索；有界搜索看 :doc:`bmc_regions/index_zh`。
+
+下一步：第一次运行看 :doc:`/tutorials/regions/index_zh`；任务看 :doc:`/how_to/regions/index_zh`；精确写法查 :doc:`/reference/dsl/index_zh`。
+
+有界模型检查：:doc:`bmc_semantics/index_zh`、:doc:`bmc_properties/index_zh`、
+:doc:`bmc_solving/index_zh`、:doc:`bmc_regions/index_zh` 与 :doc:`bmc_scaling/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 读前条件：你能读 FCSTM 模型和 FBMCQ 查询，但需要理解有界结论、性质极性、见证与重放
 为何具有当前含义。
 
-读后能力：三页依次解释轨迹符号与核心转换关系、定义性与七类性质目标，以及双重求解、
-结论映射、见证投影和运行时重放。
+读后能力：前三页依次解释轨迹符号与核心转换关系、定义性与七类性质目标，以及双重求解、
+结论映射、见证投影和运行时重放；:doc:`bmc_regions/index_zh` 说明拥有区域的状态怎样进入同一个转换关系，
+:doc:`bmc_scaling/index_zh` 说明一次检查的代价怎样随状态、区域和上界增长，哪些部分可以提前算出。
 
 不负责内容：它们不教授首次使用，也不充当字段目录。
 

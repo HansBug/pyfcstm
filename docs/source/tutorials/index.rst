@@ -48,7 +48,9 @@ Follow this route if you have not used pyfcstm before.
    can be explained with a diagram.
 6. Read :doc:`history/index` when a composite state must resume where it was
    interrupted instead of starting over.
-7. Treat :doc:`bmc/index` as the advanced capstone after you can already read
+7. Read :doc:`regions/index` when one state has to run several control parts
+   side by side, such as a safety check next to a motion controller.
+8. Treat :doc:`bmc/index` as the advanced capstone after you can already read
    an FCSTM model and one concrete runtime trace. It replaces one chosen event
    sequence with a bounded symbolic search over all allowed sequences.
 
@@ -66,6 +68,8 @@ that refreshes one workflow.
   or :doc:`visualization/index` and then to the matching how-to page.
 * Already model composite states and need a recovery to continue where it was
   interrupted: read :doc:`history/index`.
+* Already model composite states and need several parts of one state to work in
+  the same cycle: read :doc:`regions/index`.
 * Already understand concrete traces and need evidence about every behavior up
   to a finite bound: finish with :doc:`bmc/index`.
 * Already need exact syntax, command options, or schema fields: skip tutorials
@@ -216,6 +220,24 @@ derive the lowering rules or the blocked-restore semantics.
 Next step: use :ref:`dsl-history-task` for your own model, look up forms in
 :ref:`dsl-history-reference`, and read :ref:`dsl-history-semantics` for the
 execution rules.
+
+Regions tutorial: :doc:`regions/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you can read a model with composite states and run a batch
+simulation, as taught by the DSL and Simulation tutorials.
+
+Outcome: you follow one interlock controller whose safety check and motion
+controller run side by side as two regions: you simulate it, see why the order
+of the regions decides the fault cycle, inspect it, prove a safety property of
+it, generate a runtime from it, and draw it.
+
+Non-goal: it does not list every region form, derive the execution rules, or
+cover how the bounded search scales.
+
+Next step: repeat the tasks with :doc:`/how_to/regions/index`, understand the
+rules through :doc:`/explanations/region_semantics/index`, or look up exact
+forms in :doc:`/reference/dsl/index`.
 
 Bounded model checking: :doc:`bmc/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

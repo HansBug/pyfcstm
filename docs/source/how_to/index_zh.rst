@@ -38,6 +38,7 @@
 * 准备环境或持续集成任务：打开 :doc:`installation/index_zh`。
 * 串联命令流程：打开 :doc:`cli_workflows/index_zh`。
 * 修改源语言内容：打开 :doc:`dsl/index_zh`。
+* 让同一个状态里的几个部分并排运行：打开 :doc:`regions/index_zh`。
 * 执行运行行为：打开 :doc:`simulation/index_zh`。
 * 读取结构、诊断或大语言模型修复反馈：打开 :doc:`inspect/index_zh`。
 * 生成代码或写模板：打开 :doc:`generation/index_zh` 或 :doc:`templates/index_zh`。
@@ -124,6 +125,17 @@
 
 下一步：精确语法查 :doc:`/reference/dsl/index_zh`；
 形式含义不清时看 :doc:`/explanations/dsl_semantics/index_zh`。
+
+区域建模任务：:doc:`regions/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：你正在编辑 FCSTM 模型，想让一个状态在同一个周期里运行几个控制部分，或者你的模型已经这样写了。
+
+读后能力：你能把一个状态拆成区域、嵌套区域、让区域共用一个事件、决定区域的顺序、让各区域一起完成、从外面打断整组、在一个区域里读另一个区域的状态，并修复区域模型常见的错误。该页还列出其他工具里与区域有关的任务在哪一页。
+
+不负责内容：它不解释规则为什么是这样，也不列出每个合法和非法的写法。
+
+下一步：规则看 :doc:`/explanations/region_semantics/index_zh`；精确语法查 :doc:`/reference/dsl/index_zh`。
 
 仿真任务：:doc:`simulation/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

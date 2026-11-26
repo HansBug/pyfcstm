@@ -1,0 +1,11 @@
+input int u;
+state Root {
+    [*] -> P;
+    state P {
+        [*] -> a;
+        state a;
+        state b;
+    }
+    state Q;
+    !P -> Q : if [u == 1];
+}

@@ -312,8 +312,6 @@ Read the table from top to bottom:
 
 Inspect judges the model as you wrote it, before conversion. The commands below
 inspect ``charger.fcstm``, then a copy without the ``[H*]`` declaration.
-Without ``--collect-errors``, inspect stops at the first model error with a
-one-line message and no diagnostic code.
 
 .. code-block:: console
 
@@ -342,18 +340,25 @@ one-line message and no diagnostic code.
      Variable 'faults' does not affect any transition guard.
    ...
 
-The report is cut down to its summary and the three warnings; ``...`` leaves out the rest. Now make a copy without the ``[H*]`` declaration:
+The report is cut down to its summary and the three warnings; ``...`` leaves out the rest. Now make a copy without the ``[H*]`` declaration, which removes one line of ``Session``:
 
 .. testcode::
 
    text = open("charger.fcstm").read()
-   lines = [line for line in text.splitlines(True) if "[H*] ->" not in line]
-   open("forgot_deep.fcstm", "w").write("".join(lines))
+   deep = "        [H*] -> Authenticating;  // deep history, used while no record exists\n"
+   open("forgot_deep.fcstm", "w").write(text.replace(deep, ""))
 
-Inspect the copy. This run adds ``--collect-errors``, and only the error block is kept; ``$ echo $?`` shows its exit status:
+Inspect the copy twice. Without ``--collect-errors``, inspect stops at the first
+model error with a one-line message and no diagnostic code. With it, inspect
+collects the errors into the report; only its summary line and the error block
+are kept here. Both runs fail, so each is followed by ``$ echo $?``:
 
 .. code-block:: console
 
+   $ pyfcstm inspect -i forgot_deep.fcstm --format human --color never
+   Invalid state machine model in forgot_deep.fcstm: Charger.Session does not declare deep history ([H*] -> ...;), so it cannot be entered through Session.[H*]. (line 37)
+   $ echo $?
+   1
    $ pyfcstm inspect -i forgot_deep.fcstm --collect-errors --format human --color never
    [ERROR] FCSTM Inspect Report: forgot_deep.fcstm
    ...
@@ -370,7 +375,7 @@ The first report has the same three warnings as ``charger_restart.fcstm``, so
 history added no finding. It lists the three variables you declared and no
 ``__hist_*`` variable.
 
-The second report is the mistake to recognize. ``Session.[H*]`` asks for deep
+The copy is the mistake to recognize. ``Session.[H*]`` asks for deep
 history, but ``Session`` no longer declares it, so inspect reports
 ``E_HISTORY_TARGET_UNDECLARED`` at the transition and exits with status 1.
 ``pyfcstm simulate``, ``pyfcstm generate`` and ``pyfcstm bmc`` refuse the same
@@ -395,14 +400,17 @@ when the model is edited.
 record back into those variables. The hot start itself works as described in
 the "Hot start at a state" section of :doc:`/how_to/simulation/index`.
 
+The controller saves its record before the power goes. This script ends the charge in ``Fault`` and writes what a controller would put in non-volatile storage, here a JSON file:
+
 .. testcode::
 
-   from pyfcstm.model import load_state_machine_from_text
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
    from pyfcstm.simulate import SimulationRuntime
 
    OWNER = "Charger.Session"
-   with open("charger.fcstm") as f:
-       machine = load_state_machine_from_text(f.read())
+   machine = load_state_machine_from_file("charger.fcstm")
 
    # Charge into ConstantCurrent, then overheat.
    runtime = SimulationRuntime(machine)
@@ -415,44 +423,55 @@ the "Hot start at a state" section of :doc:`/how_to/simulation/index`.
    ]:
        runtime.cycle(["Charger." + event] if event else [])
 
-   # What a controller writes to non-volatile storage: the current state, its own
-   # variables and the source-level record, but no generated __hist_* number.
-   saved_state = ".".join(runtime.current_state.path)
-   saved_record = machine.history_record(runtime.vars, OWNER)
-   saved_vars = {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")}
-   print("saved state: ", saved_state)
-   print("saved record:", saved_record)
-   print("saved vars:  ", saved_vars)
-
-
-   def resume(record):
-       """Hot start at the saved state, then let the fault clear."""
-       hidden = machine.history_variables({OWNER: record} if record else None)
-       initial_vars = dict(saved_vars)
-       initial_vars.update(hidden)
-       restored = SimulationRuntime(
-           machine, initial_state=saved_state, initial_vars=initial_vars
-       )
-       restored.cycle(["Charger.Fault.Cleared"])
-       return hidden, ".".join(restored.current_state.path), restored.vars
-
-
-   for label, record in [
-       ("with the saved record", saved_record),
-       ("without a record", None),
-   ]:
-       hidden, state, variables = resume(record)
-       print()
-       print("After the power loss,", label)
-       print("  history variables:", hidden)
-       print("  after Cleared:    ", state)
-       print("  precharge_runs:   ", variables["precharge_runs"])
+   # What goes to non-volatile storage: the state, the model's own variables and
+   # the source-level record, but no generated __hist_* number.
+   saved = {
+       "state": ".".join(runtime.current_state.path),
+       "record": machine.history_record(runtime.vars, OWNER),
+       "vars": {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")},
+   }
+   with open("saved.json", "w") as f:
+       json.dump(saved, f)
+   print("saved state: ", saved["state"])
+   print("saved record:", saved["record"])
+   print("saved vars:  ", saved["vars"])
 
 .. testoutput::
 
    saved state:  Charger.Fault
    saved record: Charging.ConstantCurrent
    saved vars:   {'energy': 5, 'precharge_runs': 1, 'faults': 1, '__forced_0': 0, '__forced_1': 0}
+
+After the restart, a second script reads the file and hot starts twice, once with the saved record and once without it. Each restored machine then receives ``Cleared``:
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   OWNER = "Charger.Session"
+   machine = load_state_machine_from_file("charger.fcstm")
+   with open("saved.json") as f:
+       saved = json.load(f)
+
+   cases = [("with the saved record", saved["record"]), ("without a record", None)]
+   for label, record in cases:
+       hidden = machine.history_variables({OWNER: record} if record else None)
+       initial_vars = dict(saved["vars"])
+       initial_vars.update(hidden)
+       runtime = SimulationRuntime(
+           machine, initial_state=saved["state"], initial_vars=initial_vars
+       )
+       runtime.cycle(["Charger.Fault.Cleared"])
+       print("After the power loss,", label)
+       print("  history variables:", hidden)
+       print("  after Cleared:    ", ".".join(runtime.current_state.path))
+       print("  precharge_runs:   ", runtime.vars["precharge_runs"])
+       print()
+
+.. testoutput::
 
    After the power loss, with the saved record
      history variables: {'__hist_goto': 0, '__hist_Session': 7}

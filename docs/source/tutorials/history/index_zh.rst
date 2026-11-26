@@ -250,7 +250,7 @@
 6. 检查模型并修复一个错误
 -------------------------
 
-检查命令按你书写的模型（模型转换之前）进行判断。下面的命令先检查 ``charger.fcstm``\ ，再检查一份删掉了 ``[H*]`` 声明的副本。不加 ``--collect-errors`` 时，检查命令遇到第一个模型错误就停止，只输出一行消息，不带诊断码。
+检查命令按你书写的模型（模型转换之前）进行判断。下面的命令先检查 ``charger.fcstm``\ ，再检查一份删掉了 ``[H*]`` 声明的副本。
 
 .. code-block:: console
 
@@ -279,18 +279,22 @@
      Variable 'faults' does not affect any transition guard.
    ...
 
-报告被缩减到摘要和三条警告；``...`` 省掉了其余内容。然后做一份删掉 ``[H*]`` 声明的副本：
+报告被缩减到摘要和三条警告；``...`` 省掉了其余内容。然后做一份删掉 ``[H*]`` 声明的副本，它从 ``Session`` 里去掉一行：
 
 .. testcode::
 
    text = open("charger.fcstm").read()
-   lines = [line for line in text.splitlines(True) if "[H*] ->" not in line]
-   open("forgot_deep.fcstm", "w").write("".join(lines))
+   deep = "        [H*] -> Authenticating;  // deep history, used while no record exists\n"
+   open("forgot_deep.fcstm", "w").write(text.replace(deep, ""))
 
-再检查这份副本。这次加了 ``--collect-errors``\ ，只保留错误块；``$ echo $?`` 显示它的退出状态：
+把这份副本检查两次。不加 ``--collect-errors`` 时，检查命令遇到第一个模型错误就停止，只输出一行消息，不带诊断码；加上它则把错误收进报告，这里只保留摘要行和错误块。两次都失败，所以各自后面跟着 ``$ echo $?``\ ：
 
 .. code-block:: console
 
+   $ pyfcstm inspect -i forgot_deep.fcstm --format human --color never
+   Invalid state machine model in forgot_deep.fcstm: Charger.Session does not declare deep history ([H*] -> ...;), so it cannot be entered through Session.[H*]. (line 37)
+   $ echo $?
+   1
    $ pyfcstm inspect -i forgot_deep.fcstm --collect-errors --format human --color never
    [ERROR] FCSTM Inspect Report: forgot_deep.fcstm
    ...
@@ -305,7 +309,7 @@
 
 第一份报告与 ``charger_restart.fcstm`` 一样只有三条警告，说明历史没有带来新的诊断。报告列出你声明的三个变量，没有任何 ``__hist_*`` 变量。
 
-第二份报告是需要学会辨认的错误。\ ``Session.[H*]``\ 要求深历史，但 ``Session`` 已经不再声明它，所以检查命令在这条转换上报告 ``E_HISTORY_TARGET_UNDECLARED``\ ，并以状态码 1 退出。\ ``pyfcstm simulate``\ 、\ ``pyfcstm generate``\ 和 ``pyfcstm bmc`` 也会拒绝同一个模型，因为历史从不会被隐式提供。有两种修复方式：
+这份副本就是需要学会辨认的错误。\ ``Session.[H*]``\ 要求深历史，但 ``Session`` 已经不再声明它，所以检查命令在这条转换上报告 ``E_HISTORY_TARGET_UNDECLARED``\ ，并以状态码 1 退出。\ ``pyfcstm simulate``\ 、\ ``pyfcstm generate``\ 和 ``pyfcstm bmc`` 也会拒绝同一个模型，因为历史从不会被隐式提供。有两种修复方式：
 
 * 如果恢复应当精确回到被打断的阶段，把 ``[H*] -> Authenticating;`` 放回 ``Session``\ ；
 * 如果恢复应当从头开始，改写成 ``Fault -> Session :: Cleared;``\ 。
@@ -315,14 +319,17 @@
 
 充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。``__forced_*`` 变量同样是普通变量：它们在每个检查点都是 0，与其他变量一起保存、一起提供。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
 
+控制器在断电前保存记录。下面的脚本让充电停在 ``Fault``\ ，并写出控制器会放进非易失存储的内容，这里用一个 JSON 文件：
+
 .. testcode::
 
-   from pyfcstm.model import load_state_machine_from_text
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
    from pyfcstm.simulate import SimulationRuntime
 
    OWNER = "Charger.Session"
-   with open("charger.fcstm") as f:
-       machine = load_state_machine_from_text(f.read())
+   machine = load_state_machine_from_file("charger.fcstm")
 
    # Charge into ConstantCurrent, then overheat.
    runtime = SimulationRuntime(machine)
@@ -335,44 +342,55 @@
    ]:
        runtime.cycle(["Charger." + event] if event else [])
 
-   # What a controller writes to non-volatile storage: the current state, its own
-   # variables and the source-level record, but no generated __hist_* number.
-   saved_state = ".".join(runtime.current_state.path)
-   saved_record = machine.history_record(runtime.vars, OWNER)
-   saved_vars = {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")}
-   print("saved state: ", saved_state)
-   print("saved record:", saved_record)
-   print("saved vars:  ", saved_vars)
-
-
-   def resume(record):
-       """Hot start at the saved state, then let the fault clear."""
-       hidden = machine.history_variables({OWNER: record} if record else None)
-       initial_vars = dict(saved_vars)
-       initial_vars.update(hidden)
-       restored = SimulationRuntime(
-           machine, initial_state=saved_state, initial_vars=initial_vars
-       )
-       restored.cycle(["Charger.Fault.Cleared"])
-       return hidden, ".".join(restored.current_state.path), restored.vars
-
-
-   for label, record in [
-       ("with the saved record", saved_record),
-       ("without a record", None),
-   ]:
-       hidden, state, variables = resume(record)
-       print()
-       print("After the power loss,", label)
-       print("  history variables:", hidden)
-       print("  after Cleared:    ", state)
-       print("  precharge_runs:   ", variables["precharge_runs"])
+   # What goes to non-volatile storage: the state, the model's own variables and
+   # the source-level record, but no generated __hist_* number.
+   saved = {
+       "state": ".".join(runtime.current_state.path),
+       "record": machine.history_record(runtime.vars, OWNER),
+       "vars": {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")},
+   }
+   with open("saved.json", "w") as f:
+       json.dump(saved, f)
+   print("saved state: ", saved["state"])
+   print("saved record:", saved["record"])
+   print("saved vars:  ", saved["vars"])
 
 .. testoutput::
 
    saved state:  Charger.Fault
    saved record: Charging.ConstantCurrent
    saved vars:   {'energy': 5, 'precharge_runs': 1, 'faults': 1, '__forced_0': 0, '__forced_1': 0}
+
+重启之后，第二个脚本读回这个文件，热启动两次：一次带保存的记录，一次不带。每个恢复出来的状态机随后收到 ``Cleared``\ ：
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   OWNER = "Charger.Session"
+   machine = load_state_machine_from_file("charger.fcstm")
+   with open("saved.json") as f:
+       saved = json.load(f)
+
+   cases = [("with the saved record", saved["record"]), ("without a record", None)]
+   for label, record in cases:
+       hidden = machine.history_variables({OWNER: record} if record else None)
+       initial_vars = dict(saved["vars"])
+       initial_vars.update(hidden)
+       runtime = SimulationRuntime(
+           machine, initial_state=saved["state"], initial_vars=initial_vars
+       )
+       runtime.cycle(["Charger.Fault.Cleared"])
+       print("After the power loss,", label)
+       print("  history variables:", hidden)
+       print("  after Cleared:    ", ".".join(runtime.current_state.path))
+       print("  precharge_runs:   ", runtime.vars["precharge_runs"])
+       print()
+
+.. testoutput::
 
    After the power loss, with the saved record
      history variables: {'__hist_goto': 0, '__hist_Session': 7}

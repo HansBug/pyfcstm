@@ -1,4 +1,0 @@
-regions: 6 leaf states, 6 transitions
-flat:    9 leaf states, 27 transitions
-same variables after every one of 200 cycles: True
-variables after the last cycle: {'c0': 96, 'u0': 200, 'c1': 92, 'u1': 200}

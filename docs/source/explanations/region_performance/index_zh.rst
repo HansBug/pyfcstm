@@ -114,13 +114,56 @@
 
 下面的脚本通过公开接口加载 :math:`R = 2`\ 、\ :math:`S = 3`\ 、\ :math:`T = 1` 的区域模型及其展开式，数出叶子状态与普通转换，并在同样的 200 组随机输入上运行两者。
 
-.. literalinclude:: size_and_equivalence.demo.py
-   :language: python
-   :caption: size_and_equivalence.demo.py
+.. testcode::
 
-.. literalinclude:: size_and_equivalence.demo.py.txt
-   :language: text
-   :caption: size_and_equivalence.demo.py.txt
+   import random
+
+   from pyfcstm.dsl import INIT_STATE
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+
+   def load(path):
+       with open(path) as handle:
+           return load_state_machine_from_text(handle.read())
+
+
+   def size(model):
+       states = list(model.walk_states())
+       leaves = [s for s in states if s.is_leaf_state]
+       owners = list(states)
+       for state in states:
+           owners += list(state.regions.values())
+       transitions = [t for owner in owners for t in owner.transitions if t.from_state is not INIT_STATE]
+       return len(leaves), len(transitions)
+
+
+   def run(model, inputs):
+       runtime = SimulationRuntime(model, input_source={"x0": 0, "x1": 0}, history_size=1)
+       trace = []
+       for values in inputs:
+           runtime.cycle(inputs=values)
+           trace.append(dict(runtime.vars))
+       return trace
+
+
+   regions = load("product_r2_s3.fcstm")
+   flat = load("expanded_r2_s3.fcstm")
+   print("regions: %d leaf states, %d transitions" % size(regions))
+   print("flat:    %d leaf states, %d transitions" % size(flat))
+
+   rng = random.Random(7)
+   inputs = [{"x0": rng.randint(0, 1), "x1": rng.randint(0, 1)} for _ in range(200)]
+   a, b = run(regions, inputs), run(flat, inputs)
+   print("same variables after every one of %d cycles: %s" % (len(inputs), a == b))
+   print("variables after the last cycle:", a[-1])
+
+.. testoutput::
+
+   regions: 6 leaf states, 6 transitions
+   flat:    9 leaf states, 27 transitions
+   same variables after every one of 200 cycles: True
+   variables after the last cycle: {'c0': 96, 'u0': 200, 'c1': 92, 'u1': 200}
 
 两个计数是 6 与 9 个叶子状态、6 与 27 条转换，与公式相同：:math:`2 \cdot 3 = 6`\ 、\ :math:`3^2 = 9`\ 、\ :math:`2 \cdot 3 \cdot 1 = 6` 与 :math:`3^2 (2^2 - 1) = 27`\ 。变量 ``c0``\ 、\ ``u0``\ 、\ ``c1`` 与 ``u1`` 在 200 个周期的每一个之后都一致。这只说明一个模型在一组随机序列上一致；完整网格见下一个清单。
 
@@ -135,9 +178,49 @@
    :caption: expanded_r2_s3.fcstm（45 行中的前 19 行）
    :lines: 1-19
 
-.. literalinclude:: summary_model_size.demo.py.txt
-   :language: text
-   :caption: summary_model_size.demo.py.txt（完整）
+20 个网格点的测量记录，打印自入库的数据文件 :file:`data/e1.jsonl`\ 。文档检查不重新运行它们，因为计时列取决于机器；记录的前几行给出机器、提交和重复次数。
+
+.. code-block:: text
+   :caption: 记录自 data/e1.jsonl
+
+   measured on: b054fbe3 | INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.10GHz | Python 3.11.15
+   each pair was run for 200 cycles on 5 random input sequences; timing is the median of 5 batches
+
+    R  S  T | leaf states        | transitions            | formula | same vars | ms per cycle
+            |  regions    flat   |  regions        flat   | matches |           |  regions   flat
+    1  2  1 |        2       2   |        2           2   | True    | True      |    0.18    0.13
+    2  2  1 |        4       4   |        4          12   | True    | True      |    0.34    0.20
+    3  2  1 |        6       8   |        6          56   | True    | True      |    0.59    0.32
+    4  2  1 |        8      16   |        8         240   | True    | True      |    0.66    0.39
+    1  3  1 |        3       3   |        3           3   | True    | True      |    0.18    0.13
+    2  3  1 |        6       9   |        6          27   | True    | True      |    0.32    0.19
+    3  3  1 |        9      27   |        9         189   | True    | True      |    0.49    0.26
+    4  3  1 |       12      81   |       12        1215   | True    | True      |    0.75    0.45
+    1  4  1 |        4       4   |        4           4   | True    | True      |    0.18    0.13
+    2  4  1 |        8      16   |        8          48   | True    | True      |    0.35    0.20
+    3  4  1 |       12      64   |       12         448   | True    | True      |    0.50    0.33
+    4  4  1 |       16     256   |       16        3840   | True    | True      |    0.66    1.59
+    1  3  2 |        3       3   |        6           6   | True    | True      |    0.20    0.14
+    2  3  2 |        6       9   |       12          72   | True    | True      |    0.37    0.22
+    3  3  2 |        9      27   |       18         702   | True    | True      |    0.57    0.40
+    4  3  2 |       12      81   |       24        6480   | True    | True      |    0.76    2.90
+    1  4  2 |        4       4   |        8           8   | True    | True      |    0.20    0.15
+    2  4  2 |        8      16   |       16         128   | True    | True      |    0.39    0.23
+    3  4  2 |       12      64   |       24        1664   | True    | True      |    0.58    0.47
+    4  4  2 |       16     256   |       32       20480   | True    | True      |    0.78    8.06
+
+   coupled models (leaf states, transitions):
+     regions_reader_after_writer    3, 2
+     regions_reader_before_writer   3, 2
+     flat_naive                     2, 2
+     flat_substituted               2, 2
+
+   cycles with different variables, out of 1000 compared:
+     regions_reader_before_writer   vs regions_reader_after_writer     600 (first at cycle: 1)
+     flat_naive                     vs regions_reader_after_writer     600 (first at cycle: 1)
+     flat_substituted               vs regions_reader_after_writer       0 (first at cycle: none)
+     flat_naive                     vs regions_reader_before_writer      0 (first at cycle: none)
+     flat_substituted               vs regions_reader_before_writer    600 (first at cycle: 1)
 
 20 个网格点全部与公式一致，20 对模型在每组 200 个周期的 5 组随机序列上、每个周期之后变量都相同。最后两列显示代价：\ **展开式有几千条转换之前，区域写法每个周期并不比展开式快。**\ 在 :math:`R = 2`\ 、\ :math:`S = 3`\ 、\ :math:`T = 1` 时，区域写法用 0.32 ms，展开式用 0.19 ms；在 :math:`R = 4`\ 、\ :math:`S = 4`\ 、\ :math:`T = 1`\ （展开式 3840 条转换）时次序反过来，0.66 ms 对 1.59 ms；在 :math:`R = 4`\ 、\ :math:`S = 4`\ 、\ :math:`T = 2`\ （展开式 20480 条转换）时是 0.78 ms 对 8.06 ms。展开式每个状态要测试 :math:`\prod (T_i+1) - 1` 条转换，区域写法每个区域带一份额外开销（由计数作出的推断，没有为这次比较剖析仿真器）。没有人会手写 20480 条转换的状态机，这就是规模节省的实际含义。
 
@@ -146,9 +229,54 @@
 
 公式 :eq:`region-perf-states` 到 :eq:`region-perf-uniform` 要求区域互相独立。如果后面的区域读取前面的区域在同一周期写入的变量，后面的区域看到的是新值，而条件在周期开始时求值的展开式不能重现这一点。下一个脚本用四个小模型：区域 ``W`` 在 ``during`` 动作里写 ``p = x0``\ ，区域 ``V`` 按 ``p`` 切换，两个区域写法的差别在于先写哪个区域。展开式有两种：朴素展开（条件读 ``p``\ ），以及把条件改写成读 ``x0`` 的展开（这正是 ``W`` 写给 ``p`` 的值）。
 
-.. literalinclude:: ordered_read.demo.py.txt
-   :language: text
-   :caption: ordered_read.demo.py.txt
+.. testcode::
+
+   import random
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+
+   def run(label, inputs):
+       with open("coupled_%s.fcstm" % label) as handle:
+           model = load_state_machine_from_text(handle.read())
+       runtime = SimulationRuntime(model, input_source={"x0": 0}, history_size=1)
+       trace = []
+       for value in inputs:
+           runtime.cycle(inputs={"x0": value})
+           trace.append((runtime.vars["c"], runtime.vars["d"]))
+       return trace
+
+
+   rng = random.Random(3)
+   inputs = [rng.randint(0, 1) for _ in range(200)]
+   labels = ["regions_reader_after_writer", "regions_reader_before_writer", "flat_naive", "flat_substituted"]
+   traces = {label: run(label, inputs) for label in labels}
+
+   print("x0 :", " ".join(str(v) for v in inputs[:8]))
+   for label in labels:
+       print("%-30s c after cycles 1-8: %s" % (label, " ".join(str(c) for c, _ in traces[label][:8])))
+   pairs = [
+       ("regions_reader_before_writer", "regions_reader_after_writer"),
+       ("flat_naive", "regions_reader_after_writer"),
+       ("flat_substituted", "regions_reader_after_writer"),
+       ("flat_naive", "regions_reader_before_writer"),
+   ]
+   for left, right in pairs:
+       differing = sum(1 for x, y in zip(traces[left], traces[right]) if x != y)
+       print("%-30s differs from %-30s in %3d of 200 cycles" % (left, right, differing))
+
+.. testoutput::
+
+   x0 : 0 0 1 1 0 0 1 1
+   regions_reader_after_writer    c after cycles 1-8: 0 0 1 1 2 2 3 3
+   regions_reader_before_writer   c after cycles 1-8: 0 0 0 1 1 2 2 3
+   flat_naive                     c after cycles 1-8: 0 0 0 1 1 2 2 3
+   flat_substituted               c after cycles 1-8: 0 0 1 1 2 2 3 3
+   regions_reader_before_writer   differs from regions_reader_after_writer    in  97 of 200 cycles
+   flat_naive                     differs from regions_reader_after_writer    in  97 of 200 cycles
+   flat_substituted               differs from regions_reader_after_writer    in   0 of 200 cycles
+   flat_naive                     differs from regions_reader_before_writer   in   0 of 200 cycles
 
 按下面的方式读输出。
 
@@ -170,9 +298,38 @@
    :language: fcstm
    :caption: sweep_r2_s3_t1.fcstm
 
-.. literalinclude:: summary_simulator.demo.py.txt
-   :language: text
-   :caption: summary_simulator.demo.py.txt（完整）
+模拟器测量的记录值，打印自入库的数据文件 :file:`data/e2.jsonl` 与 :file:`data/fits.json`\ 。文档检查不重新运行它们，因为它们取决于测量时的机器；记录的前几行给出机器、提交和批次数。
+
+.. code-block:: text
+   :caption: 记录自 data/e2.jsonl
+
+   measured on: commit b054fbe3; INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.10GHz; Python 3.11.15
+   each point: median of 7 timed batches after a warm-up; first cycle: minimum of fresh runs
+   base model: R=4 S=8 T=2 D=1 V=1; one parameter changes per sweep
+
+   R sweep (R): us per cycle / first cycle us
+     R=1: 234/500  R=2: 395/618  R=4: 683/1044  R=8: 1284/1964  R=16: 2511/3476  R=32: 5552/7551  R=64: 15436/18297  R=128: 44288/49382
+     linear R2 0.9711, slope 338.645 us per unit | quadratic R2 0.9999, x^2 term 1.7141 us | power exponent 1.06 (R2 0.982)
+
+   S sweep (S): us per cycle / first cycle us
+     S=3: 624/889  S=4: 696/1051  S=8: 640/877  S=16: 672/1157  S=32: 675/951  S=64: 703/1036  S=128: 741/1209
+     linear R2 0.6810, slope 0.714 us per unit | quadratic R2 0.6851, x^2 term -0.0017 us | power exponent 0.03 (R2 0.589)
+
+   T sweep (T): us per cycle / first cycle us
+     T=1: 552/895  T=2: 648/911  T=3: 678/902  T=4: 716/1069  T=5: 748/1056  T=6: 746/917  T=7: 775/907
+     linear R2 0.8856, slope 33.297 us per unit | quadratic R2 0.9741, x^2 term -6.0759 us | power exponent 0.17 (R2 0.979)
+
+   V sweep (V): us per cycle / first cycle us
+     V=1: 637/916  V=2: 674/1229  V=4: 731/981  V=8: 867/1080  V=16: 1049/1202  V=32: 1417/1453  V=64: 1981/1957
+     linear R2 0.9904, slope 21.310 us per unit | quadratic R2 0.9995, x^2 term -0.1211 us | power exponent 0.27 (R2 0.927)
+
+   D_chain sweep (D): us per cycle / first cycle us
+     D=1: 212/340  D=2: 262/556  D=3: 316/821  D=4: 361/1125  D=5: 435/1510  D=6: 494/2271  D=8: 595/3214  D=10: 763/5884  D=12: 931/7201
+     linear R2 0.9901, slope 64.293 us per unit | quadratic R2 0.9982, x^2 term 1.8475 us | power exponent 0.60 (R2 0.950)
+
+   D_branch sweep (D): us per cycle / first cycle us
+     D=1: 354/510  D=2: 559/1004  D=3: 781/2120  D=4: 1000/2427  D=5: 1255/3279  D=6: 1514/4464  D=8: 2091/7589  D=10: 2899/11585  D=12: 3543/17332
+     linear R2 0.9881, slope 291.746 us per unit | quadratic R2 0.9989, x^2 term 9.7317 us | power exponent 0.94 (R2 0.982)
 
 拟合
 ~~~~
@@ -223,9 +380,45 @@
 
 这个实验用 ``pyfcstm generate --template python`` 为每个扫描模型生成 Python 运行时，并在相同的输入序列上给 ``cycle(inputs=...)`` 计时。
 
-.. literalinclude:: summary_python.demo.py.txt
-   :language: text
-   :caption: summary_python.demo.py.txt（完整）
+生成的 Python 运行时测量的记录值，打印自 :file:`data/e2.jsonl`\ 、\ :file:`data/e3.jsonl` 与 :file:`data/fits.json`\ 。文档检查不重新运行它们，因为它们取决于测量时的机器。
+
+.. code-block:: text
+   :caption: 记录自 data/e2.jsonl 与 data/e3.jsonl
+
+   measured on: commit b054fbe3; INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.10GHz; Python 3.11.15
+   each point: median of 7 timed batches; same models and same input sequence as the simulator
+
+   R sweep (R): generated Python us per cycle, and simulator/generated ratio
+     R=1: 40 (5.8x)  R=2: 69 (5.7x)  R=4: 131 (5.2x)  R=8: 273 (4.7x)  R=16: 614 (4.1x)  R=32: 1458 (3.8x)  R=64: 4800 (3.2x)  R=128: 17081 (2.6x)
+     linear R2 0.9448 | quadratic R2 1.0000, x^2 term 0.9177 us
+   S sweep (S): generated Python us per cycle, and simulator/generated ratio
+     S=3: 127 (4.9x)  S=4: 134 (5.2x)  S=8: 130 (4.9x)  S=16: 135 (5.0x)  S=32: 132 (5.1x)  S=64: 135 (5.2x)  S=128: 133 (5.6x)
+     linear R2 0.1552 | quadratic R2 0.3437, x^2 term -0.0008 us
+   T sweep (T): generated Python us per cycle, and simulator/generated ratio
+     T=1: 108 (5.1x)  T=2: 129 (5.0x)  T=3: 141 (4.8x)  T=4: 150 (4.8x)  T=5: 153 (4.9x)  T=6: 158 (4.7x)  T=7: 167 (4.6x)
+     linear R2 0.9121 | quadratic R2 0.9746, x^2 term -1.3360 us
+   V sweep (V): generated Python us per cycle, and simulator/generated ratio
+     V=1: 129 (4.9x)  V=2: 140 (4.8x)  V=4: 145 (5.0x)  V=8: 173 (5.0x)  V=16: 222 (4.7x)  V=32: 303 (4.7x)  V=64: 478 (4.1x)
+     linear R2 0.9992 | quadratic R2 0.9994, x^2 term -0.0050 us
+   D_chain sweep (D): generated Python us per cycle, and simulator/generated ratio
+     D=1: 40 (5.3x)  D=2: 45 (5.8x)  D=3: 53 (6.0x)  D=4: 62 (5.8x)  D=5: 68 (6.4x)  D=6: 72 (6.8x)  D=8: 86 (6.9x)  D=10: 96 (8.0x)  D=12: 111 (8.4x)
+     linear R2 0.9965 | quadratic R2 0.9973, x^2 term -0.0545 us
+   D_branch sweep (D): generated Python us per cycle, and simulator/generated ratio
+     D=1: 71 (5.0x)  D=2: 111 (5.0x)  D=3: 153 (5.1x)  D=4: 197 (5.1x)  D=5: 241 (5.2x)  D=6: 302 (5.0x)  D=8: 413 (5.1x)  D=10: 536 (5.4x)  D=12: 688 (5.1x)
+     linear R2 0.9896 | quadratic R2 0.9998, x^2 term 1.7943 us
+
+   ratio over all 47 points: median 5.0, min 2.6, max 8.4
+   final variables equal to the simulator's after 1024 cycles: 47 of 47 points
+
+   generated machine.py bytes and import ms, by R:
+     R=1: 136721 bytes, 14.5 ms
+     R=2: 190883 bytes, 20.8 ms
+     R=4: 299207 bytes, 25.4 ms
+     R=8: 516083 bytes, 43.5 ms
+     R=16: 951907 bytes, 76.6 ms
+     R=32: 1825459 bytes, 142.7 ms
+     R=64: 3573103 bytes, 340.8 ms
+     R=128: 7079885 bytes, 912.8 ms
 
 .. figure:: fig_python_vs_simulator_zh.plot.py.svg
    :alt: 生成的 Python 与仿真器在相同扫描上每个周期的时间
@@ -249,9 +442,87 @@
 
 C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核心、7 次运行的最小值，每次至少 2000 个周期（驱动程序选取周期数，使一次运行约持续 0.25 s），并使用驱动程序里一张表给出的同一输入序列。
 
-.. literalinclude:: summary_c.demo.py.txt
-   :language: text
-   :caption: summary_c.demo.py.txt（完整）
+生成的 C 运行时测量的记录值，打印自 :file:`data/e2.jsonl` 到 :file:`data/e4.jsonl` 以及 :file:`data/e4_baseline.jsonl`\ 。文档检查不重新运行它们：测量需要 C 编译器、固定的一个核心和约一小时，数字也取决于测量时的机器。
+
+.. code-block:: text
+   :caption: 记录自 data/e4.jsonl 与 data/e4_baseline.jsonl
+
+   measured on: commit b054fbe3; INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.10GHz; Python 3.11.15; gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0 (-O2 -std=c99, pinned to one core)
+   each point: minimum of 7 runs of 2000+ cycles
+
+   R sweep (R): ns per cycle | .text bytes | sizeof bytes | first cycle us
+     R=1       87.7 |   32329 |     14968 |       3.1
+     R=2      168.1 |   38060 |     33800 |       2.8
+     R=4      347.1 |   47748 |     92200 |       4.6
+     R=8     1109.2 |   66428 |    284824 |       6.7
+     R=16    3279.9 |  104560 |    981112 |      11.1
+     R=32    9660.6 |  179976 |   3617848 |      21.4
+     R=64   29617.3 |  331616 |  13867960 |      52.0
+     power exponent of ns per cycle 1.43 (R2 0.991); quadratic R2 0.9999; linear R2 0.967
+
+   S sweep (S): ns per cycle | .text bytes | sizeof bytes | first cycle us
+     S=3      302.4 |   35961 |     35800 |       4.3
+     S=4      316.8 |   38264 |     45544 |       4.5
+     S=8      358.1 |   47748 |     92200 |       4.8
+     S=16     435.7 |   66938 |    222376 |       5.2
+     S=32     742.9 |  103506 |    630184 |       5.7
+     S=64    1165.5 |  178514 |   2035624 |       7.1
+     power exponent of ns per cycle 0.43 (R2 0.923); quadratic R2 0.9944; linear R2 0.994
+
+   T sweep (T): ns per cycle | .text bytes | sizeof bytes | first cycle us
+     T=1      347.0 |   42020 |     92200 |       5.4
+     T=2      402.5 |   47748 |     92200 |       5.3
+     T=3      416.9 |   53604 |     92200 |       5.6
+     T=4      513.3 |   59460 |     92200 |       5.9
+     T=5      474.5 |   65060 |     92200 |       5.9
+     T=6      502.7 |   70660 |     92200 |       4.8
+     T=7      486.5 |   76772 |     92200 |       5.0
+     power exponent of ns per cycle 0.19 (R2 0.862); quadratic R2 0.8854; linear R2 0.721
+
+   V sweep (V): ns per cycle | .text bytes | sizeof bytes | first cycle us
+     V=1      365.7 |   47748 |     92200 |       4.7
+     V=2      332.7 |   50916 |     95864 |       4.7
+     V=4      326.4 |   55852 |    103192 |       4.8
+     V=8      347.0 |   65884 |    117848 |       4.7
+     V=16     525.0 |   84450 |    147160 |       4.9
+     V=32     543.6 |  110602 |    205784 |       5.3
+     V=64     576.1 |  177138 |    323032 |       5.0
+     power exponent of ns per cycle 0.15 (R2 0.729); quadratic R2 0.8806; linear R2 0.724
+
+   D_chain sweep (D): ns per cycle | .text bytes | sizeof bytes | first cycle us
+     D=1       86.6 |   32329 |     14968 |       3.3
+     D=2      132.2 |   34171 |     19960 |       3.2
+     D=3      199.7 |   35181 |     25720 |       4.8
+     D=4      247.2 |   36404 |     32248 |       7.8
+     D=5      307.8 |   37554 |     39544 |      11.7
+     D=6      409.6 |   38782 |     47608 |      23.0
+     D=8      605.4 |   41670 |     66040 |      92.2
+     D=10     813.6 |   44230 |     87544 |     427.1
+     D=12    1176.6 |   47498 |    112120 |    2093.5
+     power exponent of ns per cycle 1.05 (R2 0.966); quadratic R2 0.9973; linear R2 0.959
+
+   the base model R=4 S=8 T=2 D=1 V=1 appears in several sweeps; its ns per cycle:
+     347.1 358.1 402.5 365.7  (spread 16%)
+
+   generated Python / generated C time per cycle, same model:
+     R sweep: median 246x, min 151x, max 459x
+     S sweep: median 337x, min 116x, max 423x
+     T sweep: median 321x, min 293x, max 343x
+     V sweep: median 445x, min 353x, max 830x
+
+   default capacity macros against the model size (scopes = all states + regions):
+     63 models: ARENA_CAPACITY == max(24, 12*scopes) in 63, TRAIL_CAPACITY == 16 + 4*scopes in 63
+     D=1 S=8 R=1  scopes=11   ARENA_CAPACITY=132    TRAIL_CAPACITY=60
+     D=4 S=8 R=1  scopes=17   ARENA_CAPACITY=204    TRAIL_CAPACITY=84
+     D=1 S=8 R=8  scopes=74   ARENA_CAPACITY=888    TRAIL_CAPACITY=312
+     D=4 S=8 R=8  scopes=269  ARENA_CAPACITY=3228   TRAIL_CAPACITY=1092
+     D=1 S=8 R=64 scopes=578  ARENA_CAPACITY=6936   TRAIL_CAPACITY=2328
+     D=4 S=8 R=64 scopes=2285 ARENA_CAPACITY=27420  TRAIL_CAPACITY=9156
+
+   region-free ring, earlier template vs current template:
+     n=4   ns/cycle  126.4 ->   49.9 | .text   9377 ->  27156 | sizeof  1400 ->  1688
+     n=16  ns/cycle  128.4 ->   60.6 | .text  13267 ->  31342 | sizeof  1400 ->  1928
+     n=64  ns/cycle  125.1 ->   74.4 | .text  29027 ->  47918 | sizeof  1400 ->  2888
 
 .. figure:: fig_c_speed_size_zh.plot.py.svg
    :alt: 生成的 C 每个周期的时间与代码体积随 R 和 S 的变化
@@ -391,4 +662,4 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
    python tools/measure_region_performance.py fit --data-dir docs/source/explanations/region_performance/data \
        --out docs/source/explanations/region_performance/data/fits.json
 
-基线对比需要从提交 ``ab9cae94`` 取出早先的模板，并使用 ``--part baseline --old-template <目录>``\ 。整个运行在上述机器上约需一小时。新数据就位之后，图和文字表格由文档构建重新生成：在 :file:`docs/source` 里运行 ``make -f all.mk build`` 会运行画图脚本与汇总脚本，它们只读数据文件。这个命令块只用于说明，本身不是生成的输出。
+基线对比需要从提交 ``ab9cae94`` 取出早先的模板，并使用 ``--part baseline --old-template <目录>``\ 。整个运行在上述机器上约需一小时。新数据就位之后，图由文档构建重新生成：在 :file:`docs/source` 里运行 ``make -f all.mk build`` 会运行画图脚本，它们只读数据文件。本页的文字表格是记录值：它们抄自数据文件，新数据就位后需要手工刷新。这个命令块只用于说明，本身不是生成的输出。

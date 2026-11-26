@@ -937,8 +937,8 @@ def command_fit(args):
 
 
 def nodes_regions(r, s, k):
-    """Fitted node count of the region family (non-integer coefficients)."""
-    return 23 * r * s * k - 18 * r * s + 22.29 * r * k + 2.904 * r + 46.17 * k + 17.61
+    """Fitted node count of the region family, with the coefficients printed on the page."""
+    return 23 * r * s * k - 18 * r * s + 22.3 * r * k + 2.9 * r + 46.2 * k + 17.6
 
 
 def calls_flat(n, k):
@@ -1234,6 +1234,36 @@ def command_check(args):
                     )
                 )
             )
+    # Node count against T: not linear, the doubling factor rises with T.
+    for family, fixed, k in (("flat", {"N": 100}, 5), ("regions", {"R": 4, "S": 8}, 3)):
+        sweep = {}
+        for r in original:
+            cfg, params = r["cfg"], r["cfg"]["params"]
+            if (
+                cfg["family"] == family
+                and cfg["kind"] == "unsat"
+                and cfg["k"] == k
+                and r["status"] == "unsat"
+                and r.get("nodes")
+                and not params.get("calls")
+                and "V" not in params
+                and all(params.get(n) == v for n, v in fixed.items())
+            ):
+                sweep[params.get("T", 2)] = r["nodes"]
+        ts = sorted(sweep)
+        report.append(
+            "nodes against T, %s %s k=%d: " % (family, fixed, k)
+            + ", ".join(
+                "T=%d: %d%s"
+                % (
+                    t,
+                    sweep[t],
+                    "" if i == 0 else " (x%.2f)" % (sweep[t] / sweep[ts[i - 1]]),
+                )
+                for i, t in enumerate(ts)
+            )
+        )
+
     # Seconds per counted z3 call: counts from unit_cost.jsonl, unprofiled time
     # from unit_cost_time.jsonl (regions) and timing.jsonl (ring).
     seconds = {}
@@ -1271,6 +1301,23 @@ def command_check(args):
                 100 * max(shares),
             )
         )
+    for r in original:
+        params = r["cfg"]["params"]
+        if (
+            r["cfg"]["family"] == "flat"
+            and params.get("N") == 100
+            and params.get("T", 2) == 2
+            and r["cfg"]["k"] == 5
+            and params.get("V") in (4, 16, 64)
+            and params.get("eff") is not False
+            and r["cfg"]["kind"] == "unsat"
+            and r["status"] == "unsat"
+        ):
+            ctxs = 2 * 99 * params["V"] * 4
+            report.append(
+                "context cost, original campaign, N=100 V=%d k=5: build %.1f s, %d contexts, %.2f ms per context"
+                % (params["V"], r["t_compile"], ctxs, 1000 * r["t_compile"] / ctxs)
+            )
     print("\n".join(report))
     if failures:
         print("closed forms disagree with the data:")

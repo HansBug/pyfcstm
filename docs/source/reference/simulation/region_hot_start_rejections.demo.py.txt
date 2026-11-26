@@ -1,0 +1,28 @@
+every region done
+    ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+unknown state in a region
+    ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+unknown state
+    ValueError: Unknown configuration path: 'Controller.Nowhere'.
+a region as the position
+    ValueError: 'Controller.Running.Motion' names a region, not a state
+empty text
+    ValueError: State path cannot be empty
+unbalanced braces
+    ValueError: Expected '}' at line 1, column 48, got end of input.
+region written twice
+    ValueError: Duplicate region in configuration for 'Controller.Running'.
+old marker [*]
+    ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+marker with other case
+    ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+Configuration of another model
+    ValueError: Provided Configuration does not belong to this state machine
+State of another model
+    ValueError: Provided State object does not belong to this state machine
+a number
+    TypeError: initial_state must be str, tuple, State or Configuration, got int
+a list
+    TypeError: initial_state must be str, tuple, State or Configuration, got list
+hidden variable missing
+    ValueError: initial_vars must provide all variables. Missing: ['__forced_0']

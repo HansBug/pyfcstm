@@ -1,0 +1,18 @@
+def int alarm = 0;
+def int ticks = 0;
+state Root {
+    [*] -> Job;
+    state Job {
+        >> during before { if [active("Root.Job.Feed.Busy")] { alarm = 1; } }
+        region Feed {
+            [*] -> Idle;
+            state Idle;
+            state Busy;
+            Idle -> Busy : /Go;
+        }
+        region Check {
+            [*] -> Watch;
+            state Watch { during { ticks = ticks + 1; } }
+        }
+    }
+}

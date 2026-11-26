@@ -1,7 +1,7 @@
 区域怎样进入有界转移系统
 ========================
 
-拥有一组区域（region）的状态会在同一个周期里按顺序逐个运行这些区域。有界模型检查（bounded model checking，BMC）必须把这个周期变成一条有限公式，而且不能把各区域路径的每一种组合都写出来；它解码出的见证（witness）还要经得起仿真器的回放（replay）。本页解释 :mod:`pyfcstm.bmc.region_relation` 及其相邻模块怎样做到这些：用哪些符号描述区域，区域怎样串联，拥有者（owner）怎样启动与结束，热启动的初始帧从哪里来，以及构造在哪里停下。
+拥有一组区域（region）的状态会在同一个周期里按顺序逐个运行这些区域。有界模型检查（bounded model checking，BMC）必须把这个周期变成一条有限公式，而且不能把各区域路径的每一种组合都写出来；它解码出的见证（witness）还要经得起仿真器的回放（replay）。本页解释 :mod:`pyfcstm.bmc.region_relation` 及其相邻模块怎样做到这些：用哪些符号描述区域，区域怎样串联，拥有者（owner）怎样启动与结束，热启动（hot start）的初始帧从哪里来，以及构造在哪里停下。
 
 本页只讲区域的编码。它不定义 FBMCQ 语法（见 :doc:`FBMCQ 参考 </reference/bmc_query/index_zh>`\ ），不重复不含区域的模型的关系（见 :doc:`/explanations/bmc_semantics/index_zh`\ ），也不给出代价增长的闭式（见 :doc:`/explanations/bmc_scaling/index_zh`\ ）。哪台机器怎样运行一个周期由 :doc:`/explanations/region_semantics/index_zh` 定义；本页只说明编码如何跟随它。BMC 的结论仍然只是关于至多 :math:`N` 个宏步的有界陈述。
 
@@ -69,7 +69,7 @@
      - 拥有者在这一帧没有停驻，所以区域没有位置。
    * - -6
      - ``REGION_PENDING_ID``
-     - 热启动（hot start）省略了这个区域或写了 ``[init]``\ ，区域在第一个周期里启动。只有保存整个起点位置的那一帧可以使用它。
+     - 热启动省略了这个区域或写了 ``[init]``\ ，区域在第一个周期里启动。只有保存整个起点位置的那一帧可以使用它。
 
 三条约束把每个区域的位置与它的拥有者绑在一起。它们在每一帧都成立，并且是核心公式的一部分：
 
@@ -141,10 +141,11 @@
    \mathrm{Entry}_O(\eta) &\equiv
      \bigwedge_{i=1}^{n}\Bigl(\bigwedge_{j<i}\mathrm{ok}_j\ \Rightarrow\
        \mathrm{Init}_i\bigl(\eta^{(i-1)},\,q_i,\,\eta^{(i)}\bigr)\Bigr),\\
-   \mathrm{Accept}_O(\eta) &\equiv \bigwedge_{i=1}^{n}\mathrm{ok}_i.
+   \mathrm{Accept}_O(\eta) &\equiv \bigwedge_{i=1}^{n}\mathrm{ok}_i\ \land\
+     \Bigl(\lnot\,\mathrm{AllDone}\ \lor\ \mathrm{Can}_O\bigl(\eta^{(n)}\bigr)\Bigr).
    \end{aligned}
 
-:math:`\mathrm{Init}_i` 是区域 :math:`R_i` 第一条可提交初始路径的关系。只有前面的区域都已启动时才断言它，所以排在起不来的区域之后的区域不赋任何值，它的任何操作也不必有定义。\ :math:`\mathrm{Accept}_O` 是进入 :math:`O` 的那条路径能否被采用的条件。它为假时整条路径被拒绝。编码不会回头为前面的区域尝试另一个入口，这就是“后面的区域起不来则拒绝整个进入”的规则。
+:math:`\mathrm{Init}_i` 是区域 :math:`R_i` 第一条可提交初始路径的关系。只有前面的区域都已启动时才断言它，所以排在起不来的区域之后的区域不赋任何值，它的任何操作也不必有定义。\ :math:`\mathrm{AllDone}` 表示各区域在启动之后立刻全部已完成，:math:`\mathrm{Can}_O` 是第 4 节的续接检查，这里作用于 :math:`\eta^{(n)}`\ ：各区域立刻一起结束时，只有拥有者能在同一周期里续接，这次进入才被接受。\ :math:`\mathrm{Accept}_O` 是进入 :math:`O` 的那条路径能否被采用的条件。它为假时整条路径被拒绝。编码不会回头为前面的区域尝试另一个入口，这就是“后面的区域起不来则拒绝整个进入”的规则。
 
 冷启动最能看出这个拒绝，因为没有别的东西能作用于初始帧。模型有两个区域；只有输入 ``g`` 为正时 ``B`` 才能启动。
 
@@ -249,7 +250,7 @@
 .. literalinclude:: hot_start_refused.demo.sh.txt
    :language: text
 
-诊断码是 ``invalid_start_position``\ ，退出码为 1，不写出 JSON 结果。不是模型中位置的文本也用同一个诊断码拒绝。
+诊断码是 ``invalid_start_position``\ ，退出码为 1，不写出 JSON 结果。不是模型中位置的配置文本（例如 ``Root.Job{A: Nope}``\ ）也用同一个诊断码拒绝，而指向不存在状态的普通路径用 ``unknown_state`` 拒绝。
 
 6. 模式与调用快照观察机器，而不构造它
 -------------------------------------
@@ -258,10 +259,10 @@
 
 .. code-block:: text
 
-   in(O) and, for every written region i,
-       at(R_i, pattern_i)  with  [done]  ->  p_i = DONE
-                                 [init]  ->  p_i is PENDING or INACTIVE
-                                 State   ->  the nested pattern
+   in(O) 且对每个写出的区域 i：
+       at(R_i, 模式_i)   [done]  ->  p_i = DONE
+                         [init]  ->  p_i 是 PENDING 或 INACTIVE
+                         状态    ->  嵌套的模式
 
 其中 ``in(O)`` 是普通的 ``active(O)``\ 。与起点的差别在于方向：起点\ *构造*\ 一个位置，所以它省略的区域等待初始化；模式\ *匹配*\ 一个位置，所以它省略的区域可以在任何地方。由 ``init state(...)`` 文本构造出的位置总是匹配同一段文本写成的模式。
 
@@ -273,7 +274,7 @@
 * 还没有启动的区域显示 ``[init]``\ ；
 * 同一周期里拥有者被重新进入时，进入的调用看到每个区域都是 ``[init]``\ ，而退出与切面的调用仍然看到原来的位置。
 
-``called`` 与 ``call_count`` 也会把一组区域结束时结算的 ``>> during after`` 调用，按仿真器告诉处理函数的状态来统计：切面包住整组时是拥有者，位于下面时是叶子（\ ``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf``\ ）。下一个脚本的模型进入 ``O``\ ，让两个区域结束，并在第二步里再次进入 ``O``\ 。
+``called`` 与 ``call_count`` 也会把一组区域结束时结算的 ``>> during after`` 调用，按仿真器告诉处理函数的状态来统计：切面包住整组时是拥有者，位于下面时是叶子（\ ``test/bmc/test_region_call_records.py`` 中的 ``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf``\ ）。下一个脚本的模型进入 ``O``\ ，让两个区域结束，并在第二步里再次进入 ``O``\ 。
 
 .. literalinclude:: reenter.fcstm
    :language: fcstm
@@ -351,7 +352,7 @@
 
 * 一个查询表达式最多嵌套 100 层。更长的链会在构造任何东西之前以 ``expression_too_deep`` 被拒绝；请把它拆到几条 ``assume`` 或 ``check`` 子句里。
 * 宏步展开器有区域继承来的固定保护，没有任何选项能改变它们：一条路径上至多 1000 个微步，栈深度 64。它们限制的是穿过一个单元的一条路径。本页不就区域能嵌套多深做任何声明。
-* 宏步展开器会拒绝在执行动作的同时回到某个状态的路径，也就是依赖动作的循环；仿真器在运行时抛出的搜索上限没有对应的有界形式。因此在声明了区域的共享语义用例里，四个搜索上限用例、三个依赖动作的循环用例和一个超出展开深度的重入用例被排除在与仿真器的差分检查之外。
+* 宏步展开器会拒绝在执行动作的同时回到某个状态的路径，也就是依赖动作的循环；仿真器在运行时抛出的搜索上限没有对应的有界形式。因此在声明了区域的共享语义用例里，四个搜索上限用例、三个依赖动作的循环用例和一个超出展开深度的重入用例被排除在与仿真器的差分检查之外。另有四个区域用例因其他原因被排除：两个需要调用者完整给出变量的热启动，两个需要查询语言从不使用的短事件名。
 
 .. literalinclude:: expression_depth.demo.sh.txt
    :language: text
@@ -403,7 +404,7 @@
      - 两种顺序下的 ``interlock.fbmcq``
      - 第 3 步交接的值（第 2 节）
    * - :eq:`eq-region-owner-start`
-     - ``_StepBuilder.entry``
+     - ``_StepBuilder.entry``\ （\ ``ok`` 与续接检查）
      - ``test_regions_start_in_declaration_order_on_the_values_left_behind``\ 、\ ``test_a_group_that_cannot_start_leaves_a_cold_start_delta``
      - ``blocked_free.fbmcq``\ 、\ ``blocked_stuck.fbmcq``
      - ``g == 0`` 时的两个 ``[delta]`` 步（第 3 节）

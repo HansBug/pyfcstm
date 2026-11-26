@@ -1053,6 +1053,26 @@ use inside a region), :download:`region_single.fcstm <region_single.fcstm>` (one
 transition on the owner) and :download:`region_case_alias.fcstm.txt <region_case_alias.fcstm.txt>`
 (a counterexample). Download them into an empty directory to run the commands.
 
+.. literalinclude:: region_pipeline.fcstm
+   :language: fcstm
+   :caption: region_pipeline.fcstm
+
+.. literalinclude:: region_nested.fcstm
+   :language: fcstm
+   :caption: region_nested.fcstm
+
+.. literalinclude:: region_single.fcstm
+   :language: fcstm
+   :caption: region_single.fcstm
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: region_case_alias.fcstm.txt
+   :language: fcstm
+   :caption: region_case_alias.fcstm.txt
+
 PlantUML export
 ~~~~~~~~~~~~~~~
 
@@ -1367,7 +1387,11 @@ out of ``actions``.
    data = model.diagram().to_dict()
 
 
+   nodes = {}
+
+
    def walk(node, depth=0):
+       nodes[node['id']] = node
        kind = 'region' if node.get('region') else 'state'
        ordinal = ' ordinal=%d' % node['ordinal'] if node.get('region') else ''
        print('%s%s %s id=%s%s' % ('  ' * depth, kind, node['name'], node['id'], ordinal))
@@ -1376,10 +1400,10 @@ out of ``actions``.
 
 
    walk(data['rootState'])
-   work = data['rootState']['children'][1]
-   print('work actions:', [a['label'] for a in work['actions']])
-   print('intake actions:', [a['label'] for a in work['children'][0]['actions']])
-   print('guard:', work['children'][1]['transitions'][1]['guardLabel'])
+   print('work actions:', [a['label'] for a in nodes['Line.Work']['actions']])
+   print('intake actions:', [a['label'] for a in nodes['Line.Work.Intake']['actions']])
+   pack = nodes['Line.Work.Pack']
+   print('pack guards:', [t['guardLabel'] for t in pack['transitions'] if t['guardLabel']])
    print(model.diagram().with_view_state(collapsed_state_ids=('Line.Work.Intake',)).view_state)
 
 .. testoutput::
@@ -1395,7 +1419,7 @@ out of ``actions``.
          state Boxed id=Line.Work.Pack.Boxed
    work actions: ['>> during before {1 op}']
    intake actions: ['>> during after {1 op}']
-   guard: active("Line.Work.Intake.Full") && ready == 1
+   pack guards: ['active("Line.Work.Intake.Full") && ready == 1']
    DiagramViewState(mode='compare', collapsed_state_ids=('Line.Work.Intake',), zoom=None, pan_x=None, pan_y=None)
 
 Reading the output: ``Intake`` and ``Pack`` are siblings of the states of

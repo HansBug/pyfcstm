@@ -182,18 +182,39 @@ Region paths. ``region_status`` accepts Region paths and returns ``live``,
 (owner outside this configuration). ``leaves`` omits Done and pending branches.
 Unknown paths raise ``ValueError``.
 
-``to_dict()`` returns fresh JSON-compatible containers. The example above yields:
+``to_dict()`` returns fresh JSON-compatible containers. For the first example above, with the Done region ``Left``, it yields:
 
-.. code-block:: json
+.. testcode::
+
+   import json
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
+   print(json.dumps(config.to_dict(), indent=2))
+
+.. testoutput::
 
    {
      "mode": "stable",
      "state": "Root",
      "regions": [
-       {"name": "Left", "configuration": null},
-       {"name": "Right", "configuration": {
-         "state": "Root.Right.Working", "regions": []
-       }}
+       {
+         "name": "Left",
+         "configuration": null
+       },
+       {
+         "name": "Right",
+         "configuration": {
+           "state": "Root.Right.Working",
+           "regions": []
+         }
+       }
      ]
    }
 
@@ -556,9 +577,22 @@ unchanged.
 
    $ pyfcstm simulate -i limits_composite_loop.fcstm -e "cycle; cycle Root.Go; cycle Root.Go; cycle"
    ...
+   Cycle: 1
+   Current State: Root.S
+   Variables:
+     x = 1
+   ...
    [WARNING] Cycle 2 completed as Delta ...
+   Cycle: 2
+   Current State: Root.S
+   Variables:
+     x = 1
    ...
    [WARNING] Cycle 3 completed as Delta ...
+   Cycle: 3
+   Current State: Root.S
+   Variables:
+     x = 1
    ...
    Cycle: 4
    Current State: Root.S

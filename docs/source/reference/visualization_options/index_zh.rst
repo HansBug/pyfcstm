@@ -998,6 +998,26 @@ scale、边长与像素三条限额，不衡量自身输出。
 
 含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域（region）没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：:download:`region_pipeline.fcstm <region_pipeline.fcstm>`\ （两个区域、拥有者（owner）与区域上各一个切面、调用 ``active(...)`` 的条件）、:download:`region_nested.fcstm <region_nested.fcstm>`\ （嵌套拥有者、在区域内使用而声明的事件）、:download:`region_single.fcstm <region_single.fcstm>`\ （单个区域）、:download:`controller.fcstm </_models/controller.fcstm>`\ （教程里的控制器，拥有者上的强制转换）和 :download:`region_case_alias.fcstm.txt <region_case_alias.fcstm.txt>`\ （反例）。把它们下载到一个空目录即可运行这些命令。
 
+.. literalinclude:: region_pipeline.fcstm
+   :language: fcstm
+   :caption: region_pipeline.fcstm
+
+.. literalinclude:: region_nested.fcstm
+   :language: fcstm
+   :caption: region_nested.fcstm
+
+.. literalinclude:: region_single.fcstm
+   :language: fcstm
+   :caption: region_single.fcstm
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: region_case_alias.fcstm.txt
+   :language: fcstm
+   :caption: region_case_alias.fcstm.txt
+
 PlantUML 导出
 ~~~~~~~~~~~~~
 
@@ -1289,7 +1309,11 @@ PlantUML 导出
    data = model.diagram().to_dict()
 
 
+   nodes = {}
+
+
    def walk(node, depth=0):
+       nodes[node['id']] = node
        kind = 'region' if node.get('region') else 'state'
        ordinal = ' ordinal=%d' % node['ordinal'] if node.get('region') else ''
        print('%s%s %s id=%s%s' % ('  ' * depth, kind, node['name'], node['id'], ordinal))
@@ -1298,10 +1322,10 @@ PlantUML 导出
 
 
    walk(data['rootState'])
-   work = data['rootState']['children'][1]
-   print('work actions:', [a['label'] for a in work['actions']])
-   print('intake actions:', [a['label'] for a in work['children'][0]['actions']])
-   print('guard:', work['children'][1]['transitions'][1]['guardLabel'])
+   print('work actions:', [a['label'] for a in nodes['Line.Work']['actions']])
+   print('intake actions:', [a['label'] for a in nodes['Line.Work.Intake']['actions']])
+   pack = nodes['Line.Work.Pack']
+   print('pack guards:', [t['guardLabel'] for t in pack['transitions'] if t['guardLabel']])
    print(model.diagram().with_view_state(collapsed_state_ids=('Line.Work.Intake',)).view_state)
 
 .. testoutput::
@@ -1317,7 +1341,7 @@ PlantUML 导出
          state Boxed id=Line.Work.Pack.Boxed
    work actions: ['>> during before {1 op}']
    intake actions: ['>> during after {1 op}']
-   guard: active("Line.Work.Intake.Full") && ready == 1
+   pack guards: ['active("Line.Work.Intake.Full") && ready == 1']
    DiagramViewState(mode='compare', collapsed_state_ids=('Line.Work.Intake',), zoom=None, pan_x=None, pan_y=None)
 
 读输出时注意：树中 ``Intake`` 与 ``Pack`` 与 ``Work`` 的状态同级，序号为 ``1`` 和 ``2``；``Work`` 的切面与 ``Intake`` 的切面分别记在各自节点的 ``actions`` 里；区域 id 是 ``collapsed_state_ids`` 的合法成员（``with_view_state`` 接受并原样返回）。只有区域节点带 ``region`` 与 ``ordinal``。

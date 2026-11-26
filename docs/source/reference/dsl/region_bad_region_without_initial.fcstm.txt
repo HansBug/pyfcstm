@@ -1,3 +1,0 @@
-state Root {
-    region A { state Leaf; }
-}

@@ -260,9 +260,9 @@ Further rules:
 .. testoutput::
 
    Trip -> Controller.Running.Safety.Watching.Trip
-   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: ...
-   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf ...
-   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf ...
+   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
    ..Stop -> Controller.Running.Stop
    /Running.Stop -> Controller.Running.Stop
 
@@ -297,8 +297,8 @@ Further rules:
 
 The first script shows the outcomes for names that depend on the position:
 ``Trip`` is found by one leaf, ``Ping`` is ambiguous because both leaves own a
-``Ping``, and ``Nope`` and ``Reset`` are found by none, even though ``Reset``
-exists on the root, because a bare name never looks upward. ``..Stop`` and
+``Ping`` (the message lists each candidate with the leaf that led to it), and
+``Nope`` and ``Reset`` are found by none, even though ``Reset`` exists on the root, because a bare name never looks upward. ``..Stop`` and
 ``/Running.Stop`` reach the owner's event. The second script runs ``cycle`` on a
 fresh runtime for each line: the refusals leave the position unchanged, a done
 region leaves ``Ping`` unambiguous, and with a single active leaf the refusal
@@ -370,9 +370,13 @@ a plain composite state written without a child.
 
 The first script starts the controller of the tutorial
 (:download:`controller.fcstm </_models/controller.fcstm>`) in each spelling of
-the table above, then in three positions that leave something out, and prints
-the resulting configuration. The second script shows that the first cycle
-initializes the region that was left out.
+the table above, then in three more positions: an owner written as a bare path,
+an owner with a finished region, and a composite state written without a child.
+It prints the resulting configuration. The controller has a hidden variable
+``__forced_0`` that the model conversion adds for a forced transition; a hot
+start must give it a value like any other variable (see the rules below). The
+second script shows that the first cycle initializes the region that was left
+out.
 
 .. testcode::
 
@@ -381,13 +385,13 @@ initializes the region that was left out.
 
    with open('controller.fcstm') as stream:
        model = load_state_machine_from_text(stream.read())
-   motion_on = next(s for s in model.walk_states() if s.path == ('Controller', 'Running', 'Motion', 'On'))
+   states = {state.path: state for state in model.walk_states()}
    positions = [
        'Controller.Running{Safety: Watching, Motion: On}',
        Configuration.parse(model, 'Controller.Running{Safety: Watching, Motion: On}'),
        'Controller.Running.Motion.On',
        ('Controller', 'Running', 'Motion', 'On'),
-       motion_on,
+       states[('Controller', 'Running', 'Motion', 'On')],
        'Controller.Running',
        'Controller.Running{Safety: [done], Motion: On}',
        'Controller',
@@ -446,35 +450,58 @@ Rules and refusals:
 
 .. testcode::
 
-   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.model import Configuration, load_state_machine_from_text
    from pyfcstm.simulate import SimulationRuntime
 
    with open('controller.fcstm') as stream:
-       model = load_state_machine_from_text(stream.read())
+       text = stream.read()
+   model = load_state_machine_from_text(text)
+   other = load_state_machine_from_text(text)
+   other_states = {state.path: state for state in other.walk_states()}
    variables = {'permit': 1, 'motor': 1, '__forced_0': 0}
-   cases = [
-       ('Controller.Running{Safety: [done], Motion: [done]}', variables),
-       ('Controller.Running{Safety: Nowhere, Motion: On}', variables),
-       ('Controller.Running.Motion', variables),
-       ('Controller.Running{Safety: [*], Motion: On}', variables),
-       (5, variables),
-       ('Controller.Running.Motion.On', {'permit': 1, 'motor': 1}),
-   ]
-   for position, given in cases:
+   cases = {
+       'every region done': 'Controller.Running{Safety: [done], Motion: [done]}',
+       'region written twice': 'Controller.Running{Safety: Watching, Safety: Watching}',
+       'unknown state': 'Controller.Running{Safety: Nowhere, Motion: On}',
+       'a region as the position': 'Controller.Running.Motion',
+       'empty text': '',
+       'brace not closed': 'Controller.Running{Safety: Watching',
+       'marker [*]': 'Controller.Running{Safety: [*], Motion: On}',
+       'marker [Done]': 'Controller.Running{Safety: [Done], Motion: On}',
+       'Configuration of another model': Configuration.parse(
+           other, 'Controller.Running{Safety: Watching, Motion: On}'),
+       'State of another model': other_states[('Controller', 'Running', 'Motion', 'On')],
+       'a list': ['Controller', 'Running'],
+       'a number': 5,
+   }
+   for name, position in cases.items():
        try:
-           SimulationRuntime(model, initial_state=position, initial_vars=given,
+           SimulationRuntime(model, initial_state=position, initial_vars=variables,
                              input_source={'fault': 0, 'requested': 1})
        except (ValueError, TypeError) as error:
-           print(type(error).__name__ + ':', error)
+           print(name + ':', type(error).__name__ + ':', error)
+   try:
+       SimulationRuntime(model, initial_state='Controller.Running.Motion.On',
+                         initial_vars={'permit': 1, 'motor': 1},
+                         input_source={'fault': 0, 'requested': 1})
+   except ValueError as error:
+       print('hidden variable missing:', type(error).__name__ + ':', error)
 
 .. testoutput::
 
-   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
-   ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
-   ValueError: 'Controller.Running.Motion' names a region, not a state
-   ValueError: Expected a configuration identifier at line 1, column 28, got '['.
-   TypeError: initial_state must be str, tuple, State or Configuration, got int
-   ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
+   every region done: ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   region written twice: ValueError: Duplicate region in configuration for 'Controller.Running'.
+   unknown state: ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+   a region as the position: ValueError: 'Controller.Running.Motion' names a region, not a state
+   empty text: ValueError: State path cannot be empty
+   brace not closed: ValueError: Expected '}' at line 1, column 36, got end of input.
+   marker [*]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   marker [Done]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   Configuration of another model: ValueError: Provided Configuration does not belong to this state machine
+   State of another model: ValueError: Provided State object does not belong to this state machine
+   a list: TypeError: initial_state must be str, tuple, State or Configuration, got list
+   a number: TypeError: initial_state must be str, tuple, State or Configuration, got int
+   hidden variable missing: ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
 
 .. literalinclude:: pending_delta.fcstm
    :language: fcstm
@@ -707,7 +734,9 @@ the table of several cycles, in ``history`` and in exported files.
        reports ``Error: variable 'permit' is assigned more than once.`` Missing
        variables report ``Error: All variables must be provided. Missing:
        [...]`` and list the available names. Refused positions report
-       ``Initialization failed: <message>`` with the messages of the table above.
+       ``Initialization failed: <message>``; the messages are those printed
+       for each refused input in :ref:`sim-region-hot-start`, and the records
+       below show some of them.
    * - ``events``
      - Lists the events that can be typed as shown for the active leaves. A short
        name that two leaves use for different events is not offered; an event of
@@ -715,7 +744,8 @@ the table of several cycles, in ``history`` and in exported files.
    * - ``cycle [count] [events...] [--input name=value ...]``
      - Every cycle needs a complete input vector: one ``--input`` per input
        variable. A refused event name reports ``Cycle execution failed: ...``
-       with the text of the table above.
+       with the text of the table in :ref:`sim-region-event-names`; the last
+       record below shows one.
    * - ``history``, ``export``
      - The ``state`` column and field hold the configuration text.
    * - Completion

@@ -352,11 +352,11 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 调用次数在网格和三个大点上核对过。
 
-下面的命令把每个闭式与已提交的数据文件比较。它是只读取 ``data/*.jsonl`` 的维护命令，所以每次运行的输出相同；但它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。输出是从仓库里的一次运行复制来的。每一行是一次比较，数字来自 ``data/`` 里的点，这些点按上面两次测量的对照表所述的方式测得。
+下面的命令把每个闭式与已提交的数据文件比较。它是只读取 ``data/*.jsonl`` 的维护命令，所以每次运行的输出相同；但它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。输出是从仓库根目录下的一次运行复制来的，所以数据目录写的是完整路径。每一行是一次比较，数字来自 ``data/`` 里的点，这些点按上面两次测量的对照表所述的方式测得。
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py check-formulas --data data
+   python tools/measure_bmc_scaling.py check-formulas --data docs/source/explanations/bmc_scaling/data
 
 .. code-block:: text
 
@@ -392,7 +392,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
    context cost, original campaign, N=100 V=16 k=5: build 78.1 s, 12672 contexts, 6.16 ms per context
    context cost, original campaign, N=100 V=64 k=5: build 87.9 s, 50688 contexts, 1.73 ms per context
    context cost, original campaign, N=100 V=64 k=5: build 88.8 s, 50688 contexts, 1.75 ms per context
-   closed forms agree with the data in data
+   closed forms agree with the data in docs/source/explanations/bmc_scaling/data
 
 **它展示了什么。** 每一行写出一个闭式、与它比较的点数以及结果。写着“all equal”的行是精确的；给出误差的行是拟合的。\ **可以得出的结论。** 拟合的调用次数在网格上误差在 0.3% 以内，在大点上误差在 3.1% 以内。\ **不能得出的结论。** 区域调用次数的网格只到 :math:`R=8`\ 、\ :math:`S=24`\ 、\ :math:`k=8`\ ；超出以后误差缓慢增大，\ :math:`R=96` 与 :math:`R=256` 的 :math:`-2.2\%` 和 :math:`-3.0\%` 两行就是例子。
 
@@ -410,7 +410,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
    t_{\mathrm{build}} \approx c_{\mathrm{call}}\cdot \mathrm{calls} + c_{\mathrm{ctx}}\cdot C_{\mathrm{ctx}}
 
-其中 :math:`c_{\mathrm{call}}` 是一次 Z3 调用的成本，\ :math:`c_{\mathrm{ctx}}` 是一个上下文的成本。重测里，构造 :math:`R=96` 与 :math:`R=256`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）的区域状态机，分别用了 2.72 秒和 14.8 秒，对应 520 万与 2910 万次调用，折合每次调用 0.52 微秒与 0.51 微秒；构造 :math:`N=1600`\ 、\ :math:`k=5` 的环用了 17.9 秒，对应 1090 万次调用，折合每次调用 1.63 微秒。所以 :math:`c_{\mathrm{call}}` 属于模型的类别，而不只取决于机器，你应当在自己这一类的小模型上测一次。两批测量的每个上下文成本不同。对 :math:`N=100`\ 、\ :math:`k=5`\ ，原始测量在 :math:`V=4` 时构造用了 19.3 到 19.6 秒，\ :math:`V=16` 时 76.4 到 78.1 秒，\ :math:`V=64` 时 87.9 到 88.8 秒，折合 :math:`V=4` 与 16 时每个上下文约 6 毫秒，\ :math:`V=64` 时 1.7 毫秒；原始测量的曲线趋平，重测仍是线性，原始测量在 :math:`V=4` 与 16 时约比重测慢 4 到 4.6 倍，在 :math:`V=64` 时约慢 1.3 到 1.4 倍。原始测量同时运行 56 个进程且没有预热，二者是否是原因没有测试，这个差别没有查清。请使用与 :eq:`bmc-scaling-contexts` 吻合的重测数字，把原始测量的数字当作悲观情形。
+其中 :math:`c_{\mathrm{call}}` 是一次 Z3 调用的成本，\ :math:`c_{\mathrm{ctx}}` 是一个上下文的成本。重测里，构造 :math:`R=96` 与 :math:`R=256`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）的区域状态机，分别用了 2.72 秒和 14.8 秒，对应 520 万与 2910 万次调用，折合每次调用 0.52 微秒与 0.51 微秒；构造 :math:`N=1600`\ 、\ :math:`k=5` 的环用了 17.9 秒，对应 1090 万次调用，折合每次调用 1.63 微秒。所以 :math:`c_{\mathrm{call}}` 属于模型的类别，而不只取决于机器，你应当在自己这一类的小模型上测一次。两批测量的每个上下文成本不同。对 :math:`N=100`\ 、\ :math:`k=5`\ ，原始测量在 :math:`V=4` 时构造用了 19.3 到 19.6 秒，\ :math:`V=16` 时 76.4 到 78.1 秒，\ :math:`V=64` 时 87.9 到 88.8 秒，折合 :math:`V=4` 与 16 时每个上下文约 6 毫秒，\ :math:`V=64` 时 1.7 毫秒；原始测量的曲线趋平，重测仍是线性，原始测量在 :math:`V=4` 与 16 时约比重测慢 3.9 到 4.7 倍，在 :math:`V=64` 时约慢 1.3 到 1.4 倍。原始测量同时运行 56 个进程且没有预热，二者是否是原因没有测试，这个差别没有查清。请使用与 :eq:`bmc-scaling-contexts` 吻合的重测数字，把原始测量的数字当作悲观情形。
 
 .. figure:: phases_zh.plot.py.svg
    :alt: 各类机器构造公式耗时占总耗时比例的散点图。
@@ -519,6 +519,8 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 **它展示了什么。** 每个区域 ``P0``\ 、\ ``P1``\ 、\ ``P2`` 从 ``W`` 进入 ``H0`` 或 ``H1``\ ；查询要求每个区域都处于某个 ``H`` 状态，且任意两个区域不处于同一个。三个区域、两个状态时这不可能。\ **可以得出的结论。** 这一族对每个 :math:`m` 都不可满足。\ **不能得出的结论。** 只测了一种互斥结构，别的结构可能表现不同。
 
+这张表来自 ``data/pigeonhole.jsonl``\ （重测，每行一个全新进程，每行只跑一次；\ ``区域数`` 是该记录的鸽子数，比它的洞数多 1）。\ ``求解秒数`` 是记录的 ``t_solve`` 字段，\ ``冲突数`` 是查询自己那次检查（\ ``checks`` 的倒数第二项；两个未判定的行取它们唯一的一项）的 ``conflicts`` 统计。下面 ``check-formulas`` 的输出只打印相邻冲突数的比值。
+
 .. list-table:: 互斥区域，不可满足，重测
    :header-rows: 1
    :widths: 14 22 22 42
@@ -570,7 +572,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 该预期多少时间
 --------------
 
-下表是每个时间预算内跑完的最大规模，取自原始测量（提交 ``560b7dc4``\ ，同时运行 56 个进程，8 秒以上的点只跑一次）。每个查询都是不可满足的 ``check reach``\ ，耗时是构造加求解。每个规模都是“实测的最大值”，所以真正的极限落在它与下一个实测规模之间。
+下表是每个时间预算内跑完的最大规模，取自原始测量（提交 ``560b7dc4``\ ，同时运行 56 个进程，8 秒以上的点只跑一次）。每个查询都是不可满足的 ``check reach``\ ，耗时是构造加求解。每个规模都是“实测的最大值”，所以真正的极限落在它与下一个实测规模之间。这张表是下面那条 ``range-table`` 命令输出的转录。
 
 .. list-table:: 每个时间预算内实测的最大规模
    :header-rows: 1
@@ -641,7 +643,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py range-table --data data
+   python tools/measure_bmc_scaling.py range-table --data docs/source/explanations/bmc_scaling/data
 
 .. figure:: time_flat_zh.plot.py.svg
    :alt: 不含区域的状态机，构造、求解与总计秒数对状态数、上界与每个状态的转换数的曲线。
@@ -661,7 +663,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py compare-retest --data data
+   python tools/measure_bmc_scaling.py compare-retest --data docs/source/explanations/bmc_scaling/data
 
 .. code-block:: text
 

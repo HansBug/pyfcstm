@@ -318,51 +318,106 @@ Legal declarations:
      - Invalid.
 
 The validation errors are ``ValueError`` raised when the renderer reads the
-configuration. Each of them names the configuration file; ``<work>`` below stands
-for a temporary directory. This is real output, produced from a one-line
-``config.yaml`` for each case:
+configuration. Each of them names the configuration file; ``...`` below stands
+for the temporary directory of the script. The script builds the renderer once
+for each one-line ``config.yaml``:
 
-.. literalinclude:: region_features.demo.py
-   :language: python
-   :caption: region_features.demo.py (builds the renderer once per config)
+.. testcode::
 
-.. literalinclude:: region_features.demo.py.txt
-   :language: text
-   :caption: region_features.demo.py output
+   import tempfile
+   from pathlib import Path
 
-The key is also checked by ``pyfcstm generate``. The next script builds four
-template directories and renders ``region_controller.fcstm`` (two regions) or
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   configs = ("{}", "features: [region]", "features: []", "features:", "features: region",
+              "features: {region: true}", "features: [cloud]", "features: [Region]",
+              "features: [region, region]", "features: [1]", "features: [null]")
+   for text in configs:
+       with tempfile.TemporaryDirectory() as work:
+           Path(work, "config.yaml").write_text(text + "\n")
+           try:
+               print(text, "->", sorted(StateMachineCodeRenderer(work).features))
+           except ValueError as err:
+               print(text, "-> ValueError:", err)
+
+.. testoutput::
+
+   {} -> []
+   features: [region] -> ['region']
+   features: [] -> []
+   features: -> []
+   features: region -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got str.
+   features: {region: true} -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got dict.
+   features: [cloud] -> ValueError: Renderer config .../config.yaml declares unknown feature 'cloud'. Supported features: region.
+   features: [Region] -> ValueError: Renderer config .../config.yaml declares unknown feature 'Region'. Supported features: region.
+   features: [region, region] -> ValueError: Renderer config .../config.yaml declares duplicate feature 'region'.
+   features: [1] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got int.
+   features: [null] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got NoneType.
+
+The key is also checked by ``pyfcstm generate``. The next commands build four
+template directories and render ``controller.fcstm`` (two regions) or
 ``region_plain.fcstm`` (none) into each one. A refused run exits with status 1,
 writes nothing, and prints the model's region count, where the first region is,
 what a template author should declare, which built-in templates to use instead,
 and one command that can be copied. The suggested template is the first name of
 the printed list. The ``(line 12)`` is the line of the first region
-in ``region_controller.fcstm``.
+in ``controller.fcstm``.
 
-.. literalinclude:: region_controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
-   :caption: region_controller.fcstm
+   :caption: controller.fcstm
 
 .. literalinclude:: region_plain.fcstm
    :language: fcstm
    :caption: region_plain.fcstm
 
-.. literalinclude:: region_features.demo.sh
-   :language: bash
-   :caption: region_features.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_features.demo.sh.txt
-   :language: text
-   :caption: region_features.demo.sh output
+   $ mkdir declared undeclared empty_list null_value
+   $ echo 'name: {{ model.root_state.name }}' > declared/names.txt.j2
+   $ cp declared/names.txt.j2 undeclared/
+   $ cp declared/names.txt.j2 empty_list/
+   $ cp declared/names.txt.j2 null_value/
+   $ echo 'features: [region]' > declared/config.yaml
+   $ echo '{}' > undeclared/config.yaml
+   $ echo 'features: []' > empty_list/config.yaml
+   $ echo 'features:' > null_value/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t declared -o out_declared
+   $ cat out_declared/names.txt
+   name: Controller
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o out_undeclared
+   generate with template directory '...undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. ...
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o out_undeclared
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out_undeclared || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i controller.fcstm -t empty_list -o out_empty_list
+   generate with template directory '...empty_list' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ pyfcstm generate -i controller.fcstm -t null_value -o out_null_value
+   generate with template directory '...null_value' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ pyfcstm generate -i region_plain.fcstm -t undeclared -o out_plain
+   $ cat out_plain/names.txt
+   name: Plain
 
-What the output establishes:
+What the records establish:
 
-* a template that lists ``region`` renders the region model (``exit=0`` and a file in ``out``);
-* a template without the key, with ``features: []`` or with ``features:`` is refused for the region model: ``exit=1``, nothing in ``out``, and the message names the template directory;
+* a template that lists ``region`` renders the region model (exit status 0 and a file in the output directory);
+* a template without the key, with ``features: []`` or with ``features:`` is refused for the region model: exit status 1, no output directory, and the message names the template directory;
 * the same template without declaration still renders a model without regions;
 * the refusal does not tell you the template is broken, it tells you that the template author has not declared region support. Select a built-in template, or declare ``region`` after the template renders regions.
 
-The output does not show what happens with ``--clear``. The refusal comes before
+The records do not show what happens with ``--clear``. The refusal comes before
 the output directory is touched, so an existing directory is not cleared either.
 A built-in template is never refused for regions; the refusal text for a built-in
 name exists in ``pyfcstm/entry/generate.py`` but cannot be reached with the five

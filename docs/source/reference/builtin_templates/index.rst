@@ -134,7 +134,7 @@ instead of one path. For those rules, see
 :doc:`/explanations/region_semantics/index`.
 
 The facts below were read from the files that ``pyfcstm generate --template X``
-writes for ``region_controller.fcstm`` (two regions inside ``Running``) and for
+writes for ``controller.fcstm`` (two regions inside ``Running``) and for
 ``region_plain.fcstm`` (no region), and from the generated ``README.md`` of
 each. The repository's template tests run the 118 shared region cases
 (``region_*.yaml`` under ``test/fixtures/simulate_semantics/cases``) against
@@ -142,9 +142,9 @@ every built-in template: the Python template is compared with
 ``SimulationRuntime``, and the four C-family templates are compiled and run
 against it. This page did not re-run those suites.
 
-.. literalinclude:: region_controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
-   :caption: region_controller.fcstm
+   :caption: controller.fcstm
 
 .. literalinclude:: region_plain.fcstm
    :language: fcstm
@@ -223,24 +223,195 @@ Python runtime
    * - event names
      - Absolute path, ``/``-rooted path, ``.``-relative path, or a short name. For a model with regions, a short name is resolved once for each active leaf; no match raises ``SimulationRuntimeEventError``, equal matches are used, different matches are reported as ambiguous with every candidate listed. A region in ``[init]`` has no active leaf and takes no part.
 
-The following run generates the Python runtime for both models and drives it.
-It shows the position text before and after a ``/Start`` event, the four region
-statuses, the missing ``current_state_path`` on the region model, the rejected
-paths, six spellings of ``initial_state`` with the resulting position, the
-all-``[done]`` refusal, the hook context for an action that wraps two regions,
-and the same members on the plain model.
+The following commands generate the Python runtime for three models, and the
+scripts after them drive the generated ``machine.py`` files.
 
-.. literalinclude:: region_python_runtime.demo.py
-   :language: python
-   :caption: region_python_runtime.demo.py
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o controller_py
+   $ pyfcstm generate -i region_probe.fcstm --template python -o probe_py
+   $ pyfcstm generate -i region_plain.fcstm --template python -o plain_py
+
+The first script cold-starts the controller and reads the position text before and after a ``/Start`` event, the four region statuses and the hidden variable after ``/Stop``:
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   sensors = {"fault": 0, "requested": 1}
+   machine.cycle(inputs=sensors)
+   print("first cycle:", machine.configuration)
+   machine.cycle("/Start", inputs=sensors)
+   print("after /Start:", machine.configuration)
+   machine.cycle(inputs=sensors)
+   print("next cycle:", machine.configuration)
+   print("motor:", machine.vars["motor"])
+   print("leaves:", machine.leaves)
+   print("is_active(Controller.Running):", machine.is_active("Controller.Running"))
+   print("is_active(Controller.Idle):", machine.is_active("Controller.Idle"))
+   for path in ("Controller.Running.Safety", "Controller.Running.Motion"):
+       print("region_status(%s): %s" % (path, machine.region_status(path)))
+   machine.cycle("/Stop", inputs=sensors)
+   print("after /Stop:", machine.configuration)
+   print("region_status(Controller.Running.Safety):", machine.region_status("Controller.Running.Safety"))
+   print("hidden variable __forced_0:", machine.vars["__forced_0"])
+
+.. testoutput::
+
+   first cycle: Controller.Idle
+   after /Start: Controller.Running{Safety: Watching, Motion: Off}
+   next cycle: Controller.Running{Safety: Watching, Motion: On}
+   motor: 1
+   leaves: (('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'On'))
+   is_active(Controller.Running): True
+   is_active(Controller.Idle): False
+   region_status(Controller.Running.Safety): live
+   region_status(Controller.Running.Motion): live
+   after /Stop: Controller.Idle
+   region_status(Controller.Running.Safety): inactive
+   hidden variable __forced_0: 0
+
+The second shows the missing ``current_state_path`` on the region model and the rejected paths:
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   try:
+       machine.current_state_path
+   except AttributeError as err:
+       print("AttributeError:", err)
+   for path in ("Controller.Idle", "Controller.Nowhere"):
+       try:
+           machine.region_status(path)
+       except ValueError as err:
+           print("ValueError:", err)
+
+.. testoutput::
+
+   AttributeError: 'ControllerMachine' object has no attribute 'current_state_path'
+   ValueError: region_status requires a Region path.
+   ValueError: Unknown configuration path: 'Controller.Nowhere'.
+
+The third gives six spellings of ``initial_state`` with the resulting position, and the refusal when every region is ``[done]``:
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   base_vars = {"permit": 0, "motor": 0, "__forced_0": 0}
+   spellings = [
+       ("configuration text", "Controller.Running{Safety: Watching, Motion: On}"),
+       ("text, region left out", "Controller.Running{Motion: On}"),
+       ("text, region [init]", "Controller.Running{Safety: Watching, Motion: [init]}"),
+       ("dotted path through a region", "Controller.Running.Motion.On"),
+       ("owner path only", "Controller.Running"),
+       ("tuple", ("Controller", "Running", "Motion", "On")),
+   ]
+   for label, state in spellings:
+       m = ControllerMachine(initial_state=state, initial_vars=dict(base_vars))
+       print("%s: %s | Safety=%s Motion=%s" % (
+           label, m.configuration,
+           m.region_status("Controller.Running.Safety"),
+           m.region_status("Controller.Running.Motion")))
+   try:
+       ControllerMachine(
+           initial_state="Controller.Running{Safety: [done], Motion: [done]}",
+           initial_vars=dict(base_vars))
+   except ValueError as err:
+       print("ValueError:", err)
+
+.. testoutput::
+
+   configuration text: Controller.Running{Safety: Watching, Motion: On} | Safety=live Motion=live
+   text, region left out: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   text, region [init]: Controller.Running{Safety: Watching, Motion: [init]} | Safety=live Motion=pending
+   dotted path through a region: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   owner path only: Controller.Running{Safety: [init], Motion: [init]} | Safety=pending Motion=pending
+   tuple: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+
+The fourth is the hook context for an action that wraps two regions, on this model:
 
 .. literalinclude:: region_probe.fcstm
    :language: fcstm
    :caption: region_probe.fcstm
 
-.. literalinclude:: region_python_runtime.demo.py.txt
-   :language: text
-   :caption: region_python_runtime.demo.py output
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "probe_py")
+   from machine import LineMachine
+
+
+   class Probe(LineMachine):
+       def read_fault(self):
+           return 0
+
+       def _log(self, name, ctx):
+           print("%s: state_path=%s active_leaf=%s configuration=%s" % (
+               name, ".".join(ctx.state_path), ".".join(ctx.active_leaf), ctx.configuration))
+
+       def _abstract_hook_Line_Boot(self, ctx):
+           self._log("Boot", ctx)
+
+       def _abstract_hook_Line_Work_Left_L_Tick(self, ctx):
+           self._log("Tick", ctx)
+
+       def _abstract_hook_Line_Work_Settle(self, ctx):
+           self._log("Settle", ctx)
+
+
+   probe = Probe()
+   probe.cycle()
+   print("cycle 1 configuration:", probe.configuration)
+   probe.cycle()
+
+.. testoutput::
+
+   Boot: state_path=Line active_leaf=Line configuration=Line
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: [init]}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+   cycle 1 configuration: Line.Work{Left: L, Right: R}
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: R}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+
+The last shows the same members on the plain model:
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "plain_py")
+   from machine import PlainMachine
+
+   plain = PlainMachine()
+   plain.cycle()
+   print("current_state_path:", plain.current_state_path)
+   print("current_state_name:", plain.current_state_name)
+   print("configuration:", plain.configuration)
+   print("leaves:", plain.leaves)
+   print("has region_status:", hasattr(plain, "region_status"))
+
+.. testoutput::
+
+   current_state_path: ('Plain', 'Idle')
+   current_state_name: Idle
+   configuration: Plain.Idle
+   leaves: (('Plain', 'Idle'),)
+   has region_status: False
 
 Reading the output:
 
@@ -315,13 +486,13 @@ Two rules differ between ``c`` / ``cpp`` and ``c_poll`` / ``cpp_poll``:
    :header-rows: 1
 
    * - Macro
-     - ``region_controller.fcstm``
+     - ``controller.fcstm``
      - ``region_plain.fcstm``
      - Meaning
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
      - 8
-     - How many configurations and pending work items one decision of a cycle may examine. The default depends on the model: ``max(24, 12 * scopes)`` for ``region_controller.fcstm``, whose 7 states after lowering and 2 regions make 9 scopes.
+     - How many configurations and pending work items one decision of a cycle may examine. The default depends on the model: ``max(24, 12 * scopes)`` for ``controller.fcstm``, whose 7 states after lowering and 2 regions make 9 scopes.
    * - ``<PREFIX>_TRAIL_CAPACITY``
      - 52
      - 4
@@ -362,13 +533,102 @@ that can never stop reports ``Cannot reach a stoppable state in the same cycle; 
    :language: cpp
    :caption: region_cpp_poll_runtime.cpp (driver for the ``cpp_poll`` template)
 
-.. literalinclude:: region_c_family.demo.sh
-   :language: bash
-   :caption: region_c_family.demo.sh (generates, compiles and runs each driver)
+The header facts need no compiler. The next commands generate the ``c`` runtime for both models and read the capacity macros, the region count and the
+``current_state_`` functions from ``machine.h``:
 
-.. literalinclude:: region_c_family.demo.sh.txt
-   :language: text
-   :caption: region_c_family.demo.sh output
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o out_c
+   $ pyfcstm generate -i region_plain.fcstm --template c -o out_plain_c
+   $ grep -E "^#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) " out_c/machine.h out_plain_c/machine.h
+   out_c/machine.h:#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   out_c/machine.h:#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   out_c/machine.h:#define CONTROLLER_MACHINE_STORAGE_BYTES (944 + (CONTROLLER_MACHINE_ARENA_CAPACITY) * 108 + (CONTROLLER_MACHINE_TRAIL_CAPACITY) * 32)
+   out_c/machine.h:#define CONTROLLER_MACHINE_REGION_COUNT 2
+   out_plain_c/machine.h:#define PLAIN_MACHINE_ARENA_CAPACITY 8
+   out_plain_c/machine.h:#define PLAIN_MACHINE_TRAIL_CAPACITY 4
+   out_plain_c/machine.h:#define PLAIN_MACHINE_STORAGE_BYTES (848 + (PLAIN_MACHINE_ARENA_CAPACITY) * 68 + (PLAIN_MACHINE_TRAIL_CAPACITY) * 32)
+   out_plain_c/machine.h:#define PLAIN_MACHINE_REGION_COUNT 0
+   $ grep -l current_state_ out_c/machine.h out_plain_c/machine.h
+   out_plain_c/machine.h
+
+Compiling and running the drivers needs a C and a C++ compiler, so the commands
+below are not run by the documentation check. They generate each template, compile
+the driver that is listed above for it and run it; the output after them was
+recorded from a real run of this version, and the template tests are what
+check the C-family runtimes against the simulator.
+
+.. code-block:: bash
+
+   # c: generate, compile as C99 and run the driver
+   pyfcstm generate -i controller.fcstm --template c -o out_c
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c out_c/machine.c region_c_runtime.c -lm -o c_driver
+   ./c_driver
+
+   # c: the hook context driver, on the model of region_probe.fcstm
+   pyfcstm generate -i region_probe.fcstm --template c -o out_hooks
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_hooks out_hooks/machine.c region_c_hooks.c -lm -o hooks_driver
+   ./hooks_driver
+
+   # cpp: the C++98 wrapper over the same C core
+   pyfcstm generate -i controller.fcstm --template cpp -o out_cpp
+   cc -std=c99 -O1 -c out_cpp/machine.c -o out_cpp/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp out_cpp/machine.cpp region_cpp_runtime.cpp out_cpp/machine_c.o -lm -o cpp_driver
+   ./cpp_driver
+
+   # c_poll: event checks are queried during the cycle
+   pyfcstm generate -i controller.fcstm --template c_poll -o out_c_poll
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c_poll out_c_poll/machine.c region_c_poll_runtime.c -lm -o c_poll_driver
+   ./c_poll_driver
+
+   # cpp_poll: the C++98 wrapper over the polling core
+   pyfcstm generate -i controller.fcstm --template cpp_poll -o out_cpp_poll
+   cc -std=c99 -O1 -c out_cpp_poll/machine.c -o out_cpp_poll/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp_poll out_cpp_poll/machine.cpp region_cpp_poll_runtime.cpp out_cpp_poll/machine_c.o -lm -o cpp_poll_driver
+   ./cpp_poll_driver
+
+The recorded output, in the same order (the lines starting with ``==`` label the
+runs):
+
+.. code-block:: text
+
+   == c: model with regions (controller.fcstm)
+   cycle 1: Controller.Idle | at=1 regions=[0, 0] | motor=0
+   cycle 2 (/Start): Controller.Running{Safety: Watching, Motion: Off} | at=2 regions=[3, 4] | motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   REGION_COUNT = 2
+   Safety status = 2 (LIVE is 2)
+   Running active = 1, Idle active = 0
+   leaf count = 2
+   leaf ids = 3, 5
+   parsed: Controller.Running{Safety: [init], Motion: On}
+   refused: kind=5 position=0 message=Path passes through the regions of 'Controller.Running' at byte 0.
+   refused: kind=6 position=19 message=Unknown region 'Speed' at byte 19.
+   refused: kind=7 position=31 message=Duplicate region 'Motion' at byte 31.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   cycle after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   ARENA_CAPACITY = 108, TRAIL_CAPACITY = 52, STORAGE_BYTES = 14272
+   sizeof(machine) >= STORAGE_BYTES: 1
+   == c: hook context (region_probe.fcstm)
+   Boot: state_id=0 active_leaf_state_id=0 configuration=Line
+   Tick: state_id=2 active_leaf_state_id=2 configuration=Line.Work{Left: L, Right: [init]}
+   state ids: Line=0 Work=1 Left.L=2 Right.R=3
+   == cpp: wrapper over the same core
+   after three cycles: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   Safety status = 2
+   valid = 1
+   saved == parsed: 0
+   saved != parsed: 1
+   refused: kind=3 message=Unknown name 'Idle' at byte 27.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   == c_poll: event checks are queried during the cycle
+   cycle 1: Controller.Idle | start checks so far=0 stop checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1 stop checks so far=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2 stop checks so far=0
+   == cpp_poll: wrapper over the polling core
+   cycle 1: Controller.Idle | start checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2
 
 Reading the output:
 
@@ -680,6 +940,6 @@ A reviewer can audit this page without guessing by checking these sources:
   C kernel emitters ``pyfcstm/render/c_kernel.py``,
   ``pyfcstm/render/c_kernel_engine.py`` and ``pyfcstm/render/c_configuration.py``,
   and the files that ``pyfcstm generate --template <name>`` writes for
-  ``region_controller.fcstm`` and ``region_plain.fcstm``;
+  ``controller.fcstm`` and ``region_plain.fcstm``;
 * current evidence boundary: template unit tests, semantic-alignment tests,
   formatter checks and native smoke checks when the host toolchain is available.

@@ -110,11 +110,11 @@
 
 五套内置模板的 ``config.yaml`` 都声明了 ``features: [region]``\ （见 :ref:`sec-reference-template-config-features-zh`），所以 ``pyfcstm generate --template <name>`` 能渲染声明了 ``region`` 块的模型，嵌套的区域（region）也不例外。自定义模板目录遇到这样的模型会被拒绝，除非它自己声明了这个特性。拒绝的文字见 :doc:`/reference/template_config/index_zh`。生成的运行时遵循模拟器对区域的规则：区域的拥有者（owner）按书写顺序推进各个区域，靠后的区域能读到靠前区域在同一周期写入的值，机器的位置是一棵树而不是一条路径，由配置（configuration）值表示。这些规则见 :doc:`/explanations/region_semantics/index_zh`。
 
-下面的事实取自 ``pyfcstm generate --template X`` 为 ``region_controller.fcstm``\ （``Running`` 里有两个区域）和 ``region_plain.fcstm``\ （没有区域）写出的文件，以及各自生成的 ``README.md``。仓库的模板测试把 118 个共享区域用例（``test/fixtures/simulate_semantics/cases`` 下的 ``region_*.yaml``）对每个内置模板运行一遍：Python 模板与 ``SimulationRuntime`` 对比，四套 C 家族模板则编译后运行并与它对比。本页没有重跑这些测试套件。
+下面的事实取自 ``pyfcstm generate --template X`` 为 ``controller.fcstm``\ （``Running`` 里有两个区域）和 ``region_plain.fcstm``\ （没有区域）写出的文件，以及各自生成的 ``README.md``。仓库的模板测试把 118 个共享区域用例（``test/fixtures/simulate_semantics/cases`` 下的 ``region_*.yaml``）对每个内置模板运行一遍：Python 模板与 ``SimulationRuntime`` 对比，四套 C 家族模板则编译后运行并与它对比。本页没有重跑这些测试套件。
 
-.. literalinclude:: region_controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
-   :caption: region_controller.fcstm
+   :caption: controller.fcstm
 
 .. literalinclude:: region_plain.fcstm
    :language: fcstm
@@ -187,19 +187,194 @@ Python 运行时
    * - 事件名
      - 绝对路径、以 ``/`` 开头的路径、以 ``.`` 开头的相对路径，或短名。含区域的模型里，短名对每个活动叶子各解析一次；一个都找不到抛出 ``SimulationRuntimeEventError``，找到的相同则使用，找到的不同则报歧义并列出全部候选。处于 ``[init]`` 的区域没有活动叶子，不参与解析。
 
-下面的运行为两个模型生成 Python 运行时并驱动它。它展示 ``/Start`` 事件前后的位置文本、四种区域状态、区域模型上不存在的 ``current_state_path``、被拒绝的路径、``initial_state`` 的六种写法及其位置、全部 ``[done]`` 的拒绝、一个包住两个区域的动作的钩子上下文，以及不含区域的模型上的同样成员。
+下面的命令为三个模型生成 Python 运行时，其后的脚本驱动生成出的 ``machine.py``\ 。
 
-.. literalinclude:: region_python_runtime.demo.py
-   :language: python
-   :caption: region_python_runtime.demo.py
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o controller_py
+   $ pyfcstm generate -i region_probe.fcstm --template python -o probe_py
+   $ pyfcstm generate -i region_plain.fcstm --template python -o plain_py
+
+第一个脚本冷启动控制器，读取 ``/Start`` 事件前后的位置文本、四种区域状态，以及 ``/Stop`` 之后的隐藏变量：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   sensors = {"fault": 0, "requested": 1}
+   machine.cycle(inputs=sensors)
+   print("first cycle:", machine.configuration)
+   machine.cycle("/Start", inputs=sensors)
+   print("after /Start:", machine.configuration)
+   machine.cycle(inputs=sensors)
+   print("next cycle:", machine.configuration)
+   print("motor:", machine.vars["motor"])
+   print("leaves:", machine.leaves)
+   print("is_active(Controller.Running):", machine.is_active("Controller.Running"))
+   print("is_active(Controller.Idle):", machine.is_active("Controller.Idle"))
+   for path in ("Controller.Running.Safety", "Controller.Running.Motion"):
+       print("region_status(%s): %s" % (path, machine.region_status(path)))
+   machine.cycle("/Stop", inputs=sensors)
+   print("after /Stop:", machine.configuration)
+   print("region_status(Controller.Running.Safety):", machine.region_status("Controller.Running.Safety"))
+   print("hidden variable __forced_0:", machine.vars["__forced_0"])
+
+.. testoutput::
+
+   first cycle: Controller.Idle
+   after /Start: Controller.Running{Safety: Watching, Motion: Off}
+   next cycle: Controller.Running{Safety: Watching, Motion: On}
+   motor: 1
+   leaves: (('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'On'))
+   is_active(Controller.Running): True
+   is_active(Controller.Idle): False
+   region_status(Controller.Running.Safety): live
+   region_status(Controller.Running.Motion): live
+   after /Stop: Controller.Idle
+   region_status(Controller.Running.Safety): inactive
+   hidden variable __forced_0: 0
+
+第二个脚本展示区域模型上不存在的 ``current_state_path`` 和被拒绝的路径：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   try:
+       machine.current_state_path
+   except AttributeError as err:
+       print("AttributeError:", err)
+   for path in ("Controller.Idle", "Controller.Nowhere"):
+       try:
+           machine.region_status(path)
+       except ValueError as err:
+           print("ValueError:", err)
+
+.. testoutput::
+
+   AttributeError: 'ControllerMachine' object has no attribute 'current_state_path'
+   ValueError: region_status requires a Region path.
+   ValueError: Unknown configuration path: 'Controller.Nowhere'.
+
+第三个脚本给出 ``initial_state`` 的六种写法及其位置，以及所有区域都是 ``[done]`` 时的拒绝：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   base_vars = {"permit": 0, "motor": 0, "__forced_0": 0}
+   spellings = [
+       ("configuration text", "Controller.Running{Safety: Watching, Motion: On}"),
+       ("text, region left out", "Controller.Running{Motion: On}"),
+       ("text, region [init]", "Controller.Running{Safety: Watching, Motion: [init]}"),
+       ("dotted path through a region", "Controller.Running.Motion.On"),
+       ("owner path only", "Controller.Running"),
+       ("tuple", ("Controller", "Running", "Motion", "On")),
+   ]
+   for label, state in spellings:
+       m = ControllerMachine(initial_state=state, initial_vars=dict(base_vars))
+       print("%s: %s | Safety=%s Motion=%s" % (
+           label, m.configuration,
+           m.region_status("Controller.Running.Safety"),
+           m.region_status("Controller.Running.Motion")))
+   try:
+       ControllerMachine(
+           initial_state="Controller.Running{Safety: [done], Motion: [done]}",
+           initial_vars=dict(base_vars))
+   except ValueError as err:
+       print("ValueError:", err)
+
+.. testoutput::
+
+   configuration text: Controller.Running{Safety: Watching, Motion: On} | Safety=live Motion=live
+   text, region left out: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   text, region [init]: Controller.Running{Safety: Watching, Motion: [init]} | Safety=live Motion=pending
+   dotted path through a region: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   owner path only: Controller.Running{Safety: [init], Motion: [init]} | Safety=pending Motion=pending
+   tuple: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+
+第四个脚本是一个包住两个区域的动作的钩子上下文，模型如下：
 
 .. literalinclude:: region_probe.fcstm
    :language: fcstm
    :caption: region_probe.fcstm
 
-.. literalinclude:: region_python_runtime.demo.py.txt
-   :language: text
-   :caption: region_python_runtime.demo.py 的输出
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "probe_py")
+   from machine import LineMachine
+
+
+   class Probe(LineMachine):
+       def read_fault(self):
+           return 0
+
+       def _log(self, name, ctx):
+           print("%s: state_path=%s active_leaf=%s configuration=%s" % (
+               name, ".".join(ctx.state_path), ".".join(ctx.active_leaf), ctx.configuration))
+
+       def _abstract_hook_Line_Boot(self, ctx):
+           self._log("Boot", ctx)
+
+       def _abstract_hook_Line_Work_Left_L_Tick(self, ctx):
+           self._log("Tick", ctx)
+
+       def _abstract_hook_Line_Work_Settle(self, ctx):
+           self._log("Settle", ctx)
+
+
+   probe = Probe()
+   probe.cycle()
+   print("cycle 1 configuration:", probe.configuration)
+   probe.cycle()
+
+.. testoutput::
+
+   Boot: state_path=Line active_leaf=Line configuration=Line
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: [init]}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+   cycle 1 configuration: Line.Work{Left: L, Right: R}
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: R}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+
+最后一个脚本展示不含区域的模型上的同样成员：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "plain_py")
+   from machine import PlainMachine
+
+   plain = PlainMachine()
+   plain.cycle()
+   print("current_state_path:", plain.current_state_path)
+   print("current_state_name:", plain.current_state_name)
+   print("configuration:", plain.configuration)
+   print("leaves:", plain.leaves)
+   print("has region_status:", hasattr(plain, "region_status"))
+
+.. testoutput::
+
+   current_state_path: ('Plain', 'Idle')
+   current_state_name: Idle
+   configuration: Plain.Idle
+   leaves: (('Plain', 'Idle'),)
+   has region_status: False
 
 读输出时注意：
 
@@ -249,13 +424,13 @@ C 家族运行时
    :header-rows: 1
 
    * - 宏
-     - ``region_controller.fcstm``
+     - ``controller.fcstm``
      - ``region_plain.fcstm``
      - 含义
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
      - 8
-     - 一个周期的一次判定最多能检查多少个配置和待办项。默认值取决于模型：``region_controller.fcstm`` 是 ``max(24, 12 * scopes)``，降级后有 7 个状态和 2 个区域，共 9。
+     - 一个周期的一次判定最多能检查多少个配置和待办项。默认值取决于模型：``controller.fcstm`` 是 ``max(24, 12 * scopes)``，降级后有 7 个状态和 2 个区域，共 9。
    * - ``<PREFIX>_TRAIL_CAPACITY``
      - 52
      - 4
@@ -287,13 +462,96 @@ C 家族运行时
    :language: cpp
    :caption: region_cpp_poll_runtime.cpp（``cpp_poll`` 模板的驱动程序）
 
-.. literalinclude:: region_c_family.demo.sh
-   :language: bash
-   :caption: region_c_family.demo.sh（生成、编译并运行每个驱动程序）
+头文件里的事实不需要编译器。下面的命令为两个模型生成 ``c`` 运行时，并从 ``machine.h`` 读出容量宏、区域个数和 ``current_state_`` 函数：
 
-.. literalinclude:: region_c_family.demo.sh.txt
-   :language: text
-   :caption: region_c_family.demo.sh 的输出
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o out_c
+   $ pyfcstm generate -i region_plain.fcstm --template c -o out_plain_c
+   $ grep -E "^#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) " out_c/machine.h out_plain_c/machine.h
+   out_c/machine.h:#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   out_c/machine.h:#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   out_c/machine.h:#define CONTROLLER_MACHINE_STORAGE_BYTES (944 + (CONTROLLER_MACHINE_ARENA_CAPACITY) * 108 + (CONTROLLER_MACHINE_TRAIL_CAPACITY) * 32)
+   out_c/machine.h:#define CONTROLLER_MACHINE_REGION_COUNT 2
+   out_plain_c/machine.h:#define PLAIN_MACHINE_ARENA_CAPACITY 8
+   out_plain_c/machine.h:#define PLAIN_MACHINE_TRAIL_CAPACITY 4
+   out_plain_c/machine.h:#define PLAIN_MACHINE_STORAGE_BYTES (848 + (PLAIN_MACHINE_ARENA_CAPACITY) * 68 + (PLAIN_MACHINE_TRAIL_CAPACITY) * 32)
+   out_plain_c/machine.h:#define PLAIN_MACHINE_REGION_COUNT 0
+   $ grep -l current_state_ out_c/machine.h out_plain_c/machine.h
+   out_plain_c/machine.h
+
+编译并运行驱动程序需要 C 和 C++ 编译器，所以下面的命令不在文档检查里运行。它们生成每个模板、编译上面为它列出的驱动程序并运行；命令之后的输出是这个版本的一次真实运行记录，而 C 家族运行时与仿真器是否一致，由模板测试检查。
+
+.. code-block:: bash
+
+   # c: generate, compile as C99 and run the driver
+   pyfcstm generate -i controller.fcstm --template c -o out_c
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c out_c/machine.c region_c_runtime.c -lm -o c_driver
+   ./c_driver
+
+   # c: the hook context driver, on the model of region_probe.fcstm
+   pyfcstm generate -i region_probe.fcstm --template c -o out_hooks
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_hooks out_hooks/machine.c region_c_hooks.c -lm -o hooks_driver
+   ./hooks_driver
+
+   # cpp: the C++98 wrapper over the same C core
+   pyfcstm generate -i controller.fcstm --template cpp -o out_cpp
+   cc -std=c99 -O1 -c out_cpp/machine.c -o out_cpp/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp out_cpp/machine.cpp region_cpp_runtime.cpp out_cpp/machine_c.o -lm -o cpp_driver
+   ./cpp_driver
+
+   # c_poll: event checks are queried during the cycle
+   pyfcstm generate -i controller.fcstm --template c_poll -o out_c_poll
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c_poll out_c_poll/machine.c region_c_poll_runtime.c -lm -o c_poll_driver
+   ./c_poll_driver
+
+   # cpp_poll: the C++98 wrapper over the polling core
+   pyfcstm generate -i controller.fcstm --template cpp_poll -o out_cpp_poll
+   cc -std=c99 -O1 -c out_cpp_poll/machine.c -o out_cpp_poll/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp_poll out_cpp_poll/machine.cpp region_cpp_poll_runtime.cpp out_cpp_poll/machine_c.o -lm -o cpp_poll_driver
+   ./cpp_poll_driver
+
+下面是同一顺序的输出记录（以 ``==`` 开头的行标明各次运行）：
+
+.. code-block:: text
+
+   == c: model with regions (controller.fcstm)
+   cycle 1: Controller.Idle | at=1 regions=[0, 0] | motor=0
+   cycle 2 (/Start): Controller.Running{Safety: Watching, Motion: Off} | at=2 regions=[3, 4] | motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   REGION_COUNT = 2
+   Safety status = 2 (LIVE is 2)
+   Running active = 1, Idle active = 0
+   leaf count = 2
+   leaf ids = 3, 5
+   parsed: Controller.Running{Safety: [init], Motion: On}
+   refused: kind=5 position=0 message=Path passes through the regions of 'Controller.Running' at byte 0.
+   refused: kind=6 position=19 message=Unknown region 'Speed' at byte 19.
+   refused: kind=7 position=31 message=Duplicate region 'Motion' at byte 31.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   cycle after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   ARENA_CAPACITY = 108, TRAIL_CAPACITY = 52, STORAGE_BYTES = 14272
+   sizeof(machine) >= STORAGE_BYTES: 1
+   == c: hook context (region_probe.fcstm)
+   Boot: state_id=0 active_leaf_state_id=0 configuration=Line
+   Tick: state_id=2 active_leaf_state_id=2 configuration=Line.Work{Left: L, Right: [init]}
+   state ids: Line=0 Work=1 Left.L=2 Right.R=3
+   == cpp: wrapper over the same core
+   after three cycles: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   Safety status = 2
+   valid = 1
+   saved == parsed: 0
+   saved != parsed: 1
+   refused: kind=3 message=Unknown name 'Idle' at byte 27.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   == c_poll: event checks are queried during the cycle
+   cycle 1: Controller.Idle | start checks so far=0 stop checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1 stop checks so far=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2 stop checks so far=0
+   == cpp_poll: wrapper over the polling core
+   cycle 1: Controller.Idle | start checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2
 
 读输出时注意：
 
@@ -523,5 +781,5 @@ C++ 模板按设计复用 C 核心。``cpp`` 复用 C99 核心；``cpp_poll`` �
 * 事件输入模型：生成 README、运行时模板和模板测试；
 * C 家族辅助和固定宽度代码体事实：``pyfcstm/render/c_runtime.py``；
 * 包装层事实：``templates/cpp``、``templates/cpp_poll`` 源模板和包装层冒烟测试；
-* 区域支持：每个 ``templates/<name>/config.yaml`` 里的 ``features``、C 内核发射器 ``pyfcstm/render/c_kernel.py``、``pyfcstm/render/c_kernel_engine.py`` 与 ``pyfcstm/render/c_configuration.py``，以及 ``pyfcstm generate --template <name>`` 为 ``region_controller.fcstm`` 和 ``region_plain.fcstm`` 写出的文件；
+* 区域支持：每个 ``templates/<name>/config.yaml`` 里的 ``features``、C 内核发射器 ``pyfcstm/render/c_kernel.py``、``pyfcstm/render/c_kernel_engine.py`` 与 ``pyfcstm/render/c_configuration.py``，以及 ``pyfcstm generate --template <name>`` 为 ``controller.fcstm`` 和 ``region_plain.fcstm`` 写出的文件；
 * 当前证据边界：模板单元测试、语义对齐测试、格式化检查，以及主机工具链可用时的本机冒烟检查。

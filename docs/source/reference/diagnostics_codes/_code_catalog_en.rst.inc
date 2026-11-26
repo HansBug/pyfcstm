@@ -503,19 +503,7 @@ The chosen consumer cannot preserve a region model. Every consumer in the Python
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
 
-A custom template directory whose ``config.yaml`` has no ``features`` key is refused for a model with regions. The demo prints the template config, the refusal on stderr with its exit status, whether the output directory was created, and the same model generated with the built-in ``python`` template. The paths in the message are shortened to relative form in the recorded output.
-
-.. literalinclude:: region_two_regions.fcstm
-   :language: fcstm
-   :caption: region_two_regions.fcstm
-
-.. literalinclude:: region_unsupported.demo.sh
-   :language: bash
-   :caption: region_unsupported.demo.sh
-
-.. literalinclude:: region_unsupported.demo.sh.txt
-   :language: text
-   :caption: region_unsupported.demo.sh.txt
+A custom template directory whose ``config.yaml`` has no ``features`` key is refused for a model with regions. The terminal record in :ref:`diag-region-examples` shows the template config, the refusal with its exit status, the missing output directory, and the same model generated with the built-in ``python`` template.
 
 Read the refusal in this order: the first line names the template directory; the second line states how many regions the model declares and where the first one is; ``If you write this template`` says what to declare; ``If you write the model`` lists the built-in templates that declare ``region`` and gives a command that can be copied. No file is written, and an existing output directory is not cleared.
 
@@ -525,7 +513,7 @@ Declare ``features: [region]`` in the ``config.yaml`` of a custom template only 
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
 
-Generation refuses the model before clearing or replacing existing output, so a failed run leaves the previous output intact (the demo above shows that the output directory is not created). An ordinary model without regions is unaffected by the missing declaration.
+Generation refuses the model before clearing or replacing existing output, so a failed run leaves the previous output intact (the terminal record in :ref:`diag-region-examples` shows that the output directory is not created). An ordinary model without regions is unaffected by the missing declaration.
 
 .. _diag-code-e-active-query-target:
 
@@ -569,16 +557,11 @@ A path that names no child is rejected with reason ``not_found``. The expression
    :language: fcstm
    :caption: region_diag_active_not_found.fcstm.txt (negative example, do not copy)
 
-.. literalinclude:: region_codes_refs.demo.py.txt
-   :language: text
-   :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_active_not_found.fcstm.txt
-
-``span`` ``[2, 28, 2, 50]`` is the ``active("Root.Unknown")`` call on line 2, and ``refs.state_path`` is the path as written after import rebasing.
+The terminal record and the structured diagnostic in :ref:`diag-region-examples` show the result. The span ``line=2, column=28, end_line=2, end_column=50`` is the ``active("Root.Unknown")`` call on line 2, and ``refs.state_path`` is the path as written after import rebasing.
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
 
-The five reasons, with the CLI result of each (the same demo output as above):
+The five reasons, with the CLI result of each (see :ref:`diag-region-examples`):
 
 .. list-table:: ``refs.reason`` values of ``E_ACTIVE_QUERY_TARGET``
    :header-rows: 1
@@ -603,12 +586,6 @@ The five reasons, with the CLI result of each (the same demo output as above):
      - The query sits in a persistent variable initializer.
      - Not reachable from text; see the next example.
 
-.. literalinclude:: region_codes.demo.sh.txt
-   :language: text
-   :caption: region_codes.demo.sh.txt
-   :start-after: === E_ACTIVE_QUERY_TARGET ===
-   :end-before: === active() in a persistent
-
 Every rejection exits with status 1 and prints no report.
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
@@ -619,10 +596,7 @@ A persistent initializer has no active configuration to query, so ``initializer`
    :language: fcstm
    :caption: region_diag_active_initializer.fcstm.txt (negative example, do not copy)
 
-.. literalinclude:: region_codes.demo.sh.txt
-   :language: text
-   :caption: region_codes.demo.sh.txt
-   :start-after: === active() in a persistent initializer is a syntax error ===
+The terminal record in :ref:`diag-region-examples` shows that syntax error.
 
 Do not turn a region into a query target either; query a state inside it.
 
@@ -662,26 +636,11 @@ A region is empty, a state mixes direct states and regions, a parallel owner con
 
 .. diagnostics-example E_REGION_STRUCTURE 1 cli_error
 
-A region without any state is rejected with reason ``empty_region``. The demo runs the CLI on the broken model, on the repaired one, and on the other cases of this code. Then a Python demo prints the structured diagnostic that model construction collects (a span is ``[line, column, end_line, end_column]``).
+A region without any state is rejected with reason ``empty_region``. The terminal record in :ref:`diag-region-examples` runs the CLI on the broken model, on the repaired one, and on the other cases of this code, and a script prints the structured diagnostic that model construction collects.
 
 .. literalinclude:: region_diag_empty_region.fcstm.txt
    :language: fcstm
    :caption: region_diag_empty_region.fcstm.txt (negative example, do not copy)
-
-.. literalinclude:: region_codes.demo.sh.txt
-   :language: text
-   :caption: region_codes.demo.sh.txt
-   :start-after: === E_REGION_STRUCTURE ===
-   :end-before: === E_DUPLICATE_REGION ===
-
-.. literalinclude:: region_codes_refs.demo.py
-   :language: python
-   :caption: region_codes_refs.demo.py
-
-.. literalinclude:: region_codes_refs.demo.py.txt
-   :language: text
-   :caption: region_codes_refs.demo.py.txt
-   :end-before: --- region_diag_duplicate.fcstm.txt
 
 The CLI prints one line, the message with the line number of the offending construct, and exits with status 1 without a report. The structured form carries ``namespace_path`` (the full path of the invalid namespace), ``reason`` and ``source_path``.
 
@@ -701,19 +660,19 @@ The four reasons, in the priority order in which they are checked on each node (
      - ``region Empty {}`` in text; the first example above.
    * - ``mixed_children``
      - A state has both direct child states and regions.
-     - Not expressible in text: ``region_diag_mixed_children.fcstm.txt`` fails in the parser, as the demo output shows. Reachable only by building the AST with the public node classes.
+     - Not expressible in text: ``region_diag_mixed_children.fcstm.txt`` fails in the parser, as the terminal record shows. Reachable only by building the AST with the public node classes.
    * - ``owner_statements``
      - A state that owns regions also has its own transitions, forced transitions, imports or histories.
      - Not expressible in text: ``region_diag_owner_transition.fcstm.txt`` fails in the parser. Reachable only through the public AST classes.
    * - ``history_boundary``
      - A state with a history entry has a region anywhere in its subtree.
-     - ``region_diag_history_boundary.fcstm.txt`` in the demo output: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
+     - ``region_diag_history_boundary.fcstm.txt`` in the terminal record: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
 
-A valid replacement of the first example is a region with a state and an initial transition (``region_diag_empty_region_fixed.fcstm``, accepted in the demo). One direct region is allowed and does not produce a warning.
+A valid replacement of the first example is a region with a state and an initial transition (``region_diag_empty_region_fixed.fcstm``, accepted in the terminal record). One direct region is allowed and does not produce a warning.
 
 .. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
 
-History inside an ordinary subtree is permitted, and so are regions elsewhere in the machine: ``region_diag_history_outside.fcstm`` puts ``[H]`` on ``Root.P`` and the regions under the sibling ``Root.Q``, and the demo output shows it accepted with two regions. A history owner whose subtree contains regions is the only forbidden combination. A region cannot directly contain an import, and a transition declared on the owner is not allowed; move local transitions inside the regions and imports inside ordinary child states.
+History inside an ordinary subtree is permitted, and so are regions elsewhere in the machine: ``region_diag_history_outside.fcstm`` puts ``[H]`` on ``Root.P`` and the regions under the sibling ``Root.Q``, and the terminal record shows it accepted with two regions. A history owner whose subtree contains regions is the only forbidden combination. A region cannot directly contain an import, and a transition declared on the owner is not allowed; move local transitions inside the regions and imports inside ordinary child states.
 
 .. literalinclude:: region_diag_history_outside.fcstm
    :language: fcstm
@@ -766,19 +725,7 @@ Two direct regions of one owner with the same name are rejected. The CLI line ca
    :language: fcstm
    :caption: region_diag_duplicate.fcstm.txt (negative example, do not copy)
 
-.. literalinclude:: region_codes.demo.sh.txt
-   :language: text
-   :caption: region_codes.demo.sh.txt
-   :start-after: === E_DUPLICATE_REGION ===
-   :end-before: === E_ACTIVE_QUERY_TARGET ===
-
-.. literalinclude:: region_codes_refs.demo.py.txt
-   :language: text
-   :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_duplicate.fcstm.txt
-   :end-before: --- region_diag_active_not_found.fcstm.txt
-
-Read ``span`` ``[3, 5, 3, 42]`` as the second ``region A`` on line 3 and ``previous_span`` ``[2, 5, 2, 42]`` as the first on line 2.
+The terminal record in :ref:`diag-region-examples` shows both. Read the span ``line=3, column=5, end_line=3, end_column=42`` as the second ``region A`` on line 3 and ``previous_span`` ``line=2, column=5, end_line=2, end_column=42`` as the first on line 2.
 
 .. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
 
@@ -786,7 +733,7 @@ Rename the second region (for example to ``B``) and update every path that names
 
 .. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
 
-Uniqueness is per owner, not global. ``region_diag_same_name_two_owners.fcstm`` declares ``A`` under both ``Root.P`` and ``Root.Q``, and the child state ``Idle`` in both ``Root.P.A`` and ``Root.P.B``; the demo output above shows it accepted with three regions.
+Uniqueness is per owner, not global. ``region_diag_same_name_two_owners.fcstm`` declares ``A`` under both ``Root.P`` and ``Root.Q``, and the child state ``Idle`` in both ``Root.P.A`` and ``Root.P.B``; the terminal record in :ref:`diag-region-examples` shows it accepted with three regions.
 
 .. literalinclude:: region_diag_same_name_two_owners.fcstm
    :language: fcstm
@@ -2093,17 +2040,11 @@ This diagnostic appears in a successful inspect report. Reproduce it with ``pyfc
 .. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
-A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration. With ``owner_never_completes`` the repair is on the regions, not the transition: give every region of the owner a ``[*]`` exit, or leave the owner with a forced transition. In the output below, ``Monitor`` has no exit, so ``Job -> Next`` is reported and ``Root.Next`` is unreachable; ``region_owner_completes.fcstm`` fixes it.
+A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration. With ``owner_never_completes`` the repair is on the regions, not the transition: give every region of the owner a ``[*]`` exit, or leave the owner with a forced transition. In the terminal record and the script output of :ref:`inspect-report-region-reachability`, ``Monitor`` has no exit, so ``Job -> Next`` is reported and ``Root.Next`` is unreachable; ``region_owner_completes.fcstm`` fixes it.
 
 .. literalinclude:: /reference/inspect_report/region_owner_never_completes.fcstm
    :language: fcstm
    :caption: region_owner_never_completes.fcstm (in the inspect report reference directory)
-
-.. literalinclude:: /reference/inspect_report/region_reachability.demo.sh.txt
-   :language: text
-   :caption: region_reachability.demo.sh.txt
-   :start-after: === owner of regions ===
-   :end-before: === plain composite state, no regions ===
 
 .. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
 

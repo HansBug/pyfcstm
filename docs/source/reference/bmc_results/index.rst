@@ -65,7 +65,7 @@ Invocation and frozen option surface
 
 Both installed entry forms have the same behavior:
 
-.. code-block:: console
+.. code-block:: text
 
    pyfcstm bmc -i machine.fcstm -q property.fbmcq [OPTIONS]
    python -m pyfcstm bmc -i machine.fcstm -q property.fbmcq [OPTIONS]
@@ -671,34 +671,53 @@ EXPLANATION`` or ``VERIFIED DOMAIN PROOF``.
 achieved depth to name, so the headline names the depth that was *requested*,
 followed by ``NOT ACHIEVED``.
 
-Four runs against the benchmark corpus, covering both halves of the rule:
+The runs below cover both halves of the rule. The first commands write two small models and their queries; the files stay in the working directory for the later examples of this page:
 
 .. code-block:: console
 
+   $ echo 'def int retries = 0; def int pressure = 0; state Controller { event Purge; state Idle; state Purging; state Vented; [*] -> Idle; Idle -> Purging :: Purge; Purging -> Vented; }' > latch.fcstm
+   $ printf 'assume at 1: var("retries") == 1;\nassume at 1: var("retries") == 2;\ncheck reach <= 2: active("Controller.Vented");\n' > two_values.fbmcq
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never
+   ...
    Explanation: COMPLETE VERIFIED DOMAIN PROOF
-
+   ...
+   $ echo $?
+   3
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never
+   ...
    Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
-
-   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+   ...
+   $ echo $?
+   3
+   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
+   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
        --explain-infeasibility proof --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Explanation depth: requested proof, achieved formal
-   Reason: the formal explanation is complete, but no rule in the catalog closes
-   this core.
-
+   ...
+   Reason: the formal explanation is structural_only, but no rule in the catalog closes this core.
+   ...
+   $ echo $?
+   3
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never --timeout-ms 1
+   ...
    Explanation: PROOF EXPLANATION NOT ACHIEVED
-
+   ...
+   $ echo $?
+   3
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never --timeout-ms 1
+   ...
    Explanation: FORMAL EXPLANATION NOT ACHIEVED
-   Reason: component probe did not start: budget exhausted before the probe
-   started; ...
+   Reason: component probe did not start: budget exhausted before the probe started; ...
+   ...
+   $ echo $?
+   3
 
 Applying the rule to the pairing not shown: a proof that was built but reported
 ``partial`` would open on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is
@@ -1042,16 +1061,22 @@ learns immediately, and a consumer that only reads results never needs the matri
 at all.
 
 A request for ``proof`` that degrades therefore reports ``achieved_mode`` as
-``formal``, and ``reason`` names the cause.  Against the same model and a query
-whose conflict needs a transition reading:
+``formal``, and ``reason`` names the cause.  Against a model whose transition effect
+increments ``retries`` and a query that assumes another value (``effect.fcstm`` and
+``needs_effect.fbmcq`` above):
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
+       --explain-infeasibility proof --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Explanation depth: requested proof, achieved formal
    ...
-   Reason: the formal explanation is complete, but no rule in the catalog closes
-   this core.
+   Reason: the formal explanation is structural_only, but no rule in the catalog closes this core.
+   ...
+   $ echo $?
+   3
 
 Degradation is not failure: the formal block still names the classification, the
 subset-minimal core and every source location.  For some conflicts it says *more*
@@ -1535,14 +1560,28 @@ runs several branches in writing order.  The result protocol describes this
 with a small set of *optional* fields.  Every one of them is absent for a model
 without regions, so a consumer written for the earlier shape keeps working; the
 schema marks none of them required.  The examples use the models next to this
-page (``region_job.fcstm``, ``region_controller.fcstm``, ``region_calls.fcstm``,
+page (``region_job.fcstm``, ``controller.fcstm``, ``region_calls.fcstm``,
 ``region_nested.fcstm``, ``region_safety.fcstm``, ``region_reentry.fcstm`` and
-``region_plain.fcstm``) and the unabridged output is
-:ref:`included at the end of this part <bmc-results-region-evidence>`.
+``region_plain.fcstm``) and every example runs the real command or script. Each query is first written into a ``.fbmcq`` file with ``echo``, and the JSON results stay in the working directory for the scripts that follow.
 
 .. literalinclude:: region_job.fcstm
    :language: fcstm
-   :caption: region_job.fcstm, the model behind the witness excerpts
+   :caption: region_job.fcstm, the model behind the witness examples
+
+The five results that the scripts below read are produced first. ``controller.fcstm`` is the shared controller model:
+
+.. code-block:: console
+
+   $ echo 'check reach <= 6: active("Job.Next");' > job_next.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q job_next.fbmcq --json -o job.json
+   $ echo 'check cover <= 3: case("Controller.Idle::transition::Controller.Running::0");' > ctrl_case.fbmcq
+   $ pyfcstm bmc -i controller.fcstm -q ctrl_case.fbmcq --json -o ctrl.json
+   $ echo 'init state("Job.Run{Work: Busy}"); check reach <= 1: true;' > hot.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q hot.fbmcq --json -o hot.json
+   $ echo 'check reach <= 2: called("Root.Run.B.B1.BEnter");' > calls.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q calls.fbmcq --json -o calls.json
+   $ echo 'check reach <= 2: active("Root.Busy");' > plain.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q plain.fbmcq --json -o plain.json
 
 .. list-table:: Fields that exist only for models with regions
    :header-rows: 1
@@ -1588,10 +1627,21 @@ page (``region_job.fcstm``, ``region_controller.fcstm``, ``region_calls.fcstm``,
 ``case_label`` and ``witness.property.case_label`` are not new fields, but they
 change meaning slightly: for a model with regions, ``case_label`` is the label
 of the case that ran *outside every region* (the case whose ``scope`` is
-``null``), or ``null`` when the step ran none.  Excerpt (``region_controller.fcstm``,
-property ``cover`` of ``Controller.Idle::transition::Controller.Running::0``):
+``null``), or ``null`` when the step ran none.  The script reads the result of
+``controller.fcstm`` with the property ``cover`` of
+``Controller.Idle::transition::Controller.Running::0``:
 
-.. code-block:: text
+.. testcode::
+
+   import json
+
+   witness = json.load(open("ctrl.json"))["witness"]
+   for step in witness["steps"]:
+       print("step %d: case_label=%s" % (step["index"], step["case_label"]))
+       for case in step["local_cases"]:
+           print("    %s %s %s" % (case["scope"], case["kind"], case["label"]))
+
+.. testoutput::
 
    step 0: case_label=__init__::initial::Controller.Idle::0
        None initial __init__::initial::Controller.Idle::0
@@ -1611,14 +1661,36 @@ consumer that looked up ``case_label`` on every step must handle ``null`` for
 these steps.
 
 The ``local_cases`` of ``region_job.fcstm`` over six steps show the writing
-order and the three kinds (excerpt):
+order and the three kinds:
 
-.. code-block:: text
+.. testcode::
 
-   step 1: case_label=None case_kind=transition
+   import json
+
+   witness = json.load(open("job.json"))["witness"]
+   for step in witness["steps"]:
+       print("step %d: case_kind=%s" % (step["index"], step["case_kind"]))
+       for case in step["local_cases"]:
+           print("    %s %s %s" % (case["scope"], case["kind"], case["label"]))
+
+.. testoutput::
+
+   step 0: case_kind=initial
+       None initial __init__::initial::Job.Run::0
+       Job.Run initial Job.Run::initial::Job.Run.Prep.Wait::0
+       Job.Run initial Job.Run::initial::Job.Run.Work.Idle::0
+   step 1: case_kind=transition
        Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
        Job.Run.Work transition Job.Run.Work.Idle::transition::Job.Run.Work.Busy::0
-   step 5: case_label=None case_kind=transition
+   step 2: case_kind=fallback
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work fallback Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0
+   step 3: case_kind=transition
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work transition Job.Run.Work.Busy::transition::__region_done__::0
+   step 4: case_kind=transition
+       Job.Run.Prep transition Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0
+   step 5: case_kind=transition
        Job.Run.Prep transition Job.Run.Prep.Ready::transition::__region_done__::0
        Job.Run transition Job.Run::transition::Job.Next::0
 
@@ -1627,15 +1699,44 @@ Step 5 reads: ``Prep`` finished first (it is written first), then the owner
 (one region fell back, one moved) has ``transition`` and step 2 (every region
 fell back) has ``fallback``.
 
-.. code-block:: text
+.. testcode::
+
+   import json
+
+   witness = json.load(open("job.json"))["witness"]
+   for frame in witness["frames"]:
+       print("frame %d: %s" % (frame["index"], frame.get("configuration")))
+
+.. testoutput::
 
    frame 0: None
    frame 1: Job.Run{Prep: Wait, Work: Idle}
+   frame 2: Job.Run{Prep: Wait, Work: Busy}
+   frame 3: Job.Run{Prep: Wait, Work: Busy}
    frame 4: Job.Run{Prep: Wait, Work: [done]}
+   frame 5: Job.Run{Prep: Ready, Work: [done]}
    frame 6: Job.Next
 
+.. testcode::
+
+   import json
+
+   for name in ("job", "plain"):
+       witness = json.load(open(name + ".json"))["witness"]
+       print(name, "frame keys:", sorted(witness["frames"][1]))
+       print(name, "step keys:", sorted(witness["steps"][0]))
+   print("case_label of step 0:", witness["steps"][0]["case_label"])
+
+.. testoutput::
+
+   job frame keys: ['configuration', 'index', 'sentinel', 'state', 'state_id', 'terminated', 'vars']
+   job step keys: ['abstract_calls', 'case_kind', 'case_label', 'consumed_events', 'delta', 'event_reads', 'gamma', 'index', 'input_events', 'input_reads', 'inputs', 'local_cases', 'progress', 'source_frame', 'source_state', 'target_frame', 'target_state', 'unconsumed_events']
+   plain frame keys: ['index', 'sentinel', 'state', 'state_id', 'terminated', 'vars']
+   plain step keys: ['abstract_calls', 'case_kind', 'case_label', 'consumed_events', 'delta', 'event_reads', 'gamma', 'index', 'input_events', 'input_reads', 'inputs', 'progress', 'source_frame', 'source_state', 'target_frame', 'target_state', 'unconsumed_events']
+   case_label of step 0: __init__::initial::Root.Idle::0
+
 ``frame 0: None`` is the cold-start sentinel with no ``configuration`` key (the
-excerpt prints ``None`` for the missing key).  The same query on a model
+script prints ``None`` for the missing key).  The same query on a model
 without regions has frame keys ``index, sentinel, state, state_id, terminated,
 vars`` and step keys without ``local_cases``, with ``case_label`` still set
 (``__init__::initial::Root.Idle::0`` on step 0): nothing is added and nothing
@@ -1643,11 +1744,18 @@ is renamed.
 
 A hot start records the position that was constructed:
 
-.. code-block:: text
+.. testcode::
 
-   query:  init state("Job.Run{Work: Busy}"); check reach <= 1: true;
-   witness.initial.configuration: Job.Run{Prep: [init], Work: Busy}
-   witness.initial.state:         Job.Run
+   import json
+
+   initial = json.load(open("hot.json"))["witness"]["initial"]
+   print(initial["configuration"])
+   print(initial["state"])
+
+.. testoutput::
+
+   Job.Run{Prep: [init], Work: Busy}
+   Job.Run
 
 ``initial.state`` is the owner path and ``initial.configuration`` carries what
 the state path cannot: the position of every region.
@@ -1658,12 +1766,24 @@ Calls in a witness
 Each call record of ``region_calls.fcstm`` (``check reach <= 2: called("Root.Run.B.B1.BEnter");``,
 step 0) names the configuration the handler would have seen:
 
-.. code-block:: text
+.. testcode::
 
-   0 Root.Run.RunEnter | stage=enter role=state_enter | state=Root.Run active_leaf=Root.Run | Root.Run{A: [init], B: [init]}
-   1 Root.Run.A.A1.AEnter | stage=enter role=state_enter | state=Root.Run.A.A1 active_leaf=Root.Run.A.A1 | Root.Run{A: A1, B: [init]}
-   3 Root.Run.B.B1.BEnter | stage=enter role=state_enter | state=Root.Run.B.B1 active_leaf=Root.Run.B.B1 | Root.Run{A: A1, B: B1}
-   5 Root.Run.GroupTail | stage=during role=aspect_during_after | state=Root.Run active_leaf=Root.Run | Root.Run{A: A1, B: B1}
+   import json
+
+   step = json.load(open("calls.json"))["witness"]["steps"][0]
+   print(sorted(step["abstract_calls"][0]))
+   for call in step["abstract_calls"]:
+       print(call["ordinal"], call["action_name"], call["stage"], call["role"], call["state"], call["active_leaf"], call["configuration"])
+
+.. testoutput::
+
+   ['action_name', 'active_leaf', 'configuration', 'named_ref', 'ordinal', 'role', 'snapshot', 'stage', 'state']
+   0 Root.Run.RunEnter enter state_enter Root.Run Root.Run Root.Run{A: [init], B: [init]}
+   1 Root.Run.A.A1.AEnter enter state_enter Root.Run.A.A1 Root.Run.A.A1 Root.Run{A: A1, B: [init]}
+   2 Root.Run.A.A1.AWork during leaf_during Root.Run.A.A1 Root.Run.A.A1 Root.Run{A: A1, B: [init]}
+   3 Root.Run.B.B1.BEnter enter state_enter Root.Run.B.B1 Root.Run.B.B1 Root.Run{A: A1, B: B1}
+   4 Root.Run.B.B1.BWork during leaf_during Root.Run.B.B1 Root.Run.B.B1 Root.Run{A: A1, B: B1}
+   5 Root.Run.GroupTail during aspect_during_after Root.Run Root.Run Root.Run{A: A1, B: B1}
 
 The first call sees both regions waiting; ``AEnter`` sees ``A`` placed and ``B``
 waiting; ``BEnter`` sees ``B1`` already in the configuration; the group's
@@ -1704,9 +1824,23 @@ and the process exits ``4``:
        committed
      - This is what checks the labels in ``local_cases``.
 
-A mismatch is a defect of the tool, not a finding about the model; the excerpt
+A mismatch is a defect of the tool, not a finding about the model; the result
 for a passing run is ``replay ok: True, mismatches: []`` with frame
-configurations identical on both sides.
+configurations identical on both sides:
+
+.. testcode::
+
+   import json
+
+   replay = json.load(open("job.json"))["replay"]
+   print("replay ok: %s, mismatches: %s" % (replay["ok"], replay["mismatches"]))
+   print([frame["configuration"] for frame in replay["runtime_trace"]["frames"]])
+
+.. testoutput::
+
+   replay ok: True, mismatches: []
+   ['Job', 'Job.Run{Prep: Wait, Work: Idle}', 'Job.Run{Prep: Wait, Work: Busy}', 'Job.Run{Prep: Wait, Work: Busy}', 'Job.Run{Prep: Wait, Work: [done]}', 'Job.Run{Prep: Ready, Work: [done]}', 'Job.Next']
+
 
 Human report
 ~~~~~~~~~~~~
@@ -1717,23 +1851,28 @@ local case is written relative to the outermost owner: the owner itself by its
 last name (``Run:``), anything deeper by the path below it (``Prep:``,
 ``Work.Inner.X:``).  A case outside every region has no scope prefix.
 
-.. code-block:: text
+.. code-block:: console
 
-   5: Job.Run{Prep: Ready, Work: [done]}
-        -> Job.Next [transition]
-        Prep: Ready -> [done] [transition]
-        Run: [start] -> Job.Next [transition]
-
-   1: Root.Run{Work: Inner{X: x1, Y: y1}, Aux: a1}
-        -> Root.Run{Work: Inner{X: x2, Y: y1}, Aux: a1} [transition]
-        Work.Inner.X: x1 -> x2 [transition]
-        Work.Inner.Y: y1 -> y1 [fallback]
-        Aux: a1 -> a1 [fallback]
+   $ pyfcstm bmc -i region_job.fcstm -q job_next.fbmcq
+   ...
+     5: Job.Run{Prep: Ready, Work: [done]}
+          -> Job.Next [transition]
+          Prep: Ready -> [done] [transition]
+          Run: [start] -> Job.Next [transition]
+   ...
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2}}");' > nested.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q nested.fbmcq
+   ...
+     1: Root.Run{Work: Inner{X: x1, Y: y1}, Aux: a1}
+          -> Root.Run{Work: Inner{X: x2, Y: y1}, Aux: a1} [transition]
+          Work.Inner.X: x1 -> x2 [transition]
+          Work.Inner.Y: y1 -> y1 [fallback]
+          Aux: a1 -> a1 [fallback]
+   ...
 
 ``[start]`` on the left is the owner's initial transition or its continuation
 point, ``[done]`` on the right is the region finishing.  The ``Solver:`` timing
-line of the report is not deterministic and is not part of the recorded
-output.
+line of the report is not deterministic, so ``...`` stands for it above.
 
 Diagnostics and build limits
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1760,18 +1899,51 @@ Diagnostics and build limits
        times inside one cycle on changing values (default 16)
      - ``BmcBuildError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.``
 
+The first three failures come from query files that the commands below write and read (the 100- and 101-term queries are generated by a short script, because they are too long to type):
+
+.. testcode::
+
+   from pathlib import Path
+
+   for terms in (100, 101):
+       query = "check reach <= 1: " + " && ".join(["true"] * terms) + ";\n"
+       Path("deep_%d.fbmcq" % terms).write_text(query)
+
+
+.. code-block:: console
+
+   $ echo 'init state("Job.Run{Prep: [done], Work: [done]}"); check reach <= 1: true;' > bad_start.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q bad_start.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
+   $ echo 'check reach <= 1: active("Job.Run{Zed: Wait}");' > bad_pattern.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q bad_pattern.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Job.Run' has no region 'Zed'.
+   $ echo $?
+   1
+   $ pyfcstm bmc -i region_job.fcstm -q deep_100.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i region_job.fcstm -q deep_101.fbmcq
+   Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+   $ echo $?
+   1
+
 The group re-entry limit has no command-line option.  ``pyfcstm bmc`` takes the
 default of 16, and a model that exceeds it ends in the unexpected-error banner
-with exit ``1`` (the excerpt below shows the first and last line of stderr; the
-traceback between them contains local paths):
+with exit ``1`` (the record below shows the first and last line of stderr; the
+traceback between them contains local paths, which ``...`` stands for):
 
-.. code-block:: text
+.. code-block:: console
 
-   query:  check reach <= 1: terminated();
-   exit:   1
-   stdout: (empty)
-   stderr, first line: Unexpected error found when running pyfcstm!
-   stderr, last line:  _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo 'check reach <= 1: terminated();' > term.fbmcq
+   $ pyfcstm bmc -i region_reentry.fcstm -q term.fbmcq
+   Unexpected error found when running pyfcstm!
+   ...
+   _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo $?
+   1
 
 The model is ``region_reentry.fcstm``: the group of ``Owner`` finishes in the
 cycle it starts and ``Owner -> Owner`` re-enters it while ``n`` grows, up to 20
@@ -1781,13 +1953,38 @@ and never approximated.  Through the Python API
 :class:`pyfcstm.bmc.BmcOptions` takes ``max_group_reentries`` (a positive
 ``int``; ``bool``, ``0``, negative numbers and strings are refused):
 
-.. code-block:: text
+.. testcode::
+
+   from pathlib import Path
+
+   from pyfcstm.bmc import BmcBuildError, BmcEngine, BmcOptions, build_bmc_core_formula
+   from pyfcstm.model import load_state_machine_from_text
+
+   text = Path("region_reentry.fcstm").read_text().replace("n < 20", "n < 3")
+   model = load_state_machine_from_text(text)
+   for limit in (3, 4):
+       print("max_group_reentries=%d with a group that passes 3 times:" % limit)
+       engine = BmcEngine(model, BmcOptions(max_group_reentries=limit))
+       try:
+           build_bmc_core_formula(engine.prepare("check reach <= 1: terminated();"))
+       except BmcBuildError as err:
+           print("  BmcBuildError:", err)
+       else:
+           print("  built")
+   for value in (0, -1, True, "16"):
+       try:
+           BmcOptions(max_group_reentries=value)
+       except BmcBuildError as err:
+           print("max_group_reentries=%r: BmcBuildError: %s" % (value, err))
+
+.. testoutput::
 
    max_group_reentries=3 with a group that passes 3 times:
      BmcBuildError: state 'Root.Owner' re-enters its own group more than 3 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
    max_group_reentries=4 with a group that passes 3 times:
      built
    max_group_reentries=0: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries=-1: BmcBuildError: max_group_reentries must be a positive integer.
    max_group_reentries=True: BmcBuildError: max_group_reentries must be a positive integer.
    max_group_reentries='16': BmcBuildError: max_group_reentries must be a positive integer.
 
@@ -1806,16 +2003,36 @@ higher-priority candidate shadows, and the enter action of a continuation
 target.  ``region_safety.fcstm`` divides by the input only in a candidate that
 dead-ends; the default run reports it:
 
-.. code-block:: text
+.. code-block:: console
 
-   query:  check reach <= 2: active("Root.Run{R: A}");
-   exit:   5
+   $ echo 'check reach <= 2: active("Root.Run{R: A}");' > safety.fbmcq
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq
    BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
      Runtime error: modulo_by_zero at step 1
      Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
      Model role: RUNTIME ERROR PREFIX
-     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer modulo by zero
-   json runtime_safety.status: violated
+     Model evidence: SAT error-prefix model available.
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: ...modulo by zero
+   ...
+   $ echo $?
+   5
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq --json -o safety.json
+   $ echo $?
+   5
+
+.. testcode::
+
+   import json
+
+   result = json.load(open("safety.json"))["result"]["runtime_safety"]
+   print(result["status"])
+   print(result["error"])
+
+.. testoutput::
+
+   violated
+   {'kind': 'modulo_by_zero', 'location': 'action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J', 'step': 1}
 
 Known limit.  The core relation of such a model is satisfiable in the cycle
 where the simulator raises: an evaluation error on a path that dead-ends, or in
@@ -1824,30 +2041,22 @@ error of the relation, while the simulator evaluates it and fails.  The
 runtime-safety check is what reports these cases, so keep it on.  With
 ``--no-runtime-safety`` the same query finds a witness and replay raises inside
 the simulator; the command then ends in the unexpected-error banner with exit
-``1`` (excerpt):
+``1``:
 
-.. code-block:: text
+.. code-block:: console
 
-   query:  check reach <= 2: active("Root.Run{R: A}");   (with --no-runtime-safety)
-   exit:   1
-   stdout: (empty)
-   stderr, first line: Unexpected error found when running pyfcstm!
-   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq --no-runtime-safety
+   Unexpected error found when running pyfcstm!
+   ...
+   SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: ...modulo by zero
+   $ echo $?
+   1
 
 The wording of the Python exception at the end follows the interpreter (the message differs between interpreter versions, including patch versions: ``integer modulo by zero`` and ``integer division or modulo by zero`` are both seen).
 
 Do not read ``exit 1`` there as a property verdict: no result was produced.
 The same two shapes exist in models without regions, where the runtime-safety
 check also reports them.
-
-.. _bmc-results-region-evidence:
-
-Full recorded output
-~~~~~~~~~~~~~~~~~~~~
-
-.. literalinclude:: region_bmc_results.demo.py.txt
-   :language: text
-   :caption: region_bmc_results.demo.py.txt
 
 Dual checks and the response cause boundary
 -------------------------------------------
@@ -1971,35 +2180,62 @@ exception: it means a fully constructed, inspectable mismatch result.
 Reproducible examples
 ---------------------
 
-Assume ``machine.fcstm`` contains ``state Root;``.  Each command uses a query
-file containing exactly the shown statement.
+The examples use ``region_plain.fcstm`` next to this page, whose root state is
+``Root``.  Each query is written with ``echo`` into a file that contains exactly
+the shown statement.
 
 **Example 1: positive witness.**  Put
 ``check reach <= 1: active("Root");`` in ``reach.fbmcq``:
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q reach.fbmcq --json
-   {
-     "exit_code": 0,
-     ...
-     "result": {"outcome": "witness_found", "status": "sat", ...},
-     "replay": {"mismatches": [], "ok": true, ...},
-     "witness": {"model_role": "primary_witness", "verdict": {"outcome": "witness_found", ...}, ...}
-   }
+   $ echo 'check reach <= 1: active("Root");' > reach.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q reach.fbmcq --json -o reach.json
+   $ echo $?
+   0
 
-The excerpt is schematic because sorted pretty JSON places keys between these
-lines and live timing varies.  The complete payload validates against the
-downloadable reference schema.
+.. testcode::
+
+   import json
+
+   payload = json.load(open("reach.json"))
+   print(payload["exit_code"])
+   print(payload["result"]["outcome"], payload["result"]["status"])
+   print(payload["replay"]["ok"], payload["replay"]["mismatches"])
+   print(payload["witness"]["model_role"], payload["witness"]["verdict"]["outcome"])
+
+.. testoutput::
+
+   0
+   witness_found sat
+   True []
+   primary_witness witness_found
+
+The script prints the fields that matter; the complete payload validates against
+the downloadable reference schema.
 
 **Example 2: a counterexample is a negative verdict, not a CLI error.**  Put
 ``check forbid <= 1: active("Root");`` in ``forbid.fbmcq``:
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q forbid.fbmcq --json > result.json
+   $ echo 'check forbid <= 1: active("Root");' > forbid.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q forbid.fbmcq --json > result.json
    $ echo $?
    1
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("result.json"))
+   print(payload["result"]["status"], payload["result"]["outcome"])
+   print(type(payload["witness"]).__name__, type(payload["replay"]).__name__)
+
+.. testoutput::
+
+   sat property_violated
+   dict dict
 
 ``result.json`` is complete: ``status`` is ``sat``, ``outcome`` is
 ``property_violated``, and witness/replay are objects.  stderr is empty.
@@ -2010,9 +2246,24 @@ downloadable reference schema.
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q response.fbmcq --json -o response.json
+   $ echo 'check response <= 1: trigger true -> within 2 false;' > response.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q response.fbmcq --json -o response.json
    $ echo $?
    3
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("response.json"))
+   result = payload["result"]
+   print(result["status"], result["incomplete_status"], result["outcome"], payload["exit_code"])
+   print(payload["witness"]["model_role"])
+
+.. testoutput::
+
+   unsat sat incomplete 3
+   incomplete_suffix
 
 stdout and stderr are empty; ``response.json`` has primary ``status: unsat``,
 ``incomplete_status: sat``, ``outcome: incomplete``, and ``exit_code: 3``.
@@ -2027,9 +2278,15 @@ verdict.  Increase the bound if a definitive horizon is required.
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q large.fbmcq --max-bound 1 \
+   $ echo 'check reach <= 2: active("Root");' > large.fbmcq
+   $ cp result.json before.json
+   $ pyfcstm bmc -i region_plain.fcstm -q large.fbmcq --max-bound 1 \
        --json -o result.json
-   Error: Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1. ...
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
+   $ cmp result.json before.json && echo "result.json is unchanged"
+   result.json is unchanged
 
 The command exits ``1``; it emits no JSON and leaves the old ``result.json``
 unchanged.  A missing parent directory for ``-o`` similarly fails instead of

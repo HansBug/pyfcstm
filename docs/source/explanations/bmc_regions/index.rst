@@ -366,14 +366,20 @@ when the input ``g`` is positive.
 Three queries: one without assumptions, one that fixes ``g == 0`` and asks for
 the owner, and one that fixes ``g == 0`` and only asks to see any trace.
 
+.. literalinclude:: blocked_free.fbmcq
+   :language: fbmcq
+   :caption: blocked_free.fbmcq
+
+.. literalinclude:: blocked_stuck.fbmcq
+   :language: fbmcq
+   :caption: blocked_stuck.fbmcq
+
+.. literalinclude:: blocked_zero.fbmcq
+   :language: fbmcq
+   :caption: blocked_zero.fbmcq
+
 .. code-block:: console
 
-   $ cat blocked_free.fbmcq blocked_stuck.fbmcq blocked_zero.fbmcq
-   check reach <= 1: active("Root.Run");
-   assume always: g == 0;
-   check reach <= 2: active("Root.Run");
-   assume always: g == 0;
-   check reach <= 2: true;
    $ pyfcstm bmc -i blocked.fcstm -q blocked_free.fbmcq --color never
    BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -445,19 +451,31 @@ The joint model has two regions that both finish, and the owner continues to
    :language: fcstm
    :linenos:
 
-Five queries ask about it.  The first shows the files, the second prints the
-headline of each report; every report is cut to the line the page discusses.
+Five queries ask about it, shown here one file at a time.  The commands after
+them print the headline of each report, cut to the line the page discusses.
+
+.. literalinclude:: joint_a_done.fbmcq
+   :language: fbmcq
+   :caption: joint_a_done.fbmcq
+
+.. literalinclude:: joint_all_done.fbmcq
+   :language: fbmcq
+   :caption: joint_all_done.fbmcq
+
+.. literalinclude:: joint_next.fbmcq
+   :language: fbmcq
+   :caption: joint_next.fbmcq
+
+.. literalinclude:: joint_blocked_b_done.fbmcq
+   :language: fbmcq
+   :caption: joint_blocked_b_done.fbmcq
+
+.. literalinclude:: joint_blocked_next.fbmcq
+   :language: fbmcq
+   :caption: joint_blocked_next.fbmcq
 
 .. code-block:: console
 
-   $ cat joint_a_done.fbmcq joint_all_done.fbmcq joint_next.fbmcq joint_blocked_b_done.fbmcq joint_blocked_next.fbmcq
-   check reach <= 3: active("Root.Job{A: [done]}");
-   check reach <= 3: active("Root.Job{A: [done], B: [done]}");
-   check reach <= 3: active("Root.Next");
-   assume always: ok == 0;
-   check reach <= 3: active("Root.Job{B: [done]}");
-   assume always: ok == 0;
-   check reach <= 3: active("Root.Next");
    $ pyfcstm bmc -i joint.fcstm -q joint_a_done.fbmcq --color never
    BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -507,7 +525,15 @@ group's initialization: it runs once, before the first non-pseudo child is
 entered.  The plain ``during after`` runs once on the committed path that hands
 control back.  The next script lists the abstract actions of each step in call
 order for two models, read from the JSON result that ``pyfcstm bmc --json``
-writes.
+writes.  The two queries are one line each.
+
+.. literalinclude:: aspects.fbmcq
+   :language: fbmcq
+   :caption: aspects.fbmcq
+
+.. literalinclude:: plain_before.fbmcq
+   :language: fbmcq
+   :caption: plain_before.fbmcq
 
 .. code-block:: console
 
@@ -601,11 +627,12 @@ compiled, since no frame can hold that position (the third line of
 :eq:`eq-region-position-domain`).  This is a negative example; the query is
 refused on purpose.
 
+.. literalinclude:: start_all_done.fbmcq
+   :language: fbmcq
+   :caption: start_all_done.fbmcq
+
 .. code-block:: console
 
-   $ cat start_all_done.fbmcq
-   init state("Root.Job{A: [done], B: [done]}");
-   check reach <= 1: true;
    $ pyfcstm bmc -i joint.fcstm -q start_all_done.fbmcq
    Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Root.Job'; a finished owner cannot be hot-started.
    $ echo $?
@@ -932,6 +959,16 @@ divides by the input.  The third command turns the check off.
    :language: fcstm
    :linenos:
 
+The two queries are one line each.
+
+.. literalinclude:: dead_end.fbmcq
+   :language: fbmcq
+   :caption: dead_end.fbmcq
+
+.. literalinclude:: outranked.fbmcq
+   :language: fbmcq
+   :caption: outranked.fbmcq
+
 .. code-block:: console
 
    $ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never
@@ -964,10 +1001,12 @@ divides by the input.  The third command turns the check off.
 
 With the default, both models report ``RUNTIME ERROR REACHABLE WITHIN BOUND`` with
 exit status 5, the failing operation, and the confirmation that the runtime
-reproduced the error.  With ``--no-runtime-safety`` the property query on
-``dead_end.fcstm`` finds a witness, and the replay raises the simulator's own
-error: the command line prints the unexpected-error banner and exits with 1, not
-with 4.  Turn the check off only when you know the model cannot divide or index
+reproduced the error.  With ``--no-runtime-safety`` the check is skipped and the
+command on ``dead_end.fcstm`` ends with the simulator's own
+``SimulationRuntimeExpressionError`` instead of a verdict: it prints the
+unexpected-error banner and exits with 1, not with 5.  The elided traceback
+frames lead from the command's witness replay into the simulator; the page does
+not show the witness itself.  Turn the check off only when you know the model cannot divide or index
 out of range; the result then depends on that assumption.
 
 10. Equation ledger

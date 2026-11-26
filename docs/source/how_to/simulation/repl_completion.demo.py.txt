@@ -1,0 +1,7 @@
+'init Controller.Running.':
+  Controller.Running.Motion.Off  [leaf state]
+  Controller.Running.Motion.On  [leaf state]
+  Controller.Running.Safety.Watching  [leaf state]
+'cycle Co':
+  Controller.Start  [event name]
+'cycle S':

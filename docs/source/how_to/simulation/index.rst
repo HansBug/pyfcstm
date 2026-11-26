@@ -242,3 +242,235 @@ Candidate decision diagnostics
 ------------------------------------------------------------
 
 For rejected candidates, captured Python reports, REPL queries, per-cycle inputs and JSONL output, see :doc:`diagnostics`.
+
+Tasks for models with regions
+-----------------------------
+
+The cards below use a model with regions.  Each one states the same six
+facts: **Input**, **Command or code**, **Expected signal**, **File side
+effect**, **First failure check** and **Reference link**.  Run them from this
+directory.  ``hot_controller.fcstm`` is the interlock controller of
+:doc:`/tutorials/regions/index`; the modeling tasks themselves are on
+:doc:`/how_to/regions/index`.
+
+Hot start a model with regions from a position
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``hot_controller.fcstm`` and a position to start from.  A position
+is a tree: the part you write is placed without running ``enter`` actions and
+the part you leave out waits for initialization.  Every variable must be
+given, including the hidden ones (``__forced_0`` here) that the model
+conversion adds.
+
+.. literalinclude:: hot_controller.fcstm
+   :language: fcstm
+   :caption: hot_controller.fcstm
+
+**Command or code.** ``initial_state`` accepts five spellings of a position;
+the script also shows an owner written alone:
+
+.. literalinclude:: hot_start_forms.demo.py
+   :language: python
+   :caption: hot_start_forms.demo.py
+
+.. literalinclude:: hot_start_forms.demo.py.txt
+   :language: text
+
+**Expected signal.** The configuration text and the ``Configuration`` object
+place every region.  A dotted path, a tuple path and a ``State`` object name
+one leaf: the regions they do not pass through wait (``[init]``) and take their
+initial transition in the first cycle.  An owner written alone waits as a
+whole, and its regions start in writing order.  No ``enter`` action runs for
+the part that is placed.
+
+**File side effect.** None.
+
+**First failure check.** If the start position is not what you expected, print
+``runtime.configuration`` before the first cycle; it shows exactly what was
+placed and what waits.
+
+**Reference link.** :doc:`/reference/region_model/index` for position text and
+validation modes, :doc:`/reference/simulation/index` for the constructor.
+
+Supply every variable, including the hidden ones
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** A model whose conversion adds hidden variables: ``__forced_*`` for
+forced transitions, ``__hist_*`` for history and ``__active_*`` for
+``active()`` queries.  They are ordinary variables; the runtime neither
+derives nor checks them against the position.  ``hot_watch.fcstm`` uses
+``active()``.
+
+**Command or code.**
+
+.. literalinclude:: hot_active_variables.demo.py
+   :language: python
+   :caption: hot_active_variables.demo.py
+
+.. literalinclude:: hot_active_variables.demo.py.txt
+   :language: text
+
+**Expected signal.** ``model.active_queries`` lists the queries and their
+variable names; ``model.active_variables(config)`` computes the values that
+match a position.  The runtime accepts them as ``initial_vars`` and shows them
+in ``runtime.vars``.  If you pass a value that disagrees with the position,
+the runtime runs with the value you passed.
+
+**File side effect.** None.
+
+**First failure check.** If construction names a missing variable, list
+``model.active_queries`` and the model's ``__forced_*`` and ``__hist_*``
+variables, and add them.
+
+**Reference link.** :doc:`/reference/region_model/index`.
+
+Fix three typical hot-start errors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``hot_controller.fcstm`` and the three refusals below.  The script
+``hot_start_errors.demo.py`` constructs a runtime three times and prints the
+``ValueError`` each time.
+
+.. literalinclude:: hot_start_errors.demo.py.txt
+   :language: text
+
+**Command or code and fix.**
+
+* *Hidden variable left out* (first line): add ``__forced_0`` to
+  ``initial_vars``.  Do not drop it because it is not in your source text.
+* *Every region done* (second line): a configuration in which every region of an
+  owner is ``[done]`` cannot be a resting position, at any depth.  Leave one
+  region alive, or start at the state the owner continues to.
+* *Unknown state* (third line): the path does not exist.  Print
+  ``[s.path for s in model.walk_states()]`` and copy a path from there.
+
+**Expected signal.** Each refusal raises ``ValueError`` before any cycle runs.
+
+**File side effect.** None.
+
+**First failure check.** Read the message: each one names the missing
+variable, the owner with all regions done, or the unknown path.
+
+**Reference link.** :doc:`/reference/simulation/index`.
+
+Resolve an ambiguous event name
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``leaf_events.fcstm``: two leaves each declare an event named
+``Ping``, and one leaf declares ``Go``.  The full path and ``/Name`` mean the
+same wherever the machine rests.  A short name is resolved once for every
+active leaf: no match is an error, one distinct event is used, and different
+events are an ambiguity.
+
+.. literalinclude:: leaf_events.fcstm
+   :language: fcstm
+   :caption: leaf_events.fcstm
+
+**Command or code.**
+
+.. literalinclude:: event_names.demo.py
+   :language: python
+   :caption: event_names.demo.py
+
+.. literalinclude:: event_names.demo.py.txt
+   :language: text
+
+**Expected signal.** ``Go`` resolves to one event; ``/Reset`` resolves from
+anywhere; ``Ping`` raises an ambiguity error that lists each candidate and the
+leaf it came from; ``Nope`` raises a lookup error that lists the leaves it
+tried.  ``cycle(['Ping'])`` is refused with the same ambiguity, while the full
+path moves one region and two full paths move both.  A bare name never looks
+upward, and a finished region or one that waits for initialization takes no
+part.
+
+**File side effect.** None.
+
+**First failure check.** Copy the full path from the error text into the
+call or the model.
+
+**Reference link.** :doc:`/reference/simulation/index`.
+
+Find out why nothing happened in a cycle
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``hot_stuck.fcstm``: ``Right`` can only start when ``flag > 0``.
+Started at ``Root.Pair{Left: Busy}`` with ``flag=0``, the waiting region cannot
+reach a resting position.
+
+.. literalinclude:: hot_stuck.fcstm
+   :language: fcstm
+   :caption: hot_stuck.fcstm
+
+**Command or code.**
+
+.. literalinclude:: hot_delta.demo.py
+   :language: python
+   :caption: hot_delta.demo.py
+
+.. literalinclude:: hot_delta.demo.py.txt
+   :language: text
+
+**Expected signal.** With ``flag=0`` the cycle is a Delta: ``delta=True``,
+the configuration and the variables are unchanged, even ``Left``'s ``during``
+(which would have raised ``work``) is rolled back.  The first check names the
+transition that failed (``guard_false``, ``flag > 0``).  With ``flag=1`` the
+same call places ``Right`` and runs ``Left``'s ``during``.  A Delta is a whole
+cycle that did not commit; a cycle in which every region simply stays put is
+not a Delta.  The CLI shows the same evidence with
+``pyfcstm simulate --diagnostics`` and ``why``; see :doc:`diagnostics`.
+
+**File side effect.** None; a Delta warning goes to standard error.
+
+**First failure check.** Read the first check whose outcome is
+``guard_false`` or ``successor_rejected`` and look at its ``vars``: those are
+values at the check, not final values.
+
+**Reference link.** :doc:`/reference/simulation/diagnostics`.
+
+Type a configuration into ``init`` and read ``events`` in the REPL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``hot_controller.fcstm``.  ``init`` accepts configuration text in
+braces; give every variable once.
+
+**Command or code.**
+
+.. literalinclude:: repl_init.demo.sh
+   :language: bash
+
+.. literalinclude:: repl_init.demo.sh.txt
+   :language: text
+
+**Expected signal.** ``init`` reports the position it built.  An owner written
+alone is shown with ``[init]`` for every region.  ``events`` lists only events
+that exist from the active leaves.  Position text is shown as configuration
+text everywhere (``current``, history tables, exports).
+
+Two refusals, both negative examples:
+
+.. literalinclude:: repl_init_duplicate.demox.sh.txt
+   :language: text
+
+(A variable assigned twice; the exit code in ``repl_init_duplicate.demox.sh.exitcode`` is 1.)
+
+.. literalinclude:: repl_init_done.demox.sh.txt
+   :language: text
+
+(All regions done; exit code 1 in ``repl_init_done.demox.sh.exitcode``.)
+
+In the interactive REPL, Tab completion offers only short event names that
+would actually resolve, and it completes states inside regions.  The completer
+used by the REPL gives:
+
+.. literalinclude:: repl_completion.demo.py.txt
+   :language: text
+
+``cycle S`` offers nothing because ``Start`` is declared on the owner and a
+bare name does not look upward; ``cycle Co`` offers the full path.
+
+**File side effect.** None.
+
+**First failure check.** If ``init`` says a variable is missing, run
+``current`` on a normal start: it lists every variable, hidden ones included.
+
+**Reference link.** :doc:`/reference/simulation/index`.

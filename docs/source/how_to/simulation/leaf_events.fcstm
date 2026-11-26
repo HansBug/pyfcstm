@@ -1,0 +1,18 @@
+state Root {
+    event Reset;
+    [*] -> P;
+    state P {
+        region L {
+            [*] -> X;
+            state X { event Go; event Ping; }
+            state X2;
+            X -> X2 :: Go;
+        }
+        region R {
+            [*] -> Y;
+            state Y { event Ping; }
+            state Y2;
+            Y -> Y2 :: Ping;
+        }
+    }
+}

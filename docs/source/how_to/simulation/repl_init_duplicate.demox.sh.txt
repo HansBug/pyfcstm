@@ -1,0 +1,4 @@
+────────────────────────────────────────────────────────────
+>>> init Controller.Running permit=1 permit=0 motor=0 __forced_0=0
+────────────────────────────────────────────────────────────
+Error: variable 'permit' is assigned more than once.

@@ -1,0 +1,4 @@
+queries: [('Plant.Trigger.Fired', '__active_Plant_Trigger_Fired')]
+hidden variables for this position: {'__active_Plant_Trigger_Fired': 1}
+after one cycle: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+runtime.vars: {'__active_Plant_Trigger_Fired': 1}

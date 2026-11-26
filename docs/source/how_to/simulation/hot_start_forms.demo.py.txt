@@ -1,0 +1,18 @@
+configuration text:
+  at start     Controller.Running{Safety: Watching, Motion: On}
+  after cycle  Controller.Running{Safety: Watching, Motion: On}
+Configuration object:
+  at start     Controller.Running{Safety: Watching, Motion: On}
+  after cycle  Controller.Running{Safety: Watching, Motion: On}
+dotted path:
+  at start     Controller.Running{Safety: [init], Motion: On}
+  after cycle  Controller.Running{Safety: Watching, Motion: On}
+tuple path:
+  at start     Controller.Running{Safety: [init], Motion: On}
+  after cycle  Controller.Running{Safety: Watching, Motion: On}
+State object:
+  at start     Controller.Running{Safety: [init], Motion: On}
+  after cycle  Controller.Running{Safety: Watching, Motion: On}
+owner only:
+  at start     Controller.Running{Safety: [init], Motion: [init]}
+  after cycle  Controller.Running{Safety: Watching, Motion: Off}

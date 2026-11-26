@@ -1,0 +1,16 @@
+control int flag = 0;
+output int work = 0;
+
+state Root {
+    [*] -> Pair;
+    state Pair {
+        region Left {
+            [*] -> Busy;
+            state Busy { during { work = work + 1; } }
+        }
+        region Right {
+            [*] -> Ready : if [flag > 0];
+            state Ready;
+        }
+    }
+}

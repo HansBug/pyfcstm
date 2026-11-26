@@ -6,32 +6,67 @@
 采集后继拒绝证据
 ----------------
 
-从仓库根目录运行，或下载 :download:`candidate_failure.fcstm` 后调整路径。模型先尝试 ``A -> Blocked``，再尝试 ``A -> B``。进入 ``Blocked`` 会设置 ``x=100``，但其初始迁移要求 ``x < 0``。
+将 :download:`candidate_failure.fcstm` 下载到一个空目录，并在其中运行示例。本页的 ``bash`` 块展示的命令不在文档检查里运行，``console`` 块和 Python 块则对照真实输出核对。模型先尝试 ``A -> Blocked``，再尝试 ``A -> B``。进入 ``Blocked`` 会设置 ``x=100``，但其初始迁移要求 ``x < 0``。
 
 .. literalinclude:: candidate_failure.fcstm
    :language: fcstm
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/how_to/simulation/candidate_failure.fcstm \
+   pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --no-color -e 'cycle; cycle Root.A.Go; why Root.A::0::A->Blocked --verbose'
 
 第二次调用停在 ``Root.B``，最终 ``x=1``。报告中第一个候选为 ``successor_rejected``，其后继守卫检查记录 ``x=100``。``why`` 只展示证据，不执行新周期，不写文件。若显示 ``No diagnostic report``，应先开启采集再重现调用；事后打开开关无法恢复过去的证据。
 
-等价 Python 程序可以直接从仓库执行：
+等价的 Python 程序打印同样的报告和已提交的变量：
 
-.. code-block:: bash
+.. testcode::
 
-   python docs/source/how_to/simulation/candidate_diagnostics.demo.py
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: candidate_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
+   model = load_state_machine_from_file("candidate_failure.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   result = runtime.cycle("Root.A.Go", diagnostics=True)
+   print(result.diagnostics)
+   print("vars:", dict(runtime.vars))
 
-完整的简洁报告如下：
+.. testoutput::
 
-.. literalinclude:: candidate_diagnostics.demo.py.txt
-   :language: text
+   Cycle 2: cycle; Root.A -> Root.B
+   Result: cycle committed.
+   Events: Root.A.Go
+   Inputs: {}
+   Parameters: {}
+   Persistent values before: {'x': 0}
+   Persistent values after:  {'x': 1}
+   Committed micro-transitions (in execution order):
+     #6 Root.A::1::A->B
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root.A::0::A->Blocked [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:11:5
+     #2 Root.Blocked::0::INIT_STATE->Inner [validation] guard_false: guard failed; candidate not selected
+       Guard x < 0: failed; values={'x': 100}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'x': 100}; inputs={}; parameters={}
+       source=.../candidate_failure.fcstm:7:9
+   #3 Root.A::1::A->B [preflight] selected: selected in this phase; not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:12:5
+   #4 Root.A::0::A->Blocked [execution] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:11:5
+     #5 Root.Blocked::0::INIT_STATE->Inner [validation] guard_false: guard failed; candidate not selected
+       Guard x < 0: failed; values={'x': 100}
+       Checked while validating candidate #4.
+       Values at check (not final values): vars={'x': 100}; inputs={}; parameters={}
+       source=.../candidate_failure.fcstm:7:9
+   #6 Root.A::1::A->B [execution] selected: committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:12:5
+   vars: {'x': 1}
 
 按下面的顺序理解证据：
 
@@ -56,20 +91,37 @@
 排查组合迁移回滚与回退路径
 --------------------------
 
-将 :download:`combo_diagnostics.fcstm` 和 :download:`combo_diagnostics.demo.py` 下载到同一目录，或在仓库根目录执行已有程序：
-
-.. code-block:: bash
-
-   python docs/source/how_to/simulation/combo_diagnostics.demo.py
+将 :download:`combo_diagnostics.fcstm` 下载到示例所在目录。
 
 .. literalinclude:: combo_diagnostics.fcstm
    :language: fcstm
 
 程序为三种情形分别构造新实例。``A + B`` 的各项都在同一个宏步骤内检查，使用该次调用冻结的输入；不是第一拍 A、第二拍 B。
 
-.. literalinclude:: combo_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("combo_diagnostics.fcstm")
+   cases = [
+       ("missing B", 12, ["Root.Start.A"]),
+       ("target guard false", 3, ["Root.Start.A", "Root.Start.B"]),
+       ("complete path", 12, ["Root.Start.A", "Root.Start.B"]),
+   ]
+   for title, sensor, events in cases:
+       runtime = SimulationRuntime(
+           model, parameters={"limit": 10}, input_source={"sensor": sensor}
+       )
+       runtime.cycle()
+       runtime.cycle(events)
+       print(title, "->", runtime.configuration, dict(runtime.vars))
+
+.. testoutput::
+
+   missing B -> Root.Fallback {'score': 121, 'reading': 0}
+   target guard false -> Root.Fallback {'score': 121, 'reading': 0}
+   complete path -> Root.Target.Good {'score': 11011, 'reading': 12}
 
 .. list-table:: 预期提交边界
    :header-rows: 1
@@ -87,12 +139,48 @@
      - 整条路径成功，回退候选未检查。
      - ``Root.Target.Good``；``score=11011``、``reading=12``。
 
-下面是第二种情形的真实输出节选；这里省略其他两种情形，它们由同一个程序完整打印：
+第二种情形的完整报告由第二个程序给出，它只运行这一种情形：
 
-.. literalinclude:: combo_diagnostics.demo.py.txt
-   :language: text
-   :start-after: === target guard false ===
-   :end-before: === complete path ===
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("combo_diagnostics.fcstm")
+   runtime = SimulationRuntime(
+       model, parameters={"limit": 10}, input_source={"sensor": 3}
+   )
+   runtime.cycle()
+   result = runtime.cycle(["Root.Start.A", "Root.Start.B"], diagnostics=True)
+   print(result.diagnostics)
+
+.. testoutput::
+
+   Cycle 2: cycle; Root.Start -> Root.Fallback
+   Result: cycle committed.
+   Events: Root.Start.A, Root.Start.B
+   Inputs: {'sensor': 3}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 121, 'reading': 0}
+   Committed micro-transitions (in execution order):
+     #8 Root.Start::1::Start->Fallback
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root.Start -> Root.Target [combo: A + B] (term 1: A; prefix) [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.Start.A: present
+     source=.../combo_diagnostics.fcstm:22:5
+     #2 Root.Start -> Root.Target [combo: A + B] (term 2: B; terminal) [validation] enabled: local conditions passed during search; not proof of a committed path
+       Event Root.Start.B: present
+       Checked while validating candidate #1.
+       source=.../combo_diagnostics.fcstm:22:5
+     #3 Root.Target::0::INIT_STATE->Good [validation] guard_false: guard failed; candidate not selected
+       Guard reading >= limit: failed; values={'limit': 10, 'reading': 3}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'score': 10011, 'reading': 3}; inputs={'sensor': 3}; parameters={'limit': 10}
+       source=.../combo_diagnostics.fcstm:15:9
+   ...
+   #8 Root.Start::1::Start->Fallback [execution] selected: committed
+   ...
 
 被拒路径计算了源状态退出动作的 ``+1``、末端迁移动作的 ``+10`` 和 ``reading=sensor``，再计算目标进入动作的 ``+10000``，所以初始守卫看到 10011 和 3。这是推测检查时的值。回退路径从原边界出发，提交自己的 ``+1+20+100``，得到 121。报告自身的 ``vars_before`` 和 ``vars_after`` 就能区分最终值与失败检查快照，无需额外读取运行时。
 
@@ -100,30 +188,68 @@
 
 默认组合迁移展示原始来源、目标和规范触发串。这是可读语义标签，不是替代 DSL。详细文本与 ``transition_label`` 保留展开地址。共享前缀会明确列出多个来源；共享微迁移提交，不代表它对应的全部原始候选都提交，还需查看末端路径与最终边界。
 
-程序不写文件。若最终目标与预期不同，先检查是否在同一次调用中传入两个完整事件路径，以及冻结输入是否满足目标守卫。使用 ``report.to_text(check_id=3, verbose=True)`` 或命令行 ``why 3 --verbose`` 可以连同祖先一起查询失败检查；编号仅在当前报告有效。选择器与字段契约见 :doc:`../../reference/simulation/diagnostics_zh`。
+这些程序不写文件。若最终目标与预期不同，先检查是否在同一次调用中传入两个完整事件路径，以及冻结输入是否满足目标守卫。使用 ``report.to_text(check_id=3, verbose=True)`` 或命令行 ``why 3 --verbose`` 可以连同祖先一起查询失败检查；编号仅在当前报告有效。选择器与字段契约见 :doc:`../../reference/simulation/diagnostics_zh`。
 
 区分 Delta 与普通原地周期
 -------------------------
 
-将 :download:`delta_diagnostics.fcstm` 与 :download:`delta_diagnostics.demo.py` 下载到同一目录，或执行：
-
-.. code-block:: bash
-
-   python docs/source/how_to/simulation/delta_diagnostics.demo.py
+将 :download:`delta_diagnostics.fcstm` 下载到示例所在目录。
 
 .. literalinclude:: delta_diagnostics.fcstm
    :language: fcstm
 
-.. literalinclude:: delta_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
-
 第一拍冻结输入为 3。初始路径计算出 ``score=110``、``reading=3``，但无法从伪状态到达可停止状态，因此返回 Delta，保留原根状态边界和为零的持久变量，提交执行迹为空。第二拍输入为 12，初始化成功，得到 ``score=1110``、``reading=12``；第一拍推测得到的 110 没有累加进来。
 
-.. literalinclude:: delta_diagnostics.demo.py.txt
-   :language: text
+.. testcode::
 
-标准错误还会记录一条 Delta 警告，程序不写文件。Delta 推进周期计数、历史和输入源，不会倒退环境时间。若第二拍仍然失败，检查输入序列与守卫值，不要假设继续使用第一拍样本。普通可停止叶状态可以原地执行 ``during`` 并改变输出，同时 ``decisions`` 为空；这仍是普通周期，报告也会保留输入、参数与前后边界快照。忽略调用则以 ``inputs=None`` 明确表示没有重新采样。
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("delta_diagnostics.fcstm")
+   runtime = SimulationRuntime(
+       model, parameters={"limit": 10},
+       input_source={"sensor": SequenceInput([3, 12])},
+   )
+   for _ in range(2):
+       result = runtime.cycle(diagnostics=True)
+       print(result.diagnostics)
+       print("delta:", result.delta, dict(runtime.vars))
+
+.. testoutput::
+
+   Cycle 1 completed as Delta - State: Root; no stoppable successor was committed
+   Cycle 1: delta; Root -> Root
+   Result: no stoppable successor committed; state and persistent values unchanged; cycle and inputs advanced.
+   Events: (none processed)
+   Inputs: {'sensor': 3}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 0, 'reading': 0}
+   Committed micro-transitions: (none)
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root::0::INIT_STATE->Prepare [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     source=.../delta_diagnostics.fcstm:14:5
+     #2 Root.Prepare::0::Prepare->Ready [validation] guard_false: guard failed; candidate not selected
+       Guard reading >= limit: failed; values={'limit': 10, 'reading': 3}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'score': 110, 'reading': 3}; inputs={'sensor': 3}; parameters={'limit': 10}
+       source=.../delta_diagnostics.fcstm:15:5
+   ...
+   delta: True {'score': 0, 'reading': 0}
+   Cycle 2: cycle; Root -> Root.Ready
+   Result: cycle committed.
+   Events: (none processed)
+   Inputs: {'sensor': 12}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 1110, 'reading': 12}
+   Committed micro-transitions (in execution order):
+     #4 Root::0::INIT_STATE->Prepare
+     #6 Root.Prepare::0::Prepare->Ready
+   ...
+   delta: False {'score': 1110, 'reading': 12}
+
+标准错误还会记录一条 Delta 警告，即上面输出的第一行；程序不写文件。Delta 推进周期计数、历史和输入源，不会倒退环境时间。若第二拍仍然失败，检查输入序列与守卫值，不要假设继续使用第一拍样本。普通可停止叶状态可以原地执行 ``during`` 并改变输出，同时 ``decisions`` 为空；这仍是普通周期，报告也会保留输入、参数与前后边界快照。忽略调用则以 ``inputs=None`` 明确表示没有重新采样。
 
 同一伪状态边在一个宏步骤内多次执行时，即使标签相同，每次提交仍然独立展示。紧凑文本仅折叠相邻且除编号外证据完全相同的未提交检查，保留全部编号与次数；变量值或验证父检查不同就是不同事实。详细文本和 JSON 始终保留全部原始检查。与完整路径守卫约束的关系见 :ref:`exec-diagnostic-boundaries-zh`。
 
@@ -160,7 +286,7 @@
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/how_to/simulation/candidate_failure.fcstm \
+   pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --diagnostics-format jsonl --no-color \
      -e 'cycle; cycle Root.A.Go' > decisions.jsonl
    python -c 'import json; rows=[json.loads(s) for s in open("decisions.jsonl")]; assert len(rows)==2; assert rows[1]["state_after"]==["Root","B"]; print("2 valid reports")'

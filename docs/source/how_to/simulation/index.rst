@@ -68,21 +68,56 @@ Run batch commands
 Use ``-e`` when you want a reproducible transcript in CI, docs or bug reports.
 Separate commands with semicolons:
 
-.. code-block:: bash
+Download :download:`controller.fcstm </_models/controller.fcstm>` into an empty directory and run:
 
-   pyfcstm simulate -i docs/source/tutorials/cli/simple_machine.fcstm \
-     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
-     --no-color
+.. code-block:: console
 
-The generated transcript used by the short tutorial is kept here:
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=0; \
+   events; \
+   cycle /Start --input fault=0 --input requested=0; \
+   history 2"
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=0 --input requested=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Controller.Idle
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
 
-.. literalinclude:: ../../tutorials/simulation/cli_batch.demo.sh.txt
-   :language: text
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Controller.Start
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Start --input fault=0 --input requested=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> history 2
+   ────────────────────────────────────────────────────────────
+    Cycle                        State                        Delta  __forced_0  motor  permit
+   --------------------------------------------------------------------------------------------
+      1                     Controller.Idle                   False      0         0      0
+      2    Controller.Running{Safety: Watching, Motion: Off}  False      0         0      1
+
+Every cycle that really executes needs the complete input vector, so each ``cycle`` carries ``--input`` values; ``events`` lists the events the active leaves can take.
 
 Use the interactive REPL
 ------------------------
 
-Omit ``-e`` to start the REPL:
+Omit ``-e`` to start the REPL. An interactive session cannot be replayed by the
+documentation checks, so this command is shown without being run:
 
 .. code-block:: bash
 
@@ -108,14 +143,34 @@ Inject events
 A command such as ``cycle Start`` injects an event into that cycle.  In Python,
 pass the event list to ``SimulationRuntime.cycle``:
 
-.. literalinclude:: ../../tutorials/simulation/event_triggering.demo.py
-   :language: python
-   :caption: Event injection through the Python runtime
+.. testcode::
 
-Output:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: ../../tutorials/simulation/event_triggering.demo.py.txt
-   :language: text
+   model = load_state_machine_from_text("""
+   def int counter = 0;
+   state System {
+       [*] -> Idle;
+       state Idle;
+       state Active;
+       Idle -> Active :: Start;
+       Active -> Idle :: Stop;
+   }
+   """)
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.configuration)
+   runtime.cycle(["Start"])
+   print(runtime.configuration)
+   runtime.cycle(["Stop"])
+   print(runtime.configuration)
+
+.. testoutput::
+
+   System.Idle
+   System.Active
+   System.Idle
 
 Event names in examples rely on DSL event scoping.  For syntax facts, use
 :doc:`../../reference/dsl/index`; this page only covers how the simulator
@@ -160,14 +215,50 @@ Abstract lifecycle actions are implemented by registering Python handlers.  Use
 ``@abstract_handler`` on methods whose names can be arbitrary; the decorator
 argument names the DSL action path:
 
-.. literalinclude:: ../../tutorials/simulation/abstract_handlers.demo.py
-   :language: python
-   :caption: Abstract handlers in a simulation runtime
+.. testcode::
 
-Output:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, abstract_handler
 
-.. literalinclude:: ../../tutorials/simulation/abstract_handlers.demo.py.txt
-   :language: text
+   model = load_state_machine_from_text("""
+   def int counter = 0;
+   state System {
+       [*] -> Active;
+       state Active {
+           enter abstract Init;
+           exit abstract Cleanup;
+           during { counter = counter + 1; }
+       }
+       state Done;
+       Active -> Done : if [counter >= 2];
+   }
+   """)
+
+
+   class MyHandlers:
+       @abstract_handler("System.Active.Init")
+       def handle_init(self, ctx):
+           print("[Init]", ctx.get_full_state_path(), ctx.get_var("counter"))
+
+       @abstract_handler("System.Active.Cleanup")
+       def handle_cleanup(self, ctx):
+           print("[Cleanup]", ctx.get_var("counter"))
+
+
+   runtime = SimulationRuntime(model)
+   runtime.register_handlers_from_object(MyHandlers())
+   for _ in range(4):
+       runtime.cycle()
+       print(runtime.configuration)
+
+.. testoutput::
+
+   [Init] System.Active 0
+   System.Active
+   System.Active
+   [Cleanup] 2
+   System.Done
+   System.Done
 
 Handler context is read-only.  Typical helpers are ``ctx.get_full_state_path()``,
 ``ctx.get_var(name)``, ``ctx.has_var(name)``, ``ctx.active_leaf`` and
@@ -190,7 +281,7 @@ extension; current task docs should prefer small examples such as:
 Use JSON or JSONL for machine processing, CSV (with its explicit ``delta``
 column) for spreadsheets, and YAML for
 human-readable snapshots.  Keep exported files outside the source tree
-unless the file is a checked-in demo output regenerated by the docs build.
+unless you deliberately want to commit the exported file.
 The exact per-format fields are listed in
 :doc:`../../reference/simulation/index`.
 
@@ -248,33 +339,81 @@ Tasks for models with regions
 
 The cards below use a model with regions.  Each one states the same six
 facts: **Input**, **Command or code**, **Expected signal**, **File side
-effect**, **First failure check** and **Reference link**.  Run them from this
-directory.  ``hot_controller.fcstm`` is the interlock controller of
+effect**, **First failure check** and **Reference link**.  Download
+:download:`controller.fcstm </_models/controller.fcstm>`,
+:download:`hot_watch.fcstm`, :download:`hot_stuck.fcstm` and
+:download:`leaf_events.fcstm` into an empty directory and run the examples
+there.  ``controller.fcstm`` is the interlock controller of
 :doc:`/tutorials/regions/index`; the modeling tasks themselves are on
 :doc:`/how_to/regions/index`.
 
 Hot start a model with regions from a position
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``hot_controller.fcstm`` and a position to start from.  A position
+**Input.** ``controller.fcstm`` and a position to start from.  A position
 is a tree: the part you write is placed without running ``enter`` actions and
 the part you leave out waits for initialization.  Every variable must be
 given, including the hidden ones (``__forced_0`` here) that the model
 conversion adds.
 
-.. literalinclude:: hot_controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
-   :caption: hot_controller.fcstm
+   :caption: controller.fcstm
 
 **Command or code.** ``initial_state`` accepts five spellings of a position;
 the script also shows an owner written alone:
 
-.. literalinclude:: hot_start_forms.demo.py
-   :language: python
-   :caption: hot_start_forms.demo.py
+.. testcode::
 
-.. literalinclude:: hot_start_forms.demo.py.txt
-   :language: text
+   from pyfcstm.model import Configuration, load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("controller.fcstm")
+   variables = {"permit": 1, "motor": 1, "__forced_0": 0}
+   motion_on = model.root_state.substates["Running"].regions["Motion"].substates["On"]
+   forms = {
+       "configuration text": "Controller.Running{Safety: Watching, Motion: On}",
+       "Configuration object": Configuration.parse(
+           model, "Controller.Running{Safety: Watching, Motion: On}"
+       ),
+       "dotted path": "Controller.Running.Motion.On",
+       "tuple path": ("Controller", "Running", "Motion", "On"),
+       "State object": motion_on,
+       "owner only": "Controller.Running",
+   }
+   for label, initial_state in forms.items():
+       runtime = SimulationRuntime(
+           model,
+           initial_state=initial_state,
+           initial_vars=variables,
+           input_source={"fault": SequenceInput([0]), "requested": SequenceInput([1])},
+       )
+       before = runtime.configuration
+       runtime.cycle()
+       print(f"{label}:")
+       print(f"  at start     {before}")
+       print(f"  after cycle  {runtime.configuration}")
+
+.. testoutput::
+
+   configuration text:
+     at start     Controller.Running{Safety: Watching, Motion: On}
+     after cycle  Controller.Running{Safety: Watching, Motion: On}
+   Configuration object:
+     at start     Controller.Running{Safety: Watching, Motion: On}
+     after cycle  Controller.Running{Safety: Watching, Motion: On}
+   dotted path:
+     at start     Controller.Running{Safety: [init], Motion: On}
+     after cycle  Controller.Running{Safety: Watching, Motion: On}
+   tuple path:
+     at start     Controller.Running{Safety: [init], Motion: On}
+     after cycle  Controller.Running{Safety: Watching, Motion: On}
+   State object:
+     at start     Controller.Running{Safety: [init], Motion: On}
+     after cycle  Controller.Running{Safety: Watching, Motion: On}
+   owner only:
+     at start     Controller.Running{Safety: [init], Motion: [init]}
+     after cycle  Controller.Running{Safety: Watching, Motion: Off}
 
 **Expected signal.** The configuration text and the ``Configuration`` object
 place every region.  A dotted path, a tuple path and a ``State`` object name
@@ -303,12 +442,35 @@ derives nor checks them against the position.  ``hot_watch.fcstm`` uses
 
 **Command or code.**
 
-.. literalinclude:: hot_active_variables.demo.py
-   :language: python
-   :caption: hot_active_variables.demo.py
+.. testcode::
 
-.. literalinclude:: hot_active_variables.demo.py.txt
-   :language: text
+   from pyfcstm.model import Configuration, load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("hot_watch.fcstm")
+   config = Configuration.parse(
+       model, "Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}"
+   )
+   hidden = model.active_variables(config)
+   print("queries:", [(".".join(q.state_path), q.variable_name) for q in model.active_queries])
+   print("hidden variables for this position:", hidden)
+
+   runtime = SimulationRuntime(
+       model,
+       initial_state=config,
+       initial_vars=hidden,
+       input_source={"go": SequenceInput([1])},
+   )
+   runtime.cycle()
+   print("after one cycle:", runtime.configuration)
+   print("runtime.vars:", dict(runtime.vars))
+
+.. testoutput::
+
+   queries: [('Plant.Trigger.Fired', '__active_Plant_Trigger_Fired')]
+   hidden variables for this position: {'__active_Plant_Trigger_Fired': 1}
+   after one cycle: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+   runtime.vars: {'__active_Plant_Trigger_Fired': 1}
 
 **Expected signal.** ``model.active_queries`` lists the queries and their
 variable names; ``model.active_variables(config)`` computes the values that
@@ -327,16 +489,38 @@ variables, and add them.
 Fix three typical hot-start errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``hot_controller.fcstm`` and the three refusals below.  The script
-``hot_start_errors.demo.py`` constructs a runtime three times and prints the
-``ValueError`` each time.
+**Input.** ``controller.fcstm`` and the three refusals below.  The script
+constructs a runtime three times and prints the ``ValueError`` each time.
 
-.. literalinclude:: hot_start_errors.demo.py
-   :language: python
-   :caption: hot_start_errors.demo.py
+.. testcode::
 
-.. literalinclude:: hot_start_errors.demo.py.txt
-   :language: text
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("controller.fcstm")
+   full = {"permit": 1, "motor": 1, "__forced_0": 0}
+   cases = [
+       ("hidden variable left out", "Controller.Running{Safety: Watching, Motion: On}",
+        {"permit": 1, "motor": 1}),
+       ("every region done", "Controller.Running{Safety: [done], Motion: [done]}", full),
+       ("unknown state", "Controller.Running{Safety: Nope, Motion: On}", full),
+   ]
+   for label, initial_state, variables in cases:
+       try:
+           SimulationRuntime(
+               model,
+               initial_state=initial_state,
+               initial_vars=variables,
+               input_source={"fault": SequenceInput([0]), "requested": SequenceInput([1])},
+           )
+       except ValueError as error:
+           print(f"{label}: ValueError: {error}")
+
+.. testoutput::
+
+   hidden variable left out: ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
+   every region done: ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   unknown state: ValueError: Unknown configuration path: 'Controller.Running.Safety.Nope'.
 
 **Command or code and fix.**
 
@@ -372,12 +556,40 @@ events are an ambiguity.
 
 **Command or code.**
 
-.. literalinclude:: event_names.demo.py
-   :language: python
-   :caption: event_names.demo.py
+.. testcode::
 
-.. literalinclude:: event_names.demo.py.txt
-   :language: text
+   from pyfcstm.model import Configuration, load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+   from pyfcstm.simulate.runtime import SimulationRuntimeEventError
+   from pyfcstm.utils.validate import ModelLookupError, ModelValueError
+
+   model = load_state_machine_from_file("leaf_events.fcstm")
+   config = Configuration.parse(model, "Root.P{L: X, R: Y}")
+   for name in ("Go", "/Reset", "Ping", "Nope"):
+       try:
+           print(f"{name!r} -> {config.resolve_event(name).path_name}")
+       except (ModelValueError, ModelLookupError) as error:
+           print(f"{name!r} -> {type(error).__name__}: {error}")
+
+   for events in (["Ping"], ["Root.P.L.X.Ping"], ["Root.P.L.X.Ping", "Root.P.R.Y.Ping"]):
+       runtime = SimulationRuntime(model)
+       runtime.cycle()
+       try:
+           runtime.cycle(events)
+       except SimulationRuntimeEventError as error:
+           print(f"cycle({events}) -> refused: {error}")
+       else:
+           print(f"cycle({events}) -> {runtime.configuration}")
+
+.. testoutput::
+
+   'Go' -> Root.P.L.X.Go
+   '/Reset' -> Root.Reset
+   'Ping' -> ModelValueError: Position-dependent event name 'Ping' is ambiguous: Root.P.L.X.Ping (from Root.P.L.X); Root.P.R.Y.Ping (from Root.P.R.Y); use the full event path or a root-based "/path".
+   'Nope' -> ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Root.P.L.X, Root.P.R.Y); use the full event path or a root-based "/path".
+   cycle(['Ping']) -> refused: Position-dependent event name 'Ping' is ambiguous: Root.P.L.X.Ping (from Root.P.L.X); Root.P.R.Y.Ping (from Root.P.R.Y); use the full event path or a root-based "/path".
+   cycle(['Root.P.L.X.Ping']) -> Root.P{L: X, R: Y}
+   cycle(['Root.P.L.X.Ping', 'Root.P.R.Y.Ping']) -> Root.P{L: X, R: Y2}
 
 **Expected signal.** ``Go`` resolves to one event; ``/Reset`` resolves from
 anywhere; ``Ping`` raises an ambiguity error that lists each candidate and the
@@ -407,12 +619,40 @@ reach a resting position.
 
 **Command or code.**
 
-.. literalinclude:: hot_delta.demo.py
-   :language: python
-   :caption: hot_delta.demo.py
+.. testcode::
 
-.. literalinclude:: hot_delta.demo.py.txt
-   :language: text
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("hot_stuck.fcstm")
+   for flag in (0, 1):
+       runtime = SimulationRuntime(
+           model,
+           initial_state="Root.Pair{Left: Busy}",
+           initial_vars={"flag": flag, "work": 0},
+       )
+       print(f"flag={flag} at start: {runtime.configuration}")
+       result = runtime.cycle(diagnostics=True)
+       print(f"  delta={result.delta} outcome={result.diagnostics.outcome}")
+       print(f"  after cycle: {runtime.configuration} vars={dict(runtime.vars)}")
+       for item in result.diagnostics.decisions:
+           print(
+               f"  check #{item.id} {item.transition_label.split('::')[0]} -> "
+               f"{item.outcome}; guard={item.guard} result={item.guard_result}"
+           )
+
+.. testoutput::
+
+   Cycle 1 completed as Delta - State: Root.Pair{Left: Busy, Right: [init]}; no stoppable successor was committed
+   flag=0 at start: Root.Pair{Left: Busy, Right: [init]}
+     delta=True outcome=delta
+     after cycle: Root.Pair{Left: Busy, Right: [init]} vars={'flag': 0, 'work': 0}
+     check #1 Root.Pair.Right -> guard_false; guard=flag > 0 result=False
+   flag=1 at start: Root.Pair{Left: Busy, Right: [init]}
+     delta=False outcome=cycle
+     after cycle: Root.Pair{Left: Busy, Right: Ready} vars={'flag': 1, 'work': 1}
+     check #1 Root.Pair.Right -> selected; guard=flag > 0 result=True
+     check #2 Root.Pair.Right -> selected; guard=flag > 0 result=True
 
 **Expected signal.** With ``flag=0`` the cycle is a Delta: ``delta=True``,
 the configuration and the variables are unchanged, even ``Left``'s ``during``
@@ -434,44 +674,79 @@ values at the check, not final values.
 Type a configuration into ``init`` and read ``events`` in the REPL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``hot_controller.fcstm``.  ``init`` accepts configuration text in
+**Input.** ``controller.fcstm``.  ``init`` accepts configuration text in
 braces; give every variable once.
 
 **Command or code.**
 
-.. literalinclude:: repl_init.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: repl_init.demo.sh.txt
-   :language: text
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; \
+   events; \
+   init Controller.Running permit=1 motor=0 __forced_0=0"
+   ────────────────────────────────────────────────────────────
+   >>> init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0
+   ────────────────────────────────────────────────────────────
+   Initialized from state: Controller.Running{Safety: Watching, Motion: On}
+   Cycle: 0
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Controller.Stop
+
+   ────────────────────────────────────────────────────────────
+   >>> init Controller.Running permit=1 motor=0 __forced_0=0
+   ────────────────────────────────────────────────────────────
+   Initialized from state: Controller.Running
+   Cycle: 0
+   Current State: Controller.Running{Safety: [init], Motion: [init]}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 1
 
 **Expected signal.** ``init`` reports the position it built.  An owner written
 alone is shown with ``[init]`` for every region.  ``events`` lists only events
 that exist from the active leaves.  Position text is shown as configuration
 text everywhere (``current``, history tables, exports).
 
-Two refusals, both negative examples:
+Two refusals, both negative examples.  Each one ends with exit status 1:
 
-.. literalinclude:: repl_init_duplicate.demox.sh.txt
-   :language: text
+.. code-block:: console
 
-(A variable assigned twice; the exit code in ``repl_init_duplicate.demox.sh.exitcode`` is 1.)
-
-.. literalinclude:: repl_init_done.demox.sh.txt
-   :language: text
-
-(All regions done; exit code 1 in ``repl_init_done.demox.sh.exitcode``.)
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running permit=1 permit=0 motor=0 __forced_0=0"
+   ────────────────────────────────────────────────────────────
+   >>> init Controller.Running permit=1 permit=0 motor=0 __forced_0=0
+   ────────────────────────────────────────────────────────────
+   Error: variable 'permit' is assigned more than once.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=0 __forced_0=0"
+   ────────────────────────────────────────────────────────────
+   >>> init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=0 __forced_0=0
+   ────────────────────────────────────────────────────────────
+   Initialization failed: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
 
 In the interactive REPL, Tab completion offers only short event names that
-would actually resolve, and it completes states inside regions.  The completer
-used by the REPL gives:
-
-.. literalinclude:: repl_completion.demo.py
-   :language: python
-   :caption: repl_completion.demo.py
-
-.. literalinclude:: repl_completion.demo.py.txt
-   :language: text
+would actually resolve, and it completes states inside regions.  Completion
+needs a terminal, so it is not part of the checked examples; in an interactive
+session on ``controller.fcstm`` after one ``cycle``, typing
+``init Controller.Running.`` and pressing Tab offers
+``Controller.Running.Motion.Off``, ``Controller.Running.Motion.On`` and
+``Controller.Running.Safety.Watching`` as leaf states, ``cycle Co`` offers
+``Controller.Start`` as an event name, and ``cycle S`` offers nothing.
 
 ``cycle S`` offers nothing because ``Start`` is declared on the owner and a
 bare name does not look upward; ``cycle Co`` offers the full path.

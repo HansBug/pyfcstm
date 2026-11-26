@@ -561,6 +561,23 @@ def _run_vars(model, seq_by_cycle, names):
     return trace
 
 
+def _time_plain(model, names, seq, repeats, cycles=100):
+    from pyfcstm.simulate import SimulationRuntime
+
+    runtime = SimulationRuntime(
+        model, input_source={n: 0 for n in names}, history_size=1
+    )
+    index = [0]
+
+    def step(count):
+        for _ in range(count):
+            runtime.cycle(inputs=seq[index[0] % len(seq)])
+            index[0] += 1
+
+    step(30)
+    return summarize(_time_cycles(step, cycles, repeats))
+
+
 def cmd_e1(args):
     """
     Run experiment 1.
@@ -570,6 +587,7 @@ def cmd_e1(args):
     :return: ``None``.
     :rtype: None
     """
+    pin_core(args.core)
     writer = Writer(args.out, {"experiment": "e1"})
     cycles, seeds = args.cycles, args.seeds
     for T in (1, 2):
@@ -595,6 +613,16 @@ def cmd_e1(args):
                         equivalent = False
                         first_diff = next(i for i in range(cycles) if a[i] != b[i])
                         break
+                timing = {}
+                if args.repeats:
+                    seq = [
+                        {n: rng.randint(0, T) for n in names} for _ in range(SEQ_LEN)
+                    ]
+                    for label, model in (
+                        ("region", region_model),
+                        ("flat", flat_model),
+                    ):
+                        timing[label] = _time_plain(model, names, seq, args.repeats)
                 writer.write(
                     kind="product",
                     model={"R": R, "S": S, "T": T},
@@ -610,6 +638,10 @@ def cmd_e1(args):
                     first_difference_cycle=first_diff,
                     cycles=cycles,
                     seeds=seeds,
+                    repeats=args.repeats,
+                    stat="median",
+                    region_seconds_per_cycle=(timing.get("region") or {}).get("median"),
+                    flat_seconds_per_cycle=(timing.get("flat") or {}).get("median"),
                 )
     for label, text in coupled_models().items():
         model = load_model(text)
@@ -906,6 +938,15 @@ DRIVER = r"""
 #include <stdint.h>
 #include "machine.h"
 static const int SEQ[%(seq_len)d] = {%(seq)s};
+#ifdef %(macro)s_ARENA_CAPACITY
+#define CAP_ARENA ((long)%(macro)s_ARENA_CAPACITY)
+#define CAP_TRAIL ((long)%(macro)s_TRAIL_CAPACITY)
+#define CAP_STORAGE ((long)%(macro)s_STORAGE_BYTES)
+#else
+#define CAP_ARENA (-1L)
+#define CAP_TRAIL (-1L)
+#define CAP_STORAGE (-1L)
+#endif
 static double cpu_ns(void) { struct timespec t; clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t); return 1e9 * t.tv_sec + t.tv_nsec; }
 static double mono_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC_RAW, &t); return 1e9 * t.tv_sec + t.tv_nsec; }
 int main(int argc, char **argv)
@@ -932,7 +973,7 @@ int main(int argc, char **argv)
     for (k = 0; k < sizeof(%(cls)sVars); ++k) { h ^= bytes[k]; h *= 1099511628211ULL; }
     printf("{\"ns_per_cycle\": %%.3f, \"first_cycle_ns\": %%.0f, \"vars_hash\": \"%%016llx\", \"sizeof_machine\": %%zu, \"arena\": %%ld, \"trail\": %%ld, \"storage_bytes\": %%ld}\n",
            (t1 - t0) / (double)cycles, f1 - f0, (unsigned long long)h, sizeof(*m),
-           (long)%(macro)s_ARENA_CAPACITY, (long)%(macro)s_TRAIL_CAPACITY, (long)%(macro)s_STORAGE_BYTES);
+           CAP_ARENA, CAP_TRAIL, CAP_STORAGE);
     return 0;
 }
 """
@@ -1199,6 +1240,40 @@ def linear_fit(xs, ys):
     }
 
 
+def poly_fit(xs, ys, degree):
+    """
+    Fit a polynomial by least squares (normal equations, no dependencies).
+
+    :param xs: Abscissae.
+    :type xs: list
+    :param ys: Ordinates.
+    :type ys: list
+    :param degree: Polynomial degree.
+    :type degree: int
+    :return: ``coefficients`` from the constant term up and ``r2``.
+    :rtype: dict
+    """
+    n = degree + 1
+    mat = [
+        [sum(x ** (i + j) for x in xs) for j in range(n)]
+        + [sum(y * x**i for x, y in zip(xs, ys))]
+        for i in range(n)
+    ]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(mat[r][col]))
+        mat[col], mat[pivot] = mat[pivot], mat[col]
+        for r in range(n):
+            if r != col:
+                factor = mat[r][col] / mat[col][col]
+                mat[r] = [a - factor * b for a, b in zip(mat[r], mat[col])]
+    coef = [mat[i][n] / mat[i][i] for i in range(n)]
+    fit = [sum(c * x**k for k, c in enumerate(coef)) for x in xs]
+    my = sum(ys) / len(ys)
+    ss_res = sum((y - f) ** 2 for y, f in zip(ys, fit))
+    ss_tot = sum((y - my) ** 2 for y in ys)
+    return {"coefficients": coef, "r2": 1 - ss_res / ss_tot if ss_tot else 1.0}
+
+
 def power_fit(xs, ys):
     """
     Fit ``y = c x^k`` on log-log axes.
@@ -1252,6 +1327,7 @@ def cmd_fit(args):
             result["%s/%s" % (exp, sweep)] = {
                 "points": len(xs),
                 "linear": linear_fit(xs, ys),
+                "quadratic": poly_fit(xs, ys, 2),
                 "power": power_fit(xs, ys),
             }
     with open(args.out, "w") as handle:
@@ -1273,6 +1349,13 @@ def build_parser():
     p.add_argument("--cycles", type=int, default=200)
     p.add_argument("--seeds", type=int, default=5)
     p.add_argument("--max-flat-transitions", type=int, default=25000)
+    p.add_argument(
+        "--repeats",
+        type=int,
+        default=5,
+        help="timed batches per model and form; 0 skips timing",
+    )
+    p.add_argument("--core", type=int, default=None)
     p.set_defaults(func=cmd_e1)
     for name, func in (("e2", cmd_e2), ("e3", cmd_e3)):
         p = sub.add_parser(name, help="time per cycle (%s)" % name)

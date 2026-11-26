@@ -83,6 +83,36 @@ _EQUATION_PAIRS = (
     "explanations/bmc_solving/index",
 )
 
+# --- scaling page: equations, resources -------------------------------------
+# The scaling explanation keeps its own frozen label list, separate from the
+# semantics ledger above, because its equations describe measured cost rather
+# than the encoding.  Order is the order of appearance on the page.
+_SCALING_PAGE = "explanations/bmc_scaling/index"
+
+_SCALING_EQUATION_LABELS = (
+    "bmc-scaling-nodes-flat",
+    "bmc-scaling-nodes-flat-vars",
+    "bmc-scaling-nodes-regions",
+    "bmc-scaling-bool-vars",
+    "bmc-scaling-size-order",
+    "bmc-scaling-calls-flat",
+    "bmc-scaling-calls-regions",
+    "bmc-scaling-contexts",
+    "bmc-scaling-compile-time",
+    "bmc-scaling-solve-time",
+    "bmc-scaling-propagation-fit",
+    "bmc-scaling-conflict-growth",
+)
+
+_SCALING_DATA_FILES = (
+    "formula_grid.jsonl",
+    "solve_law.jsonl",
+    "unit_cost.jsonl",
+    "variables.jsonl",
+    "pigeonhole.jsonl",
+    "timing.jsonl",
+)
+
 _SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli.schema.json")
 _SCHEMA_ID = (
     "https://github.com/HansBug/pyfcstm/blob/main/"
@@ -600,6 +630,63 @@ def _check_pages(errors: List[str]) -> None:
         for target in required:
             if target not in text:
                 errors.append("%s does not link to %s." % (relative, target))
+
+
+def _check_scaling_page(errors: List[str]) -> None:
+    """Check the scaling explanation's pages, equations and committed data.
+
+    The page states closed forms and measured fits, so the same drift risks as
+    the semantics ledger apply: the English and Chinese LaTeX must be literally
+    equal, every labelled equation must be cited with ``:eq:``, and the data
+    files the figures and tables are drawn from must be committed.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "docs/source"
+    english = source / (_SCALING_PAGE + ".rst")
+    chinese = source / (_SCALING_PAGE + "_zh.rst")
+    for path in (english, chinese):
+        if not path.is_file():
+            errors.append("%s is missing." % path.relative_to(_REPO_ROOT))
+            return
+        if ".. toctree::" in _read(path):
+            errors.append("%s must not own sibling pages through a toctree." % path)
+    english_equations = _extract_equations(english)
+    chinese_equations = _extract_equations(chinese)
+    for language, equations in (
+        ("English", english_equations),
+        ("Chinese", chinese_equations),
+    ):
+        labels = tuple(label for label, _latex in equations)
+        if labels != _SCALING_EQUATION_LABELS:
+            errors.append(
+                "%s scaling equation ledger does not match the frozen label list."
+                % language
+            )
+    if english_equations != chinese_equations:
+        errors.append("English and Chinese scaling equation labels/LaTeX differ.")
+    known = set(_SCALING_EQUATION_LABELS)
+    for path in (english, chinese):
+        cited = set()
+        for label in _equation_references(path):
+            cited.add(label)
+            if label not in known and label not in _EQUATION_LABELS:
+                errors.append(
+                    "%s references equation %r, which no labelled block defines."
+                    % (path.relative_to(_REPO_ROOT), label)
+                )
+        missing = [label for label in _SCALING_EQUATION_LABELS if label not in cited]
+        if missing:
+            errors.append(
+                "%s never references %s." % (path.relative_to(_REPO_ROOT), ", ".join(missing))
+            )
+    data = source / "explanations/bmc_scaling/data"
+    for name in _SCALING_DATA_FILES:
+        if not (data / name).is_file():
+            errors.append("scaling data file %s is missing." % name)
 
 
 def _check_readme(errors: List[str]) -> None:
@@ -1587,6 +1674,7 @@ def check() -> None:
     errors: List[str] = []
     _check_equations(errors)
     _check_equation_references(errors)
+    _check_scaling_page(errors)
     _check_headline_transcription(errors)
     _check_pages(errors)
     _check_readme(errors)

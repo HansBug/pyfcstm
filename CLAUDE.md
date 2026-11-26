@@ -258,6 +258,7 @@ As of 2026-03, the repository is no longer only a generic template experiment. T
 - Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
 - A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
 - A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, a stable structured JSON result, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
+- Ordered parallel regions (`region Name { ... }`) supported end to end: parsing and model, `SimulationRuntime` (cold and hot start, short event names) and `pyfcstm simulate`, `pyfcstm inspect` with two order diagnostics, `pyfcstm.verify`, bounded model checking, all five built-in templates (`python`, `c`, `c_poll`, `cpp`, `cpp_poll`, which declare `features: [region]`), PlantUML, the diagram viewer and the VS Code preview; a template that does not declare the `region` feature refuses a model with regions. Start from [docs/source/tutorials/regions/](docs/source/tutorials/regions/)
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -628,6 +629,7 @@ Mandatory completion rule for built-in template work:
 - [expr.py](pyfcstm/model/expr.py): Expression system supporting literals, variables, unary/binary operators, bitwise ops, function calls
 - [base.py](pyfcstm/model/base.py): Base classes `AstExportable` and `PlantUMLExportable`
 - Model methods: `walk_states()` for traversal, `find_state()` for lookups, export capabilities
+- Regions: a state that owns regions has ordered `Region` children; the position of a machine with regions is an immutable tree, the `Configuration` of [configuration.py](pyfcstm/model/configuration.py), with a one-line text form such as `Root.Run{A: X, B: [done]}`
 
 **Rendering Engine** ([pyfcstm/render/](pyfcstm/render/))
 
@@ -649,6 +651,7 @@ Mandatory completion rule for built-in template work:
 
 - [runtime.py](pyfcstm/simulate/runtime.py): `SimulationRuntime` for cycle-based execution
   - Execution stack of active states from root to leaf; speculative validation before transitions
+  - **Regions**: an owner advances its regions one after another in writing order inside one cycle; `runtime.configuration` gives the position as a tree, and hot start takes a configuration text (what is written is put in place, what is not written waits for initialization)
   - **Hot Start**: builds frame stack directly to target state without enter actions
     - Leaf states use `'active'` mode; Composite states use `'init_wait'` mode
     - `initial_vars` must provide all variables; DFS finds stoppable paths
@@ -847,6 +850,24 @@ no docstring and no gate file.
   `during before` / `during after` do not wrap child-to-child transitions.
 - `>> during before` and `>> during after` are aspect actions for descendant
   leaf-state cycles. Plain leaf `during` executes during ordinary active cycles.
+- Regions: `state Owner { region A { ... } region B { ... } }` runs every region
+  in every cycle, in writing order, and the order is part of the meaning. A state
+  holds either ordinary children or regions, never both; a region holds an initial
+  transition, children, transitions, `event` declarations and aspects, and no
+  `enter` / `during` / `exit` and no variable declarations. `region` and `active`
+  are reserved words. A later region sees what an earlier one wrote in the same
+  cycle, and the last write wins. Transitions never cross from one region into
+  another or from outside into a region; enter the owner instead. `X -> [*]` in a
+  region finishes it, and when the last region finishes the owner continues in
+  the same cycle (joint completion). A forced transition on the owner
+  (`!Running -> Idle : /Stop;`) takes the whole group away; it expands into
+  ordinary `-> [*]` transitions. An event declared in a region belongs to that
+  region; share one with a root path such as `/Owner.Region.Event`. Hot start takes
+  a configuration text such as `Controller.Running{Safety: Watching, Motion: On}`;
+  a machine with regions has no `current_state_path`, read `configuration`.
+  `active("State.Path")` is a read-only query usable wherever a condition is; it
+  is syntactic sugar over hidden flag variables that are ordinary variables.
+  Do not write `enter` / `during` / `exit` inside a region.
 
 ## Python Docstring Style Guide
 

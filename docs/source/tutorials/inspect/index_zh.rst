@@ -80,3 +80,4 @@
 * CI、大语言模型和验证支持的任务做法见 :doc:`../../how_to/inspect/index_zh`。
 * Inspect 能证明什么、不能证明什么见 :doc:`../../explanations/diagnostics/index_zh`。
 * 已有具体诊断码时查 :doc:`../../reference/diagnostics_codes/index_zh`。
+* 在含区域的模型上观察区域顺序诊断 ``I_REGION_BACKWARD_READ``，见 :doc:`../../tutorials/regions/index_zh`。

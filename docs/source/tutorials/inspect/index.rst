@@ -93,3 +93,4 @@ Next steps
 * Use :doc:`../../how_to/inspect/index` for CI, LLM, and verify-backed recipes.
 * Use :doc:`../../explanations/diagnostics/index` to understand what inspect can and cannot prove.
 * Use :doc:`../../reference/diagnostics_codes/index` when you have a specific diagnostic code.
+* Use :doc:`../../tutorials/regions/index` to see the region order diagnostic ``I_REGION_BACKWARD_READ`` on a model with regions.

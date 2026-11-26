@@ -78,3 +78,5 @@ Where to go next
   :doc:`/explanations/template_rendering/index`.
 * Look up built-in template contracts in
   :doc:`/reference/builtin_templates/index`.
+* Generate a runtime for a model with regions and read its position with
+  ``configuration`` in :doc:`/tutorials/regions/index`.

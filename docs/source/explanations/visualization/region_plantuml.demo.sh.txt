@@ -1,0 +1,35 @@
+$ pyfcstm plantuml -i controller.fcstm   (the Running block)
+    state "Running" as controller__running <<composite>> {
+        note as controller__running__safety
+            **region 1: Safety**
+        end note
+        state "Watching" as controller__running__safety__watching
+        [*] --> controller__running__safety__watching
+        --
+        note as controller__running__motion
+            **region 2: Motion**
+        end note
+        state "Off" as controller__running__motion__off
+        state "On" as controller__running__motion__on
+        [*] --> controller__running__motion__off
+        controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+        controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+    }
+
+$ pyfcstm plantuml -i controller_swapped.fcstm   (region lines only)
+            **region 1: Motion**
+        --
+            **region 2: Safety**
+
+$ pyfcstm plantuml -i controller.fcstm -c max_depth=2   (the Running block)
+    state "Running" as controller__running <<composite>> {
+        note as controller__running__safety
+            **region 1: Safety**
+        end note
+        state "..." as controller__running__safety___collapsed_
+        --
+        note as controller__running__motion
+            **region 2: Motion**
+        end note
+        state "..." as controller__running__motion___collapsed_
+    }

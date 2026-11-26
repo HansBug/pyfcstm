@@ -233,7 +233,7 @@ VSCode 验证套件
      - ``region_definition: REGION ID '{' region_inner_statement* '}'``\ 。复合状态要么含子状态，要么含区域，不能两者都有。\ ``region_inner_statement`` 是状态、转换、强制转换、\ ``>> during`` 切面、事件声明或 ``;``\ ；\ ``enter``、\ ``during``、\ ``exit`` 和变量声明在区域里无法解析。拥有区域的状态保留 ``enter``、\ ``during``、\ ``exit``、切面和事件，但不能有转换、强制转换、历史或导入。\ ``active`` 是 ``cond_expression`` 的一个分支 ``ACTIVE '(' STRING ')'``\ 。
    * - Pygments 词法分析器
      - ``pyfcstm/highlight/pygments_lexer.py``
-     - ``region`` 与 ``state`` 一样是 ``Keyword.Declaration``\ ；\ ``active`` 与内置函数一样是 ``Name.Builtin``\ 。只是包含这个词的标识符，例如 ``active_count``\ ，仍是普通名字。下面的演示输出各标记类型。
+     - ``region`` 与 ``state`` 一样是 ``Keyword.Declaration``\ ；\ ``active`` 与内置函数一样是 ``Name.Builtin``\ 。只是包含这个词的标识符，例如 ``active_count``\ ，仍是普通名字。下面的脚本输出各标记类型。
    * - TextMate 文法
      - ``editors/fcstm.tmLanguage.json``
      - ``meta.definition.region.fcstm`` 规则匹配 ``region Name {``\ ，并把名字标为 ``entity.name.namespace.region.fcstm``\ ；\ ``region`` 也在声明关键字列表里，\ ``active`` 是 ``support.function.builtin.fcstm``\ 。两个词都被排除在标识符的前瞻之外。
@@ -254,19 +254,39 @@ VSCode 验证套件
 * 两条顺序诊断 ``I_REGION_BACKWARD_READ`` 和 ``W_REGION_BLIND_OVERWRITE`` 在 jsfcstm 里不存在。对含区域或含 ``active()`` 查询的模型，\ ``inspectModel`` 会抛出错误，见 :ref:`inspect-report-region-order-zh`\ 。
 * ``python editors/validate.py`` 会读取 ``editors/vscode/syntaxes/fcstm.tmLanguage.json``\ ，它是打包产物。在没有生成它的检出里，命令会以 ``FileNotFoundError`` 停止。它内置的测试源码同时包含 ``region`` 和 ``active(...)``\ 。
 
-下面是各构造的 Pygments 标记类型，由直接导入 :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer` 的演示脚本输出（因此不依赖入口点是否已安装）：
+下面是各构造的 Pygments 标记类型，由直接导入 :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer` 的脚本输出（因此不依赖入口点是否已安装）：
 
 .. literalinclude:: region_highlight.fcstm
    :language: fcstm
    :caption: region_highlight.fcstm
 
-.. literalinclude:: region_highlight.demo.py
-   :language: python
-   :caption: region_highlight.demo.py
+.. testcode::
 
-.. literalinclude:: region_highlight.demo.py.txt
-   :language: text
-   :caption: region_highlight.demo.py.txt
+   from pathlib import Path
+
+   from pygments.token import Token
+
+   from pyfcstm.highlight.pygments_lexer import FcstmLexer
+
+   lexer = FcstmLexer()
+   wanted = ("region", "Motor", "Sensor", "active", "active_count", "state", "Root")
+   for line_no, line in enumerate(Path("region_highlight.fcstm").read_text().splitlines(), 1):
+       for token_type, value in lexer.get_tokens(line):
+           if value in wanted and token_type is not Token.Text:
+               print("line %d: %-14r %s" % (line_no, value, token_type))
+
+.. testoutput::
+
+   line 1: 'active_count' Token.Name
+   line 2: 'state'        Token.Keyword.Declaration
+   line 2: 'Root'         Token.Name
+   line 3: 'region'       Token.Keyword.Declaration
+   line 3: 'Motor'        Token.Name
+   line 4: 'state'        Token.Keyword.Declaration
+   line 7: 'region'       Token.Keyword.Declaration
+   line 7: 'Sensor'       Token.Name
+   line 8: 'state'        Token.Keyword.Declaration
+   line 10: 'active'       Token.Name.Builtin
 
 输出这样读：两个 ``region`` 关键字和三个 ``state`` 关键字都是 ``Keyword.Declaration``\ ；区域名是普通的 ``Name``\ ；\ ``active`` 是 ``Name.Builtin``\ ，而 ``active_count`` 仍是 ``Name``\ 。
 

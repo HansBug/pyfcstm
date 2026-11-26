@@ -1861,6 +1861,10 @@ language-isolated build roots are [docs/build/pdf/en/](docs/build/pdf/en/) and
 [docs/build/pdf/zh/](docs/build/pdf/zh/); each command runs [tools/check_docs_pdf.py](tools/check_docs_pdf.py) before it
 reports success.
 
+#### Docs Check Artifacts
+
+Every Docs Check run uploads two downloadable artifacts for reviewers who cannot build the documentation locally: `docs-pdf-bilingual` (the finished English and Chinese PDFs, `pyfcstm-en.pdf` and `pyfcstm-zh.pdf`) and `docs-html-bilingual` (the English and Chinese HTML trees under one folder; unpack it and open `pyfcstm-docs-html/index.html`, every link is relative so it works offline). Both are kept for 14 days. The older `docs-pdf-evidence` artifact keeps the logs and intermediate files of the PDF build.
+
 #### PDF Build Discipline
 
 - Changes to a root index or toctree, [docs/source/conf.py](docs/source/conf.py), LaTeX configuration, documentation

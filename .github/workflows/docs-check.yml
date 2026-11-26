@@ -297,6 +297,54 @@ jobs:
                   raise SystemExit('CODE_REGISTRY runtime value leaked into {0}'.format(page))
           PY
 
+      - name: Package the bilingual HTML for local viewing
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=.ci/docs-html/pyfcstm-docs-html
+          if [ ! -f /tmp/pyfcstm-docs-check-en/index.html ] || [ ! -f /tmp/pyfcstm-docs-check-zh/index.html ]; then
+            echo "The HTML builds are missing, so there is nothing to package." >&2
+            exit 0
+          fi
+          mkdir -p "${package}"
+          cp -a /tmp/pyfcstm-docs-check-en "${package}/en"
+          cp -a /tmp/pyfcstm-docs-check-zh "${package}/zh"
+          cat > "${package}/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>pyfcstm documentation</title>
+            <style>
+              body { font-family: sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
+              a { display: block; margin: 1rem 0; padding: 1rem; border: 1px solid #888; border-radius: 6px; text-decoration: none; }
+            </style>
+          </head>
+          <body>
+            <h1>pyfcstm documentation</h1>
+            <a href="en/index.html">English documentation</a>
+            <a href="zh/index.html">中文文档</a>
+            <p>Open this page from a browser. Every link is relative, so the folder works offline wherever you unpack it.</p>
+          </body>
+          </html>
+          HTML
+          {
+            echo '## Bilingual HTML package'
+            echo
+            echo "* Download the \`docs-html-bilingual\` artifact, unpack it and open \`pyfcstm-docs-html/index.html\`."
+            echo "* Size: \`$(du -sh "${package}" | cut -f1)\` unpacked."
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload the bilingual HTML package
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-html-bilingual
+          if-no-files-found: warn
+          retention-days: 14
+          path: .ci/docs-html
+
   docs_examples:
     name: Docs examples
     runs-on: ubuntu-22.04
@@ -412,6 +460,29 @@ jobs:
             echo "* English: \`${en_seconds}s\`, \`${en_pdf}\`"
             echo "* Chinese: \`${zh_seconds}s\`, \`${zh_pdf}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Collect the finished PDFs
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/docs-pdf-final
+          for language in en zh; do
+            pdf="$(find "docs/build/pdf/${language}/latex" -maxdepth 1 -type f -name '*.pdf' -print -quit 2>/dev/null || true)"
+            if [ -n "${pdf}" ]; then
+              cp "${pdf}" ".ci/docs-pdf-final/pyfcstm-${language}.pdf"
+            else
+              echo "No ${language} PDF was produced." >&2
+            fi
+          done
+          ls -l .ci/docs-pdf-final
+      - name: Upload the finished PDFs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-pdf-bilingual
+          if-no-files-found: warn
+          retention-days: 14
+          path: .ci/docs-pdf-final/*.pdf
       - name: Upload PDF build evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

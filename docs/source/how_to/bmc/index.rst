@@ -903,9 +903,11 @@ owner written alone.  Persistent variables keep their initializers unless you
    :language: text
 
 **Expected output.** Frame 0 is exactly the configuration you wrote.  The
-witness reaches ``Motion: Off`` in two steps: the first step leaves ``Running``
-(the ``Stop`` forced transition), the second enters it again.  Every step lists
-one local case per region that did something; the next card explains them.
+query asks for ``Controller.Idle`` within one step, and the only way out of
+``Running`` is the ``Stop`` forced transition, so frame 1 is ``Controller.Idle``.
+Step 0 lists one local case per region that did something: ``Safety`` and
+``Motion`` each take their ``__region_done__`` transition, then the owner takes
+its transition to ``Idle``; the next card explains these entries.
 Without ``havoc { permit, motor }`` the same ``where`` clause makes the scenario
 infeasible (``Failure boundary: INITIALIZATION``), because the initializers
 ``permit = 0`` and ``motor = 0`` contradict it.
@@ -959,10 +961,12 @@ Both commands exit with code 1 (``region_bad_start.demox.sh.exitcode`` and
 .. literalinclude:: region_pattern.demo.sh.txt
    :language: text
 
-**Expected output.** The first query leaves ``Safety`` out of the start text:
-frame 0 shows ``Safety: [init]``, and the pattern that writes ``[init]``
-matches it.  The second query starts with both regions written and the pattern
-leaves ``Safety`` out, so ``Watching`` does not matter.  The third query
+**Expected output.** The script prints frame 0 only: the property already
+holds there, and later frames are free choices of the solver.  The first
+query leaves ``Safety`` out of the start text: frame 0 shows ``Safety:
+[init]``, and the pattern that writes ``[init]`` matches it.  The second query
+starts with both regions written and the pattern leaves ``Safety`` out, so
+``Watching`` does not matter.  The third query
 starts with ``Safety: Watching`` and asks for ``Safety: [init]``: no witness
 (exit 1, ``no_witness``).  The pattern holds exactly where the written regions
 agree, and the ``[init]`` marker also holds for a region that has not started
@@ -1004,9 +1008,9 @@ path, or ``null`` outside every region), ``kind`` and ``label``.
 
 **Expected output.** Step 0 enters ``Running``: ``case_label`` names the outer
 transition, the first ``local`` line has scope ``None`` (outside every
-region), and the owner scope shows one ``initial`` case per region.  Steps 1
-and 2 have ``case_label=None`` because every case ran inside a region:
-``Safety`` stays (``fallback``) and ``Motion`` moves (``transition``).  The
+region), and the owner scope shows one ``initial`` case per region.  Step 1
+has ``case_label=None`` because every case ran inside a region: ``Safety``
+stays (``fallback``) and ``Motion`` moves (``transition``).  The
 human trace prints the same cases with scopes relative to the owner.  A
 ``cover`` query takes a naked ``case("label")``; copy the label from a
 witness.  The ``::2`` at the end of a label is the case's ordinal among the

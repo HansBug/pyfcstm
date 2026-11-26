@@ -825,8 +825,8 @@ assumptions_self_conflict``。
 .. literalinclude:: region_start.demo.sh.txt
    :language: text
 
-**预期输出。** 第 0 帧恰好是你写的配置。见证用两步到达 ``Motion: Off``：第一步离开 ``Running``\ （``Stop`` 强制转换），第二步再次进入。
-每一步为每个有动作的区域列出一个局部情形，下一张卡会解释它们。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
+**预期输出。** 第 0 帧恰好是你写的配置。查询要求一步内到达 ``Controller.Idle``，离开 ``Running`` 的唯一途径是 ``Stop`` 强制转换，所以第 1 帧是 ``Controller.Idle``。
+第 0 步为每个有动作的区域列出一个局部情形：``Safety`` 与 ``Motion`` 各走自己的 ``__region_done__`` 转换，然后拥有者走向 ``Idle`` 的转换；下一张卡会解释这些条目。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
 （``Failure boundary: INITIALIZATION``），因为初始值 ``permit = 0`` 与 ``motor = 0`` 与它矛盾。
 
 **文件副作用。** 无；临时 JSON 文件放在 ``.region_tmp`` 里，脚本会把它删除。
@@ -870,7 +870,7 @@ assumptions_self_conflict``。
 .. literalinclude:: region_pattern.demo.sh.txt
    :language: text
 
-**预期输出。** 第一条查询的起始文本没有写 ``Safety``：第 0 帧显示 ``Safety: [init]``，写了 ``[init]`` 的模式能匹配它。第二条查询两个区域都写了，
+**预期输出。** 脚本只打印第 0 帧：性质在那里已经成立，后面的帧是求解器的自由选择。第一条查询的起始文本没有写 ``Safety``：第 0 帧显示 ``Safety: [init]``，写了 ``[init]`` 的模式能匹配它。第二条查询两个区域都写了，
 模式没有写 ``Safety``，所以 ``Watching`` 无关紧要。第三条查询以 ``Safety: Watching`` 起步，却要求 ``Safety: [init]``：没有见证
 （退出码 1，``no_witness``）。模式恰好在写出的区域一致时成立；在拥有者正被进入时发生的调用里，``[init]`` 对尚未启动的区域也成立。
 
@@ -905,7 +905,7 @@ assumptions_self_conflict``。
    :language: text
 
 **预期输出。** 第 0 步进入 ``Running``：``case_label`` 给出外层转换，第一行 ``local`` 的作用域是 ``None``\ （在所有区域之外），拥有者作用域里每个区域各有一个 ``initial`` 情形。
-第 1、2 步的 ``case_label=None``，因为所有情形都在区域里运行：``Safety`` 保持（``fallback``），``Motion`` 迁移（``transition``）。人读轨迹用相对拥有者的作用域打印同样的情形。
+第 1 步的 ``case_label=None``，因为所有情形都在区域里运行：``Safety`` 保持（``fallback``），``Motion`` 迁移（``transition``）。人读轨迹用相对拥有者的作用域打印同样的情形。
 ``cover`` 查询接受单独的 ``case("标签")``，请从见证里复制标签。标签末尾的 ``::2`` 是该情形在展开后的情形中的序号，不是你写下的任何东西的个数。
 
 **文件副作用。** 无。

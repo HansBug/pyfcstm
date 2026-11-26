@@ -1,5 +1,5 @@
 # Shared helper sourced by the region_*.demo.sh scripts: run one query and print
-# the deterministic parts of its JSON result.
+# the deterministic parts of its JSON result (optional third argument: last frame).
 run_region_query() {
     model="$1"
     query="$2"
@@ -10,5 +10,5 @@ run_region_query() {
     code="$?"
     set -e
     echo "-- $query (exit $code)"
-    python region_summary.py "$workdir/result.json"
+    python region_summary.py "$workdir/result.json" $3
 }

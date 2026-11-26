@@ -3,7 +3,6 @@ reach status=sat outcome=witness_found exit=0
   frame 0: Controller.Idle
   frame 1: Controller.Running{Safety: Watching, Motion: Off}
   frame 2: Controller.Running{Safety: Watching, Motion: On}
-  frame 3: Controller.Running{Safety: Watching, Motion: Off}
   step 0: case_label=Controller.Idle::transition::Controller.Running::0
     local None [transition] Controller.Idle::transition::Controller.Running::0
     local Controller.Running [initial] Controller.Running::initial::Controller.Running.Safety.Watching::0
@@ -11,9 +10,6 @@ reach status=sat outcome=witness_found exit=0
   step 1: case_label=None
     local Controller.Running.Safety [fallback] Controller.Running.Safety.Watching::fallback::Controller.Running.Safety.Watching::0
     local Controller.Running.Motion [transition] Controller.Running.Motion.Off::transition::Controller.Running.Motion.On::2
-  step 2: case_label=None
-    local Controller.Running.Safety [fallback] Controller.Running.Safety.Watching::fallback::Controller.Running.Safety.Watching::0
-    local Controller.Running.Motion [transition] Controller.Running.Motion.On::transition::Controller.Running.Motion.Off::2
 -- human trace of the same query
 Trace
   0: Controller.Idle
@@ -25,10 +21,6 @@ Trace
        -> Controller.Running{Safety: Watching, Motion: On} [transition]
        Safety: Watching -> Watching [fallback]
        Motion: Off -> On [transition]
-  2: Controller.Running{Safety: Watching, Motion: On}
-       -> Controller.Running{Safety: Watching, Motion: Off} [transition]
-       Safety: Watching -> Watching [fallback]
-       Motion: On -> Off [transition]
 
 -- cover a local case
 -- region_cover.fbmcq (exit 0)

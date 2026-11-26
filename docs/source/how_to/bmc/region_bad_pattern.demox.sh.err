@@ -1,0 +1,1 @@
+Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Controller.Running.Safety.Nope'.

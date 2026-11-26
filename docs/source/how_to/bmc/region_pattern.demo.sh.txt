@@ -1,0 +1,16 @@
+-- region_pattern_construct.fbmcq (exit 0)
+reach status=sat outcome=witness_found exit=0
+  frame 0: Controller.Running{Safety: [init], Motion: On}
+  frame 1: Controller.Running{Safety: Watching, Motion: On}
+  step 0: case_label=None
+    local Controller.Running [initial] Controller.Running::initial::Controller.Running.Safety.Watching::0
+    local Controller.Running.Motion [fallback] Controller.Running.Motion.On::fallback::Controller.Running.Motion.On::0
+-- region_pattern_match.fbmcq (exit 0)
+reach status=sat outcome=witness_found exit=0
+  frame 0: Controller.Running{Safety: Watching, Motion: On}
+  frame 1: Controller.Running{Safety: Watching, Motion: On}
+  step 0: case_label=None
+    local Controller.Running.Safety [fallback] Controller.Running.Safety.Watching::fallback::Controller.Running.Safety.Watching::0
+    local Controller.Running.Motion [fallback] Controller.Running.Motion.On::fallback::Controller.Running.Motion.On::0
+-- region_pattern_construct_miss.fbmcq (exit 1)
+reach status=unsat outcome=no_witness exit=1

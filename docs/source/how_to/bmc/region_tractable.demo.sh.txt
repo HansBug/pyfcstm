@@ -1,0 +1,6 @@
+k=1 status=unsat (decisive) exit=1
+k=2 status=sat (decisive) exit=0
+k=3 status=sat (decisive) exit=0
+-- a bound policy rejects the deeper query
+Failed to compile BMC query: max_bound policy rejected query_bound=3 with max_bound=2.
+exit 1

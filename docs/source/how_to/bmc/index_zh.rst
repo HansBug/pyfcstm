@@ -796,6 +796,192 @@ assumptions_self_conflict``。
 **参考。** ``runtime_safety`` 结果、``runtime_error_prefix`` 见证和退出状态 ``5`` 见
 :doc:`../../reference/bmc_results/index_zh`。
 
+含区域模型的任务
+----------------
+
+这些任务卡使用 ``region_controller.fcstm``，也就是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器（``Running`` 里 ``Safety`` 在 ``Motion`` 之前）。
+请把它下载到各任务卡所列查询文件旁边。有界结果不能说明界限之外的任何事情，SAT 与 UNSAT 要像上面的任务卡一样通过性质类别来解读。辅助脚本
+``region_summary.py`` 打印 JSON 结果中确定的部分：
+
+.. literalinclude:: region_summary.py
+   :language: python
+   :caption: region_summary.py
+
+18. 从给定位置起检查性质
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**输入。** ``region_controller.fcstm`` 与 ``region_start.fbmcq``。``init state(...)`` 接受配置文本、经过区域的状态路径，或只写拥有者。
+持久变量保留各自的初始值，除非用 ``havoc`` 放开，所以这里放开并约束 ``permit`` 与 ``motor``。
+
+.. literalinclude:: region_start.fbmcq
+   :language: text
+   :caption: region_start.fbmcq
+
+**命令行。**
+
+.. literalinclude:: region_start.demo.sh
+   :language: bash
+
+.. literalinclude:: region_start.demo.sh.txt
+   :language: text
+
+**预期输出。** 第 0 帧恰好是你写的配置。见证用两步到达 ``Motion: Off``：第一步离开 ``Running``\ （``Stop`` 强制转换），第二步再次进入。
+每一步为每个有动作的区域列出一个局部情形，下一张卡会解释它们。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
+（``Failure boundary: INITIALIZATION``），因为初始值 ``permit = 0`` 与 ``motor = 0`` 与它矛盾。
+
+**文件副作用。** 无；临时 JSON 文件放在 ``.region_tmp`` 里，脚本会把它删除。
+
+**失败时先查什么。** 结论是 ``SCENARIO INFEASIBLE`` 时，读人读报告里的 ``Failure boundary`` 一行，并把 ``where`` 与变量初始值对照。
+编译以 ``invalid_start_position`` 停止时，说明起始文本有误。下面是负例：``region_bad_start.fbmcq`` 写了不存在的状态，
+``region_all_done.fbmcq`` 把拥有者的全部区域都标成 ``[done]``，这永远不是停驻位置。
+
+.. literalinclude:: region_bad_start.demox.sh.err
+   :language: text
+
+.. literalinclude:: region_all_done.demox.sh.err
+   :language: text
+
+两条命令的退出码都是 1（``region_bad_start.demox.sh.exitcode`` 与 ``region_all_done.demox.sh.exitcode``）。
+
+**参考。** :doc:`/reference/bmc_query/index_zh`。
+
+19. 用 ``active`` 配置模式匹配位置
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**输入。** 同一个模型上的三条查询。``init state(...)``\ *构造*\ 一个位置，所以它没写的区域等待初始化；``active("...{...}")``\ *匹配*\ 一个位置，所以它没写的区域不受约束。
+
+.. literalinclude:: region_pattern_construct.fbmcq
+   :language: text
+   :caption: region_pattern_construct.fbmcq
+
+.. literalinclude:: region_pattern_match.fbmcq
+   :language: text
+   :caption: region_pattern_match.fbmcq
+
+.. literalinclude:: region_pattern_construct_miss.fbmcq
+   :language: text
+   :caption: region_pattern_construct_miss.fbmcq
+
+**命令行。**
+
+.. literalinclude:: region_pattern.demo.sh
+   :language: bash
+
+.. literalinclude:: region_pattern.demo.sh.txt
+   :language: text
+
+**预期输出。** 第一条查询的起始文本没有写 ``Safety``：第 0 帧显示 ``Safety: [init]``，写了 ``[init]`` 的模式能匹配它。第二条查询两个区域都写了，
+模式没有写 ``Safety``，所以 ``Watching`` 无关紧要。第三条查询以 ``Safety: Watching`` 起步，却要求 ``Safety: [init]``：没有见证
+（退出码 1，``no_witness``）。模式恰好在写出的区域一致时成立；在拥有者正被进入时发生的调用里，``[init]`` 对尚未启动的区域也成立。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 模式被拒绝时，编译以 ``invalid_active_pattern`` 停止（负例 ``region_bad_pattern.fbmcq``，退出码 1，见
+``region_bad_pattern.demox.sh.exitcode``）：
+
+.. literalinclude:: region_bad_pattern.demox.sh.err
+   :language: text
+
+模式匹配得过宽时，检查你省略了哪些区域。
+
+**参考。** :doc:`/reference/bmc_query/index_zh`。
+
+20. 读懂 ``local_cases`` 与 ``case_label``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**输入。** ``region_cases.fbmcq`` 与 ``region_cover.fbmcq``。见证的每一步是整整一个周期。``case_label`` 是在所有区域之外运行的那个情形的标签，没有则为 ``null``。
+``local_cases`` 按执行顺序为每个有动作的作用域列出一项：``scope``\ （状态路径，在所有区域之外时为 ``null``）、``kind`` 与 ``label``。
+
+.. literalinclude:: region_cases.fbmcq
+   :language: text
+   :caption: region_cases.fbmcq
+
+**命令行。**
+
+.. literalinclude:: region_cases.demo.sh
+   :language: bash
+
+.. literalinclude:: region_cases.demo.sh.txt
+   :language: text
+
+**预期输出。** 第 0 步进入 ``Running``：``case_label`` 给出外层转换，第一行 ``local`` 的作用域是 ``None``\ （在所有区域之外），拥有者作用域里每个区域各有一个 ``initial`` 情形。
+第 1、2 步的 ``case_label=None``，因为所有情形都在区域里运行：``Safety`` 保持（``fallback``），``Motion`` 迁移（``transition``）。人读轨迹用相对拥有者的作用域打印同样的情形。
+``cover`` 查询接受单独的 ``case("标签")``，请从见证里复制标签。标签末尾的 ``::2`` 是该情形在展开后的情形中的序号，不是你写下的任何东西的个数。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** ``cover`` 说标签未知时，消息是 ``Failed to compile BMC query: cover case label is unknown``：从同一模型上 ``reach`` 查询的见证里复制标签。
+
+**参考。** :doc:`/reference/bmc_results/index_zh`。
+
+21. 处理 ``max_group_reentries`` 超限
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**输入。** 拥有区域的状态可以在一个周期内被再次进入（``Owner -> Owner``）。每一圈的取值都在变化时，关系会把各圈逐个展开，最多
+``BmcOptions.max_group_reentries`` 次（默认 16），超过就抛出 ``BmcBuildError``，而不是近似。``region_reentry_six.fcstm`` 需要六圈；
+``region_reentry_loop.fcstm`` 的条件（``n < limit``）没有任何取值能让它停下。
+
+.. literalinclude:: region_reentry_six.fcstm
+   :language: fcstm
+   :caption: region_reentry_six.fcstm
+
+**命令或代码。** 命令行没有设置这个上限的选项，所以在 Python 里调大它：
+
+.. literalinclude:: region_reentry.demo.py
+   :language: python
+   :caption: region_reentry.demo.py
+
+.. literalinclude:: region_reentry.demo.py.txt
+   :language: text
+
+再用命令行在同样两个模型上对照：
+
+.. literalinclude:: region_reentry.demo.sh.txt
+   :language: text
+
+**预期输出。** 六圈模型在上限为 16 或 7 时能编译，为 6 时被拒绝；消息会指出状态和选项名。无界的循环在任何上限下都被拒绝：调大数字对它没有帮助。
+在命令行里，同样的消息以 ``_BmcCliInternalError`` 出现，退出码为 1（命令行经由它的意外错误路径报告这个构建失败）。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 先问这个循环是否本该停下：让条件依赖某个计数器或常量，使某个取值能让它停下。只有循环有界、仅仅比 16 圈长时才调大上限。
+
+**参考。** :doc:`/reference/bmc_results/index_zh`。
+
+22. 让查询算得动
+~~~~~~~~~~~~~~~~
+
+**输入。** 一条很慢或超时的查询。代价随转换写入的变量数、上界 ``k``、状态数与区域数增长；区域之间是相加而不是相乘，但彼此互斥的区域在求解器必须证明
+“不可能”时可能指数增长。这些结论来自合成模型上的测量，不是承诺：见\ `性能曲线
+<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7181487794>`_\ 与\ `解析模型
+<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7182704825>`_\ ，推理见 :doc:`/explanations/bmc_scaling/index_zh`。
+
+**命令行。** 一次把上界加一，对状态分类而不是默认它是 SAT 或 UNSAT，并用 ``--max-bound`` 设上限：
+
+.. literalinclude:: region_tractable.demo.sh
+   :language: bash
+
+.. literalinclude:: region_tractable.demo.sh.txt
+   :language: text
+
+**预期输出。** ``k=1`` 是 UNSAT（还没有见证），``k=2`` 是第一个有见证的上界，所以对这个问题再加深没有收益；策略在求解之前就以退出码 1 拒绝了 ``k=3``。
+把 ``unknown`` 与 ``timeout`` 当作\ *没有结论*\ 的结果，在 CI 里为它们单独设定预期的退出处理；用 ``--timeout-ms`` 给每次 ``check()`` 设上限。
+这次运行没有超时，所以没有 ``timeout`` 行。
+
+缩小一条太慢的查询的步骤：
+
+1. 减少区域写入的变量：只对性质需要的变量 ``havoc``，其余用 ``where`` 约束。
+2. 从一个位置起步（任务 18），而不是冷启动，这样第一个上界不会花在走到那里上。
+3. 先问能展示该行为的最小 ``k``，再加深。
+4. 一次只查一条性质，不要把不相关的谓词合在一起。
+5. 区域彼此互斥（一个只有在另一个不运行时才能运行）时，预期“不可能”的证明最慢，此时把 ``k`` 保持得小。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 读 ``result.status``。``timeout`` 表示某次求解器 ``check()`` 没有在 ``--timeout-ms`` 内完成，它不是结论。
+
+**参考。** :doc:`/reference/bmc_results/index_zh`。
+
 选择并比较求解器配置
 --------------------
 

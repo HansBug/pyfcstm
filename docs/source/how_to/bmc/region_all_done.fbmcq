@@ -1,0 +1,2 @@
+init state("Controller.Running{Safety: [done], Motion: [done]}");
+check reach <= 1: terminated();

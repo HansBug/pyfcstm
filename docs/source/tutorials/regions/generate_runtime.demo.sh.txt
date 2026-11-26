@@ -1,9 +1,0 @@
-README.md
-README_zh.md
-machine.py
-1 Controller.Idle permit=0 motor=0
-2 Controller.Running{Safety: Watching, Motion: Off} permit=1 motor=0
-3 Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1
-4 Controller.Running{Safety: Watching, Motion: Off} permit=0 motor=0
-5 Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1
-6 Controller.Idle permit=1 motor=0

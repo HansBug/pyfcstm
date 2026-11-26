@@ -1748,11 +1748,9 @@ def _page_resources(path: Path) -> Tuple[str, ...]:
 def _check_page_resources(errors: List[str]) -> None:
     """Confirm each page's resources exist and both languages use the same set.
 
-    A demo source needs its recorded output next to it, because the page includes
-    the output and the generated-resources job compares it against a fresh run.
-    Only the pages named in ``_RESOURCE_PAGES`` are checked, and the demo scan
-    covers every ``*.demo.sh`` and ``*.demo.py`` in each page's directory, not
-    only the ones the page includes.
+    A resource path that starts with ``/`` is relative to ``docs/source``, as
+    Sphinx reads it, so the shared models in ``_models`` can be checked too.
+    Only the pages named in ``_RESOURCE_PAGES`` are checked.
 
     :param errors: Collected problems, appended to.
     :type errors: List[str]
@@ -1766,7 +1764,8 @@ def _check_page_resources(errors: List[str]) -> None:
             resources = _page_resources(path)
             sets[label] = resources
             for resource in resources:
-                if not (path.parent / resource).is_file():
+                base = source if resource.startswith("/") else path.parent
+                if not (base / resource.lstrip("/")).is_file():
                     errors.append("%s uses %s, which does not exist." % (label, resource))
         english, chinese = (sets[label] for label, _path in _prose_pages(relative))
         if english != chinese:
@@ -1774,12 +1773,6 @@ def _check_page_resources(errors: List[str]) -> None:
                 "%s: English and Chinese pages include different resources: %s."
                 % (relative, ", ".join(sorted(set(english) ^ set(chinese))))
             )
-        directory = (source / relative).parent
-        for demo in sorted(
-            list(directory.glob("*.demo.sh")) + list(directory.glob("*.demo.py"))
-        ):
-            if not (directory / (demo.name + ".txt")).is_file():
-                errors.append("%s has no recorded output %s.txt." % (demo.name, demo.name))
 
 
 def check() -> None:

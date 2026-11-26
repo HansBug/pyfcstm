@@ -1,8 +1,0 @@
-Controller
-  Controller.Idle
-  Controller.Running
-    Controller.Running.Safety  (region)
-      Controller.Running.Safety.Watching
-    Controller.Running.Motion  (region)
-      Controller.Running.Motion.Off
-      Controller.Running.Motion.On

@@ -20,3 +20,4 @@ pandas
 sphinxcontrib-svg2pdfconverter
 pygments>=2.10.0
 matplotlib==3.9.2
+sybil[pytest]==9.3.0

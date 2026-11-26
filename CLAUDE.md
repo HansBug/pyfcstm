@@ -417,6 +417,7 @@ make docs_en / make docs_zh      # Build for specific language
 make docs_pdf                    # Build and validate English and Chinese PDFs
 make docs_pdf_en / make docs_pdf_zh  # Build and validate one language PDF
 make pdocs                       # Production documentation with versioning
+make docs_doctest                # Run the examples written in the documentation pages
 make rst_auto                    # Generate RST from Python source files
 make rst_auto RANGE_DIR=model    # Generate RST for specific directory
 make sha256                      # Update generated SHA-256 sidecar files
@@ -791,6 +792,10 @@ of them is not a judgement call:
 | `make rst_auto` | Any change to repository code or the public Python API | Generated API RST is stale; commit the intentional updates together with the code |
 | `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth |
 | `make resource_ownership_check` | Adding or moving a call that acquires something needing an explicit release: a descriptor, temporary file, temporary directory, subprocess, socket or lock | A handler is opened while a resource is held, which from CPython 3.11 skips the owner's `finally` entirely (rules 6-12 of the Exception Handling Policy) |
+
+A change to a documentation page that carries an example also requires `make docs_doctest` (see
+[Documentation Examples](#documentation-examples)); it is a separate gate from `make doctest` and runs in the Docs Check
+workflow.
 
 `make doctest` is a full peer of the others, not an optional extra. A docstring is a published contract: an example
 that no longer runs is a defect in the same sense as a failing test, and the gate admits no exemptions -- there is no
@@ -1829,18 +1834,14 @@ Do not use single backticks for inline code in reST. Use double backticks only: 
 | `*.fcstm` | `*.fcstm.puml` → `*.fcstm.puml.{png,svg}` |
 | `*.puml` | `*.puml.{png,svg}` |
 | `*.gv` | `*.gv.{png,svg}` |
-| `*.demo.py` | `*.demo.py.txt` |
-| `*.demox.py` | `*.demox.py.{txt,err,exitcode}` |
 | `*.plot.py` | `*.plot.py.svg` |
-| `*.demo.sh` | `*.demo.sh.txt` |
-| `*.demox.sh` | `*.demox.sh.{txt,err,exitcode}` |
 | `*.ipynb` | `*.result.ipynb` |
 
 #### Build Commands
 
 ```bash
 # From docs/source/
-make -f all.mk build      # Generate all resources (diagrams, demos, notebooks)
+make -f all.mk build      # Generate all resources (diagrams, figures, notebooks)
 make -f all.mk clean      # Clean all generated resources
 make -f all.mk cleanplt   # Clean plot outputs only
 
@@ -1881,8 +1882,7 @@ reports success.
 - `*.fcstm.puml`, `*.fcstm.puml.{png,svg}` (from `.fcstm`)
 - `*.puml.{png,svg}` (from `.puml`)
 - `*.gv.{png,svg}` (from `.gv`)
-- `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg` (from demo scripts)
-- `*.sh.txt`, `*.sh.err`, `*.sh.exitcode` (from shell scripts)
+- `*.plot.py.svg` (from `*.plot.py`)
 - `*.result.ipynb` (from `.ipynb`)
 - [docs/source/index.rst](docs/source/index.rst) (generated during build—do not edit directly)
 
@@ -1890,7 +1890,7 @@ reports success.
 - `*.fcstm` for FSM state machines
 - `*.puml` only if no corresponding `*.fcstm` exists
 - `*.gv` for Graphviz diagrams
-- `*.demo.py`, `*.demox.py`, `*.plot.py`, `*.demo.sh`, `*.demox.sh` for demos
+- `*.plot.py` for figures
 - `*.ipynb` for notebooks (with outputs cleared)
 - `*.rst`, `*.md` for documentation text
 
@@ -1906,11 +1906,41 @@ vim docs/source/tutorials/example.fcstm           # Edit source
 make -f docs/source/fcstms.mk SOURCE=docs/source build  # Regenerate
 cd docs && make html                              # Build docs
 
-# Editing a demo script:
-vim docs/source/tutorials/example.demo.py         # Edit source
-make -f docs/source/demos.mk SOURCE=docs/source build   # Regenerate output
+# Editing an example in a page:
+vim docs/source/tutorials/example/index.rst       # Edit the command or script and its output together
+make docs_doctest DOCS_DOCTEST_SCOPE=docs/source/tutorials/example   # Run the examples of that page
 cd docs && make html                              # Build docs
 ```
+
+#### Documentation Examples
+
+An example in a page is written exactly as the reader sees it, and `make docs_doctest` runs it and compares the real
+output with the output written in the page. There are no demo scripts, recorded output files or helper modules next to
+a page: an example that needs one is not simple enough, so shorten the example instead.
+
+- A terminal record is a `.. code-block:: console` block. A line that starts with `$ ` is a command that the reader
+  types, and the lines after it are what it prints. A trailing backslash continues a command. All commands of one block
+  run in one shell in a throwaway copy of the page directory, with standard error merged into standard output.
+- A Python script is a `.. testcode::` block, and the `.. testoutput::` block after it is what it prints. Sphinx shows
+  both as ordinary highlighted blocks, so the reader sees a script and its output and nothing else. A script that prints
+  nothing needs no output block, and a script that ends with a non-zero status fails the check.
+- `...` on its own line, or inside a line, stands for output that is left out. Use it for text that changes from run to
+  run, such as a solver time, and for the long parts a page does not discuss. Do not filter, sort, or reformat output
+  with `sed`, `grep`, `awk` or a helper: an unstable value is left out with `...`, not removed with a pipeline.
+- A command that ends with a non-zero exit status must be followed by `$ echo $?` and the status, so a page cannot show
+  a failing command as if it had succeeded.
+- Use only what a reader can call from the public documentation: the `pyfcstm` command and the public Python API. Do
+  not import a module that sits next to the page and do not reach into private names.
+- A model that several pages use lives in [docs/source/_models/](docs/source/_models/), is shown with
+  `.. literalinclude:: /_models/name.fcstm`, and is copied into the throwaway directory next to the page's own files. A
+  model that only one page uses stays in that page's directory. Add a model only when the page shows it or a command
+  reads it; every `.fcstm` under `docs/source` also produces a PlantUML text, a PNG and an SVG.
+- Both language pages carry the same examples. Each page is run on its own, so an example of the Chinese page is checked
+  as strictly as one of the English page.
+- This gate is separate from `make doctest`, which runs the `>>>` examples in the docstrings under
+  [pyfcstm/](pyfcstm/). Do not merge the two entry points: a docstring example is part of the package contract, and a
+  page example is part of the documentation.
+- Figures drawn by `*.plot.py` are not examples. Keep them out of the pages' command output.
 
 #### Documentation Dependencies
 

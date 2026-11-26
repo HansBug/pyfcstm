@@ -297,6 +297,36 @@ jobs:
                   raise SystemExit('CODE_REGISTRY runtime value leaked into {0}'.format(page))
           PY
 
+  docs_examples:
+    name: Docs examples
+    runs-on: ubuntu-22.04
+    needs: detect_docs_routes
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install docs dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-doc.txt
+          make build_assets
+          python -m pip install -e . --no-deps
+      - name: Run the examples written in the documentation pages
+        shell: bash
+        run: |
+          make docs_doctest
+
   docs_pdf:
     name: Docs PDF
     runs-on: ubuntu-24.04
@@ -498,15 +528,7 @@ jobs:
               '.puml.svg',
               '.gv.png',
               '.gv.svg',
-              '.demo.py.txt',
-              '.demox.py.txt',
-              '.demox.py.err',
-              '.demox.py.exitcode',
               '.plot.py.svg',
-              '.demo.sh.txt',
-              '.demox.sh.txt',
-              '.demox.sh.err',
-              '.demox.sh.exitcode',
               '.result.ipynb',
           )
 
@@ -555,20 +577,8 @@ jobs:
               elif changed_path.endswith('.gv'):
                   add_for_source(changed_path + '.png', source_exists)
                   add_for_source(changed_path + '.svg', source_exists)
-              elif changed_path.endswith('.demo.py'):
-                  add_for_source(changed_path + '.txt', source_exists)
-              elif changed_path.endswith('.demox.py'):
-                  add_for_source(changed_path + '.txt', source_exists)
-                  add_for_source(changed_path + '.err', source_exists)
-                  add_for_source(changed_path + '.exitcode', source_exists)
               elif changed_path.endswith('.plot.py'):
                   add_for_source(changed_path + '.svg', source_exists)
-              elif changed_path.endswith('.demo.sh'):
-                  add_for_source(changed_path + '.txt', source_exists)
-              elif changed_path.endswith('.demox.sh'):
-                  add_for_source(changed_path + '.txt', source_exists)
-                  add_for_source(changed_path + '.err', source_exists)
-                  add_for_source(changed_path + '.exitcode', source_exists)
               elif changed_path.endswith('.ipynb'):
                   add_for_source(changed_path[:-len('.ipynb')] + '.result.ipynb', source_exists)
               elif changed_path.endswith('.fcstm.puml.png'):
@@ -592,32 +602,8 @@ jobs:
               elif changed_path.endswith('.gv.svg'):
                   source = changed_path[:-len('.gv.svg')] + '.gv'
                   add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demo.py.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.err'):
-                  source = changed_path[:-len('.err')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.exitcode'):
-                  source = changed_path[:-len('.exitcode')]
-                  add_for_source(changed_path, changed_file_exists(source))
               elif changed_path.endswith('.plot.py.svg'):
                   source = changed_path[:-len('.svg')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demo.sh.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.err'):
-                  source = changed_path[:-len('.err')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.exitcode'):
-                  source = changed_path[:-len('.exitcode')]
                   add_for_source(changed_path, changed_file_exists(source))
               elif changed_path.endswith('.result.ipynb'):
                   source = changed_path[:-len('.result.ipynb')] + '.ipynb'

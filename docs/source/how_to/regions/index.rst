@@ -13,10 +13,14 @@ values, see :doc:`/reference/region_model/index`.
 
 Every card states the same six facts: **Input**, **Command or code**,
 **Expected signal**, **File side effect**, **First failure check** and
-**Reference link**.  Every example model sits next to this page; run the
-commands from the directory that holds ``index.rst``.  The outputs below come
-from the ``*.demo.py`` and ``*.demox.sh`` files in that directory, so a rebuild
-of the documentation regenerates them.
+**Reference link**.  Download the models a card names into an empty directory
+and run its commands there; the models of the tasks about order
+(:download:`controller.fcstm </_models/controller.fcstm>` and
+:download:`controller_swapped.fcstm </_models/controller_swapped.fcstm>`) are
+the same ones the first tutorial uses.  A line starting with ``...`` in an
+output stands for text that the card does not discuss.  The documentation
+checks run every command and script on this page against the real
+``pyfcstm``, so the outputs are what you get.
 
 1. Split one state into two regions
 -----------------------------------
@@ -30,26 +34,40 @@ says the same with two regions of two states and four transitions.
    :language: fcstm
    :caption: panel_regions.fcstm
 
-**Command or code.** Run both models over the same inputs and print the
-configuration after every cycle:
+**Command or code.** Run both models, and in the second cycle change both
+inputs at once.  The first cycle (left out of the output) enters the initial
+state:
 
-.. literalinclude:: split_state.demo.py
-   :language: python
-   :caption: split_state.demo.py
+.. code-block:: console
 
-.. literalinclude:: split_state.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i panel_flat.fcstm -e "\
+   cycle --input hot=0 --input open=0; \
+   cycle --input hot=1 --input open=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input hot=1 --input open=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Panel.HotClosed
+   $ pyfcstm simulate -i panel_regions.fcstm -e "\
+   cycle --input hot=0 --input open=0; \
+   cycle --input hot=1 --input open=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input hot=1 --input open=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Panel{Temperature: Hot, Door: Open}
 
-**Expected signal.** Both models agree on the cycles where only one input
-changes.  In the second cycle both inputs change at once: the flat machine
-takes one transition (``HotClosed``) and misses the door, while the regions
-machine takes both (``Panel{Temperature: Hot, Door: Open}``).  Each region
+**Expected signal.** In the second cycle the flat machine takes one transition
+(``HotClosed``) and misses the door, while the regions machine takes both
+(``Panel{Temperature: Hot, Door: Open}``).  Each region
 advances once per cycle, so splitting changes behavior when two concerns move in
 the same cycle.  Check this difference before you split a machine whose
 single-step behavior is relied on.
 
-**File side effect.** None.  The script reads the two ``.fcstm`` files and
-prints to stdout.
+**File side effect.** None.  The commands read the two ``.fcstm`` files and
+print to stdout.
 
 **First failure check.** If the load fails, run
 ``pyfcstm inspect -i panel_regions.fcstm`` and read the first error; the usual
@@ -71,18 +89,28 @@ directly, so ``Line`` holds a state ``Cell`` and ``Cell`` owns the regions
 
 **Command or code.**
 
-.. literalinclude:: nest_regions.demo.py
-   :language: python
-   :caption: nest_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: nest_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i nested_cell.fcstm -e "\
+   cycle --input go=0; \
+   cycle --input go=1"
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Plant{Line: Cell{Feed: Waiting, Cut: Ready}, Monitor: Watching}
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant{Line: Cell{Feed: Pushing, Cut: Cutting}, Monitor: Watching}
 
 **Expected signal.** The configuration text nests one block per owner:
 ``Plant{Line: Cell{Feed: Waiting, Cut: Ready}, Monitor: Watching}``.  The
 inner owner is a state, so every path passes through the region name
-(``Plant.Line.Cell.Feed.Waiting``).  ``leaves`` lists the three live leaves and
-``region_status`` of the inner region is ``live``.
+(``Plant.Line.Cell.Feed.Waiting``), and both inner regions move in the cycle
+where ``go`` becomes ``1``.
 
 **File side effect.** None.
 
@@ -105,19 +133,67 @@ each region declares its own ``Ping`` and uses ``: Ping``.
 
 **Command or code.**
 
-.. literalinclude:: shared_events.demo.py
-   :language: python
-   :caption: shared_events.demo.py
+The shared event first, then the bare name that is refused:
 
-.. literalinclude:: shared_events.demo.py.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i shared_event.fcstm -e "\
+   cycle; \
+   cycle /Start"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Start
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Rig{Left: Busy, Right: Busy}
+   $ pyfcstm simulate -i shared_event.fcstm -e "\
+   cycle; \
+   cycle Start"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Start
+   ────────────────────────────────────────────────────────────
+   Cycle execution failed: Position-dependent event name 'Start' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+   $ echo $?
+   1
+
+Then the counterexample, where each region owns a ``Ping``:
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i scoped_event.fcstm -e "\
+   cycle; \
+   cycle Rig.Left.Ping; \
+   cycle Rig.Right.Ping"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Rig.Left.Ping
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Rig{Left: Busy, Right: Idle}
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Rig.Right.Ping
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Rig{Left: Busy, Right: Busy}
+   $ pyfcstm simulate -i scoped_event.fcstm -e "\
+   cycle; \
+   cycle Ping"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Ping
+   ────────────────────────────────────────────────────────────
+   Cycle execution failed: Position-dependent event name 'Ping' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+   $ echo $?
+   1
 
 **Expected signal.** ``/Start`` moves both regions in one cycle.  In the
 counterexample, ``Rig.Left.Ping`` and ``Rig.Right.Ping`` are two different
-events: naming one moves one region, and sending both moves both.  A bare name
-(``Start``, ``Ping``) is refused because it is resolved from every live leaf
-and matches nothing.  A region-local ``: Name`` belongs to that region and is
-never looked up in the owner.
+events: naming one moves one region, and the other region needs its own event.
+A bare name (``Start``, ``Ping``) is refused with exit code 1 because it is
+resolved from every live leaf and matches nothing.  A region-local ``: Name``
+belongs to that region and is never looked up in the owner.
 
 **File side effect.** None.
 
@@ -136,31 +212,77 @@ execution order.  The rule of thumb: a region that reads what another region
 writes goes after it (a forward dependency); a read of a later region's value
 sees the previous cycle (a backward dependency).
 
-**Command or code.** ``order_regions.demo.py`` sends ``/Start`` in the second
-cycle and sets ``fault`` to 1 in cycles 4 and 5:
+**Command or code.** Send ``/Start`` in the second cycle and raise ``fault``
+in the fourth cycle (and in the fifth, for the swapped file).  The first three
+cycles are left out of the output:
 
-.. literalinclude:: order_regions.demo.py
-   :language: python
-   :caption: order_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: order_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i controller.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=0; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
+   $ pyfcstm simulate -i controller_swapped.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=0; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Controller.Running{Motion: On, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 0
 
-Then ask ``inspect`` which order
-is suspicious:
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 5
+   Current State: Controller.Running{Motion: Off, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
 
-.. literalinclude:: order_check.demo.sh
-   :language: bash
+Then ask ``inspect`` which order is suspicious.  The line starting with
+``diagnostics:`` counts the findings, and the swapped file has one more:
 
-.. literalinclude:: order_check.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm inspect -i controller.fcstm --color never
+   ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --color never
+   ...
+     diagnostics: 0 errors / 4 warnings / 1 infos
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+   ...
 
 **Expected signal.** In ``controller.fcstm`` the fault cycle (cycle 4) already
-shows ``permit=0 motor=0``.  In the swapped file the motor is still ``1`` in
-cycle 4 and goes to ``0`` one cycle later, and after the fault clears it comes
-back one cycle late.  ``inspect`` prints nothing for ``controller.fcstm`` (the filter keeps only
-region order diagnostics) and reports ``I_REGION_BACKWARD_READ`` for the
-swapped file; it is an information note, not a defect.
+shows ``permit = 0`` and ``motor = 0``.  In the swapped file the motor is still
+``1`` in cycle 4 and goes to ``0`` one cycle later.  ``inspect`` counts no
+information note for ``controller.fcstm`` and reports
+``I_REGION_BACKWARD_READ`` for the swapped file; it is an information note, not
+a defect.
 
 **File side effect.** None.
 
@@ -178,19 +300,71 @@ owner has an ordinary outgoing transition ``Work -> Next``.
 
 **Command or code.**
 
-.. literalinclude:: join_regions.demo.py
-   :language: python
-   :caption: join_regions.demo.py
+Let ``A`` finish first and ``B`` one cycle later:
 
-.. literalinclude:: join_regions.demo.py.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i join_done.fcstm -e "\
+   cycle --input a_ready=0 --input b_ready=0; \
+   cycle --input a_ready=1 --input b_ready=0; \
+   cycle --input a_ready=1 --input b_ready=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     stage = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Job.Next
+   Variables:
+     stage = 1
+
+Now the gated version, where ``gate`` stays ``0`` while ``B`` would finish:
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i join_gate.fcstm -e "\
+   cycle --input a_ready=1 --input b_ready=0 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     ticks = 2
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     ticks = 3
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Job.Next
+   Variables:
+     ticks = 3
 
 **Expected signal.** A finished region shows ``[done]`` and stays that way.
 When the last region finishes, the owner continues in the same cycle
-(``Job.Next``).  In ``join_gate.fcstm`` the guard is false in the cycles where
-``B`` would finish, so the last completion is refused: ``B`` stays in ``Run``,
-its ``during`` still runs (``ticks`` grows), ``A`` stays ``[done]``, and the
-machine never rests with every region done.  The event or condition that tried
+(``Job.Next``, with ``stage = 1``).  In ``join_gate.fcstm`` the guard is false
+in the cycles where ``B`` would finish, so the last completion is refused:
+``B`` stays in ``Run``, its ``during`` still runs (``ticks`` grows), ``A`` stays
+``[done]``, and the machine never rests with every region done.  The event or condition that tried
 to finish ``B`` is not kept for the next cycle; with ``gate=1`` the machine
 leaves in that cycle.
 
@@ -211,35 +385,84 @@ a ``-> [*]`` that can fire and that the owner's outgoing guard can become true.
 ``preempt_blocked.fcstm`` points the forced transition at a state that cannot be
 entered.
 
-**Command or code.** ``preempt_owner.demo.py`` runs the two models, sending
-``/Cancel`` (and ``/ADone`` in the second run):
+**Command or code.** Finish ``A`` with ``/ADone``, then send ``/Cancel``:
 
-.. literalinclude:: preempt_owner.demo.py
-   :language: python
-   :caption: preempt_owner.demo.py
+.. code-block:: console
 
-.. literalinclude:: preempt_owner.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i preempt_group.fcstm -e "\
+   cycle; \
+   cycle /ADone; \
+   cycle /Cancel"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /ADone
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Workflow.Job{A: [done], B: Working}
+   Variables:
+     __forced_0 = 0
+     order = 1
 
-The forced transition is shorthand.  ``preempt_expansion.demo.py`` prints the
-expanded model with ``to_ast_node()``; it shows what each region really contains:
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Cancel
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Workflow.Idle
+   Variables:
+     __forced_0 = 0
+     order = 123
 
-.. literalinclude:: preempt_expansion.demo.py
-   :language: python
-   :caption: preempt_expansion.demo.py
+Then the model whose forced transition points at a state that cannot be
+entered:
 
-.. literalinclude:: preempt_expansion.demo.py.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i preempt_blocked.fcstm -e "\
+   cycle; \
+   cycle /Cancel"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Cancel
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Workflow.Job{A: [done], B: Working}
+   Variables:
+     __forced_0 = 1
+     order = 1
+
+The forced transition is shorthand.  Loading the model and printing it with
+``to_ast_node()`` shows what each region really contains (the output is cut to
+the parts this card discusses):
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   model = load_state_machine_from_file("preempt_group.fcstm")
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   ...
+   def int __forced_0 = 0;
+   ...
+           region A {
+   ...
+               Working -> [*] : if [__forced_0 == 1];
+               Working -> [*] : /Cancel effect {
+                   __forced_0 = 1;
+               }
+   ...
 
 **Expected signal.** ``/Cancel`` leaves ``Job`` in one cycle and the exits run
 in writing order: ``1`` (``A``), ``2`` (``B``), then the owner (``3``), so
-``order=123``.  A region that is already ``[done]`` does not exit again (the
-second run gives ``1`` at ``/ADone`` and still ``123`` at the end).  If the
-target cannot be entered, the regions leave one after another until the last
-one: ``A`` becomes ``[done]`` and ``B`` keeps working, so the machine does not
-stop on a half-left owner.  The expansion shows a hidden variable
-``__forced_0`` and an ordinary ``-> [*]`` in every region; that variable
-appears in ``runtime.vars`` like any other.
+``order = 123``.  A region that is already ``[done]`` does not exit again
+(``order = 1`` after ``/ADone`` and still ``123`` at the end).  If the target
+cannot be entered, the regions leave one after another until the last one:
+``A`` becomes ``[done]`` and ``B`` keeps working, so the machine does not stop
+on a half-left owner.  The expansion shows a hidden variable ``__forced_0`` and
+an ordinary ``-> [*]`` in every region; that variable is printed with the other
+variables of every cycle.
 
 **File side effect.** None.
 
@@ -258,12 +481,35 @@ readers.  ``Later`` writes the path as ``active("/Trigger.Fired")`` and
 
 **Command or code.**
 
-.. literalinclude:: watch_regions.demo.py
-   :language: python
-   :caption: watch_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: watch_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i watch_regions.fcstm -e "\
+   cycle --input go=0; \
+   cycle --input go=1; \
+   cycle --input go=1"
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Plant{Earlier: Waiting, Trigger: Quiet, Later: Waiting}
+   Variables:
+     __active_Plant_Trigger_Fired = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}
+   Variables:
+     __active_Plant_Trigger_Fired = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+   Variables:
+     __active_Plant_Trigger_Fired = 1
 
 **Expected signal.** In the cycle where ``Trigger`` reaches ``Fired``, ``Later``
 already shows ``Saw``; ``Earlier`` shows ``Saw`` one cycle later.  ``active()``
@@ -286,15 +532,49 @@ the reader is declared before the writer.
 ``Left`` can finish with ``/End``; ``Right`` has a leaf with no ``during``
 action.
 
-**Command or code.** The script prints the counters after every cycle; the
-``/End`` event is sent in the third cycle:
+**Command or code.** The counters are printed after every cycle; the ``/End``
+event is sent in the third cycle, and the first cycle is left out:
 
-.. literalinclude:: aspect_regions.demo.py
-   :language: python
-   :caption: aspect_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: aspect_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i aspect_regions.fcstm -e "\
+   cycle; \
+   cycle; \
+   cycle /End; \
+   cycle"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant.Run{Left: A, Right: B, Third: C}
+   Variables:
+     ancestor = 2
+     left = 2
+     right = 2
+     work = 22
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle /End
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Plant.Run{Left: [done], Right: B, Third: C}
+   Variables:
+     ancestor = 3
+     left = 2
+     right = 3
+     work = 32
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Plant.Run{Left: [done], Right: B, Third: C}
+   Variables:
+     ancestor = 4
+     left = 2
+     right = 4
+     work = 42
 
 **Expected signal.** The ancestor aspect runs once per cycle although three
 leaves work (``ancestor`` grows by one).  A region aspect runs once per cycle
@@ -326,9 +606,48 @@ reads the files as they are.  Two of them:
    :language: fcstm
    :caption: err_active_region.fcstm.txt
 
-**Command or code.** Each ``err_*.demox.sh`` runs
-``pyfcstm inspect -i err_<name>.fcstm.txt --color never``.  These are negative
-examples; do not copy the models.
+**Command or code.** Run ``pyfcstm inspect -i err_<name>.fcstm.txt --color never``
+on each model.  These are negative examples; do not copy the models.  Every
+command exits with code 1:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i err_cross_region.fcstm.txt --color never
+   Invalid state machine model in err_cross_region.fcstm.txt: Unknown to state 'Y' of transition:
+   X -> Y; (line 5)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_mixed_children.fcstm.txt --color never
+   Failed to parse input DSL file err_mixed_children.fcstm.txt: Found 2 errors during parsing:
+   Error 1: Syntax error at line 4, column 4, near 'region': Unexpected token 'region'
+   Error 2: Syntax error at line 8, column 0, near '}': Extra closing brace - check for mismatched braces
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_empty_region.fcstm.txt --color never
+   Invalid state machine model in err_empty_region.fcstm.txt: Invalid region structure at Root.R (empty_region). (line 2)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_duplicate_region.fcstm.txt --color never
+   Invalid state machine model in err_duplicate_region.fcstm.txt: Duplicate region 'R' in Root. (line 6)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_active_region.fcstm.txt --color never
+   Invalid state machine model in err_active_region.fcstm.txt: Invalid active query 'Root.S' (region). (line 6)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_history_owner.fcstm.txt --color never
+   Invalid state machine model in err_history_owner.fcstm.txt: Invalid region structure at Root.Owner (history_boundary). (line 3)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_region_in_region.fcstm.txt --color never
+   Failed to parse input DSL file err_region_in_region.fcstm.txt: Found 3 errors during parsing:
+   Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
+   Error 2: Syntax error at line 3, column 21, near '{': Invalid syntax - check for missing semicolons, braces, or operators
+   Error 3: Syntax error at line 7, column 8, near '[*]': Unexpected token '[*]'
+   $ echo $?
+   1
+
+The table lists the mistake behind each report and its fix.
 
 .. list-table::
    :header-rows: 1
@@ -359,25 +678,10 @@ examples; do not copy the models.
      - ``Failed to parse input DSL file ...: Found 3 errors during parsing:``
      - Put a state between the regions
 
-The full text and exit code of each report are in the generated files.  As an
-example, ``err_cross_region.demox.sh``:
-
-.. literalinclude:: err_cross_region.demox.sh.err
-   :language: text
-
-Exit code:
-
-.. literalinclude:: err_cross_region.demox.sh.exitcode
-   :language: text
-
-The reports of the other six scripts are in ``err_mixed_children.demox.sh.err``,
-``err_empty_region.demox.sh.err``, ``err_duplicate_region.demox.sh.err``,
-``err_active_region.demox.sh.err``, ``err_history_owner.demox.sh.err`` and
-``err_region_in_region.demox.sh.err``; ``pyfcstm inspect`` writes these failures
-to stderr and leaves stdout empty.
+``pyfcstm inspect`` writes these failures to stderr and leaves stdout empty.
 
 **Expected signal.** Every command exits with code 1 and prints one of the
-reports above.
+reports above, as the block shows.
 
 **File side effect.** None.
 

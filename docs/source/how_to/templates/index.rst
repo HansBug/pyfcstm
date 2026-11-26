@@ -410,7 +410,7 @@ two regions in writing order, and ``StateMachineCodeRenderer.features`` is
 first one, tells a template author what to declare and when, and lists the
 built-in templates that support regions.
 
-**What the template must satisfy once it declares ``region``.** The
+**What the template must satisfy once it declares** ``region``\ **.** The
 declaration is a promise, not a switch.  The template takes over the region
 semantics of its target language: an owner starts every region in writing
 order, regions advance one after another within a cycle and see the writes of

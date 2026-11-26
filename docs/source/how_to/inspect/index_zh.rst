@@ -364,7 +364,7 @@ Inspect 任务指南
 参考链接。目标相关数值诊断见 :doc:`../../reference/diagnostics_codes/index_zh`。
 
 13. 读懂并修复 ``I_REGION_BACKWARD_READ``
-----------------------------------------
+-----------------------------------------
 
 输入。``region_read_back.fcstm``：``Reader`` 写在 ``Writer`` 之前，并读取 ``Writer`` 赋值的 ``level``。区域按书写顺序执行，所以 ``Reader`` 读到的是上一个周期的 ``level``。
 

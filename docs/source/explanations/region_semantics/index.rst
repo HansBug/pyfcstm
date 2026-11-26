@@ -467,7 +467,7 @@ when region ``A``'s branch ends, then region ``B`` (6), and finally ``P``'s
 ``after`` (9) once. Region ``B`` declares no aspect, so the ``before`` of ``A``
 (2) does not appear around it. Cycle 1 shows the same order during entry.
 
-**Where a ``before`` sits.** It is placed right before the first ``during`` work
+**Where a** ``before`` **sits.** It is placed right before the first ``during`` work
 below its scope, after the conditions of the branches that were judged earlier.
 
 .. literalinclude:: aspect_position.fcstm

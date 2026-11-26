@@ -380,7 +380,7 @@ C 家族运行时
 ~~~~~~~~~~~~
 
 * 生成文件：``machine.h``、``machine.c``、``machine.hpp``、``machine.cpp``、``README.md`` 和 ``README_zh.md``。
-* 入口：包含 ``machine.hpp``，构造 ``pyfcstm_generated::<Machine>_cpp_poll::MachineWrapper``（注意命名空间是 ``_cpp_poll``），安装包装层钩子和事件检查，然后调用 ``cycle()``。
+* 入口：包含 ``machine.hpp``，构造 ``pyfcstm_generated::<Machine>_cpp_poll::MachineWrapper``\ （注意命名空间是 ``_cpp_poll``），安装包装层钩子和事件检查，然后调用 ``cycle()``。
 * 事件模型：复用的 C 轮询核心调用已安装事件检查函数；C++ 包装层提供别名和设置方法。
 * 扩展点：抽象钩子和事件检查都通过包装层接口安装。
 * 生命周期概念：包装层构造、钩子/事件检查安装、周期、变量/状态读取、按文档通过底层公开接口热启动，以及包装层持有的初始化。

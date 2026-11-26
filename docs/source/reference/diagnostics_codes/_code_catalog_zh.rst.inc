@@ -5700,7 +5700,7 @@ W_UNREACHABLE_STATE
 .. _diag-code-w-leaf-no-outgoing-transition-zh:
 
 W_LEAF_NO_OUTGOING_TRANSITION
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-

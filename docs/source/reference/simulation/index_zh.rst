@@ -347,7 +347,7 @@
 .. literalinclude:: region_handler_context.demo.py.txt
    :language: text
 
-周期 2 里，``Tick``（根上的切面）和 ``GroupPre``（拥有者上的切面）包住整组区域，所以它们的 ``state_path`` 是 ``Controller.Running``；``SafetyPre`` 与 ``Watch`` 只包住一条分支，报告的是该分支的叶子。
+周期 2 里，``Tick``\ （根上的切面）和 ``GroupPre``\ （拥有者上的切面）包住整组区域，所以它们的 ``state_path`` 是 ``Controller.Running``；``SafetyPre`` 与 ``Watch`` 只包住一条分支，报告的是该分支的叶子。
 ``Motion`` 在该周期的每次调用里都是 ``[init]``，因为它还没有启动；周期 3 里它先是 ``Off``，到 ``Drive`` 调用时是 ``On``。
 
 .. _sim-region-cli-zh:
@@ -565,7 +565,7 @@ Delta、异常、中断、热启动，以及伪状态、强制转换和组合转
    * - 构造或热启动中的 ``ValueError``
      - Python 应用程序接口和 ``init`` 命令信息
      - 错误模式非法、未知变量、缺少热启动变量、状态路径无法解析，或持久值类型非法。含区域模型的位置还包括：把区域当作位置、未知条目、重复的区域、位置文本有误、任一层拥有者的区域全体已完成、
-       另一个模型的 ``Configuration`` 或 ``State``（文本见 :ref:`sim-region-hot-start-zh`）；位置的类型不对时抛出 ``TypeError``。
+       另一个模型的 ``Configuration`` 或 ``State``\ （文本见 :ref:`sim-region-hot-start-zh`）；位置的类型不对时抛出 ``TypeError``。
    * - ``SimulationRuntimeEventError``
      - Python 应用程序接口；命令层显示 ``Cycle execution failed: ...``
      - 事件输入不受支持、无法解析，或来自外部状态机。

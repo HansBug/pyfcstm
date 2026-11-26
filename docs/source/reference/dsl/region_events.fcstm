@@ -1,5 +1,5 @@
 // Event ownership inside regions: a bare name belongs to the region, `::`
-// belongs to the source state, and ``/path`` starts at the root.
+// belongs to the source state, and /path starts at the root.
 state Plant {
     event Reset;
     [*] -> Job;

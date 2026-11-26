@@ -141,7 +141,7 @@ Region 模型与配置
 
 ``is_active`` 接受状态路径，包括活动祖先，但拒绝区域路径。
 ``region_status`` 接受区域路径，返回 ``live``、``done``、``pending``
-（所属状态活动但区域尚未初始化）或 ``inactive``（所属状态不在配置中）。
+（所属状态活动但区域尚未初始化）或 ``inactive``\ （所属状态不在配置中）。
 ``leaves`` 不包含已完成或等待初始化的分支。未知路径抛出 ``ValueError``。
 
 ``to_dict()`` 返回新分配的 JSON 兼容容器。上述例子的结果是：
@@ -222,7 +222,7 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
      - 出处
      - 记载位置
    * - 一个周期内相互嵌套进入的拥有者
-     - 至多 64 层。第 65 层抛出 ``SimulationRuntimeDfsError``（``Group initialization nested deeper than the structural safety limit (64) within one cycle``）；64 层嵌套的拥有者可以运行。
+     - 至多 64 层。第 65 层抛出 ``SimulationRuntimeDfsError``\ （``Group initialization nested deeper than the structural safety limit (64) within one cycle``）；64 层嵌套的拥有者可以运行。
        一个周期里把同一个整组重复进入约 64 次以上的循环也适用同一上限。模型本身在任何深度都能构建。
      - ``pyfcstm/simulate/runtime.py`` 的 ``_DFS_STRUCTURAL_DEPTH_LIMIT``；生成的 Python 运行时和 C 内核带有相同常量；
        共享用例 ``region_unbounded_group_reentry_is_reported_as_a_safety_limit_error``。

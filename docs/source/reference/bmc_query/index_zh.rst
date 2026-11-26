@@ -831,7 +831,7 @@ BMC 原子及上下文合法性
    * - ``Job.Run.Prep.Busy``
      - 诊断码 ``unknown_state``：``Unknown state path: 'Job.Run.Prep.Busy'.`` 普通路径先按状态绑定，再按位置读取。
 
-每条消息的前缀都是 ``Failed to compile BMC query: <诊断码> at initial.state_path: ``。“全部完成”规则在每一层嵌套都适用：它与仿真器里“每个区域都是 ``[done]`` 不是合法热启动位置”是同一条规则。
+每条消息的前缀都是 ``Failed to compile BMC query: <诊断码> at initial.state_path:``\ 。“全部完成”规则在每一层嵌套都适用：它与仿真器里“每个区域都是 ``[done]`` 不是合法热启动位置”是同一条规则。
 
 ``active(...)``：匹配一个配置
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -912,7 +912,7 @@ BMC 原子及上下文合法性
 
    * - ``active("...")``
      - 诊断码
-     - 消息（前缀 ``Failed to compile BMC query: <诊断码> at property.predicate: `` 之后）
+     - 消息（前缀\ ``Failed to compile BMC query: <诊断码> at property.predicate:``\ 之后）
    * - ``Root.Run{Work: Nope}``
      - ``invalid_active_pattern``
      - ``Unknown state path: 'Root.Run.Work.Nope'.``

@@ -136,7 +136,7 @@ Inspect 报告参考
    * - ``ComboOriginTermInfo``
      - 项序号、角色、是否消耗触发项、文本，以及转换 / 触发器 / 项 / 值 / 删除 span。
    * - ``ComboOriginRefInfo``
-     - 项序号、角色、是否消耗触发项、文本、转换 / 触发器 / 项 / 值 / 删除 span，以及 authored endpoint 来源信息：``source_kind``（``state``/``init``）、``source_path``、initial selection 的 ``selection_owner_path``、``target_kind``（``state``/``exit``）和 exit 时为 ``[*]`` 的 ``target_path``。
+     - 项序号、角色、是否消耗触发项、文本、转换 / 触发器 / 项 / 值 / 删除 span，以及 authored endpoint 来源信息：``source_kind``\ （``state``/``init``）、``source_path``、initial selection 的 ``selection_owner_path``、``target_kind``\ （``state``/``exit``）和 exit 时为 ``[*]`` 的 ``target_path``。
    * - ``VariableInfo``
      - 名称、类型、初值、读写状态路径、守卫影响标志、抽象动作作用域和浮点字面量赋值。
    * - ``EventInfo``
@@ -148,7 +148,7 @@ Inspect 报告参考
    * - ``ModelMetrics``
      - 状态 / 转换 / 事件 / 变量计数、层级深度、变量到叶状态比例、切面覆盖和抽象动作清单。
    * - ``StructureStatistics``
-     - 作者写的转换数量、``transitions_per_state``（``T / S``）、不可达数量/比例，以及守卫/效果/无事件无守卫比例。``S`` 是非伪状态数量；每个比例同时给出分子和分母，空总体返回 ``null``。默认只对三项结构信号给出建议阈值：``T / S <= 6.0``、不可达叶状态比例 ``<= 0.10``、不可达转换比例 ``<= 0.10``；超出只记录元数据，不产生诊断。
+     - 作者写的转换数量、``transitions_per_state``\ （``T / S``）、不可达数量/比例，以及守卫/效果/无事件无守卫比例。``S`` 是非伪状态数量；每个比例同时给出分子和分母，空总体返回 ``null``。默认只对三项结构信号给出建议阈值：``T / S <= 6.0``、不可达叶状态比例 ``<= 0.10``、不可达转换比例 ``<= 0.10``；超出只记录元数据，不产生诊断。
    * - ``ModelDiagnostic``
      - ``code``、``severity``、``message``、``span``、``refs`` 和可选 ``suggested_fix``。
    * - ``Span``
@@ -409,8 +409,8 @@ LLM 报告契约
 
 结构统计默认只是描述性信息：始终输出原始计数和比例，并记录三项保守的建议阈值。
 超出阈值只把字段名加入 ``exceeded_thresholds``，不会生成 G5 健康告警或综合分数。
-分母为空时返回 ``null``（human/Markdown 显示 ``N/A``）。调用方可以向
-``inspect_model`` 传入 ``StructureStatisticsPolicy``（或部分映射），单项传
+分母为空时返回 ``null``\ （human/Markdown 显示 ``N/A``）。调用方可以向
+``inspect_model`` 传入 ``StructureStatisticsPolicy``\ （或部分映射），单项传
 ``None`` 即可关闭。未来若根据指定语料库设置 cutoff，必须标明语料来源并显式配置，不能从
 本报告自行推断。
 

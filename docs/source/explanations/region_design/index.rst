@@ -272,7 +272,7 @@ marked where an experiment exists.
   owner itself cannot be given a history.
 * **Events do not travel.** Nothing sends an event between regions. Use a
   variable and an order.
-* **The whole group leaves through ``-> [*]``.** Leaving a group by a forced
+* **The whole group leaves through** ``-> [*]``\ **.** Leaving a group by a forced
   transition is the expansion above, not a special case. The differences that
   remain are in `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_.
 * **Variables are inputs, controls and outputs.** Persistent variables are

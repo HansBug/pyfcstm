@@ -924,7 +924,7 @@ runs in step 0 like any other.
      - Code ``unknown_state``: ``Unknown state path: 'Job.Run.Prep.Busy'.`` A
        plain path is bound as a state before it is read as a position.
 
-Every message is prefixed ``Failed to compile BMC query: <code> at initial.state_path: ``.
+Every message is prefixed ``Failed to compile BMC query: <code> at initial.state_path:``.
 The all-finished rule applies at every nesting level: it is the same rule that
 makes ``[done]`` for every region an illegal hot-start position in the
 simulator.
@@ -1021,7 +1021,7 @@ where every region has a position:
 
    * - ``active("...")``
      - Code
-     - Message after ``Failed to compile BMC query: <code> at property.predicate: ``
+     - Message after ``Failed to compile BMC query: <code> at property.predicate:``
    * - ``Root.Run{Work: Nope}``
      - ``invalid_active_pattern``
      - ``Unknown state path: 'Root.Run.Work.Nope'.``

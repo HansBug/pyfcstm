@@ -199,6 +199,12 @@ def page_directory(request, tmp_path_factory):
     :type tmp_path_factory: pytest.TempPathFactory
     :return: The copy, which is the working directory while the page runs.
     :rtype: pathlib.Path
+
+    Example::
+
+        A page that shows ``$ pyfcstm inspect -i controller.fcstm`` runs that
+        command in the copy, where ``controller.fcstm`` comes from ``_models``
+        or from the page directory.
     """
     work = tmp_path_factory.mktemp("page") / "work"
     shutil.copytree(str(_SOURCE / "_models"), str(work))

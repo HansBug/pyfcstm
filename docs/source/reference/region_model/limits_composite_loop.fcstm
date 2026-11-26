@@ -1,0 +1,17 @@
+def int x = 0;
+state Root {
+    event Go;
+    [*] -> S;
+    state S { during { x = x + 1; } }
+    state Q {
+        [*] -> j effect { x = (x + 1) % 5; };
+        pseudo state j;
+        state Rest;
+        j -> [*];
+        j -> Rest;
+    }
+    state T;
+    S -> Q : Go;
+    S -> T : Go;
+    Q -> Q;
+}

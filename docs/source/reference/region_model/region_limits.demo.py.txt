@@ -1,0 +1,28 @@
+== simulator: owners entered inside one another in one cycle
+64 nested owners: the first cycle runs
+65 nested owners: SimulationRuntimeDfsError: Group initialization nested deeper than the structural safety limit (64) within one cycle
+== simulator: steps in one cycle
+SimulationRuntimeDfsError: Speculative DFS exceeded the step safety limit (1000) without reaching a stoppable state or pruning
+== BMC: how often one owner may re-enter itself in one cycle
+n < 3, max_group_reentries=16: built
+n < 20, max_group_reentries=16: BmcBuildError: state 'Root.O' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+n < 3, max_group_reentries=2: BmcBuildError: state 'Root.O' re-enters its own group more than 2 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+== BMC: depth of one expression
+98 prefix negations: accepted
+99 prefix negations: InvalidBmcQuery: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+== model: a history owner whose subtree has a region
+E_REGION_STRUCTURE (history_boundary)
+== simulator: a composite candidate that only loops (a model without regions)
+events=[]           delta=False Root.S   x=1
+events=['Root.Go']  delta=True  Root.S   x=1
+events=['Root.Go']  delta=True  Root.S   x=1
+events=[]           delta=False Root.S   x=2
+== export: the text of to_ast_node() runs like the machine it came from (forced declaration over regions)
+original  [('Root.Run{A: A1, B: B1}', 0), ('Root.Idle', 12)]
+reloaded  [('Root.Run{A: A1, B: B1}', 0), ('Root.Idle', 12)]
+== inspect: a state entered only as a history default is never reported unreachable
+unreachable: 0 leaf states / 0 transitions
+after /Go the machine is in Root.P.B
+== generated C: default capacities
+controller (6 states, 2 regions): ARENA_CAPACITY 108; TRAIL_CAPACITY 52
+flat machine (3 states): ARENA_CAPACITY 8; TRAIL_CAPACITY 4

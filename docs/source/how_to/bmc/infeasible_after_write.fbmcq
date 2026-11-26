@@ -1,0 +1,3 @@
+init state("Controller.Idle");
+assume at 1: var("motor") == 5;
+check reach <= 1: active("Controller.Running");

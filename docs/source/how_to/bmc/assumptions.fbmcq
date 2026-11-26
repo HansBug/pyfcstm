@@ -1,0 +1,5 @@
+init state("Root.Idle");
+assume always: x == 0;
+assume event("Root.Go", 0) == false;
+assume events cardinality at_most_one {"Root.Go"};
+check invariant <= 1: x == 0;

@@ -3,19 +3,21 @@ BMC Task Recipes
 
 Use these recipes after completing :doc:`../../tutorials/bmc/index`.  Start in
 an empty working directory and :download:`download the task model
-<bmc_tasks.fcstm>` there.  Save each task's short FBMCQ block under the filename
-shown by its command, then run that command from the same directory.  The model
-is small on purpose:
+<bmc_tasks.fcstm>` there.  Save each query file shown in a task under the
+filename in its caption, then run the commands from the same directory.  The
+model is small on purpose:
 
 .. literalinclude:: bmc_tasks.fcstm
    :language: text
    :caption: ``bmc_tasks.fcstm``
 
 It has one persistent variable, one event, one abstract ``during`` action, and
-one event-driven transition.  The examples below show the direct CLI command
-first, then the complete short ``.fbmcq`` text to save, then the explanation,
-expected output, and failure boundary.  A block that compares alternatives
-labels each alternative as a separate file.
+one event-driven transition.  Each task below gives the command with a real
+terminal record, then the complete short ``.fbmcq`` file it reads, then the
+explanation, expected output, and failure boundary.  A line that only says
+``...`` in a terminal record stands for report lines the task does not discuss,
+such as the solver time.  A task that compares alternatives shows each
+alternative as a separate file.
 
 How to choose a property kind
 -----------------------------
@@ -116,49 +118,65 @@ a short message to stderr and do not create a partial report.
 1. Run the chosen property kind
 -------------------------------
 
-**CLI.** Replace ``reach.fbmcq`` with the query file for the property you chose.
-
-.. code-block:: bash
-
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q reach.fbmcq --json
-
 **FBMCQ.** These are seven separate query files, not seven ``check`` clauses in
 one file.  Every file starts with ``init state("Root.Idle");`` and contains
-exactly one row from this table:
+exactly one ``check`` clause.  The shared hot-start line makes frame zero
+``Root.Idle``; it is required for the bound-one ``forbid`` and ``cover``
+results shown below.
 
-.. list-table:: One ``check`` clause per property file
-   :header-rows: 1
-   :widths: 19 81
+.. literalinclude:: reach.fbmcq
+   :language: text
+   :caption: reach.fbmcq
 
-   * - File
-     - Clause after the common ``init`` line
-   * - ``reach.fbmcq``
-     - ``check reach <= 1: active("Root.Idle");``
-   * - ``forbid.fbmcq``
-     - ``check forbid <= 1: active("Root.Done");``
-   * - ``invariant.fbmcq``
-     - ``check invariant <= 1: x == 0;``
-   * - ``must_reach.fbmcq``
-     - ``check must_reach <= 1: active("Root.Idle");``
-   * - ``exists_always.fbmcq``
-     - ``check exists_always <= 1: x == 0;``
-   * - ``response.fbmcq``
-     - ``check response <= 1: trigger false -> within 1 active("Root.Done");``
-   * - ``cover.fbmcq``
-     - ``check cover <= 1: case("Root.Idle::transition::Root.Done::0");``
+.. literalinclude:: forbid.fbmcq
+   :language: text
+   :caption: forbid.fbmcq
+
+.. literalinclude:: invariant.fbmcq
+   :language: text
+   :caption: invariant.fbmcq
+
+.. literalinclude:: must_reach.fbmcq
+   :language: text
+   :caption: must_reach.fbmcq
+
+.. literalinclude:: exists_always.fbmcq
+   :language: text
+   :caption: exists_always.fbmcq
+
+.. literalinclude:: response.fbmcq
+   :language: text
+   :caption: response.fbmcq
+
+.. literalinclude:: cover.fbmcq
+   :language: text
+   :caption: cover.fbmcq
+
+**CLI.** Replace ``reach.fbmcq`` with the query file for the property you
+chose.  The direct ``reach`` command with ``--json``:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --json
+   {
+     "exit_code": 0,
+   ...
+       "kind": "reach",
+   ...
+       "outcome": "witness_found",
+   ...
+       "status": "sat",
+   ...
 
 **What it does.** The command asks one bounded question about the model.  The
 query kind controls whether SAT means a positive witness or a counterexample.
-The shared hot-start line makes frame zero ``Root.Idle``; it is required for
-the bound-one ``forbid`` and ``cover`` results shown below.
 
 **Expected output.** For the direct ``reach`` command, JSON contains
 ``"kind": "reach"``, ``"status": "sat"``, ``"outcome": "witness_found"``,
-and ``"exit_code": 0``.  Run each of the seven files in human mode to see the
-verdict on the first line of its report; only ``forbid`` exits ``1``, because
-its counterexample means the property is violated:
+and ``"exit_code": 0``, as the record above shows.  Run each of the seven files
+in human mode to see the verdict on the first line of its report; only
+``forbid`` exits ``1``, because its counterexample means the property is
+violated:
 
 .. code-block:: console
 
@@ -198,20 +216,37 @@ forms and :doc:`../../explanations/bmc_properties/index` for their objectives.
 2. Set a state and replace selected initializers
 ------------------------------------------------
 
-**CLI.**
+**CLI.** The witness frame zero carries the state and the value the query
+asked for:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q init_havoc_where.fbmcq --json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q init_havoc_where.fbmcq --json
+   {
+     "exit_code": 0,
+   ...
+       "outcome": "witness_found",
+   ...
+     "witness": {
+       "diagnostics": [],
+       "frames": [
+         {
+           "index": 0,
+           "sentinel": null,
+           "state": "Root.Idle",
+           "state_id": 2,
+           "terminated": false,
+           "vars": {
+             "x": 7
+           }
+         },
+   ...
 
 **FBMCQ.**
 
-.. code-block:: text
-
-   init state("Root.Idle") havoc { x } where x == 7;
-   check reach <= 1: x == 7;
+.. literalinclude:: init_havoc_where.fbmcq
+   :language: text
+   :caption: init_havoc_where.fbmcq
 
 **What it does.** The query starts from ``Root.Idle``, removes only ``x`` from
 the initializer constraints, and constrains frame zero to ``x == 7``.
@@ -224,8 +259,24 @@ the exit status is ``0``.
 
 **Failure boundary.** ``where`` constrains initialization; it does not override
 an initializer.  Without ``havoc { x }``, this model's ``x = 0`` and
-``where x == 7`` make the trace formula UNSAT.  ``havoc *`` removes every
-persistent initializer, so prefer a named set when possible.
+``where x == 7`` make the trace formula UNSAT:
+
+.. literalinclude:: init_where_only.fbmcq
+   :language: text
+   :caption: init_where_only.fbmcq
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q init_where_only.fbmcq
+   BMC reach <= 1: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
+     Failure boundary: INITIALIZATION
+   ...
+   $ echo $?
+   3
+
+``havoc *`` removes every persistent initializer, so prefer a named set when
+possible.
 
 **Reference.** See :doc:`../../reference/bmc_query/index` for ``cold``,
 ``state(...)``, ``terminated``, ``havoc``, and ``where`` legality.
@@ -233,24 +284,32 @@ persistent initializer, so prefer a named set when possible.
 3. Constrain frames and event inputs
 ------------------------------------
 
-**CLI.**
+**CLI.** The command writes the report to a file and prints nothing; the file
+shows the verdict, and that ``witness`` and ``replay`` are null:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q assumptions.fbmcq --json \
-       -o /tmp/bmc-assumptions.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q assumptions.fbmcq --json -o assumptions.json
+   $ cat assumptions.json
+   {
+     "exit_code": 0,
+   ...
+     "replay": null,
+   ...
+       "kind": "invariant",
+   ...
+       "outcome": "property_satisfied",
+   ...
+       "status": "unsat",
+   ...
+     "witness": null
+   }
 
 **FBMCQ.**
 
-.. code-block:: text
-
-   init state("Root.Idle");
-   assume always: x == 0;
-   assume event("Root.Go", 0) == false;
-   assume events cardinality at_most_one {"Root.Go"};
-   check invariant <= 1: x == 0;
+.. literalinclude:: assumptions.fbmcq
+   :language: text
+   :caption: assumptions.fbmcq
 
 **What it does.** The assumptions constrain ``x`` on every frame, disable
 ``Root.Go`` at step zero, and require at most one event from the selected event
@@ -260,8 +319,8 @@ set.
 ``property_satisfied``, and exit ``0``.  ``witness`` and ``replay`` are null
 because no counterexample exists under these assumptions.
 
-**File side effect.** ``/tmp/bmc-assumptions.json`` is atomically created or
-replaced.
+**File side effect.** ``assumptions.json`` is atomically created or replaced in
+the current directory.
 
 **Failure boundary.** Assumptions restrict the searched environment and can make
 an otherwise possible behavior disappear.  Event paths are fully qualified; an
@@ -275,21 +334,35 @@ unknown path is a binding error, not an UNSAT verdict.
 
 **CLI.**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q calls.fbmcq --json \
-       -o /tmp/bmc-calls.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q calls.fbmcq --json
+   {
+     "exit_code": 0,
+   ...
+       "outcome": "witness_found",
+   ...
+     "witness": {
+   ...
+       "steps": [
+         {
+           "abstract_calls": [
+             {
+               "action_name": "Root.Idle.Tick",
+               "active_leaf": "Root.Idle",
+               "named_ref": null,
+               "ordinal": 0,
+               "role": "leaf_during",
+               "snapshot": {
+                 "x": 0
+               },
+   ...
 
 **FBMCQ.**
 
-.. code-block:: text
-
-   init state("Root.Idle");
-   check reach <= 1:
-       called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
-       && call_count("Root.Idle.Tick", step=*) == 1;
+.. literalinclude:: calls.fbmcq
+   :language: text
+   :caption: calls.fbmcq
 
 **What it does.** The query selects the ``Root.Idle.Tick`` call at step zero,
 requires its runtime role, checks the call-time ``x`` snapshot, and counts the
@@ -299,7 +372,7 @@ call within the one-step bound.
 first witness step contains one ``abstract_calls`` record with ``action_name``
 ``Root.Idle.Tick``, ``role`` ``leaf_during``, and ``snapshot.x`` equal to ``0``.
 
-**File side effect.** ``/tmp/bmc-calls.json`` is atomically created or replaced.
+**File side effect.** None; add ``-o`` to write the payload atomically to a file.
 
 **Failure boundary.** A call ``where`` expression sees the captured call-time
 variables; it cannot use frame atoms such as ``active()`` or nested
@@ -328,14 +401,11 @@ card does not discuss are left out:
      0: Root.Idle -> Root.Idle [fallback; calls=Root.Idle.Tick]
    ...
 
-**FBMCQ.**
+**FBMCQ.** The same ``calls.fbmcq`` as task 4:
 
-.. code-block:: text
-
-   init state("Root.Idle");
-   check reach <= 1:
-       called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
-       && call_count("Root.Idle.Tick", step=*) == 1;
+.. literalinclude:: calls.fbmcq
+   :language: text
+   :caption: calls.fbmcq
 
 **What it does.** Human mode prints the same witness in a compact form and runs
 the mandatory replay trust gate before reporting success.
@@ -361,21 +431,27 @@ witness columns, replay mismatches, and exit precedence.
 6. Gate CI with JSON and exit status
 ------------------------------------
 
-**CLI.**
+**CLI.** The command exits ``1`` and still writes the report:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q forbid.fbmcq --json \
-       -o /tmp/bmc-ci.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q forbid.fbmcq --json -o ci.json
+   $ echo $?
+   1
+   $ cat ci.json
+   {
+     "exit_code": 1,
+   ...
+       "outcome": "property_violated",
+   ...
+       "status": "sat",
+   ...
 
-**FBMCQ.**
+**FBMCQ.** The same ``forbid.fbmcq`` as task 1:
 
-.. code-block:: text
-
-   init state("Root.Idle");
-   check forbid <= 1: active("Root.Done");
+.. literalinclude:: forbid.fbmcq
+   :language: text
+   :caption: forbid.fbmcq
 
 **What it does.** This valid query intentionally finds a forbidden-state
 counterexample.  It demonstrates a machine-readable report whose process exit
@@ -386,8 +462,8 @@ is nonzero because the property is violated.
 ``"exit_code": 1``.  CI should fail or allow that verdict according to project
 policy, but it must not confuse it with a CLI input error.
 
-**File side effect.** ``/tmp/bmc-ci.json`` is created even though the verdict
-exit is ``1``.
+**File side effect.** ``ci.json`` is created even though the verdict exit is
+``1``.
 
 **Failure boundary.** Exit ``0`` means a satisfied property or positive witness;
 ``1`` also covers controlled errors, distinguishable because those have stderr
@@ -400,25 +476,30 @@ matrix and stable JSON schema.
 7. Write a completed report atomically
 --------------------------------------
 
-**CLI.**
+**CLI.** The parent directory must already exist; a missing one is refused:
 
-.. code-block:: bash
+.. code-block:: console
 
-   mkdir -p /tmp/pyfcstm-bmc
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q invariant.fbmcq \
-       --json -o /tmp/pyfcstm-bmc/result.json
+   $ mkdir reports
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq --json -o reports/result.json
+   $ cat reports/result.json
+   {
+     "exit_code": 0,
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq --json -o missing/result.json
+   Failed to write BMC output file missing/result.json: [Errno 2] No such file or directory: 'missing/.result.json...tmp'
+   $ echo $?
+   1
 
-**FBMCQ.**
+**FBMCQ.** The same ``invariant.fbmcq`` as task 1:
 
-.. code-block:: text
-
-   init state("Root.Idle");
-   check invariant <= 1: x == 0;
+.. literalinclude:: invariant.fbmcq
+   :language: text
+   :caption: invariant.fbmcq
 
 **What it does.** The CLI writes a complete JSON payload through a
-same-directory temporary file, then replaces the target path.
+same-directory temporary file, then replaces the target path.  The error
+message above names that temporary file.
 
 **Expected output.** No stdout; the file contains ``"exit_code": 0``.
 
@@ -446,9 +527,9 @@ stdout, stderr, and UTF-8 rules.
 
 **FBMCQ.**
 
-.. code-block:: text
-
-   check reach <= 2: active("Root.Idle");
+.. literalinclude:: reach_bound_2.fbmcq
+   :language: text
+   :caption: reach_bound_2.fbmcq
 
 **What it does.** The query requests bound 2, while the command-line policy
 allows at most 1.
@@ -470,31 +551,32 @@ error classification details.
 9. Apply a per-check solver timeout
 -----------------------------------
 
-**CLI.**
+**CLI.** This command is not run in the documentation check, because whether
+one millisecond is enough depends on the speed of the machine:
 
 .. code-block:: bash
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q reach_bound_2.fbmcq \
-       --timeout-ms 1 --json -o /tmp/bmc-timeout.json
+   pyfcstm bmc -i bmc_tasks.fcstm -q reach_bound_2.fbmcq \
+       --timeout-ms 1 --json -o bmc-timeout.json
 
-**FBMCQ.**
+**FBMCQ.** The same ``reach_bound_2.fbmcq`` as task 8:
 
-.. code-block:: text
-
-   check reach <= 2: active("Root.Idle");
+.. literalinclude:: reach_bound_2.fbmcq
+   :language: text
+   :caption: reach_bound_2.fbmcq
 
 **What it does.** The command passes a one-millisecond timeout to each solver
-``check()``.  This fixture normally reports a timeout on a loaded development
-machine, but very fast machines may produce a decisive result before the limit.
+``check()``.  Whether this fixture times out depends on the machine: a loaded or
+slow machine can exceed the limit, while a fast one decides first.
 
-**Expected output.** On the verified run, the command exited ``3`` and JSON
-contained ``"timeout_ms": 1``, ``"status": "timeout"``, and
+**Expected output.** If the limit is exceeded, the command exits ``3`` and JSON
+contains ``"timeout_ms": 1``, ``"status": "timeout"``, and
 ``"outcome": "timeout"``.  If the solve finishes first, the JSON still records
-``"timeout_ms": 1`` and uses the ordinary decisive exit.
+``"timeout_ms": 1`` and uses the ordinary decisive exit; when this page was
+written, repeated runs on a development machine finished first, exited ``0``, and
+reported ``"outcome": "witness_found"``.
 
-**File side effect.** ``/tmp/bmc-timeout.json`` contains the completed verdict.
+**File side effect.** ``bmc-timeout.json`` contains the completed verdict.
 
 **Failure boundary.** The timeout is not a wall-clock budget for parsing,
 expansion, formula construction, or the whole CLI.  ``response`` may execute a
@@ -523,20 +605,56 @@ codes:
    $ echo $?
    3
 
-Add ``--json -o /tmp/bmc-response.json`` to either command to write the
-machine-readable result described below.
+The JSON of each run says the same thing in fields:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_missing.fbmcq --json
+   {
+     "exit_code": 1,
+   ...
+       "outcome": "property_violated",
+   ...
+       "status": "sat",
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_incomplete.fbmcq --json
+   {
+     "exit_code": 3,
+   ...
+     "replay": {
+       "mismatches": [],
+       "model_role": "incomplete_suffix",
+       "ok": true,
+   ...
+       "incomplete": true,
+   ...
+       "incomplete_status": "sat",
+   ...
+       "outcome": "incomplete",
+   ...
+       "status": "unsat",
+   ...
+     "witness": {
+   ...
+       "model_role": "incomplete_suffix",
+   ...
+   $ echo $?
+   3
+
+Add ``-o bmc-response.json`` to either command to write the result to a file
+instead.
 
 **FBMCQ file:** ``response_missing.fbmcq``
 
-.. code-block:: text
-
-   check response <= 1: trigger true -> within 1 false;
+.. literalinclude:: response_missing.fbmcq
+   :language: text
 
 **FBMCQ file:** ``response_incomplete.fbmcq``
 
-.. code-block:: text
-
-   check response <= 1: trigger true -> within 2 false;
+.. literalinclude:: response_incomplete.fbmcq
+   :language: text
 
 **What it does.** The first query is a decisive violation: a trigger exists and
 no response can satisfy the one-step window.  The second shape is inconclusive
@@ -546,8 +664,11 @@ suffix.
 **Expected output.** ``response_missing.fbmcq`` exits ``1`` with ``status``
 ``sat`` and ``outcome`` ``property_violated`` in JSON.  ``response_incomplete.fbmcq``
 exits ``3`` with primary ``status`` ``unsat``, ``outcome`` ``incomplete``,
-``incomplete`` true, and ``incomplete_status`` ``sat``; witness and replay are
-null.
+``incomplete`` true, and ``incomplete_status`` ``sat``.  Its ``witness`` is not
+null: it is the incomplete suffix (``model_role`` ``incomplete_suffix``) that
+could still violate the property, and ``replay`` confirms it with ``ok`` true.
+Treat that witness as the reason the result is inconclusive, not as a
+counterexample.
 
 **File side effect.** None unless you add ``-o``; then the output file is
 atomically created or replaced.
@@ -573,12 +694,19 @@ fields.
    Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Missing'.
    $ echo $?
    1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invalid_state.fbmcq --json -o invalid.json
+   Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Missing'.
+   $ echo $?
+   1
+   $ test -e invalid.json
+   $ echo $?
+   1
 
 **FBMCQ.**
 
-.. code-block:: text
-
-   check reach <= 1: active("Root.Missing");
+.. literalinclude:: invalid_state.fbmcq
+   :language: text
+   :caption: invalid_state.fbmcq
 
 **What it does.** The query is syntactically valid but names a state that the
 model does not contain.
@@ -586,8 +714,8 @@ model does not contain.
 **Expected output.** stderr starts with ``Failed to compile BMC query`` and
 identifies ``Root.Missing``; exit ``1``.  stdout is empty.
 
-**File side effect.** None.  Adding ``-o /tmp/invalid.json`` still must not
-create a partial payload.
+**File side effect.** None.  Adding ``-o invalid.json`` still creates no
+partial payload: the last two commands above show that the file does not exist.
 
 **Failure boundary.** A malformed ``.fbmcq`` fails during parsing; an unknown
 model object path fails during binding; a parsed but unsupported expression reports an
@@ -601,19 +729,46 @@ forms and :doc:`../../reference/bmc_results/index` for error streams.
 12. Choose an explanation depth
 -------------------------------
 
-**CLI.**
+**CLI.** Run the same query at each depth.  Both runs exit ``3``, because an
+infeasible scenario is a report and not a failure:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q infeasible_two_values.fbmcq \
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_two_values.fbmcq \
        --explain-infeasibility formal --color never
+   BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+   Classification: the assumptions are internally inconsistent
+   ...
+   Conflict constraints:
+     1. infeasible_two_values.fbmcq:1:1-1:28
+        assume at 1: var("x") == 1;
+     2. infeasible_two_values.fbmcq:2:1-2:28
+        assume at 1: var("x") == 2;
+   ...
+   $ echo $?
+   3
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+   ...
+   Why no execution exists:
+     1. At frame 1, x must equal 1.
+     2. At frame 1, x must equal 2.
+     3. Therefore one value cannot be two things at once. No execution satisfies these query requirements, and the property was not evaluated.
+   ...
+   $ echo $?
+   3
 
 **FBMCQ.**
 
 .. literalinclude:: infeasible_two_values.fbmcq
    :language: text
+   :caption: infeasible_two_values.fbmcq
 
 **What it does.** ``--explain-infeasibility`` asks why an infeasible scenario is
 infeasible.  ``none`` (the default) does no extra solver work.  ``formal`` adds a
@@ -635,10 +790,10 @@ not that a proof was found.  The four headlines are listed in
 
 **Failure boundary.** ``proof`` costs extra solver checks: each input node is
 verified in both directions and each derived step is re-derived independently.
-On this fixture the explanation took roughly 10 ms, but a large core with many
-members will cost more.  Use ``none`` in a CI gate that only needs the verdict,
-``formal`` when a human will read the failure, and ``proof`` when the reasoning
-itself has to be auditable.
+On this fixture the extra cost is small (the report prints ``Explanation time``
+in milliseconds), but a large core with many members will cost more.  Use
+``none`` in a CI gate that only needs the verdict, ``formal`` when a human will
+read the failure, and ``proof`` when the reasoning itself has to be auditable.
 
 **Next diagnostic step.** If ``proof`` returns ``achieved_mode`` as ``formal``,
 go to task 15.
@@ -652,27 +807,15 @@ contract and the block layouts.
 
 **CLI.**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q infeasible_cross_step.fbmcq \
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_cross_step.fbmcq \
        --explain-infeasibility formal --color never
-
-**FBMCQ.**
-
-.. literalinclude:: infeasible_cross_step.fbmcq
-   :language: text
-
-**What it does.** The core is the set of clauses that together make the scenario
-infeasible, each with the position it was written at.
-
-**Expected output.** On the verified run:
-
-.. code-block:: text
-
+   BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
-
+   ...
    Conflict constraints:
      1. infeasible_cross_step.fbmcq:2:1-2:28
         assume at 1: var("x") == 3;
@@ -681,11 +824,25 @@ infeasible, each with the position it was written at.
      3. bmc_tasks.fcstm:1:1-1:15
         def int x = 0;
      4. generated transition constraint at step 0
+   ...
+   Reduction: subset_minimal
+   ...
+   $ echo $?
+   3
 
-Read it as: the classification says which file to open, and the members say which
-lines.  Here the assumption at frame 1 disagrees with what the initializer and
-the declaration force, so either the ``assume`` value or the initial value has to
-change.
+**FBMCQ.**
+
+.. literalinclude:: infeasible_cross_step.fbmcq
+   :language: text
+   :caption: infeasible_cross_step.fbmcq
+
+**What it does.** The core is the set of clauses that together make the scenario
+infeasible, each with the position it was written at.
+
+**Expected output.** Read it as: the classification says which file to open, and
+the members say which lines.  Here the assumption at frame 1 disagrees with what
+the initializer and the declaration force, so either the ``assume`` value or the
+initial value has to change.
 
 Member 4 has no source position because nobody wrote it: the builder generates
 the transition constraint that carries frame 0's values forward.  A generated
@@ -698,8 +855,8 @@ change.
 **Failure boundary.** A core is only guaranteed *sufficient* unless the report
 says otherwise.  Check the ``Reduction:`` line: ``raw`` may include members that
 are not part of the conflict, ``partial_minimized`` was cut short, and only
-``subset_minimal`` guarantees every listed member is load bearing.  Editing a
-member of a ``raw`` core may change nothing.
+``subset_minimal`` guarantees every listed member is load bearing, as it does in
+the record above.  Editing a member of a ``raw`` core may change nothing.
 
 **Next diagnostic step.** For the reasoning that links the members, raise the
 depth to ``proof`` and read task 14.
@@ -711,35 +868,67 @@ is not minimal.
 14. Read a proof and trace a sentence to a clause
 -------------------------------------------------
 
-**CLI.**
+**CLI.** The JSON keeps the narrative and the proof graph side by side.  Each
+narrative sentence lists the ``proof_node_ids`` behind it, and each node has a
+``stable_id`` that those lists point to:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q infeasible_two_values.fbmcq \
-       --explain-infeasibility proof --json -o /tmp/bmc-proof.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --json
+   {
+     "exit_code": 3,
+   ...
+           "narrative": {
+   ...
+                 "proof_node_ids": [
+                   "proof.input.0000"
+                 ],
+                 "text": "At frame 1, x must equal 1."
+   ...
+           "proof": {
+             "graph_minimality": "dependency_pruned",
+             "input_minimality": "subset_minimal",
+   ...
+                 "rule_id": "source_fact",
+                 "stable_id": "proof.input.0000",
+                 "verification_method": "core_binding"
+   ...
+                 "rule_id": "source_fact",
+                 "stable_id": "proof.input.0001",
+                 "verification_method": "core_binding"
+   ...
+                 "rule_id": "incompatible_equalities",
+                 "stable_id": "proof.step.0002",
+                 "verification_method": "rule_checker"
+               }
+             ],
+             "root_id": "proof.step.0002",
+   ...
+             "verification_status": "verified"
+   ...
+   $ echo $?
+   3
+
+**FBMCQ.** The same ``infeasible_two_values.fbmcq`` as task 12:
+
+.. literalinclude:: infeasible_two_values.fbmcq
+   :language: text
+   :caption: infeasible_two_values.fbmcq
 
 **What it does.** At ``proof`` depth the narrative is the proof read in
 dependency order, and every sentence names the node behind it.  The JSON keeps
 both, so a sentence and its checked step can be reached from each other.
 
-**Expected output.** stdout carries the numbered derivation; the JSON at
-``result.feasibility.explanation.proof`` carries the graph:
+**Expected output.** The JSON at ``result.feasibility.explanation.proof`` carries
+the graph shown above: two ``input`` nodes, one per core member, each verified
+against the member it restates by ``core_binding``; and one root
+(``proof.step.0002``), re-derived by an independent ``rule_checker``.
+``input_minimality`` is ``subset_minimal``, ``graph_minimality`` is
+``dependency_pruned``, and ``verification_status`` is ``verified``.
 
-.. code-block:: text
-
-   proof.input.0000   input          source_fact               core_binding
-   proof.input.0001   input          source_fact               core_binding
-   proof.step.0002    contradiction  incompatible_equalities   rule_checker
-
-Two inputs, one per core member, each verified against the member it restates;
-one root, re-derived by an independent checker.  ``root_id`` is
-``proof.step.0002``, ``input_minimality`` is ``subset_minimal``,
-``graph_minimality`` is ``dependency_pruned``, and ``verification_status`` is
-``verified``.
-
-**File side effect.** ``/tmp/bmc-proof.json`` contains the whole result.
+**File side effect.** None without ``-o``; add ``-o`` to write the whole result
+to a file instead of stdout.
 
 **Failure boundary.** A verified proof says each step follows from the clauses
 named beside it.  It does not say the encoding matches what you meant -- that is
@@ -756,41 +945,66 @@ vocabulary and what each verification method checks.
 15. Handle a degraded or timed-out explanation
 ----------------------------------------------
 
+**Starting files.** This task uses ``controller.fcstm`` (:download:`download
+</_models/controller.fcstm>`), the same model as the region tasks below, and a
+query that assumes a value for ``motor`` at frame 1.  ``Idle`` writes ``motor``
+in its ``during`` action, so the value at frame 1 comes from an executed
+transition and not from a declaration:
+
+.. literalinclude:: infeasible_after_write.fbmcq
+   :language: text
+   :caption: infeasible_after_write.fbmcq
+
 **CLI.**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q infeasible_cross_step.fbmcq \
+   $ pyfcstm bmc -i controller.fcstm -q infeasible_after_write.fbmcq \
        --explain-infeasibility proof --color never
-
-**What it does.** The explanation reports the depth it reached, not the depth
-that was asked for.  This query's conflict only appears after accumulating
-across a step, so no rule in the catalog closes it.
-
-**Expected output.** On the verified run:
-
-.. code-block:: text
-
+   BMC reach <= 1: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Explanation depth: requested proof, achieved formal
    Classification: assumptions conflict with the feasible prefix
    ...
-   Reason: the formal explanation is complete, but no rule in the catalog closes
-   this core.
+   Reason: the formal explanation is complete, but no rule in the catalog closes this core.
+   ...
+   $ echo $?
+   3
+   $ pyfcstm bmc -i controller.fcstm -q infeasible_after_write.fbmcq \
+       --explain-infeasibility proof --json
+   {
+     "exit_code": 3,
+   ...
+           "achieved_mode": "formal",
+   ...
+           "proof": null,
+           "reason": "the formal explanation is complete, but no rule in the catalog closes this core.",
+           "requested_mode": "proof",
+           "status": "partial"
+   ...
+   $ echo $?
+   3
 
-In JSON, ``requested_mode`` is ``proof``, ``achieved_mode`` is ``formal``,
-``status`` is ``partial``, and ``proof`` is ``null``.
+**What it does.** The explanation reports the depth it reached, not the depth
+that was asked for.  The conflict here runs through a transition that writes
+``motor``, and no rule in the proof catalog closes a core of that shape, so the
+report keeps the formal explanation and says so.  The conflict in task 14, which
+involves only two ``assume`` clauses, does close.
+
+**Expected output.** As the records above show: the human report says
+``requested proof, achieved formal`` under a ``PARTIAL`` headline, and in JSON
+``requested_mode`` is ``proof``, ``achieved_mode`` is ``formal``, ``status`` is
+``partial``, and ``proof`` is ``null``.
 
 **File side effect.** None without ``-o``.
 
 **Failure boundary.** Degradation is not an error and does not change the exit
 status, so a consumer must compare ``requested_mode`` with ``achieved_mode``
 rather than assume ``proof`` is present.  A missing ``proof`` key means the depth
-was not reached, not that the run failed.  Note also that the formal narrative
-here names the initial state and both conflicting values -- for cross-step
-conflicts it says more than a proof built without the intermediate facts could.
+was not reached, not that the run failed.  The formal explanation of a degraded
+run is still complete: it names the initial state, the transition constraint and
+both conflicting values, as the ``Why no execution exists`` block shows.
 
 **Next diagnostic step.** Read ``reason``.  ``no rule in the catalog closes this
 core`` is a capability boundary and will not change by retrying.  ``timeout`` or
@@ -804,35 +1018,58 @@ conflicts have no proof.
 16. Gate CI on an explanation without scraping text
 ---------------------------------------------------
 
-**CLI.**
+**CLI.** An infeasible scenario exits ``3``, which is a report and not a
+failure.  The first command writes the JSON, and a short script reads it:
 
-.. code-block:: bash
+.. code-block:: console
 
-   # An infeasible scenario exits 3, which is a report and not a failure.  Under
-   # set -e -- which GitHub Actions uses for every run: step -- an unguarded
-   # invocation would abort the step here and never reach the inspection below.
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q infeasible_two_values.fbmcq \
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_two_values.fbmcq \
        --explain-infeasibility proof --color never \
-       --json -o /tmp/bmc-gate.json && status=0 || status=$?
-   test "$status" -eq 3
+       --json -o gate.json
+   $ echo $?
+   3
 
-   python - <<'INSPECT'
+.. testcode::
+
    import json
-   report = json.load(open("/tmp/bmc-gate.json"))
+
+   with open("gate.json") as handle:
+       report = json.load(handle)
    explanation = report["result"]["feasibility"]["explanation"]
    print(explanation["requested_mode"], explanation["achieved_mode"])
    print(explanation["status"], explanation["classification"])
-   INSPECT
+
+.. testoutput::
+
+   proof proof
+   complete assumptions_self_conflict
+
+In a CI step that runs under ``set -e`` -- which GitHub Actions uses for every
+``run:`` step -- an unguarded invocation would abort the step at the exit ``3``
+and never reach the inspection.  Guard the command the way this shell snippet
+does; it is not run in the documentation check, because it is a CI step and not
+a terminal record:
+
+.. code-block:: bash
+
+   pyfcstm bmc -i bmc_tasks.fcstm -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --color never \
+       --json -o gate.json && status=0 || status=$?
+   test "$status" -eq 3
+
+**FBMCQ.** The same ``infeasible_two_values.fbmcq`` as task 12:
+
+.. literalinclude:: infeasible_two_values.fbmcq
+   :language: text
+   :caption: infeasible_two_values.fbmcq
 
 **What it does.** Reads the explanation through the versioned JSON contract
 instead of the human report, which is what a gate should depend on.
 
 **Expected output.** ``proof proof`` then ``complete
-assumptions_self_conflict``.
+assumptions_self_conflict``, as the script prints.
 
-**File side effect.** ``/tmp/bmc-gate.json`` is written atomically.
+**File side effect.** ``gate.json`` is written atomically.
 
 **Failure boundary.** The exit status is part of the contract a gate has to
 handle: ``3`` means the scenario was infeasible and the property was not
@@ -869,23 +1106,27 @@ guard divides by the input ``d`` whenever the first guard fails.
        A -> C : if [10 / d > 1];
    }
 
-Save ``check reach <= 2: active("Root.B");`` as ``runtime_error.fbmcq``.
+The commands below write the same model on one line (whitespace carries no
+meaning in FCSTM), together with the query ``check reach <= 2:
+active("Root.B");`` and a variant of it that first assumes ``d != 0``.
 
-**CLI.**
+**CLI.** The reachable error exits ``5``.  The report names the operation and
+the step, and replay confirms the simulator raises the same error:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc -i runtime_error.fcstm -q runtime_error.fbmcq
-
-**Expected output.** Exit ``5``.  The report names the operation and the step,
-and replay confirms the simulator raises the same error:
-
-.. code-block:: text
-
+   $ echo 'input int d; state Root { [*] -> A; state A; state B; state C; A -> B : if [d == 1]; A -> C : if [10 / d > 1]; }' > runtime_error.fcstm
+   $ echo 'check reach <= 2: active("Root.B");' > runtime_error.fbmcq
+   $ pyfcstm bmc -i runtime_error.fcstm -q runtime_error.fbmcq
    BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
      Runtime error: division_by_zero at step 1
      Runtime error location: guard g1 in transition Root.A::1::A->C
+   ...
      Replay: runtime error reproduced: transition guard evaluation failed: division by zero
+   ...
+   $ echo $?
+   5
 
 **Failure boundary.** The property was not evaluated at all: no execution that
 reaches the error can continue, so neither "holds" nor "violated" is claimed.
@@ -902,6 +1143,16 @@ A replay that does not reproduce the error exits ``4`` instead.
 - To evaluate the property only over executions that raise no error, add
   ``--no-runtime-safety``; this run also exits ``0`` with a witness.  The error
   is still reachable; the report just no longer looks for it.
+
+.. code-block:: console
+
+   $ printf 'assume always: d != 0;\ncheck reach <= 2: active("Root.B");\n' > runtime_error_assumed.fbmcq
+   $ pyfcstm bmc -i runtime_error.fcstm -q runtime_error_assumed.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i runtime_error.fcstm -q runtime_error.fbmcq --no-runtime-safety
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
 
 **Reference.** See :doc:`../../reference/bmc_results/index` for the
 ``runtime_safety`` result, the ``runtime_error_prefix`` witness and exit ``5``.
@@ -956,8 +1207,22 @@ something: ``Safety`` and ``Motion`` each take their transition to ``[done]``
 (the ``__region_done__`` transition), then the owner takes its transition to
 ``Idle``; the next card explains these entries.
 Without ``havoc { permit, motor }`` the same ``where`` clause makes the scenario
-infeasible (``Failure boundary: INITIALIZATION``), because the initializers
-``permit = 0`` and ``motor = 0`` contradict it.
+infeasible, because the initializers ``permit = 0`` and ``motor = 0`` contradict
+it.  The query is the same as ``region_start.fbmcq`` minus the ``havoc`` part:
+
+.. literalinclude:: region_start_no_havoc.fbmcq
+   :language: text
+   :caption: region_start_no_havoc.fbmcq
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_start_no_havoc.fbmcq
+   BMC reach <= 1: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   ...
+     Failure boundary: INITIALIZATION
+   ...
+   $ echo $?
+   3
 
 **File side effect.** None; the report goes to stdout.
 
@@ -1030,7 +1295,7 @@ query leaves ``Safety`` out of the start text: frame 0 shows ``Safety:
 starts with both regions written and the pattern leaves ``Safety`` out, so
 ``Watching`` does not matter.  The third query
 starts with ``Safety: Watching`` and asks for ``Safety: [init]``: no witness
-(exit 1, ``no_witness``).  The pattern holds exactly where the written regions
+(exit 1).  The pattern holds exactly where the written regions
 agree, and the ``[init]`` marker also holds for a region that has not started
 in a call made while its owner is being entered.
 
@@ -1063,6 +1328,10 @@ path, or ``null`` outside every region), ``kind`` and ``label``.
    :language: text
    :caption: region_cases.fbmcq
 
+.. literalinclude:: region_cover.fbmcq
+   :language: text
+   :caption: region_cover.fbmcq
+
 **CLI.** The human trace prints each step on the line that starts with its
 index, followed by one line per case with its scope relative to the owner.  The
 second command covers one local case:
@@ -1091,6 +1360,41 @@ second command covers one local case:
           -> Controller.Running{Safety: Watching, Motion: On} [transition]
           Safety: Watching -> Watching [fallback]
           Motion: Off -> On [transition]
+   ...
+
+The same cases are the ``case_label`` and ``local_cases`` fields of each witness
+step in JSON:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq --json
+   {
+     "exit_code": 0,
+   ...
+           "case_label": "Controller.Idle::transition::Controller.Running::0",
+   ...
+           "local_cases": [
+             {
+               "kind": "transition",
+               "label": "Controller.Idle::transition::Controller.Running::0",
+               "scope": null
+             },
+   ...
+           "case_kind": "transition",
+           "case_label": null,
+   ...
+           "local_cases": [
+             {
+               "kind": "fallback",
+               "label": "Controller.Running.Safety.Watching::fallback::Controller.Running.Safety.Watching::0",
+               "scope": "Controller.Running.Safety"
+             },
+             {
+               "kind": "transition",
+               "label": "Controller.Running.Motion.Off::transition::Controller.Running.Motion.On::2",
+               "scope": "Controller.Running.Motion"
+             }
+           ],
    ...
 
 **Expected output.** Step 0 enters ``Running``: the line under ``0:`` is the
@@ -1257,17 +1561,52 @@ Choose and compare a solver profile
 Use this page's ``bmc_tasks.fcstm`` and ``reach.fbmcq`` from the same
 directory. Run each choice explicitly:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile default --json
-   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile logic --json
-   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile tactic --json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile default --json
+   {
+     "exit_code": 0,
+   ...
+       "ok": true,
+   ...
+       "property_satisfied": true,
+   ...
+       "solver_profile": "default",
+   ...
+       "status": "sat",
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile logic --json
+   {
+     "exit_code": 0,
+   ...
+       "ok": true,
+   ...
+       "property_satisfied": true,
+   ...
+       "solver_logic": "QF_LIA",
+       "solver_profile": "logic",
+   ...
+       "status": "sat",
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile tactic --json
+   {
+     "exit_code": 0,
+   ...
+       "ok": true,
+   ...
+       "property_satisfied": true,
+   ...
+       "solver_profile": "tactic",
+   ...
+       "status": "sat",
+   ...
 
 Each command exits ``0`` and prints ``result.status="sat"``,
 ``result.property_satisfied=true`` and ``replay.ok=true``. The requested
 choice appears in ``result.solver_profile``. With no ``-o``, only stdout is
 written; no file is created. Inspect ``result.solver_logic`` to distinguish
-fragment selection from a fallback after no probe matched.
+fragment selection from a fallback after no probe matched; above, the ``logic``
+profile selected ``QF_LIA``.
 
 Compare verdicts and replay before comparing cost. Different strategies can
 choose different valid witnesses. Context-wide counters in
@@ -1278,7 +1617,19 @@ one faster invocation is not enough to change a default. The repository's
 records and pre-registered performance thresholds.
 
 ``--solver-profile fast`` exits ``2``; use one of the three lowercase
-choices. If an optional profile returns an inconclusive answer, rerun with
+choices:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile fast
+   Usage: pyfcstm bmc [OPTIONS]
+   Try 'pyfcstm bmc --help' for help.
+
+   Error: Invalid value for '--solver-profile': 'fast' is not one of 'default', 'logic', 'tactic'.
+   $ echo $?
+   2
+
+If an optional profile returns an inconclusive answer, rerun with
 ``default`` and inspect ``reason`` rather than counting it as a property
 pass. ``--explain-infeasibility formal`` or ``proof`` can accompany any
 profile; explanation checks still use the default solver.
@@ -1289,11 +1640,23 @@ boundaries.
 Try conservative slicing for one query
 --------------------------------------
 
-Slicing requires an explicit option:
+Slicing requires an explicit option.  This page's model has the abstract action
+``Root.Idle.Tick``, so slicing skips the whole model and drops nothing:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --cone-slicing --json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --cone-slicing --json
+   {
+     "exit_code": 0,
+   ...
+       "cone_slicing": {
+         "dropped_variables": [],
+         "enabled": true,
+         "fallback": false,
+         "retained_count": 1,
+         "skipped_reason": "abstract_actions"
+       },
+   ...
 
 Python compilation uses ``compile_bmc_query(model, query,
 options=BmcOptions(cone_slicing=True))``; the file API accepts

@@ -996,7 +996,7 @@ scale、边长与像素三条限额，不衡量自身输出。
 有序区域的画法
 --------------
 
-含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域（region）没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者（owner）与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm.txt``\ （反例）。
+含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域（region）没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：:download:`region_pipeline.fcstm <region_pipeline.fcstm>`\ （两个区域、拥有者（owner）与区域上各一个切面、调用 ``active(...)`` 的条件）、:download:`region_nested.fcstm <region_nested.fcstm>`\ （嵌套拥有者、在区域内使用而声明的事件）、:download:`region_single.fcstm <region_single.fcstm>`\ （单个区域）、:download:`controller.fcstm </_models/controller.fcstm>`\ （教程里的控制器，拥有者上的强制转换）和 :download:`region_case_alias.fcstm.txt <region_case_alias.fcstm.txt>`\ （反例）。把它们下载到一个空目录即可运行这些命令。
 
 PlantUML 导出
 ~~~~~~~~~~~~~
@@ -1026,32 +1026,220 @@ PlantUML 导出
    * - ``max_depth``
      - 区域算一层。区域里被折叠的内容是该区域分区内的一个 ``state "..."``；区域注释与 ``--`` 分隔线保留。
 
-下面是真实输出。节选从第一行 ``state`` 开始，因此不再重复 skinparam 块与变量图例；以 ``$`` 开头的行是实际运行的命令。
+下面是真实输出。``...`` 表示省略的文本：skinparam 块、变量图例，以及下文没有讨论的行。
 
-.. literalinclude:: region_export.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_pipeline.fcstm
+   ...
+   state "Line" as line <<composite>> {
+       state "Idle" as line__idle
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "Wait" as line__work__intake__wait
+           state "Full" as line__work__intake__full
+           [*] --> line__work__intake__wait
+           line__work__intake__wait --> line__work__intake__full : Fill
+           line__work__intake__full --> [*]
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "Hold" as line__work__pack__hold
+           state "Boxed" as line__work__pack__boxed
+           [*] --> line__work__pack__hold
+           line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+       }
+       [*] --> line__idle
+       line__idle --> line__work : Go
+   }
+   [*] --> line
+   line --> [*]
+   @enduml
+   $ pyfcstm plantuml -i region_pipeline.fcstm -l full
+   ...
+               **region 1: Intake**
+               >> during after {
+                   ready = 1;
+               }
+           end note
+   ...
+       line__work : >> during before {\n    stage = stage + 1;\n}
+   ...
 
 读输出时注意：两条 ``**region N: ...**`` 注释带有书写顺序；``--`` 是唯一的分隔符；``active(...)`` 条件保留路径 ``Line.Work.Intake.Full``；拥有者的 ``>> during before`` 是 ``line__work`` 的一行描述（字面的 ``\n`` 是所有动作描述共用的 PlantUML 换行写法）；区域自己的切面只有在 ``-l full`` 下才出现在它的注释里。从图上不能推出区域怎样相互作用：分区之间的箭头是条件，不是通信。
 
 ``max_depth`` 把区域算作一层：``1`` 折叠 ``Work``，``2`` 显示两个区域注释但折叠它们的内容，``3`` 全部显示。
 
-.. literalinclude:: region_depth.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=1
+   ...
+       state "Work" as line__work <<composite>> {
+           state "..." as line__work___collapsed_
+       }
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=2
+   ...
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "..." as line__work__intake___collapsed_
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "..." as line__work__pack___collapsed_
+       }
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=3
+   ...
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "Wait" as line__work__intake__wait
+           state "Full" as line__work__intake__full
+           [*] --> line__work__intake__wait
+           line__work__intake__wait --> line__work__intake__full : Fill
+           line__work__intake__full --> [*]
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "Hold" as line__work__pack__hold
+           state "Boxed" as line__work__pack__boxed
+           [*] --> line__work__pack__hold
+           line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+       }
+   ...
 
 写在区域内的事件归该区域所有（下面第一条命令没有在拥有者上声明任何事件；``Merge`` 写在 ``Left`` 里）。图例显示经过区域的路径：
 
-.. literalinclude:: region_events.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_nested.fcstm -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Merge** (1 transitions)
+     <size:10><color:gray>/Cell.Left.Merge</color></size>
+   endlegend
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Go** (1 transitions)
+     <size:10><color:gray>/Go</color></size>
+   <color:#000000>■</color> **Fill** (1 transitions)
+     <size:10><color:gray>/Work.Intake.Fill</color></size>
+   endlegend
+   ...
 
 单个区域与嵌套区域（内层拥有者 ``Pair`` 本身是 ``Left`` 的一个分区，并有自己的 ``--``）：
 
-.. literalinclude:: region_shapes.demo.sh.txt
-   :language: text
+.. code-block:: console
 
-拥有者上的强制转换只画一次，隐藏变量不出现（对照变量图例与模型：模型声明四个变量，没有 ``__forced_0``）：
+   $ pyfcstm plantuml -i region_single.fcstm
+   ...
+   state "Solo" as solo <<composite>> {
+       state "Only" as solo__only <<composite>> {
+           note as solo__only__lane
+               **region 1: Lane**
+           end note
+           state "Run" as solo__only__lane__run
+           [*] --> solo__only__lane__run
+       }
+       [*] --> solo__only
+   }
+   [*] --> solo
+   solo --> [*]
+   @enduml
+   $ pyfcstm plantuml -i region_nested.fcstm
+   ...
+   state "Plant" as plant <<composite>> {
+       state "Cell" as plant__cell <<composite>> {
+           note as plant__cell__left
+               **region 1: Left**
+           end note
+           state "Idle" as plant__cell__left__idle
+           state "Pair" as plant__cell__left__pair <<composite>> {
+               note as plant__cell__left__pair__inner
+                   **region 1: Inner**
+               end note
+               state "A" as plant__cell__left__pair__inner__a
+               [*] --> plant__cell__left__pair__inner__a
+               --
+               note as plant__cell__left__pair__outer
+                   **region 2: Outer**
+               end note
+               state "B" as plant__cell__left__pair__outer__b
+               [*] --> plant__cell__left__pair__outer__b
+           }
+           [*] --> plant__cell__left__idle
+           plant__cell__left__idle --> plant__cell__left__pair : Merge
+           --
+           note as plant__cell__right
+               **region 2: Right**
+           end note
+           state "Idle" as plant__cell__right__idle
+           [*] --> plant__cell__right__idle
+       }
+       [*] --> plant__cell
+   }
+   [*] --> plant
+   plant --> [*]
+   @enduml
 
-.. literalinclude:: region_controller.demo.sh.txt
-   :language: text
+拥有者上的强制转换只画一次，隐藏变量不出现（对照变量图例与模型 ``controller.fcstm``：模型声明四个变量，没有 ``__forced_0``）：
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm -l full
+   ...
+   legend top left
+   |= Variable |= Type |= Initial Value |= Role |
+   | fault | int | N/A | input |
+   | requested | int | N/A | input |
+   | permit | int | 0 | control |
+   | motor | int | 0 | output |
+   endlegend
+
+   state "Controller" as controller <<composite>> {
+       state "Idle" as controller__idle
+       controller__idle : during {\n    motor = 0;\n}
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           controller__running__safety__watching : during {\n    if [fault != 0] {\n        permit = 0;\n    } else {\n        permit = 1;\n    }\n}
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "Off" as controller__running__motion__off
+           controller__running__motion__off : during {\n    motor = 0;\n}
+           state "On" as controller__running__motion__on
+           controller__running__motion__on : during {\n    motor = 1;\n}
+           [*] --> controller__running__motion__off
+           controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+           controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+       }
+       controller__running --> controller__idle : Stop
+       [*] --> controller__idle
+       controller__idle --> controller__running : Start
+   }
+   [*] --> controller
+   controller --> [*]
+   @enduml
 
 .. list-table:: 区域在 PlantUML 里的反例与限制
    :header-rows: 1
@@ -1064,21 +1252,73 @@ PlantUML 导出
    * - 强制使用 PlantUML 内置的 Smetana 布局
      - Smetana 不支持并发分区，只会画第一个区域。``pyfcstm`` 从不输出布局指令，所以只有用户自己强制（例如手工加一行 ``!pragma layout``）才会遇到。请使用默认的 Graphviz 布局。这是 PlantUML 的限制，此处据其行为记录，pyfcstm 没有对它做测试。
 
-.. literalinclude:: region_alias.demox.sh.txt
-   :language: text
+.. code-block:: console
 
-上面命令的退出状态是 ``0``\ （``region_alias.demox.sh.exitcode``）。不要照抄这个模型。
+   $ pyfcstm plantuml -i region_case_alias.fcstm.txt
+   ...
+   state "P" as p <<composite>> {
+       note as p__alpha
+           **region 1: Alpha**
+       end note
+       state "X" as p__alpha__x
+       [*] --> p__alpha__x
+       --
+       note as p__alpha
+           **region 2: alpha**
+       end note
+       state "X" as p__alpha__x
+       [*] --> p__alpha__x
+   }
+   [*] --> p
+   p --> [*]
+   @enduml
+
+上面的命令以状态 ``0`` 退出。不要照抄这个模型。
 
 图形快照、JSON 与查看器
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 ``StateMachine.diagram()`` 与 ``pyfcstm diagram -i X.fcstm``\ （不带 ``-o`` 时在标准输出写 JSON）把区域放进拥有者的 ``children`` 列表，排在拥有者的普通状态之后。区域节点具有状态节点的全部键，另加 ``"region": true`` 与 ``"ordinal"``\ （从 1 开始，即书写与执行顺序）。这两个键在不含区域的模型的任何节点上都不存在，所以这类模型的 JSON 不变。区域里的状态是它的 ``children``，转换是它的 ``transitions``，``>> during`` 切面是它的 ``actions``；它的 ``id`` 是经过区域的点路径（``Line.Work.Intake``）。条件标签保持 ``active("...")`` 的书写形式；隐藏标志的写入不出现在 ``actions`` 里。
 
-.. literalinclude:: region_snapshot.demo.py
-   :language: python
+.. testcode::
 
-.. literalinclude:: region_snapshot.demo.py.txt
-   :language: text
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_pipeline.fcstm', encoding='utf-8') as stream:
+       model = load_state_machine_from_text(stream.read())
+   data = model.diagram().to_dict()
+
+
+   def walk(node, depth=0):
+       kind = 'region' if node.get('region') else 'state'
+       ordinal = ' ordinal=%d' % node['ordinal'] if node.get('region') else ''
+       print('%s%s %s id=%s%s' % ('  ' * depth, kind, node['name'], node['id'], ordinal))
+       for child in node['children']:
+           walk(child, depth + 1)
+
+
+   walk(data['rootState'])
+   work = data['rootState']['children'][1]
+   print('work actions:', [a['label'] for a in work['actions']])
+   print('intake actions:', [a['label'] for a in work['children'][0]['actions']])
+   print('guard:', work['children'][1]['transitions'][1]['guardLabel'])
+   print(model.diagram().with_view_state(collapsed_state_ids=('Line.Work.Intake',)).view_state)
+
+.. testoutput::
+
+   state Line id=Line
+     state Idle id=Line.Idle
+     state Work id=Line.Work
+       region Intake id=Line.Work.Intake ordinal=1
+         state Wait id=Line.Work.Intake.Wait
+         state Full id=Line.Work.Intake.Full
+       region Pack id=Line.Work.Pack ordinal=2
+         state Hold id=Line.Work.Pack.Hold
+         state Boxed id=Line.Work.Pack.Boxed
+   work actions: ['>> during before {1 op}']
+   intake actions: ['>> during after {1 op}']
+   guard: active("Line.Work.Intake.Full") && ready == 1
+   DiagramViewState(mode='compare', collapsed_state_ids=('Line.Work.Intake',), zoom=None, pan_x=None, pan_y=None)
 
 读输出时注意：树中 ``Intake`` 与 ``Pack`` 与 ``Work`` 的状态同级，序号为 ``1`` 和 ``2``；``Work`` 的切面与 ``Intake`` 的切面分别记在各自节点的 ``actions`` 里；区域 id 是 ``collapsed_state_ids`` 的合法成员（``with_view_state`` 接受并原样返回）。只有区域节点带 ``region`` 与 ``ordinal``。
 

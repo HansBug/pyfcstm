@@ -205,5 +205,125 @@ Region 模型与配置
 ``to_ast_node()`` 导出当前模型，包括语法糖展开结果，不能当作无损源文本往返接口。
 Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC 报告添加字段。
 
+.. _region-limits-and-gaps-zh:
+
+界限与已知差距
+------------------------------
+
+下表列出与含区域的模型有关的全部界限和已知差距。数字只在真实运行产生过的地方出现：本页旁边的 ``region_limits.demo.py`` 复现这些界限和核对过的差距，它的输出在表之后。
+最后一列写着“已记录”的行，描述的是取自对应 issue、没有为本页重新运行的差距。
+
+.. list-table:: 含区域模型的界限与已知差距
+   :header-rows: 1
+   :widths: 24 30 26 20
+
+   * - 界限或差距
+     - 取值或表现
+     - 出处
+     - 记载位置
+   * - 一个周期内相互嵌套进入的拥有者
+     - 至多 64 层。第 65 层抛出 ``SimulationRuntimeDfsError``（``Group initialization nested deeper than the structural safety limit (64) within one cycle``）；64 层嵌套的拥有者可以运行。
+       一个周期里把同一个整组重复进入约 64 次以上的循环也适用同一上限。模型本身在任何深度都能构建。
+     - ``pyfcstm/simulate/runtime.py`` 的 ``_DFS_STRUCTURAL_DEPTH_LIMIT``；生成的 Python 运行时和 C 内核带有相同常量；
+       共享用例 ``region_unbounded_group_reentry_is_reported_as_a_safety_limit_error``。
+     - :ref:`region-limits-run-zh`、:doc:`../simulation/index_zh`
+   * - 一个周期内的步数
+     - 至多 1000 个推测步。一个伪状态在一个周期里转 500 圈会抛出 ``Speculative DFS exceeded the step safety limit (1000)``。
+       校验一条长链的代价增长得比链长更快（\ `issue #579 <https://github.com/HansBug/pyfcstm/issues/579>`_\ ，不含区域的模型同样如此）；这里没有测量转圈数。
+     - ``pyfcstm/simulate/runtime.py`` 的 ``_DFS_STEP_LIMIT``；共享用例 ``pseudo_self_loop_step_limit_raises_dfs_error``。
+     - :ref:`region-limits-run-zh`
+   * - BMC：同一拥有者在自己的进入里重入的次数
+     - ``BmcOptions.max_group_reentries``，默认 ``16``。需要更多时抛出 ``BmcBuildError``，而不是近似。没有命令行选项：``pyfcstm bmc`` 总是用默认值。
+     - ``pyfcstm/bmc/engine.py``、``pyfcstm/bmc/region_relation.py``；``test/bmc/test_region_relation.py``。
+     - :ref:`region-limits-run-zh`、:doc:`/reference/bmc_query/index_zh`
+   * - BMC：单个表达式的嵌套深度
+     - 100 层。表达式嵌套更深的查询被 ``expression_too_deep`` 拒绝；一个比较前面加 98 个前缀取反可以接受，99 个被拒绝。
+     - ``pyfcstm/bmc/binding.py``；``test/bmc/test_query_binding.py``。
+     - :ref:`region-limits-run-zh`
+   * - 子树里含区域的历史拥有者
+     - 被 ``E_REGION_STRUCTURE``\ （\ ``history_boundary``\ ）拒绝。区域内部、覆盖不含区域的状态的历史是合法的。
+     - ``pyfcstm/model/region.py`` 的 ``validate_region_structure``；``test/model/test_region_consumers.py``。
+     - :ref:`dsl-history-regions-zh`
+   * - jsfcstm 的 ``inspectModel``
+     - 对含区域或 ``active()`` 查询的模型不出报告：``isInspectable(machine)`` 为 ``false``，``inspectModel`` 抛出
+       ``inspectModel does not support machines with regions or active() queries``。编辑器对这样的模型跳过 inspect 诊断；模型、语义诊断和图形预览支持区域。
+     - ``editors/jsfcstm/src/diagnostics/inspect.ts``；``editors/jsfcstm/test/region-diagnostics.test.ts``。
+     - 本表
+   * - jsfcstm 的顺序诊断
+     - jsfcstm 里没有 ``I_REGION_BACKWARD_READ`` 与 ``W_REGION_BLIND_OVERWRITE``；只有 Python 的 ``pyfcstm inspect`` 会报告它们。
+     - ``editors/jsfcstm/src`` 里不存在；定义在 ``pyfcstm/diagnostics/codes.yaml``。
+     - :doc:`/reference/diagnostics_codes/index_zh`
+   * - inspect 的过近似：历史默认目标
+     - 只经历史默认目标进入的复合状态，它的普通初始子状态仍被算作可达，所以 ``inspect`` 不会报告这个子状态（下面输出里的 ``unreachable: 0``）。
+       这条规则的偏差方向是漏报，不会误报。
+     - ``pyfcstm/diagnostics/inspect.py``；发布说明。
+     - :ref:`region-limits-run-zh`
+   * - inspect 的过近似：按实际运行的机器判断的验证
+     - ``pyfcstm.verify`` 判断的是降级之后的机器。对强制声明它仍是不看条件的过近似，所以只有强制声明才能离开的复合状态后面的状态，仍可能被列为可达。
+     - 发布说明（“Inspect and verify”一节）。
+     - 已记录
+   * - inspect 的过近似：每条强制声明一个标记
+     - 只要一条强制声明的某个展开从不可达状态出发，整条声明就被标记。
+     - 发布说明（“Inspect and verify”一节）。
+     - 已记录
+   * - 触达区域的强制声明
+     - 同一拥有者的两条声明竞争整组：先抬起变量的占住它，第二条不会被尝试；不含区域的模型则改试下一条声明。区域里叶子的其他转换在变量抬起时照常工作
+       （\ `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ ）。
+     - 共享用例 ``region_forced_declaration_whose_target_cannot_be_entered_holds_the_group_against_a_later_declaration``。
+     - :ref:`dsl-region-forced-zh`
+   * - 复合状态里只会绕回的候选
+     - 在不含区域的模型里，经伪状态绕回自己起点的候选使整个周期成为 Delta，而不是让后面的候选触发（下面的输出；
+       `issue #578 <https://github.com/HansBug/pyfcstm/issues/578>`_\ ）。同一个 issue 还记录了第二个缺陷，即 Delta 周期里 handler 已被调用；那一个没有重新运行。
+     - ``limits_composite_loop.fcstm`` 与演示输出。
+     - :ref:`region-limits-run-zh`
+   * - 触达区域的强制声明的导出文本
+     - ``to_ast_node()`` 文本加载得到的机器，在 `issue #580 <https://github.com/HansBug/pyfcstm/issues/580>`_ 的复现上行为相同（退出顺序与结果一致，见下面的输出）；该 issue 记录的是更早的行为。
+     - ``region_limits.demo.py``。
+     - :ref:`region-limits-run-zh`
+   * - 行为类 inspect 诊断与语法糖
+     - 哪些诊断码属于书写的模型、哪些属于实际运行的机器，仍在归类；实际运行的机器上的发现可能提到隐藏变量或生成的状态
+       （\ `issue #588 <https://github.com/HansBug/pyfcstm/issues/588>`_\ ）。
+     - issue 正文与发布说明。
+     - 已记录
+   * - jsfcstm 对历史的预览
+     - 编辑器预览画的是降级之后的历史；Python 的图形快照和 PlantUML 按书写画
+       （\ `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_\ ）。
+     - issue 正文。
+     - 已记录
+   * - 生成的 C 系运行时：容量
+     - ``..._ARENA_CAPACITY`` 对没有区域、伪状态和复合状态的模型默认是 ``8``，否则是 ``max(24, 12 * scopes)``；``..._TRAIL_CAPACITY`` 是 ``4`` 或 ``16 + 4 * scopes``，
+       其中 scopes 是状态数加区域数。这些值是经验公式，不是证明过的上界；一个周期需要更多时失败，报 ``Speculative search exceeded the capacity safety limit`` 并点名对应的宏。
+       要在所有编译单元里调大该宏（\ `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_\ ）。
+     - ``pyfcstm/render/c_kernel.py`` 的 ``_plan_capacity``；``test/render/test_c_kernel.py``。
+     - :ref:`region-limits-run-zh`、:doc:`/reference/builtin_templates/index_zh`
+   * - 生成的 Python 运行时
+     - 每个生成的 ``machine.py`` 都带着通用的搜索内核（位置解析、记忆化、整组初始化），不管模型有没有区域，并且做与仿真器相同的推测工作；进一步的专用化记录在
+       `issue #596 <https://github.com/HansBug/pyfcstm/issues/596>`_\ 。64 与 1000 这两个界限同样适用。
+     - ``templates/python/machine.py.j2``。
+     - :doc:`/reference/builtin_templates/index_zh`
+   * - 没有在 ``features`` 里列出 ``region`` 的模板
+     - ``pyfcstm generate`` 在写出任何文件之前以 ``E_UNSUPPORTED_FEATURE`` 拒绝含区域的模型。
+     - ``pyfcstm/entry/generate.py``。
+     - :doc:`/reference/cli/index_zh`
+
+.. _region-limits-run-zh:
+
+复现这些界限
+~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: limits_composite_loop.fcstm
+   :language: fcstm
+
+.. literalinclude:: limits_history_default.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_limits.demo.py.txt
+   :language: text
+
+按顺序读各块。深度一块显示 64 层与 65 层嵌套拥有者之间的边界；步数一块显示 500 圈的链被拒绝；BMC 几块显示默认的 16 次重入上限（``n < 3`` 能构建，``n < 20`` 不能）、
+该选项可以调低或调高，以及表达式深度的 98/99 边界；历史一块显示拒绝。复合状态一块显示整个周期变成 Delta（两个 ``Root.Go`` 周期的 ``delta=True``），尽管 ``S -> T`` 本可以触发；
+导出一块显示两台机器一致；inspect 一块对一个 ``Root.P.A`` 进不去的模型显示 ``unreachable: 0``，因为 ``P`` 只经历史默认目标 ``B`` 进入且没有出路，所以没有任何东西会记录 ``A``。
+容量一块打印 C 模板对教程控制器和一台平铺机器使用的默认值。这些数字都不是性能数据。
+
 相关参考：:doc:`../dsl/index_zh`、:doc:`../diagnostics_codes/index_zh`、
 :doc:`/api_doc_zh`。

@@ -1,0 +1,33 @@
+BMC forbid <= 4: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+Scenario: FEASIBLE
+Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+Semantic interpretation: A counterexample execution exists within the bound; the property is not satisfied there.
+Primary search: COUNTEREXAMPLE = SAT
+Conclusion: At least one admissible execution violates the forbid property within 4 macro-steps.
+Evidence:
+  Model role: PRIMARY COUNTEREXAMPLE
+  Model evidence: SAT model available.
+  Replay: verified (5 frames, 4 steps).
+
+Feasibility: kernel=sat, initialization=sat, assumptions=sat
+
+Trace
+  0: init
+       -> Controller.Idle [initial]
+       [start] -> Controller.Idle [initial]
+  1: Controller.Idle
+       -> Controller.Running{Motion: Off, Safety: Watching} [transition; events=Controller.Start]
+       Controller.Idle -> Controller.Running [transition]
+       Running: [start] -> Motion.Off [initial]
+       Running: [start] -> Safety.Watching [initial]
+  2: Controller.Running{Motion: Off, Safety: Watching}
+       -> Controller.Running{Motion: On, Safety: Watching} [transition]
+       Motion: Off -> On [transition]
+       Safety: Watching -> Watching [fallback]
+  3: Controller.Running{Motion: On, Safety: Watching}
+       -> Controller.Running{Motion: On, Safety: Watching} [fallback]
+       Motion: On -> On [fallback]
+       Safety: Watching -> Watching [fallback]
+
+This is a bounded result over at most 4 macro-steps; it does not establish behavior beyond that bound.
+Use --json for the complete witness, replay trace, and stable machine-readable diagnostics.

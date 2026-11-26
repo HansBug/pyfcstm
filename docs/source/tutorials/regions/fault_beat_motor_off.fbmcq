@@ -1,0 +1,2 @@
+assume at 3: fault != 0;
+check forbid <= 4: cycle == 4 && motor != 0;

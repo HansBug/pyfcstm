@@ -676,6 +676,11 @@ def _check_scaling_page(errors: List[str]) -> None:
     equal, every labelled equation must be cited with ``:eq:``, and the data
     files the figures and tables are drawn from must be committed.
 
+    The labels must equal ``_SCALING_EQUATION_LABELS`` in order, and a page may
+    also cite a label of the semantics ledger.  When either language file is
+    missing the function records that and returns at once, because every later
+    comparison needs both.
+
     :param errors: Collected problems, appended to.
     :type errors: List[str]
     :return: ``None``.
@@ -1712,6 +1717,11 @@ _RESOURCE_PAGES = ("explanations/bmc_regions/index",)
 def _page_resources(path: Path) -> Tuple[str, ...]:
     """Return the files a page includes or offers for download.
 
+    Only the visible text is scanned (through ``_visible_text``), so a resource
+    named inside a comment or a code block does not count.  Both
+    ``literalinclude`` and ``:download:`` references are collected, because a
+    page can offer a file without displaying it.
+
     :param path: Page to scan.
     :type path: pathlib.Path
     :return: Resource paths as written, relative to the page, sorted and unique.
@@ -1728,6 +1738,9 @@ def _check_page_resources(errors: List[str]) -> None:
 
     A demo source needs its recorded output next to it, because the page includes
     the output and the generated-resources job compares it against a fresh run.
+    Only the pages named in ``_RESOURCE_PAGES`` are checked, and the demo scan
+    covers every ``*.demo.sh`` and ``*.demo.py`` in each page's directory, not
+    only the ones the page includes.
 
     :param errors: Collected problems, appended to.
     :type errors: List[str]

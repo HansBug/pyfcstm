@@ -1,5 +1,5 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 cd "$(dirname "$0")"
 
 pyfcstm simulate -i controller_swapped.fcstm --no-color -e "\

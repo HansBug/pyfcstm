@@ -1,5 +1,5 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 cd "$(dirname "$0")"
 
 echo '$ pyfcstm inspect -i controller.fcstm --color never   (Summary and diagnostic codes only)'

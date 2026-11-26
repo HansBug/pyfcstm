@@ -456,7 +456,7 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
      "exit_code": 0,
    ...
    $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq --json -o missing/result.json
-   Failed to write BMC output file missing/result.json: [Errno 2] No such file or directory: 'missing/.result.json...tmp'
+   Failed to write BMC output file missing/result.json: [Errno 2] No such file or directory: '...missing/.result.json...tmp'
    $ echo $?
    1
 

@@ -487,7 +487,7 @@ matrix and stable JSON schema.
      "exit_code": 0,
    ...
    $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq --json -o missing/result.json
-   Failed to write BMC output file missing/result.json: [Errno 2] No such file or directory: 'missing/.result.json...tmp'
+   Failed to write BMC output file missing/result.json: [Errno 2] No such file or directory: '...missing/.result.json...tmp'
    $ echo $?
    1
 

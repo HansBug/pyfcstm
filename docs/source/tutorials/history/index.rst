@@ -50,15 +50,48 @@ The first version recovers from a fault with ordinary transitions:
 ``Session`` from every phase (see :ref:`dsl-forced-transition-task`). Run a
 session into ``ConstantVoltage``, overheat it and let the fault clear:
 
-.. literalinclude:: charger_restart.demo.sh
-   :language: bash
-   :caption: ``charger_restart.demo.sh``
+.. code-block:: console
 
-Output, generated from the script, which keeps only the final ``current``
-report of each run:
+   $ pyfcstm simulate -i charger_restart.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 5
+   Current State: Charger.Session.Charging.ConstantVoltage
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     energy = 7
+     faults = 0
+     precharge_runs = 1
+   $ pyfcstm simulate -i charger_restart.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.Cleared; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Authenticating
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     energy = 7
+     faults = 1
+     precharge_runs = 1
 
-.. literalinclude:: charger_restart.demo.sh.txt
-   :language: text
+Each run prints a report for every cycle; the ``...`` leaves out all of them but the final ``current`` report.
 
 The two ``__forced_*`` variables are not yours. Model conversion carries each
 forced transition out with one hidden variable, which is raised only inside the
@@ -119,18 +152,57 @@ comment and the highlighted lines:
 4. Run the same session again
 -----------------------------
 
-The script below runs the same session as step 1, interrupts it in
+The commands below run the same session as step 1, interrupts it in
 ``ConstantVoltage`` and recovers once through each kind of history:
 
-.. literalinclude:: charger_resume.demo.sh
-   :language: bash
-   :caption: ``charger_resume.demo.sh``
+.. code-block:: console
 
-Output, generated from the script, which keeps only the final ``current``
-report of each run:
+   $ pyfcstm simulate -i charger.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.Cleared; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Charging.ConstantVoltage
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     __hist_Session = 8
+     __hist_goto = 0
+     energy = 9
+     faults = 1
+     precharge_runs = 1
+   $ pyfcstm simulate -i charger.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.ManualReset; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Charging.Precharge
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     __hist_Session = 8
+     __hist_goto = 0
+     energy = 7
+     faults = 1
+     precharge_runs = 2
 
-.. literalinclude:: charger_resume.demo.sh.txt
-   :language: text
+Each run prints a report for every cycle; the ``...`` leaves out all of them but the final ``current`` report.
 
 **Deep history** resumes ``Charging.ConstantVoltage``. The restore skips the
 initial transitions on its path, both ``[*] -> Authenticating`` in ``Session``
@@ -159,14 +231,66 @@ into a leaf path relative to ``Session``. The record describes the last exit
 only while ``Session`` is inactive, so the script prints ``(Session active)``
 otherwise.
 
-.. literalinclude:: charger_record.demo.py
-   :language: python
-   :caption: ``charger_record.demo.py``
+.. testcode::
 
-Output, generated from the script:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: charger_record.demo.py.txt
-   :language: text
+   with open("charger.fcstm") as f:
+       machine = load_state_machine_from_text(f.read())
+   runtime = SimulationRuntime(machine)
+
+   # One event per cycle; None runs a cycle without an event.
+   events = [
+       None,
+       "Idle.PlugIn",
+       "Session.Authenticating.Authorized",
+       "Session.Charging.Precharge.Ready",
+       "Session.Charging.ConstantCurrent.NearFull",
+       "Session.OverTemp",
+       "Fault.Cleared",
+       "Session.OverTemp",
+       "Fault.ManualReset",
+       "Session.Charging.Precharge.Ready",
+       "Session.Unplug",
+       "Idle.PlugIn",
+   ]
+
+   row = "{:>2}  {:<12} {:<15} {:>9} {:>6}  {}"
+   print(row.format("#", "event", "active leaf", "precharge", "energy", "Session record"))
+   for step, event in enumerate(events):
+       runtime.cycle(["Charger." + event] if event else [])
+       path = runtime.current_state.path
+       if path[1] == "Session":
+           record = "(Session active)"
+       else:
+           record = machine.history_record(runtime.vars, "Charger.Session") or "none"
+       print(
+           row.format(
+               step,
+               event.split(".")[-1] if event else "-",
+               path[-1],
+               runtime.vars["precharge_runs"],
+               runtime.vars["energy"],
+               record,
+           )
+       )
+
+.. testoutput::
+
+    #  event        active leaf     precharge energy  Session record
+    0  -            Idle                    0      0  none
+    1  PlugIn       Authenticating          0      0  (Session active)
+    2  Authorized   Precharge               1      0  (Session active)
+    3  Ready        ConstantCurrent         1      5  (Session active)
+    4  NearFull     ConstantVoltage         1      7  (Session active)
+    5  OverTemp     Fault                   1      7  Charging.ConstantVoltage
+    6  Cleared      ConstantVoltage         1      9  (Session active)
+    7  OverTemp     Fault                   1      9  Charging.ConstantVoltage
+    8  ManualReset  Precharge               2      9  (Session active)
+    9  Ready        ConstantCurrent         2     14  (Session active)
+   10  Unplug       Idle                    2     14  Charging.ConstantCurrent
+   11  PlugIn       Authenticating          2     14  (Session active)
 
 Read the table from top to bottom:
 
@@ -186,20 +310,61 @@ Read the table from top to bottom:
 6. Check the model and repair one mistake
 -----------------------------------------
 
-Inspect judges the model as you wrote it, before conversion. The script below
-inspects ``charger.fcstm``, then a copy without the ``[H*]`` declaration. The
-second run adds ``--collect-errors``: without it, inspect stops at the first
-model error with a one-line message and no diagnostic code.
+Inspect judges the model as you wrote it, before conversion. The commands below
+inspect ``charger.fcstm``, then a copy without the ``[H*]`` declaration.
+Without ``--collect-errors``, inspect stops at the first model error with a
+one-line message and no diagnostic code.
 
-.. literalinclude:: charger_check.demo.sh
-   :language: bash
-   :caption: ``charger_check.demo.sh``
+.. code-block:: console
 
-Output, generated from the script, which keeps the summary and warnings of the
-first report and the error block of the second:
+   $ pyfcstm inspect -i charger.fcstm --format human --color never
+   [WARN] FCSTM Inspect Report: charger.fcstm
 
-.. literalinclude:: charger_check.demo.sh.txt
-   :language: text
+   Summary
+     status: warning
+     root: Charger
+     states: 9 total / 6 leaf
+     transitions: 21
+     variables: 3
+       energy: control; external supply: none
+       precharge_runs: control; external supply: none
+       faults: control; external supply: none
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'energy' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'precharge_runs' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'faults' does not affect any transition guard.
+   ...
+
+The report is cut down to its summary and the three warnings; ``...`` leaves out the rest. Now make a copy without the ``[H*]`` declaration:
+
+.. testcode::
+
+   text = open("charger.fcstm").read()
+   lines = [line for line in text.splitlines(True) if "[H*] ->" not in line]
+   open("forgot_deep.fcstm", "w").write("".join(lines))
+
+Inspect the copy. This run adds ``--collect-errors``, and only the error block is kept; ``$ echo $?`` shows its exit status:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i forgot_deep.fcstm --collect-errors --format human --color never
+   [ERROR] FCSTM Inspect Report: forgot_deep.fcstm
+   ...
+     diagnostics: 1 errors / 3 warnings / 0 infos
+   ...
+   [ERROR] E_HISTORY_TARGET_UNDECLARED
+     Charger.Session does not declare deep history ([H*] -> ...;), so it cannot be entered through Session.[H*].
+     --> forgot_deep.fcstm:37:5
+   ...
+   $ echo $?
+   1
 
 The first report has the same three warnings as ``charger_restart.fcstm``, so
 history added no finding. It lists the three variables you declared and no
@@ -230,14 +395,74 @@ when the model is edited.
 record back into those variables. The hot start itself works as described in
 the "Hot start at a state" section of :doc:`/how_to/simulation/index`.
 
-.. literalinclude:: charger_hot_start.demo.py
-   :language: python
-   :caption: ``charger_hot_start.demo.py``
+.. testcode::
 
-Output, generated from the script:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: charger_hot_start.demo.py.txt
-   :language: text
+   OWNER = "Charger.Session"
+   with open("charger.fcstm") as f:
+       machine = load_state_machine_from_text(f.read())
+
+   # Charge into ConstantCurrent, then overheat.
+   runtime = SimulationRuntime(machine)
+   for event in [
+       None,
+       "Idle.PlugIn",
+       "Session.Authenticating.Authorized",
+       "Session.Charging.Precharge.Ready",
+       "Session.OverTemp",
+   ]:
+       runtime.cycle(["Charger." + event] if event else [])
+
+   # What a controller writes to non-volatile storage: the current state, its own
+   # variables and the source-level record, but no generated __hist_* number.
+   saved_state = ".".join(runtime.current_state.path)
+   saved_record = machine.history_record(runtime.vars, OWNER)
+   saved_vars = {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")}
+   print("saved state: ", saved_state)
+   print("saved record:", saved_record)
+   print("saved vars:  ", saved_vars)
+
+
+   def resume(record):
+       """Hot start at the saved state, then let the fault clear."""
+       hidden = machine.history_variables({OWNER: record} if record else None)
+       initial_vars = dict(saved_vars)
+       initial_vars.update(hidden)
+       restored = SimulationRuntime(
+           machine, initial_state=saved_state, initial_vars=initial_vars
+       )
+       restored.cycle(["Charger.Fault.Cleared"])
+       return hidden, ".".join(restored.current_state.path), restored.vars
+
+
+   for label, record in [
+       ("with the saved record", saved_record),
+       ("without a record", None),
+   ]:
+       hidden, state, variables = resume(record)
+       print()
+       print("After the power loss,", label)
+       print("  history variables:", hidden)
+       print("  after Cleared:    ", state)
+       print("  precharge_runs:   ", variables["precharge_runs"])
+
+.. testoutput::
+
+   saved state:  Charger.Fault
+   saved record: Charging.ConstantCurrent
+   saved vars:   {'energy': 5, 'precharge_runs': 1, 'faults': 1, '__forced_0': 0, '__forced_1': 0}
+
+   After the power loss, with the saved record
+     history variables: {'__hist_goto': 0, '__hist_Session': 7}
+     after Cleared:     Charger.Session.Charging.ConstantCurrent
+     precharge_runs:    1
+
+   After the power loss, without a record
+     history variables: {'__hist_goto': 0, '__hist_Session': 0}
+     after Cleared:     Charger.Session.Authenticating
+     precharge_runs:    1
 
 With the saved record, ``Cleared`` resumes ``ConstantCurrent`` after the
 restart, exactly as it would have without the power loss, and does not repeat
@@ -251,14 +476,135 @@ The simulator, the generated code and BMC never see ``[H]`` or ``[H*]``. Model
 conversion rewrites them into ordinary FCSTM before any of them runs. Printing
 the converted model shows that rewritten form:
 
-.. literalinclude:: charger_lowered.demo.py
-   :language: python
-   :caption: ``charger_lowered.demo.py``
+.. testcode::
 
-Output, generated from the script:
+   from pyfcstm.model import load_state_machine_from_text
 
-.. literalinclude:: charger_lowered.demo.py.txt
-   :language: fcstm
+   with open("charger.fcstm") as f:
+       machine = load_state_machine_from_text(f.read())
+   print(str(machine.to_ast_node()))
+
+.. testoutput::
+
+   def int energy = 0;
+   def int precharge_runs = 0;
+   def int faults = 0;
+   def int __hist_goto = 0;
+   def int __hist_Session = 0;
+   def int __forced_0 = 0;
+   def int __forced_1 = 0;
+   state Charger {
+       state Idle {
+           event PlugIn;
+       }
+       state Session {
+           state Authenticating {
+               exit {
+                   __hist_Session = 4;
+               }
+               event Authorized;
+           }
+           state Charging {
+               state Precharge {
+                   enter {
+                       precharge_runs = precharge_runs + 1;
+                   }
+                   exit {
+                       __hist_Session = 6;
+                   }
+                   event Ready;
+               }
+               state ConstantCurrent {
+                   during {
+                       energy = energy + 5;
+                   }
+                   exit {
+                       __hist_Session = 7;
+                   }
+                   event NearFull;
+               }
+               state ConstantVoltage {
+                   during {
+                       energy = energy + 2;
+                   }
+                   exit {
+                       __hist_Session = 8;
+                   }
+               }
+               [*] -> ConstantCurrent : if [__hist_goto == 7] effect {
+                   __hist_goto = 0;
+               }
+               [*] -> ConstantVoltage : if [__hist_goto == 8] effect {
+                   __hist_goto = 0;
+               }
+               Precharge -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               Precharge -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               ConstantCurrent -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               ConstantCurrent -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               ConstantVoltage -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               ConstantVoltage -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               [*] -> Precharge : if [__hist_goto == 0 || __hist_goto == 5 || __hist_goto == 6] effect {
+                   __hist_goto = 0;
+               }
+               Precharge -> ConstantCurrent :: Ready;
+               ConstantCurrent -> ConstantVoltage :: NearFull;
+           }
+           event OverTemp;
+           event Unplug;
+           [*] -> Charging : if [__hist_goto >= 5 && __hist_goto <= 8];
+           Authenticating -> [*] : OverTemp effect {
+               __forced_0 = 1;
+           }
+           Authenticating -> [*] : Unplug effect {
+               __forced_1 = 1;
+           }
+           Charging -> [*] : if [__forced_0 == 1 && __forced_1 == 0];
+           Charging -> [*] : if [__forced_1 == 1 && __forced_0 == 0];
+           [*] -> Authenticating : if [__hist_goto == 0 || __hist_goto == 4] effect {
+               __hist_goto = 0;
+           }
+           Authenticating -> Charging :: Authorized;
+       }
+       state Fault {
+           enter {
+               faults = faults + 1;
+           }
+           event Cleared;
+           event ManualReset;
+       }
+       pseudo state __forced_gate_0;
+       pseudo state __forced_gate_1;
+       Session -> Fault : if [__forced_0 == 1 && __forced_1 == 0] effect {
+           __forced_0 = 0;
+       }
+       Session -> __forced_gate_0 :: OverTemp;
+       Session -> Idle : if [__forced_1 == 1 && __forced_0 == 0] effect {
+           __forced_1 = 0;
+       }
+       Session -> __forced_gate_1 :: Unplug;
+       [*] -> Idle;
+       Idle -> Session :: PlugIn;
+       Fault -> Session :: Cleared effect {
+           __hist_goto = (__hist_Session != 0) ? __hist_Session : 4;
+       }
+       Fault -> Session :: ManualReset effect {
+           __hist_goto = (__hist_Session == 4) ? 4 : ((__hist_Session >= 6 && __hist_Session <= 8) ? 5 : 4);
+       }
+       __forced_gate_0 -> Fault : if [__forced_0 == 0 && __forced_1 == 0];
+       __forced_gate_1 -> Idle : if [__forced_0 == 0 && __forced_1 == 0];
+   }
 
 Use the output to check what the earlier steps observed:
 

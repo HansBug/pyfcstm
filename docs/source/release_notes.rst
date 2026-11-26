@@ -147,10 +147,12 @@ model:
 - A model with regions has no ``current_state_id``, ``current_state_path`` or
   ``current_state_name``; using one is a compile error.
 - The generated text changes for models without regions; the behavior does not.
-- Code size and RAM per machine grow for models without regions: the median
-  increase measured over the models without regions is 2.84 times for code and
-  3.05 times for RAM, and a chain of 16 or more pseudo states is slower than with
-  the previous template. See `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_.
+- Code size, RAM and the first-cycle time of a generated machine change for
+  models without regions as well, because they now run on the same kernel. The
+  measured size and speed ratios against the previous template, with their
+  method, are in the section *Generated C runtime* of
+  :doc:`/explanations/region_performance/index`; the remaining cost is tracked in
+  `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_.
 
 Drawing regions
 ~~~~~~~~~~~~~~~

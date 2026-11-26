@@ -16,6 +16,7 @@ directory or diagnosing a rendering failure. For a task flow, see
 .. template-config-marker: top-level-key filters
 .. template-config-marker: top-level-key tests
 .. template-config-marker: top-level-key ignores
+.. template-config-marker: top-level-key features
 .. template-config-marker: validation yaml-parse-error
 .. template-config-marker: validation empty-file
 .. template-config-marker: validation root-not-mapping
@@ -31,6 +32,10 @@ directory or diagnosing a rendering failure. For a task flow, see
 .. template-config-marker: validation stmt-style-missing-base-lang
 .. template-config-marker: validation ignores-not-list
 .. template-config-marker: validation ignores-item-not-string
+.. template-config-marker: validation features-not-list
+.. template-config-marker: validation features-item-not-string
+.. template-config-marker: validation features-unknown-feature
+.. template-config-marker: validation features-duplicate-feature
 .. template-config-marker: validation object-template-missing-template
 .. template-config-marker: validation object-import-missing-from
 .. template-config-marker: validation object-value-missing-value
@@ -147,6 +152,9 @@ Only these top-level keys are accepted:
    * - ``ignores``
      - list of strings
      - GitWildMatch-style patterns for input template files that should not be rendered or copied.
+   * - ``features``
+     - list of strings
+     - Model features the template can render. The only member is ``region``; see :ref:`sec-reference-template-config-features`.
 
 Validation failures
 -------------------
@@ -205,6 +213,18 @@ configuration file path and the failing key shape where available.
    * - ``ignores-item-not-string``
      - One ignore item is not a string.
      - ``ignores: [123]``
+   * - ``features-not-list``
+     - ``features`` is a string, a mapping or another non-list value (``null`` is not a failure, see below).
+     - ``features: region``
+   * - ``features-item-not-string``
+     - One ``features`` item is not a string.
+     - ``features: [1]``
+   * - ``features-unknown-feature``
+     - One ``features`` item is not a supported feature name; names are case-sensitive.
+     - ``features: [cloud]``
+   * - ``features-duplicate-feature``
+     - The same feature is listed twice.
+     - ``features: [region, region]``
 
 Object-loading failures happen when the selected form is incomplete or cannot
 be imported:
@@ -227,6 +247,126 @@ be imported:
    * - ``object-import-target-failure``
      - ``from`` points to an unavailable object.
      - Import failure from ``quick_import_object``.
+
+.. _sec-reference-template-config-features:
+
+Declaring model features
+------------------------
+
+``features`` is how a template says which model constructs it can render. A
+template that does not declare a feature is refused for any model that needs it,
+before a file is written. Today the closed list has one member.
+
+.. list-table:: ``features`` contract
+   :header-rows: 1
+
+   * - Item
+     - Fact
+   * - Spelling
+     - Top-level key ``features`` in ``config.yaml``.
+   * - Type
+     - List of strings. An absent key, ``features:`` (``null``) and ``features: []`` all mean "nothing declared".
+   * - Allowed members
+     - ``region`` only (``_TEMPLATE_FEATURES`` in ``pyfcstm/render/render.py``). Matching is exact, so ``Region`` is rejected.
+   * - Default
+     - Nothing declared. A template written before regions existed therefore refuses every model that declares a region.
+   * - Meaning of ``region``
+     - The template renders models that declare ``region`` blocks, including nested ones. Declare it only when the template really does; a template written for one active path would generate wrong code for a model with regions.
+   * - Needed by
+     - Only a model that declares at least one region. A model without regions renders with or without the declaration.
+   * - Read back
+     - ``StateMachineCodeRenderer(template_dir).features`` returns a ``frozenset`` of the declared names.
+   * - Checked by
+     - ``StateMachineCodeRenderer.render`` and ``render_one_file``, before the output directory is created or cleared, and by ``pyfcstm generate`` before it calls the renderer.
+   * - Built-in templates
+     - ``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` all declare ``features: [region]`` in their ``config.yaml``.
+
+Legal declarations:
+
+.. list-table:: ``features`` examples
+   :header-rows: 1
+
+   * - Case
+     - YAML
+     - Result
+   * - Renders regions.
+     - ``features: [region]``
+     - Legal. A model with regions is accepted.
+   * - No declaration.
+     - key absent, or ``{}``
+     - Legal. A model with regions is refused; a model without regions renders.
+   * - Explicit empty list.
+     - ``features: []``
+     - Legal and equivalent to leaving the key out.
+   * - Empty value.
+     - ``features:``
+     - Legal. YAML reads it as ``null``, which counts as nothing declared.
+   * - String instead of list.
+     - ``features: region``
+     - Invalid. Write ``features: [region]``.
+   * - Mapping.
+     - ``features: {region: true}``
+     - Invalid. The value must be a list.
+   * - Unknown or differently cased name.
+     - ``features: [cloud]``, ``features: [Region]``
+     - Invalid. Only ``region`` exists.
+   * - Repeated name.
+     - ``features: [region, region]``
+     - Invalid.
+   * - Non-string item.
+     - ``features: [1]``, ``features: [null]``
+     - Invalid.
+
+The validation errors are ``ValueError`` raised when the renderer reads the
+configuration. Each of them names the configuration file; ``<work>`` below stands
+for a temporary directory. This is real output, produced from a one-line
+``config.yaml`` for each case:
+
+.. literalinclude:: region_features.demo.py
+   :language: python
+   :caption: region_features.demo.py (builds the renderer once per config)
+
+.. literalinclude:: region_features.demo.py.txt
+   :language: text
+   :caption: region_features.demo.py output
+
+The key is also checked by ``pyfcstm generate``. The next script builds four
+template directories and renders ``region_controller.fcstm`` (two regions) or
+``region_plain.fcstm`` (none) into each one. A refused run exits with status 1,
+writes nothing, and prints the model's region count, where the first region is,
+what a template author should declare, which built-in templates to use instead,
+and one command that can be copied. The suggested template is the first name of
+the printed list. The ``(line 12)`` is the line of the first region
+in ``region_controller.fcstm``.
+
+.. literalinclude:: region_controller.fcstm
+   :language: fcstm
+   :caption: region_controller.fcstm
+
+.. literalinclude:: region_plain.fcstm
+   :language: fcstm
+   :caption: region_plain.fcstm
+
+.. literalinclude:: region_features.demo.sh
+   :language: bash
+   :caption: region_features.demo.sh
+
+.. literalinclude:: region_features.demo.sh.txt
+   :language: text
+   :caption: region_features.demo.sh output
+
+What the output establishes:
+
+* a template that lists ``region`` renders the region model (``exit=0`` and a file in ``out``);
+* a template without the key, with ``features: []`` or with ``features:`` is refused for the region model: ``exit=1``, nothing in ``out``, and the message names the template directory;
+* the same template without declaration still renders a model without regions;
+* the refusal does not tell you the template is broken, it tells you that the template author has not declared region support. Select a built-in template, or declare ``region`` after the template renders regions.
+
+The output does not show what happens with ``--clear``. The refusal comes before
+the output directory is touched, so an existing directory is not cleared either.
+A built-in template is never refused for regions; the refusal text for a built-in
+name exists in ``pyfcstm/entry/generate.py`` but cannot be reached with the five
+current templates.
 
 Expression styles
 -----------------
@@ -631,5 +771,6 @@ questions:
 * did English and Chinese pages cover the same canonical style names, aliases,
   statement fields, object-loading forms, helpers, and file behaviors;
 * did the prose distinguish runtime statement rendering from DSL echo rendering;
+* did the ``features`` row list its members, default, and validation errors in both languages;
 * did any destructive output behavior mention ``--clear`` and the fact that
   input-side ``.git`` ignores do not protect output directories.

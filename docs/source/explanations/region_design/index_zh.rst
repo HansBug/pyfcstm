@@ -3,9 +3,9 @@
 区域为什么按顺序执行，以及与其他工具的差别
 ==========================================
 
-本页回答“为什么”：为什么一个状态的各个区域按书写顺序一个接一个执行，为什么事件是输入而不是消息，为什么 ``!`` 强制转换与 ``active()`` 是语法糖，以及首版有意不做什么。然后把 FCSTM 与 Stateflow、SCXML 放在一起比较。模拟器在一个周期里做什么见\ :doc:`/explanations/region_semantics/index_zh`\ ；确切写法见\ :doc:`/reference/region_model/index_zh`\ 。
+本页回答“为什么”：为什么一个状态的各个区域按书写顺序一个接一个执行，为什么事件是输入而不是消息，为什么 ``!`` 强制转换（forced transition）与 ``active()`` 是语法糖，以及首版有意不做什么。然后把 FCSTM 与 Stateflow、SCXML 放在一起比较。模拟器在一个周期里做什么见\ :doc:`/explanations/region_semantics/index_zh`\ ；确切写法见\ :doc:`/reference/region_model/index_zh`\ 。
 
-本页的证据规则。下面所有关于 FCSTM 的陈述都用随仓库发布的工具实际运行核对过，命令与输出就在本页。关于 Stateflow 的陈述是设计这项功能时在 MATLAB R2020a Update 8（Stateflow 10.2）上做过的实验的记录；本页关于 Stateflow 的内容没有一句来自记忆，没有测过的会标明。关于 SCXML 的陈述是 W3C SCXML 1.0 文本的原文引用，并给出章节号。UML 状态机不做比较，因为写本页时没有核对过它的文本。
+本页的证据规则。下面所有关于 FCSTM 的陈述都用随仓库发布的工具实际运行核对过，命令与输出在本页，或在语义页里（相应陈述带有指向它们的链接）。关于 Stateflow 的陈述是设计这项功能时在 MATLAB R2020a Update 8（Stateflow 10.2）上做过的实验的记录，下表每个 Stateflow 格都附有保存记录的 issue（并行状态与历史见\ `issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_\ ，离开含子状态的状态的转换见\ `issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_\ ）；本页关于 Stateflow 的内容没有一句来自记忆，没有记录的写作“未记录”。关于 SCXML 的陈述是 W3C SCXML 1.0 文本的原文引用，并给出章节号。UML 状态机不做比较，因为写本页时没有核对过它的文本。
 
 为什么有序，而不是并发或不定序
 ------------------------------
@@ -17,6 +17,10 @@
 **顺序是建模手段。**\ 教程里的交锁控制器需要安全区域先于运动区域作出决定。有序区域时，这只要在模型里写一句：先写 ``Safety``\ 。\ :doc:`语义页 </explanations/region_semantics/index_zh>`\ 用同样的输入对比了两种顺序：顺序对调后，电机晚一个周期关断。不定序会让同一个模型的两种结果都合法。
 
 **每个工具里含义相同。**\ 被检查、被仿真、被当作生成代码运行的模型必须只有一种含义。下面把对调后的控制器分别放进模拟器和生成的 Python 运行时运行，再用有界模型检查核对性质“只有 ``permit`` 不为 0 时电机才开着”：
+
+.. literalinclude:: same_order_everywhere.demo.py
+   :language: python
+   :caption: ``same_order_everywhere.demo.py``
 
 .. literalinclude:: same_order_everywhere.demo.py.txt
    :language: text
@@ -62,7 +66,7 @@ FCSTM 里的事件是调用方为一个周期提供的标志。周期里所有�
      - 实际运行
      - 代价
    * - 含区域的状态上的 ``!P -> Off : if [x >= 2];``
-     - 每个区域里两条 ``-> [*]`` 转换（置起隐藏变量的发起者和跟随者），再加拥有者的两条转换。见语义页里的展开式。
+     - 每个区域里两条 ``-> [*]`` 转换（置起隐藏变量的发起者和跟随者），再加拥有者（owner）的两条转换。见语义页里的展开式。
      - ``runtime.vars`` 与生成代码里多一个隐藏变量 ``__forced_<n>``\ ；多出的转换；更长的导出文本。
    * - ``active("Root.P.A.A2")``
      - 一个隐藏变量 ``__active_Root_P_A_A2``\ ，在该状态 ``enter`` 的第一行置起，在 ``exit`` 的最后一行清除。
@@ -71,15 +75,15 @@ FCSTM 里的事件是调用方为一个周期提供的标志。周期里所有�
 把它们保持为语法糖，首版接受三个后果：
 
 * 模型与它导出的文本在每个环节行为一致。检查靠真实运行：控制器与它的导出文本产生相同的周期（输出在语义页里）。
-* 隐藏变量是普通变量。热启动要提供它们，运行时不推导也不校验。这是调用方的负担，也是没有特例的代价。
+* 隐藏变量是普通变量。热启动（hot start）要提供它们，运行时不推导也不校验。这是调用方的负担，也是没有特例的代价。
 * 展开式不能与其他工具完全一致的地方，差异被保留并记录，例如同一个拥有者里两条相互竞争的强制声明（\ `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ ）。
 
-图与 ``pyfcstm inspect`` 的报告按书写的模型呈现，所以两者都不显示隐藏变量。
+图与 ``pyfcstm inspect`` 的报告按书写的模型呈现，不显示隐藏变量。加上 ``--enable-verify`` 时，说明机器怎样运行的发现按实际运行的机器判断，因此可能点名隐藏变量（见\ :doc:`/explanations/diagnostics/index_zh`\ ）。
 
 首版不做什么
 ------------
 
-下面每一项都是语言的有意界限。前四项被语法拒绝，输出是真实的：
+下面每一项都是语言的有意界限。五个示例里四个被语法拒绝，区域之间的跳转被模型构建拒绝，输出是真实的：
 
 .. literalinclude:: not_in_the_language.demox.py
    :language: python
@@ -89,10 +93,10 @@ FCSTM 里的事件是调用方为一个周期提供的标志。周期里所有�
    :language: text
    :caption: 标准输出；脚本以状态码 ``1`` 退出（\ ``not_in_the_language.demox.py.exitcode``\ ）
 
-* **拥有者上的历史。**\ 拥有者不能声明 ``[H]`` 或 ``[H*]``\ 。区域内部的复合状态的历史可以使用。
+* **拥有者上的历史。**\ 拥有者不能在区域旁边声明 ``[H]`` 或 ``[H*]``\ （第一个示例把 ``[H] -> A`` 写在区域之后）。区域内部的复合状态的历史可以使用。
 * **子状态与区域混写。**\ 一个状态要么含普通子状态，要么含区域。
-* **区域里的生命周期动作与变量。**\ 区域里放状态、转换、事件和切面。``enter``\ 、``during``\ 、``exit`` 与变量声明属于拥有者或状态。
-* **在区域之间跳转。**\ 转换不能从一个区域离开去另一个区域的状态，也不能从外部进入区域里的状态；转换以拥有者为终点。语法把转换目标写成当前范围里的名字，所以写不出这种跳转。
+* **区域里的生命周期动作与变量。**\ 区域里放状态、转换、事件和切面（aspect）。``enter``\ 、``during``\ 、``exit`` 与变量声明属于拥有者或状态。
+* **在区域之间跳转。**\ 转换不能从一个区域离开去另一个区域的状态，也不能从外部进入区域里的状态；转换以拥有者为终点。第四个示例在区域 ``R2`` 里写 ``B -> A``\ 去找 ``R1`` 的状态：``A`` 不是 ``R2`` 的状态，所以模型构建拒绝它（``Unknown to state 'A' of transition``\ ）。
 * **内部事件与队列。**\ 不提供，见上文。
 * **真正的并行。**\ 不提供；区域只是逻辑并发。
 
@@ -111,7 +115,7 @@ FCSTM 与 Stateflow、SCXML 的差别
      - SCXML 1.0（W3C 文本）
    * - 同时活动的部分
      - 活动拥有者的所有区域。配置每个区域列一个位置，例如 ``Controller.Running{Safety: Watching, Motion: On}``\ 。
-     - 拥有者之下的并行（AND）状态；实验用的是一个带两个并行子状态的拥有者。
+     - 拥有者之下的并行（AND）状态；实验用的是一个带两个并行子状态的拥有者（\ `issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_\ ）。
      - “The <parallel> element encapsulates a set of child states which are simultaneously active when the parent element is active.”（3.4）
    * - 各部分的执行顺序
      - 书写顺序，可观察且有保证（轨迹见语义页）。
@@ -131,25 +135,25 @@ FCSTM 与 Stateflow、SCXML 的差别
      - “When all of the children reach final states, the <parallel> element itself is considered to be in a final state”（3.1.3）
    * - 历史
      - 拥有者不能声明历史。区域内的复合状态可以，拥有者经 ``Owner.[H]`` 或 ``Owner.[H*]`` 进入。
-     - 并行（AND）状态不能直接放历史连接点（模型在编译时被拒绝）；它外面和里面的 OR 状态可以。只在外层状态放历史时，两个并行分支都从各自的第一个状态重新开始；外层与每个分支都放历史时，各分支恢复各自的最后一个状态。
+     - 并行（AND）状态不能直接放历史连接点（模型在编译时被拒绝）；它外面和里面的 OR 状态可以。只在外层状态放历史时，两个并行分支都从各自的第一个状态重新开始；外层与每个分支都放历史时，各分支恢复各自的最后一个状态（\ `issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_\ ）。
      - 未记录
    * - 状态查询
      - ``active("路径")``\ ，隐藏标志的语法糖；从 ``enter`` 开始到 ``exit`` 结束为真。
-     - 转换条件里的 ``in(P.a2)``\ 。实测：条件读取转换源状态内部的某个状态时，机器停在那个状态里条件即成立。
+     - 转换条件里的 ``in(P.a2)``\ 。实测：条件读取转换源状态内部的某个状态时，机器停在那个状态里条件即成立（\ `issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_\ ，第二个情形）。
      - 未记录
    * - 离开含子状态的状态的转换
      - 只在机器停驻的状态上判一次；目标进不去则转换什么也不做。含区域时按上文展开。
-     - 在互斥父状态上实测：条件在父状态上判一次，退出顺序由内向外，改了条件所读变量的退出动作不会取消转换。目标进不去的图在编译时被拒绝；把该诊断降为警告后，运行时以 “State inconsistency” 错误中止。
+     - 在互斥父状态上实测：条件在父状态上判一次，退出顺序由内向外，改了条件所读变量的退出动作不会取消转换。目标进不去的图在编译时被拒绝；把该诊断降为警告后，运行时以 “State inconsistency” 错误中止（\ `issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_\ ，第 3、6 个情形，以及“目标进不去”一节）。
      - 未记录
 
-表中 Stateflow 关于强制转换的格子来自十二个互斥父状态的对照模型：十一个与当前展开逐步一致，第十二个的差别与这条转换无关。它们对并行状态没有任何说明，而 FCSTM 展开到区域里的做法只与 FCSTM 自己比较过（共享用例）。区域里仍存在的两处差异见\ `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ 。
+表中 Stateflow 关于强制转换的格子来自\ `issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_\ 记录的十二个对照模型，父状态都是互斥的：十一个与当前展开逐步一致，第十二个的差别与这条转换无关。它们对并行状态没有任何说明，而 FCSTM 展开到区域里的做法只与 FCSTM 自己比较过（共享用例）。区域里仍存在的两处差异见\ `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ 。
 
 从 Stateflow 迁移
 -----------------
 
 下面是 Stateflow 用户最先遇到的差别。每一条都是关于 FCSTM 的事实，可以用本页的命令核对；有实验的地方才标出 Stateflow 一侧。
 
-* **区域是名字空间，不是状态。**\ 路径经过区域（``Controller.Running.Motion.On``\ ），同一个状态名可以出现在两个区域里。Stateflow 的并行子状态是状态；实验也按状态处理。
+* **区域是名字空间，不是状态。**\ 路径经过区域（``Controller.Running.Motion.On``\ ），同一个状态名可以出现在两个区域里。Stateflow 的并行子状态是状态；实验也按状态处理（\ `issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_\ ）。
 * **顺序就是文本顺序。**\ 在 FCSTM 里 ``region`` 块的位置就是顺序，没有别的东西可设。调换块的位置会改变行为，对调后的控制器就是例子。Stateflow 怎样给并行状态排序，本页没有测过。
 * **历史是显式的。**\ 转换用 ``Owner.[H]`` 或 ``Owner.[H*]`` 进入历史；不会因为状态里有一个连接点就记住什么。拥有者本身不能带历史。
 * **事件不会传递。**\ 没有东西在区域之间发送事件。用变量加顺序。

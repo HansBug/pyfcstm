@@ -26,6 +26,8 @@
      - 整台机器的位置，是一棵树：不含区域的模型是一条路径，拥有者之下每个区域各有一个位置。
    * - 已完成
      - 区域内直接写的 ``-> [*]`` 转换被执行后，该区域完成。位置文本写作 ``[done]``\ 。
+   * - Delta
+     - 无法得到合法配置的周期。它什么也不提交：位置与变量保持原样，周期仍然计数。
    * - 等待初始化
      - 尚未进入的区域。位置文本写作 ``[init]``\ 。
 
@@ -69,7 +71,7 @@
    :language: fcstm
    :caption: ``controller.fcstm``
 
-``fault`` 与 ``requested`` 是输入。``permit`` 由 ``Safety`` 写、由 ``Motion`` 读，这条依赖使两个区域的顺序变得重要。``/Start`` 进入 ``Running``\ 。``!Running -> Idle : /Stop`` 是拥有者上的强制转换，见\ :ref:`region-semantics-forced-zh`\ ；部分输出里出现的隐藏变量 ``__forced_0`` 就来自它。
+``fault`` 与 ``requested`` 是输入。``permit`` 由 ``Safety`` 写、由 ``Motion`` 读，这条依赖使两个区域的顺序变得重要。``/Start`` 进入 ``Running``\ 。``!Running -> Idle : /Stop`` 是拥有者上的强制转换（forced transition），见\ :ref:`region-semantics-forced-zh`\ ；部分输出里出现的隐藏变量 ``__forced_0`` 就来自它。
 
 .. _region-semantics-one-cycle-zh:
 
@@ -125,6 +127,10 @@
 
 **顺序靠什么保证。**\ 区域按书写顺序执行，是因为 ``region`` 块的先后属于模型本身：``to_ast_node()``\ 、格式化和重新加载都保持它。
 
+.. literalinclude:: order_kept.demo.py
+   :language: python
+   :caption: ``order_kept.demo.py``
+
 .. literalinclude:: order_kept.demo.py.txt
    :language: text
    :caption: ``order_kept.demo.py``\ （脚本在三处打印 ``controller_swapped.fcstm`` 的区域名）
@@ -146,15 +152,23 @@
    :language: fcstm
    :caption: ``visible_backward.fcstm``\ ：读取者先声明
 
+.. literalinclude:: visibility.demo.py
+   :language: python
+   :caption: ``visibility.demo.py``
+
 .. literalinclude:: visibility.demo.py.txt
    :language: text
 
 * 正向模型里每一行都是 ``y`` 等于 ``x``\ ：``Rd`` 复制了 ``W`` 刚写入的值。
 * 反向模型里 ``y`` 总是慢一拍：``Rd`` 先于 ``W`` 运行，复制的是上一周期的 ``x``\ ；``W`` 不会为了补上而重跑。
-* 多写入者模型里，三个区域依次写 ``x = 1``\ 、``x = 2`` 以及 ``y + 1``\ 、``y * 10``\ 、``y + 3`` 这条链，所以 ``x`` 最终为 2，``y`` 依次为 13、143、1443。没有报告，也没有回滚。
+* 多写入者模型里，三个区域依次写 ``x = 1``\ （``R1``\ ）、``x = 2``\ （``R2``\ ）以及 ``y + 1``\ 、``y * 10``\ 、``y + 3`` 这条链，所以 ``x`` 最终为 2，``y`` 依次为 13、143、1443。没有报告，也没有回滚。
 * 输入模型里两个区域在每个周期加的是同一个 ``k``\ ：周期 1 是 2，周期 2 是 3。表格展示的是单次采样的后果，展示不了采样本身；这一契约属于 ``SimulationRuntime.cycle``\ ：每个输入源每个周期只读一次，快照由本周期的所有条件与动作共享。
 
 **交锁控制器，两种顺序。**\ 控制器是顺序会改变可观察行为的例子。同一串输入分别喂给 ``Safety`` 在前的模型和 ``Motion`` 在前的对调模型：
+
+.. literalinclude:: interlock.demo.py
+   :language: python
+   :caption: ``interlock.demo.py``
 
 .. literalinclude:: interlock.demo.py.txt
    :language: text
@@ -167,8 +181,8 @@
 
 .. _region-semantics-completion-zh:
 
-已完成、联合完成与驻停
-----------------------
+已完成、联合完成（joint completion）与停驻
+------------------------------------------
 
 **论断**\ ：区域内直接写的 ``X -> [*]`` 被执行时，区域完成，随后等待。已完成的区域不执行 ``during``\ 。最后一个区域完成的那个周期，立即续接拥有者自己的出边。如果续接无法提交，最后这次完成被拒绝，区域留在原来的叶子上。
 
@@ -197,7 +211,7 @@
 * 周期 4：``proceed`` 为 1，但没有事件，什么也不会完成。
 * 周期 5：``BDone`` 与 ``proceed=1`` 同时出现，``B`` 完成，拥有者续接到 ``Ready``\ 。
 
-**逐层的完成**\ （第三、第四张表）。每一层嵌套都应用同一规则，外层的兄弟不能替内层拥有者提供驻停资格：
+**逐层的完成**\ （第三、第四张表）。每一层嵌套都应用同一规则，外层的兄弟不能替内层拥有者提供停驻资格：
 
 * ``nested_join.fcstm``\ ：内层的组 ``Q{A1, A2}`` 在周期 3 完成，它所在的区域 ``A`` 在同一周期经 ``Q -> R`` 续接，外层拥有者的区域 ``B`` 继续工作（``n`` 一直在计数）。内层拥有者不等 ``B``\ 。
 * ``nested_rejected.fcstm``\ ：内层区域只有在它上面每一层的续接都能提交时才允许完成。``Inner -> [*]`` 需要 ``ok1``\ ，``P -> After`` 需要 ``ok2``\ 。只有其中一个为真时（周期 2 和 3）机器完全不动；两个都为真（周期 4）才落到 ``Root.After``\ 。
@@ -238,7 +252,7 @@
 * 周期 2：什么也不执行。叶子没有 ``during``\ ，也就没有 ``during`` 工作，而拥有者的 ``during before`` 与 ``during after`` 与这项工作绑定，没有工作的周期里两者都跳过。
 * 周期 3：强制转换把整组带走。区域按书写顺序离开（``A1`` 是 6，``B1`` 是 8），拥有者的 ``during after``\ （3）在整组交还控制的已提交路径上执行，拥有者的 ``exit``\ （4）最后执行一次。
 
-**不回头重选前面的区域**\ （第二部分，``group_entry.fcstm``\ ）。区域 ``R1`` 有两个初始候选：``[*] -> A`` 写 ``k = 1``\ ，``[*] -> B`` 写 ``k = 2``\ 。区域 ``R2`` 只有在 ``k == 2`` 时才能启动。``R1`` 取第一个候选，``R2`` 启动不了，整组拒绝进入。机器不会回头试 ``R1`` 的第二个候选（那样 ``R2`` 就能启动）；而是丢弃转换 ``Idle -> P``\ ，运行下一个候选 ``Idle -> Fallback``\ 。轨迹只显示已提交的结果：``k`` 仍是 0，因为被拒绝的尝试什么也没留下。
+**不回头重选前面的区域**\ （第二部分，``group_entry.fcstm``\ ）。区域 ``R1`` 有两个初始候选（candidate）：``[*] -> A`` 写 ``k = 1``\ ，``[*] -> B`` 写 ``k = 2``\ 。区域 ``R2`` 只有在 ``k == 2`` 时才能启动。``R1`` 取第一个候选，``R2`` 启动不了，整组拒绝进入。机器不会回头试 ``R1`` 的第二个候选（那样 ``R2`` 就能启动）；而是丢弃转换 ``Idle -> P``\ ，运行下一个候选 ``Idle -> Fallback``\ 。轨迹只显示已提交的结果：``k`` 仍是 0，因为被拒绝的尝试什么也没留下。
 
 .. literalinclude:: group_entry.fcstm
    :language: fcstm
@@ -259,13 +273,17 @@
 
 周期 2 里 ``R1`` 写入 ``x = 2``\ 。随后 ``R2`` 尝试 ``B -> C``\ ，它会给 ``t`` 加 10，但 ``C`` 的初始转换要求 ``x > 100``\ ，``C`` 进不去。这个候选连同它的效果一起被丢弃，``B -> D`` 运行。
 
+.. literalinclude:: fallback.demo.py
+   :language: python
+   :caption: ``fallback.demo.py``
+
 .. literalinclude:: fallback.demo.py.txt
    :language: text
 
 * ``candidate_fallback.fcstm``\ ：``t`` 是 1 而不是 11，因为被丢弃的候选没有留下效果；``x`` 是 2，因为 ``R1`` 本周期的写入没有被撤销。
 * ``initial_fallback.fcstm``\ ：一个启动嵌套组、中途失败的初始候选同样被丢弃；``leak`` 保持 0（虽然它的 ``enter`` 本来会执行），第二个候选 ``Plain`` 被进入（``picked=1``\ ）。
 * ``group_delta.fcstm``\ （冷启动）：``g`` 为 0 时区域 ``R2`` 无法初始化，机器根本进不了 ``P``\ 。这个周期是 Delta：配置仍是 ``Root``\ ，变量不变，表里显示 ``(Delta)``\ 。周期 3 里 ``g`` 为 1，整组启动。
-* ``group_delta.fcstm``\ （``R2`` 等待的热启动）：这个周期初始化不了 ``R2``\ ，所以即使 ``R1`` 本可工作，整个周期仍是 Delta，``n`` 保持 0。只有能安放 ``R2`` 的周期才会提交 ``R1`` 的工作。
+* ``group_delta.fcstm``\ （``R2`` 等待的热启动（hot start））：这个周期初始化不了 ``R2``\ ，所以即使 ``R1`` 本可工作，整个周期仍是 Delta，``n`` 保持 0。只有能安放 ``R2`` 的周期才会提交 ``R1`` 的工作。
 
 .. literalinclude:: group_delta.fcstm
    :language: fcstm
@@ -275,13 +293,17 @@
 
 **界限。**\ 组可以在一个周期内互相重入。模拟器对一个周期内嵌套或重复超过 64 个组的链，给出有记载的错误：
 
+.. literalinclude:: nesting_limit.demo.py
+   :language: python
+   :caption: ``nesting_limit.demo.py``
+
 .. literalinclude:: nesting_limit.demo.py.txt
    :language: text
 
 .. _region-semantics-aspects-zh:
 
-围绕区域的切面
---------------
+围绕区域的切面（aspect）
+------------------------
 
 **论断**\ ：拥有者及其祖先的 ``>> during before`` 与 ``>> during after`` 每个周期绕整组各执行一次；声明在区域内部的只绕该区域的分支。本周期没有 ``during`` 工作的范围，两者都不执行。before 与 after 成对嵌套。
 
@@ -290,6 +312,10 @@
    :caption: ``nested_aspects.fcstm``
 
 每个 ``seq`` 数字标记一个块：1 与 9 是 ``P`` 的 ``before`` 与 ``after``\ ，2 与 8 是区域 ``A`` 的，3 与 7 是 ``Q`` 的，4、5、6 是 ``X1``\ 、``Y1``\ 、``B1`` 的 ``during``\ 。
+
+.. literalinclude:: aspect_order.demo.py
+   :language: python
+   :caption: ``aspect_order.demo.py``
 
 .. literalinclude:: aspect_order.demo.py.txt
    :language: text
@@ -302,10 +328,14 @@
    :language: fcstm
    :caption: ``aspect_position.fcstm``
 
+.. literalinclude:: aspect_position.demo.py
+   :language: python
+   :caption: ``aspect_position.demo.py``
+
 .. literalinclude:: aspect_position.demo.py.txt
    :language: text
 
-周期 2 里，``R1`` 的条件 ``tick >= 2`` 先判断，看到的是 ``tick = 1``\ ；然后根状态的 ``before`` 把它变成 2，``P`` 的 ``before`` 执行；后判断的 ``R2`` 的条件看到 ``tick = 2``\ ，执行 ``U -> V``\ 。根状态的 ``after`` 在最后执行一次。最后一块显示 ``region_aspect.fcstm`` 里 ``R1`` 的切面每个周期计一次（``r1`` 保持 1），直到 ``R1`` 完成；此后在周期 2 与 3 里只有 ``R2`` 的切面继续（``r2`` 为 2、3），``R1`` 的 ``after`` 不再执行。
+周期 2 里，``R1`` 的条件 ``tick >= 2`` 先判断，看到的是 ``tick = 1``\ ；然后根状态的 ``before`` 把它变成 2，``P`` 的 ``before`` 执行；后判断的 ``R2`` 的条件看到 ``tick = 2``\ ，执行 ``U -> V``\ 。根状态的 ``after`` 在最后执行一次。最后一块是 ``region_aspect.fcstm``\ ：``R1`` 的 ``before`` 与 ``after`` 在周期 1 与 2 里各执行一次（``r1`` 与 ``r1after`` 依次为 1、2），只绕 ``R1`` 的分支；``R2`` 自己的 ``before`` 每个周期都执行（``r2`` 为 1 到 4）。周期 3 里 ``R1`` 经 ``A -> [*]`` 完成，这不是 ``during`` 工作，所以它的切面不执行（``r1`` 保持 2）；此后只有 ``R2`` 的切面继续。
 
 **这不能说明什么。**\ 通往停驻状态途中的伪状态不触发切面，与不含区域的模型相同。
 
@@ -316,13 +346,17 @@
 
 **论断**\ ：源状态里含有区域的强制转换 ``!Owner -> Target``\ ，是在每个区域内部写普通 ``-> [*]`` 转换的简写。模拟器里没有“一次把整组带走”的特判。事件或条件由各个区域在轮到自己时判断，区域按书写顺序离开，最后一个已完成时拥有者经自己的转换续接。
 
+.. literalinclude:: forced.demo.py
+   :language: python
+   :caption: ``forced.demo.py``
+
 .. literalinclude:: forced.demo.py.txt
    :language: text
 
 第一块是 ``forced_condition.fcstm`` 里的模型：``!P -> Off : if [x >= 2]``\ 。第二块是实际运行的机器，由 ``to_ast_node()`` 打印：
 
 * 每个区域得到两条通往 ``[*]`` 的转换：一条\ **发起者**\ ，带声明的条件（``x >= 2``\ ），效果是把 ``__forced_0`` 置起；写在它前面的一条\ **跟随者**\ ，在变量已置起时触发。
-* 拥有者得到两条通往 ``Off`` 的转换：一条用于整组结束之后（并清除变量），另一条用于拥有者之下没有区域可用的情形。
+* 拥有者得到两条通往 ``Off`` 的转换：一条等待已置起的变量并把它清除，这是整组结束之后的情形；写在它后面的是声明的那条转换，留给控制权回到拥有者而变量并未置起的情形。
 
 第三块是实际运行，它显示三个后果：
 
@@ -336,6 +370,10 @@
    :language: fcstm
    :caption: ``forced_blocked.fcstm``
 
+.. literalinclude:: forced_blocked.demo.py
+   :language: python
+   :caption: ``forced_blocked.demo.py``
+
 .. literalinclude:: forced_blocked.demo.py.txt
    :language: text
 
@@ -344,6 +382,10 @@
 在 ``forced_two_declarations.fcstm`` 里两条声明相互竞争。先被置起的那条占住整组，第二条在此期间不被尝试。在不含区域的模型里，目标进不去时由下一条声明接手；这一差别是只用普通转换展开的后果，也是已知的差距（见\ `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ ）。
 
 **它是简写，行为与它的展开式一致。**\ 实际运行的模型与由它导出的文本重新加载的模型，周期完全一致：
+
+.. literalinclude:: forced_equivalence.demo.py
+   :language: python
+   :caption: ``forced_equivalence.demo.py``
 
 .. literalinclude:: forced_equivalence.demo.py.txt
    :language: text
@@ -365,6 +407,10 @@
 
 六个变量记录 ``active()`` 在六个位置的回答：``exit_self`` 与 ``exit_other`` 在 ``Normal`` 的 ``exit`` 里，``effect_source`` 与 ``effect_target`` 在转换的 ``effect`` 里，``enter_self`` 与 ``enter_other`` 在 ``Tripped`` 的 ``enter`` 里。值 1 表示活动，2 表示不活动。
 
+.. literalinclude:: active_query.demo.py
+   :language: python
+   :caption: ``active_query.demo.py``
+
 .. literalinclude:: active_query.demo.py.txt
    :language: text
 
@@ -374,6 +420,10 @@
 * ``Safety`` 在前（第一张表）时，``Motion`` 在 ``Tripped`` 被进入的那个周期就看到它并立即停下（``m`` 保持 1）。``Motion`` 在前（第二张表）时，``Motion`` 多运行一个周期（``m=2``\ ），下一周期才停。与变量同样是慢一拍。
 
 **它是怎么工作的。**\ ``active()`` 是普通标志变量的简写：
+
+.. literalinclude:: active_lowering.demo.py
+   :language: python
+   :caption: ``active_lowering.demo.py``
 
 .. literalinclude:: active_lowering.demo.py.txt
    :language: text
@@ -386,6 +436,10 @@
 ------------
 
 **论断**\ ：含区域的机器的位置是一棵树，有一种可以读回同一个值的短文本形式。所有模型都有 ``runtime.configuration``\ ；``runtime.current_state`` 在不含区域的模型上是 ``State``\ ，在含区域的模型上是配置对象。
+
+.. literalinclude:: configuration_text.demo.py
+   :language: python
+   :caption: ``configuration_text.demo.py``
 
 .. literalinclude:: configuration_text.demo.py.txt
    :language: text
@@ -445,11 +499,15 @@
    :language: fcstm
    :caption: ``event_names.fcstm``
 
+.. literalinclude:: event_names.demo.py
+   :language: python
+   :caption: ``event_names.demo.py``
+
 .. literalinclude:: event_names.demo.py.txt
    :language: text
 
 * ``Go`` 只存在于 ``Motion`` 的叶子之下，所以只有那个叶子找到它，事件被采用。``Trip`` 对 ``Safety`` 同理。
-* ``Ping`` 在两个叶子上都有，含义不同。该周期被拒绝，信息列出每个候选及引出它的叶子；什么都不会运行。修正办法是写完整路径或从根开始的路径。
+* ``Ping`` 在两个叶子上都有，含义不同。该周期被拒绝，信息列出每个候选及引出它的叶子；什么都不会运行。修正办法是写完整路径（``Controller.Running.Motion.Off.Ping``\ ）。
 * ``Stop`` 是拥有者 ``Running`` 的事件，``Reset`` 是根的事件。裸名字只在每个活动叶子自己的名字空间里查找，所以两者都找不到。这与不含区域的模型一直遵守的规则相同。
 * ``..Stop`` 从每个叶子向上数层，两个叶子都到达拥有者的同一个事件，于是事件被采用，两个区域都动。``/Running.Stop`` 与完整路径从任何位置都能到达它。事件在 ``consumed`` 里出现两次，每次对应它推动的一次转换。
 * ``Safety`` 已完成时只剩一个活动叶子，``Ping`` 不再有歧义：已完成的区域与等待初始化的区域不参与解析。
@@ -464,6 +522,10 @@
 .. literalinclude:: handler_context.fcstm
    :language: fcstm
    :caption: ``handler_context.fcstm``
+
+.. literalinclude:: handler_context.demo.py
+   :language: python
+   :caption: ``handler_context.demo.py``
 
 .. literalinclude:: handler_context.demo.py.txt
    :language: text
@@ -519,7 +581,7 @@
      - :ref:`region-semantics-active-zh`
    * - ``region_hot_start_*``
      - 17
-     - 五种写法、等待与已完成的区域、嵌套拥有者、被拒绝的位置、隐藏变量的提供。
+     - 写出每个叶子、已完成的区域、进入区域的路径或只写拥有者的启动，等待与已完成的区域、嵌套拥有者、被拒绝的位置、隐藏变量的提供。
      - 热启动
    * - ``region_event_name_*``\ 、``region_scoped_*``
      - 8
@@ -547,4 +609,4 @@
 * **拥有者的历史。**\ 含区域的拥有者不能声明历史。区域内部的复合状态的历史可以工作（见历史相关的用例族）。
 * **强制转换。**\ 与不含区域的模型的两处差异列在\ :ref:`region-semantics-forced-zh`\ 。展开会给模型增加一个隐藏变量。
 * **与其他工具的比较**\ （Stateflow 用户会注意到什么，以及实测的差距）见\ :doc:`设计页 </explanations/region_design/index_zh>`\ 。
-* **已知的差距与模型的限制**\ 汇集在\ :doc:`/reference/region_model/index_zh`\ 的 “Limits and known gaps” 一节。
+* **已知的差距与模型的限制**\ 汇集在\ :doc:`/reference/region_model/index_zh`\ 的 “界限与已知差距”一节。

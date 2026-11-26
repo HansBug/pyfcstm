@@ -441,7 +441,8 @@ again. The model that runs records that decision in a hidden ``int`` variable,
 * In the plain composite ``P`` every resting child (``a``, ``b``) gets a
   transition to ``[*]`` that carries the declared condition and raises the
   variable. ``P -> Q`` then follows on the raised variable and clears it; the
-  second ``P -> Q`` covers the case that ``P`` has nothing to leave.
+  the second ``P -> Q`` is the declared transition itself, kept for the case that
+  control comes back to ``P`` without the variable raised.
 * In the owner ``P`` every region gets two transitions to ``[*]`` instead: a
   *follower* that waits for the variable and, written after it, a *starter*
   with the declared condition. The regions leave in written order and the owner

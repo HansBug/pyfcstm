@@ -11,10 +11,16 @@ does in a cycle, see :doc:`/explanations/region_semantics/index`; for the exact
 forms, see :doc:`/reference/region_model/index`.
 
 Evidence rules for this page. Every statement about FCSTM below was checked by
-running the shipped tools; the commands and outputs are on this page. Statements
-about Stateflow are the records of experiments that were run on MATLAB R2020a
-Update 8 (Stateflow 10.2) while this feature was designed; nothing about
-Stateflow here comes from memory, and what was not measured is marked as such.
+running the shipped tools; the commands and outputs are on this page or on
+:doc:`the semantics page </explanations/region_semantics/index>`, where the
+statement links to them. Statements about Stateflow are the records of
+experiments that were run on MATLAB R2020a Update 8 (Stateflow 10.2) while this
+feature was designed. Each Stateflow cell below links to the issue that holds
+the record (`issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_ for
+parallel states and history, `issue #581
+<https://github.com/HansBug/pyfcstm/issues/581>`_ for transitions that leave a
+state with states inside); nothing about Stateflow here comes from memory, and
+what was not recorded is marked ``not recorded``.
 Statements about SCXML are quotes from the W3C SCXML 1.0 text, with section
 numbers. UML state machines are not compared, because their text was not
 checked while writing this page.
@@ -44,6 +50,10 @@ generated code has to mean one thing. The same swapped controller is run below
 in the simulator and in the generated Python runtime, and then checked by
 bounded model checking against the property "the motor is on only while
 ``permit`` is not 0":
+
+.. literalinclude:: same_order_everywhere.demo.py
+   :language: python
+   :caption: ``same_order_everywhere.demo.py``
 
 .. literalinclude:: same_order_everywhere.demo.py.txt
    :language: text
@@ -141,14 +151,17 @@ Keeping them as shorthand has three consequences that the first release accepts:
   kept and recorded, for example two competing forced declarations in one owner
   (`issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_).
 
-Drawings and the report of ``pyfcstm inspect`` show the model as written, so
-neither shows the hidden variables.
+Drawings and the report of ``pyfcstm inspect`` show the model as written and
+leave the hidden variables out. With ``--enable-verify`` a finding about how the
+machine runs is judged on the machine that runs, so it can name a hidden
+variable (see :doc:`/explanations/diagnostics/index`).
 
 What the first release does not do
 ----------------------------------
 
-Each item below is a deliberate boundary of the language. The grammar rejects the
-first four; the output is real:
+Each item below is a deliberate boundary of the language. The grammar rejects
+four of the five examples and the model builder rejects the jump between regions;
+the output is real:
 
 .. literalinclude:: not_in_the_language.demox.py
    :language: python
@@ -158,7 +171,8 @@ first four; the output is real:
    :language: text
    :caption: standard output; the script exits with status ``1`` (``not_in_the_language.demox.py.exitcode``)
 
-* **History on an owner.** An owner cannot declare ``[H]`` or ``[H*]``. History
+* **History on an owner.** An owner cannot declare ``[H]`` or ``[H*]`` next to
+  its regions (the first example writes ``[H] -> A`` after the region). History
   of a composite state inside a region works.
 * **Mixing child states with regions.** A state contains either ordinary child
   states or regions.
@@ -167,8 +181,9 @@ first four; the output is real:
   declarations belong to the owner or to a state.
 * **Jumping between regions.** A transition cannot leave a region for a state of
   another region or enter a region's state from outside; transitions end at the
-  owner. The grammar spells a transition target as a name of the current scope,
-  so there is no way to write the jump.
+  owner. The fourth example writes ``B -> A`` in region ``R2`` for a state of
+  ``R1``: ``A`` is not a state of ``R2``, so the model builder refuses it
+  (``Unknown to state 'A' of transition``).
 * **Internal events and queues.** Not offered; see above.
 * **True parallelism.** Not offered; regions are logical concurrency only.
 
@@ -191,7 +206,7 @@ cell is deliberately empty of claims.
      - All regions of an active owner. A configuration lists one position per
        region, for example ``Controller.Running{Safety: Watching, Motion: On}``.
      - Parallel (AND) states under an owner; the experiments used one owner with
-       two parallel children.
+       two parallel children (`issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_).
      - "The <parallel> element encapsulates a set of child states which are
        simultaneously active when the parent element is active." (3.4)
    * - Order in which the parts run
@@ -224,14 +239,16 @@ cell is deliberately empty of claims.
        was refused at compile time); the OR states around and inside it can.
        With history only on the outer state, both parallel branches restart in
        their first state; with history on the outer state and on each branch,
-       each branch restores its last state.
+       each branch restores its last state (`issue #567
+       <https://github.com/HansBug/pyfcstm/issues/567>`_).
      - not recorded
    * - State query
      - ``active("Path")``, shorthand for a hidden flag; true from the start of
        ``enter`` to the end of ``exit``.
      - ``in(P.a2)`` in a transition condition. Measured: a condition that reads
        a state inside the source of a transition is satisfied when the machine
-       rests in that state.
+       rests in that state (`issue #581
+       <https://github.com/HansBug/pyfcstm/issues/581>`_, second case).
      - not recorded
    * - A transition that leaves a state with states inside
      - Judged once, at the state the machine rests in; a target that cannot be
@@ -241,12 +258,15 @@ cell is deliberately empty of claims.
        the exit order is innermost first, and an exit action that changes the
        variable the condition reads does not cancel the transition. A target that
        cannot be entered was refused at compile time; with that diagnostic
-       lowered to a warning the run stopped with a "State inconsistency" error.
+       lowered to a warning the run stopped with a "State inconsistency" error
+       (`issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_, cases 3
+       and 6, and the section on a target that cannot be entered).
      - not recorded
 
-The Stateflow cells for forced transitions come from twelve comparison models of
-exclusive parents; eleven agree step by step with the current expansion and the
-twelfth differs only in a way that does not involve the transition. They say
+The Stateflow cells for forced transitions come from the twelve comparison models
+recorded in `issue #581 <https://github.com/HansBug/pyfcstm/issues/581>`_, all
+with exclusive parents; eleven agree step by step with the current expansion and
+the twelfth differs only in a way that does not involve the transition. They say
 nothing about parallel states, and FCSTM's expansion into regions was compared
 only against FCSTM itself (the shared fixtures). The two differences that remain
 inside regions are in `issue #591
@@ -262,7 +282,7 @@ marked where an experiment exists.
 * **A region is a namespace, not a state.** Paths go through the region
   (``Controller.Running.Motion.On``) and the same state name may appear in two
   regions. A Stateflow parallel child is a state; the experiments treated it as
-  one.
+  one (`issue #567 <https://github.com/HansBug/pyfcstm/issues/567>`_).
 * **Order is the text order.** In FCSTM the position of the ``region`` block is
   the order and there is nothing else to set. Rearranging blocks changes
   behaviour, as the swapped controller shows. How Stateflow orders parallel

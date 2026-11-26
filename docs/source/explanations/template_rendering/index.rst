@@ -396,8 +396,8 @@ Read the output from the top:
 
 1. The refused template differs from the accepted one by one line, ``features:
    [region]``. Nothing else about the template changes the verdict.
-2. The command exits with ``1`` and writes the structured ``E_UNSUPPORTED_FEATURE``
-   diagnostic. Its first line names the template directory, so a template author
+2. The command exits with ``1`` and writes a refusal for the unsupported ``region``
+   feature (its diagnostic code is ``E_UNSUPPORTED_FEATURE``; the printed text does not show the code). Its first line names the template directory, so a template author
    can tell a template without the feature from a model written wrongly. The
    directory shown here is shortened by the script; the real message carries the
    path you passed. The ``(line 12)`` in the first line is the line of the model that

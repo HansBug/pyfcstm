@@ -12,7 +12,13 @@ Cycle model
 
 A runtime keeps an active stack from the root state to the active leaf.  Calling
 ``cycle()`` performs one model step against that stack and the persistent
-variable map.  The high-level phases are:
+variable map.  When a state owns regions, the stack becomes a tree: below every
+owner there is one stack per region, advanced in written order inside the same
+cycle (one input sample, one cycle count).  The position of the whole machine is
+then a ``Configuration`` (``runtime.configuration``), whose text form lists one
+position per region.  How that cycle runs is the subject of
+:doc:`../region_semantics/index`; everything below describes the single-path
+case, which is also what runs in every region.  The high-level phases are:
 
 1. initialize the root-to-leaf stack if the runtime has not entered the model;
 2. validate candidate transitions before committing them;
@@ -62,6 +68,29 @@ Execution-order matrix
      - Exiting to the machine end empties the stack.  Later ``cycle()`` calls
        are no-ops, and ``current_state`` is no longer terminal-safe.
      - ``*_terminal_*`` and ``design_explicit_exit_to_root_*`` fixtures.
+   * - Regions in one cycle
+     - Regions of an owner run in written order; a later region sees what an
+       earlier one wrote in the same cycle; the input is sampled once and the
+       cycle count grows by one.
+     - ``region_controller_*``, ``region_later_*``, ``region_earlier_*``.
+       Trace: :ref:`region-semantics-one-cycle`.
+   * - Owner lifecycle and aspects
+     - Owner ``enter`` and ``exit`` run once; plain ``during before`` runs once
+       at group initialization; ``>> during`` aspects of the owner and its
+       ancestors wrap the whole group, those of a region wrap only that region.
+     - ``region_owner_*``, ``region_group_*``, ``region_aspect*``.
+       Trace: :ref:`region-semantics-aspects`.
+   * - Completion
+     - A region is Done through ``-> [*]``; the last completion continues through
+       the owner in the same cycle or is refused.
+     - ``region_done_*``, ``region_last_*``, ``region_inner_group_*``.
+       Trace: :ref:`region-semantics-completion`.
+   * - Candidates and Delta with regions
+     - A candidate that cannot be entered gives way to the next one and the
+       writes of earlier regions stay; a cycle without a legal configuration is
+       a Delta for the whole cycle.
+     - ``region_candidate_*``, ``region_cold_start_*``.
+       Trace: :ref:`region-semantics-candidates`.
 
 .. _exec-composite-entry-order:
 
@@ -165,7 +194,12 @@ Hot start semantics
 -------------------
 
 Hot start builds the active stack directly from an ``initial_state`` and
-``initial_vars``.  This represents an already-entered boundary:
+``initial_vars``.  This represents an already-entered boundary.  For a model with
+regions the position is a tree and the same rules apply branch by branch: what the
+text names is put in place without any ``enter``, and what it leaves out waits for
+initialization and runs its initial transitions in the first cycle, in written
+order.  The rules, with real runs, are in :doc:`../region_semantics/index`.
+For every model:
 
 * all declared persistent variables must be provided, including the
   ``__hist_*`` variables of lowered history; compute them from source-level
@@ -175,6 +209,12 @@ Hot start builds the active stack directly from an ``initial_state`` and
 * enter actions on the constructed path are skipped;
 * plain composite ``during before`` for the constructed boundary is not replayed;
 * later cycles run normal transition and during semantics;
+* with regions, a region written ``[done]`` stays done and runs nothing, a region
+  that is left out or written ``[init]`` waits for initialization, a position in
+  which every region of an owner is done is refused at any depth, and a waiting
+  region that cannot reach a legal position makes the first cycle a Delta;
+* hidden variables (``__hist_*``, ``__forced_*``, ``__active_*``) are ordinary
+  variables: they are supplied with the others and never derived;
 * construction performs only structural checks; the first real cycle reports a
   successful ``Delta`` step when no stoppable or terminated successor can be
   committed, while expression, event, and DFS errors remain loud.
@@ -235,6 +275,12 @@ the explanation remains stable while tests add more focused cases.
      - ``abstract_handler_context_*``, ``abstract_hook_ref_context_*``
      - Read-only variable snapshots, callsite metadata, named references and
        active-leaf reporting.
+   * - Regions
+     - ``region_*`` (118 cases; the families are listed in
+       :ref:`region-semantics-evidence`)
+     - Written-order execution, same-cycle visibility, completion, group start,
+       fallback and Delta, aspects, forced expansion, ``active()``, hot start,
+       event names and handler context for models with regions.
 
 Boundary with generated runtimes
 --------------------------------
@@ -244,3 +290,8 @@ generation.  Generated runtimes should be checked against the same scenarios,
 but target languages may add platform constraints such as integer width or C/C++
 deployment risk that do not apply to the Python simulator itself.  Use inspect
 and generated-runtime tests when target-specific behavior matters.
+
+For models with regions the same fixtures run on the generated Python runtime and
+on the four C-family runtimes, and the configuration text a generated runtime
+reports is byte-for-byte the text the simulator reports.  How the generated
+runtimes are shaped is described in :doc:`../template_rendering/index`.

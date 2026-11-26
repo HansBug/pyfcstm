@@ -33,7 +33,7 @@ Short answers
 * **Generated C.**  Time per cycle grows faster than linearly in :math:`R`
   (log-log slope 1.43 over :math:`R = 1..64`), the size of one machine grows
   almost quadratically (slope 1.9 between :math:`R = 16` and :math:`R = 64`),
-  and the first cycle that enters nested owners grows by a factor of about 2.2
+  and the first cycle that enters nested owners grows by a factor of 2.0 to 2.2
   per level.  The capacity macros are exact functions of the model size.
 
 How to read the numbers
@@ -63,9 +63,11 @@ Every statement below carries one of three labels.
 
 All measurements come from commit ``b054fbe3`` on an Intel Xeon Platinum 8581C
 at 2.1 GHz with Python 3.11.15 and gcc 13.3.0 (``-O2 -std=c99``).  The machine
-is shared with other users.  Simulator and Python figures are the median of 7
+is shared with other users, and the pinning of every process to one core is
+likewise stated here by the author: the data records carry no core field.
+Simulator and Python figures are the median of 7
 timed batches after a warm-up; C figures are the minimum of 7 runs; each
-process is pinned to one core.  The same model, ``R=4 S=8 T=2 D=1 V=1``, was
+process is pinned to one core (self-reported).  The same model, ``R=4 S=8 T=2 D=1 V=1``, was
 measured once in each sweep, which gives a noise estimate: the simulator
 values differ by 7 %, the generated Python values by 2 % and the C values by
 16 %.  Differences smaller than that are not findings.  The models are
@@ -248,7 +250,8 @@ Read the output this way.
 * ``flat_substituted`` equals ``regions_reader_after_writer`` in all 200
   cycles: replacing ``p`` in the guard by what ``W`` assigns restores
   equivalence.  The data file records the same on 1000 cycles (600 differing
-  cycles for the two inequivalent pairs, 0 for the two equal pairs).
+  cycles for each of the three inequivalent pairs, 0 for each of the two equal
+  pairs).
 
 The conclusion is limited.  A flat expansion exists for this pair, and the
 guard stays small because ``W`` assigns a single input.  What the experiment
@@ -440,9 +443,12 @@ driver.
 * Against the generated Python on the same models, C is 246 times faster
   (median over the :math:`R` sweep; 151 to 459), 337 times over :math:`S`, 321
   over :math:`T` and 445 over :math:`V`.
-* The :math:`T` and :math:`V` sweeps are within the noise estimate of 16 % for
-  small values; only the larger :math:`V` shows a rise (327 to 366 ns up to
-  :math:`V = 8`, 525 to 576 ns from :math:`V = 16`).  No rate is given.
+* :math:`T` shows a visible rise beyond the noise estimate of 16 % (347 ns at
+  :math:`T = 1`, 513 ns at :math:`T = 4`, 487 ns at :math:`T = 7`, about 40 to
+  48 % more; the power-law fit has exponent 0.19 and :math:`R^2 = 0.86`), so no
+  rate is given.  :math:`V` stays within the noise estimate up to :math:`V = 8`
+  (326 to 366 ns) and rises from :math:`V = 16` (525 to 576 ns); no rate is
+  given for it either.
 
 Code size, RAM and capacity macros
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -511,7 +517,7 @@ First entry of nested owners
    ``R=1`` chain against :math:`D` for the three engines.  The y axis is
    logarithmic.  Simulator and Python: minimum of 5 fresh runs; C: minimum of 7
    runs.  The figure proves that the C runtime has no memo: its first cycle is
-   3.3 µs at :math:`D = 1` and 2.1 ms at :math:`D = 12`, a factor that approaches 2.2
+   3.3 µs at :math:`D = 1` and 2.1 ms at :math:`D = 12`, a factor of 2.0 to 2.2
    per level (4.6 from :math:`D = 8` to 10 and 4.9 from 10 to 12).  At
    :math:`D = 12` it is slower than the generated Python (1.7 ms).  Source:
    :file:`data/e2.jsonl`, :file:`data/e3.jsonl` and :file:`data/e4.jsonl`.
@@ -582,7 +588,7 @@ Summary
      - 15 KB at :math:`R = 1`, 13.2 MiB at :math:`R = 64`
    * - Generated C, nesting
      - Measured
-     - :math:`D`, about 2.2 times per level on the first cycle
+     - :math:`D`, 2.0 to 2.2 times per level on the first cycle
      - 3.3 µs at :math:`D = 1`, 2.1 ms at :math:`D = 12`
 
 Advice for modelers
@@ -591,7 +597,7 @@ Advice for modelers
 * **Choose regions for the model, not for speed.**  With independent regions
   the model text stays linear in :math:`R` while the flat machine is exponential
   (:eq:`region-perf-uniform`).  A hand-written flat machine of the same
-  behaviour was faster per cycle in the simulator up to 1215
+  behaviour was faster per cycle in the simulator up to 1664
   transitions (17 of 20 checked models), so regions do not save simulator time.
 * **Regions that read each other keep their order.**  A later region that reads
   what an earlier one wrote sees the new value (one cycle earlier than the
@@ -604,7 +610,7 @@ Advice for modelers
   only after you know your model's need; a smaller value is an error at run
   time, not silent misbehaviour.
 * **Keep nesting shallow in C if the entry time matters.**  Each level multiplies
-  the first cycle by about 2.2 once the depth passes 4; steady time does not.
+  the first cycle by 2.0 to 2.2 once the depth passes 4; steady time does not.
 * **Write fewer variables per transition if cycles matter.**  :math:`V` is the
   one parameter with a clean linear cost in the simulator (21 µs per variable)
   and in Python (5.5 µs per variable).

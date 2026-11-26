@@ -47,7 +47,7 @@ FCSTM 里的事件是调用方为一个周期提供的标志。周期里所有�
 
 语言围绕这一点设计：区域声明的事件归该区域，依赖位置的名字对每个活动叶子各解析一次，有歧义就拒绝（见\ :doc:`语义页 </explanations/region_semantics/index_zh>`\ ）。区域需要告诉另一个区域什么，就写一个变量，另一个区域在轮到它时读取；顺序决定它在哪个周期看到。
 
-有内部队列的 SCXML 是这样写的：“The SCXML processor MUST place the event that is generated at the rear of the session's internal event queue.”（W3C SCXML 1.0，4.2 节）。FCSTM 有意不提供对应的队列。
+有内部队列的 SCXML 是这样写的：\ ``The SCXML processor MUST place the event that is generated at the rear of the session's internal event queue.``\ （W3C SCXML 1.0，4.2 节）。FCSTM 有意不提供对应的队列。
 
 强制转换与 ``active()`` 是语法糖
 --------------------------------
@@ -120,7 +120,7 @@ FCSTM 与 Stateflow、SCXML 的差别
    * - 事件从哪里来
      - 周期的输入，所有区域共享，不会被移走。区域没有引发事件的办法。
      - 未记录
-     - 机器引发的事件进入队列：“The SCXML processor MUST place the event that is generated at the rear of the session's internal event queue.”（4.2）
+     - 机器引发的事件进入队列：\ ``The SCXML processor MUST place the event that is generated at the rear of the session's internal event queue.``\ （4.2）
    * - 事件的作用范围
      - 区域拥有它声明的事件；依赖位置的名字对每个活动叶子各解析一次，有歧义就拒绝。
      - 未记录

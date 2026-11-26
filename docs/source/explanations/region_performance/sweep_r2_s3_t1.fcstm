@@ -1,0 +1,26 @@
+input int a;
+def int n = 0;
+def int v0 = 0;
+state Root {
+    [*] -> L0;
+    state L0 {
+        region G0 {
+            state S0 { during { n = n + 1; } }
+            state S1 { during { n = n + 1; } }
+            state S2 { during { n = n + 1; } }
+            [*] -> S0;
+            S0 -> S1 : if [a == 1] effect { v0 = v0 + 1; };
+            S1 -> S2 : if [a == 1] effect { v0 = v0 + 1; };
+            S2 -> S0 : if [a == 1] effect { v0 = v0 + 1; };
+        }
+        region G1 {
+            state S0 { during { n = n + 1; } }
+            state S1 { during { n = n + 1; } }
+            state S2 { during { n = n + 1; } }
+            [*] -> S0;
+            S0 -> S1 : if [a == 1] effect { v0 = v0 + 1; };
+            S1 -> S2 : if [a == 1] effect { v0 = v0 + 1; };
+            S2 -> S0 : if [a == 1] effect { v0 = v0 + 1; };
+        }
+    }
+}

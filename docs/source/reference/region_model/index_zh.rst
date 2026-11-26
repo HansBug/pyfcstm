@@ -132,24 +132,6 @@ Region 模型与配置
 语法错误抛出 ``ValueError``，包含从 1 开始的行号和字符列号；制表符算一个字符，
 换行字符分隔行。模型校验另行报告无效路径、区域项或校验模式。
 
-.. testcode::
-
-   from pyfcstm.model import Configuration, load_state_machine_from_text
-
-   source = '''state Root {
-       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
-       region Right { state Working; [*] -> Working; }
-   }'''
-   model = load_state_machine_from_text(source)
-   try:
-       Configuration.parse(model, 'Root{\n Left: @\n}', mode='transient')
-   except ValueError as error:
-       print(error)
-
-.. testoutput::
-
-   Expected a configuration identifier at line 2, column 8, got '@'.
-
 非字符串输入抛出 ``TypeError``。嵌套过深时抛出说明原因的 ``ValueError``，
 不会直接泄漏 Python 的 ``RecursionError``；可支持的深度取决于解释器可用的调用栈。
 错误消息缩短过长的记号或路径片段、转义不可打印字符，并用 ``end of input``
@@ -164,13 +146,15 @@ Region 模型与配置
        region Right { state Working; [*] -> Working; }
    }'''
    model = load_state_machine_from_text(source)
-   try:
-       Configuration.parse(model, 'Root{Left: Working', mode='transient')
-   except ValueError as error:
-       print(error)
+   for text in ('Root{\n Left: @\n}', 'Root{Left: Working'):
+       try:
+           Configuration.parse(model, text, mode='transient')
+       except ValueError as error:
+           print(error)
 
 .. testoutput::
 
+   Expected a configuration identifier at line 2, column 8, got '@'.
    Expected '}' at line 1, column 19, got end of input.
 
 ``is_active`` 接受状态路径，包括活动祖先，但拒绝区域路径。
@@ -178,18 +162,39 @@ Region 模型与配置
 （所属状态活动但区域尚未初始化）或 ``inactive``\ （所属状态不在配置中）。
 ``leaves`` 不包含已完成或等待初始化的分支。未知路径抛出 ``ValueError``。
 
-``to_dict()`` 返回新分配的 JSON 兼容容器。上述例子的结果是：
+``to_dict()`` 返回新分配的 JSON 兼容容器。对上面第一个例子（区域 ``Left`` 已完成），结果是：
 
-.. code-block:: json
+.. testcode::
+
+   import json
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
+   print(json.dumps(config.to_dict(), indent=2))
+
+.. testoutput::
 
    {
      "mode": "stable",
      "state": "Root",
      "regions": [
-       {"name": "Left", "configuration": null},
-       {"name": "Right", "configuration": {
-         "state": "Root.Right.Working", "regions": []
-       }}
+       {
+         "name": "Left",
+         "configuration": null
+       },
+       {
+         "name": "Right",
+         "configuration": {
+           "state": "Root.Right.Working",
+           "regions": []
+         }
+       }
      ]
    }
 
@@ -481,9 +486,22 @@ BMC 表达式深度：一个比较前面加 98 个前缀取反可以接受，99 
 
    $ pyfcstm simulate -i limits_composite_loop.fcstm -e "cycle; cycle Root.Go; cycle Root.Go; cycle"
    ...
+   Cycle: 1
+   Current State: Root.S
+   Variables:
+     x = 1
+   ...
    [WARNING] Cycle 2 completed as Delta ...
+   Cycle: 2
+   Current State: Root.S
+   Variables:
+     x = 1
    ...
    [WARNING] Cycle 3 completed as Delta ...
+   Cycle: 3
+   Current State: Root.S
+   Variables:
+     x = 1
    ...
    Cycle: 4
    Current State: Root.S

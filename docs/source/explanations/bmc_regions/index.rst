@@ -258,13 +258,18 @@ that commits on :math:`\eta^{(i-1)}`; call that condition :math:`\mathrm{ok}_i`.
    \mathrm{Entry}_O(\eta) &\equiv
      \bigwedge_{i=1}^{n}\Bigl(\bigwedge_{j<i}\mathrm{ok}_j\ \Rightarrow\
        \mathrm{Init}_i\bigl(\eta^{(i-1)},\,q_i,\,\eta^{(i)}\bigr)\Bigr),\\
-   \mathrm{Accept}_O(\eta) &\equiv \bigwedge_{i=1}^{n}\mathrm{ok}_i.
+   \mathrm{Accept}_O(\eta) &\equiv \bigwedge_{i=1}^{n}\mathrm{ok}_i\ \land\
+     \Bigl(\lnot\,\mathrm{AllDone}\ \lor\ \mathrm{Can}_O\bigl(\eta^{(n)}\bigr)\Bigr).
    \end{aligned}
 
 :math:`\mathrm{Init}_i` is the relation of the first committable initial path of
 region :math:`R_i`.  It is asserted only when every earlier region started, so a
 region behind one that cannot start assigns nothing and none of its operations has
-to be defined.  :math:`\mathrm{Accept}_O` is the condition under which the path
+to be defined.  :math:`\mathrm{AllDone}` says that every region is already done
+right after its start, and :math:`\mathrm{Can}_O` is the continuation check of
+section 4, applied to :math:`\eta^{(n)}`: when the regions finish at once, the
+entry is accepted only if the owner can continue in the same cycle.
+:math:`\mathrm{Accept}_O` is the condition under which the path
 that enters :math:`O` can be taken at all.  When it is false the path is rejected
 as a whole.  The encoding does not go back and try another entry of an earlier
 region, which is the rule that a later region that cannot start rejects the whole
@@ -440,8 +445,9 @@ refused on purpose.
    :language: text
 
 The diagnostic code is ``invalid_start_position`` and the exit status is 1; no
-JSON result is written.  A text that is not a position of the model is refused
-with the same code.
+JSON result is written.  A configuration text that is not a position of the model
+(for example ``Root.Job{A: Nope}``) is refused with the same code, while a plain
+path to a state that does not exist is refused with ``unknown_state``.
 
 6. Patterns and call snapshots look at the machine, they do not build it
 ------------------------------------------------------------------------
@@ -482,7 +488,8 @@ ones the handler is given as ``ctx.configuration``:
 group's end settles against the state the simulator tells the handler; that
 state is the owner when the aspect wraps the whole group, and the leaf when it
 sits below
-(``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf``).
+(``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf`` in
+``test/bmc/test_region_call_records.py``).
 The model of the next script enters ``O``, finishes both regions and
 enters ``O`` again in the second step.
 
@@ -626,7 +633,9 @@ Three more limits are separate from this one.
   at run time has no bounded counterpart.  Of the shared semantic cases that
   declare regions, four search-limit cases, three action-dependent loops and one
   re-entry past the unroll depth are therefore excluded from the differential
-  check against the simulator.
+  check against the simulator.  Four more region cases are excluded for other
+  reasons: two need a hot start whose variables the caller must give completely,
+  and two need a short event name that the query language never uses.
 
 .. literalinclude:: expression_depth.demo.sh.txt
    :language: text
@@ -704,7 +713,7 @@ shown above.
      - ``interlock.fbmcq`` on both orders
      - Values handed on in step 3 (section 2)
    * - :eq:`eq-region-owner-start`
-     - ``_StepBuilder.entry``
+     - ``_StepBuilder.entry`` (``ok`` and the continuation check)
      - ``test_regions_start_in_declaration_order_on_the_values_left_behind``,
        ``test_a_group_that_cannot_start_leaves_a_cold_start_delta``
      - ``blocked_free.fbmcq``, ``blocked_stuck.fbmcq``

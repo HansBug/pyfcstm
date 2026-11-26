@@ -36,11 +36,15 @@ TEXT = {
         "seconds": "seconds",
         "compile": "build formula",
         "solve": "solve",
-        "total": "total",
+        "total": "total (dashed)",
         "regions_r": "regions R (S=4, k=3)",
         "regions_s": "states per region S (R=4, k=3)",
         "bound_k": "bound k (N=400)",
-        "phase_title": "Where the time goes",
+        "phase_title": "Share of time spent building the formula",
+        "phase_flat": "region-free machines",
+        "phase_regions": "machines with regions",
+        "total_s": "build + solve (seconds, log axis)",
+        "compile_pct": "build share of total (%)",
         "nodes_meas": "measured nodes",
         "nodes_pred": "closed form",
         "nodes_title": "Formula size: closed form vs measurement",
@@ -65,11 +69,15 @@ TEXT = {
         "seconds": "秒",
         "compile": "构造公式",
         "solve": "求解",
-        "total": "总计",
+        "total": "总计（虚线）",
         "regions_r": "区域数 R（S=4，k=3）",
         "regions_s": "每个区域的状态数 S（R=4，k=3）",
         "bound_k": "步数上界 k（N=400）",
-        "phase_title": "时间花在哪",
+        "phase_title": "构造公式占总耗时的比例",
+        "phase_flat": "不含区域的状态机",
+        "phase_regions": "含区域的状态机",
+        "total_s": "构造加求解（秒，对数坐标）",
+        "compile_pct": "构造占总耗时的比例（%）",
         "nodes_meas": "实测节点数",
         "nodes_pred": "闭式",
         "nodes_title": "公式规模：闭式与实测",
@@ -95,24 +103,57 @@ TEXT = {
 def rows(name):
     """Read one JSON Lines file of ``data/`` without the failed records."""
     with (DATA / name).open(encoding="utf-8") as handle:
-        return [r for r in map(json.loads, filter(str.strip, handle)) if "error" not in r]
+        return [
+            r for r in map(json.loads, filter(str.strip, handle)) if "error" not in r
+        ]
 
 
 def sweep(records, family, key, **fixed):
-    """Return ``(x, compile_s, solve_s)`` of one sweep, sorted by ``x``."""
-    out = []
+    """Return ``(x, compile_s, solve_s)`` of one sweep of finished unsat points.
+
+    Duplicate configurations are collapsed to their median.  Records of other
+    sweeps are excluded: calls, written variables and explicit ``T`` are only
+    kept when they are the swept parameter or a fixed one.
+    """
+    grouped = {}
     for r in records:
         cfg = r["cfg"]
-        if cfg["family"] != family or cfg["mode"] != "time" or cfg["kind"] != "unsat":
-            continue
         params = cfg["params"]
-        if any(cfg["k"] != v if n == "k" else params.get(n, 2 if n == "T" else None) != v for n, v in fixed.items()):
+        if cfg["family"] != family or cfg["kind"] != "unsat" or "error" in r:
             continue
-        x = cfg["k"] if key == "k" else params[key]
-        if "t_solve" not in r or r.get("status") not in ("sat", "unsat"):
+        if r.get("status") != "unsat" or "t_solve" not in r:
             continue
-        out.append((x, r["t_compile"], r["t_solve"]))
+        if params.get("calls") or params.get("eff") is False:
+            continue
+        for extra in ("V", "T"):
+            if extra in params and extra != key and extra not in fixed:
+                if extra == "V" or params[extra] != 2:
+                    break
+        else:
+            ok = True
+            for name, value in fixed.items():
+                have = (
+                    cfg["k"]
+                    if name == "k"
+                    else params.get(name, 2 if name == "T" else None)
+                )
+                ok = ok and have == value
+            if ok:
+                x = cfg["k"] if key == "k" else params[key]
+                grouped.setdefault(x, []).append((r["t_compile"], r["t_solve"]))
+    out = []
+    for x, vals in grouped.items():
+        vals.sort(key=sum)
+        mid = vals[len(vals) // 2]
+        out.append((x, mid[0], mid[1]))
     return sorted(out)
+
+
+def retest(key, family, **fixed):
+    """Return ``(x, total_s)`` of the retest points of one sweep."""
+    return [
+        (x, c + s_) for x, c, s_ in sweep(rows("timing.jsonl"), family, key, **fixed)
+    ]
 
 
 def _style(ax, xlabel, ylabel, title, logx=True, logy=True):
@@ -128,20 +169,38 @@ def _style(ax, xlabel, ylabel, title, logx=True, logy=True):
         ax.spines[side].set_visible(False)
 
 
-def _curves(ax, pts, t, show_labels):
+def _curves(ax, pts, t, show_labels, extra=()):
     xs = [p[0] for p in pts]
     total = [p[1] + p[2] for p in pts]
     ax.plot(xs, [p[1] for p in pts], "-o", color=BLUE, ms=4, lw=1.5)
     ax.plot(xs, [p[2] for p in pts], "-s", color=ORANGE, ms=4, lw=1.5)
     ax.plot(xs, total, "--", color=GREY, lw=1)
+    if extra:
+        ax.plot(
+            [e[0] for e in extra],
+            [e[1] for e in extra],
+            "x",
+            color="black",
+            ms=6,
+            mew=1.5,
+        )
     if show_labels:
-        ax.text(xs[-1], pts[-1][1], t["compile"], color=BLUE, fontsize=8, ha="right", va="top")
-        ax.text(xs[-1], pts[-1][2], t["solve"], color=ORANGE, fontsize=8, ha="right", va="bottom")
-        ax.text(xs[-1], total[-1], t["total"], color=GREY, fontsize=8, ha="right", va="bottom")
+        for row, (text, color) in enumerate(
+            ((t["compile"], BLUE), (t["solve"], ORANGE), (t["total"], GREY))
+        ):
+            ax.text(
+                0.04,
+                0.93 - 0.075 * row,
+                text,
+                transform=ax.transAxes,
+                color=color,
+                fontsize=8,
+                ha="left",
+            )
 
 
 def fig_time_flat(t):
-    timing = rows("timing.jsonl")
+    timing = rows("original_measurements.jsonl")
     fig, axes = plt.subplots(1, 3, figsize=(13, 4))
     specs = (
         ("N", {"k": 5, "T": 2}, t["n_states"]),
@@ -150,13 +209,13 @@ def fig_time_flat(t):
     )
     for ax, (key, fixed, label) in zip(axes, specs):
         pts = sweep(timing, "flat", key, **fixed)
-        _curves(ax, pts, t, True)
+        _curves(ax, pts, t, True, retest(key, "flat", **fixed))
         _style(ax, label, t["seconds"], t["flat_title"])
     return fig
 
 
 def fig_time_regions(t):
-    timing = rows("timing.jsonl")
+    timing = rows("original_measurements.jsonl")
     fig, axes = plt.subplots(1, 3, figsize=(13, 4))
     specs = (
         ("R", {"S": 4, "k": 3}, t["regions_r"]),
@@ -165,34 +224,60 @@ def fig_time_regions(t):
     )
     for ax, (key, fixed, label) in zip(axes, specs):
         pts = sweep(timing, "regions", key, **fixed)
-        _curves(ax, pts, t, True)
+        _curves(ax, pts, t, True, retest(key, "regions", **fixed))
         _style(ax, label, t["seconds"], t["region_title"])
     return fig
 
 
 def fig_phases(t):
-    timing = rows("timing.jsonl")
+    timing = rows("original_measurements.jsonl")
     fig, ax = plt.subplots(figsize=(7, 4.2))
-    pts = []
-    for r in timing:
-        if r["cfg"]["mode"] == "time" and r.get("status") in ("sat", "unsat"):
-            total = r["t_compile"] + r["t_solve"]
-            if total > 1.0:
-                pts.append((total, r["t_compile"] / total))
-    ax.scatter([p[0] for p in pts], [p[1] * 100 for p in pts], s=14, color=BLUE, alpha=0.7)
+    for family, color, label, row in (
+        ("flat", BLUE, t["phase_flat"], 0),
+        ("regions", ORANGE, t["phase_regions"], 1),
+    ):
+        pts = []
+        for r in timing:
+            if r["cfg"]["family"] == family and r.get("status") in ("sat", "unsat"):
+                total = r["t_compile"] + r["t_solve"]
+                if total > 1.0:
+                    pts.append((total, r["t_compile"] / total * 100))
+        ax.scatter(
+            [p[0] for p in pts], [p[1] for p in pts], s=14, color=color, alpha=0.7
+        )
+        ax.text(
+            0.04,
+            0.12 - 0.07 * row,
+            label,
+            transform=ax.transAxes,
+            color=color,
+            fontsize=8.5,
+            ha="left",
+        )
     ax.set_xscale("log")
     ax.set_ylim(0, 100)
-    _style(ax, t["total"] + " (" + t["seconds"] + ")", t["compile"] + " (%)", t["phase_title"], True, False)
+    _style(ax, t["total_s"], t["compile_pct"], t["phase_title"], True, False)
     return fig
 
 
 def fig_nodes(t):
-    grid = rows("formula_grid.jsonl") + rows("timing.jsonl")
+    grid = (
+        rows("formula_grid.jsonl")
+        + rows("timing.jsonl")
+        + rows("original_measurements.jsonl")
+    )
     fig, ax = plt.subplots(figsize=(6, 4.6))
     xs, ys = [], []
     for r in grid:
         cfg, p = r["cfg"], r["cfg"]["params"]
-        if cfg["mode"] != "time" or cfg["family"] != "flat" or "V" in p or p.get("T", 2) != 2:
+        if (
+            cfg["mode"] != "time"
+            or cfg["family"] != "flat"
+            or "V" in p
+            or p.get("T", 2) != 2
+        ):
+            continue
+        if cfg["kind"] != "unsat" or r.get("nodes") is None or cfg["k"] < 2:
             continue
         xs.append(r["nodes"])
         ys.append(21 * p["N"] * cfg["k"] - 18 * p["N"] + 33 * cfg["k"] + 6)
@@ -224,7 +309,15 @@ def fig_fit(t):
     ax.scatter(xs, ys, s=14, color=GREEN, alpha=0.7)
     line = np.array([xs.min(), xs.max()])
     ax.plot(line, line * ns * 1e-9, "--", color=GREY, lw=1)
-    ax.text(0.04, 0.92, t["fit_line"] % ns, transform=ax.transAxes, color=GREY, fontsize=9, ha="left")
+    ax.text(
+        0.04,
+        0.92,
+        t["fit_line"] % ns,
+        transform=ax.transAxes,
+        color=GREY,
+        fontsize=9,
+        ha="left",
+    )
     _style(ax, t["fit_x"], t["fit_y"], t["fit_title"])
     return fig
 
@@ -237,18 +330,32 @@ def fig_pigeonhole(t):
         if r["cfg"]["kind"] == "unsat"
     )
     sat = sorted(
-        (r["cfg"]["params"]["pigeons"], r["t_solve"]) for r in php if r["cfg"]["kind"] == "sat"
+        (r["cfg"]["params"]["pigeons"], r["t_solve"])
+        for r in php
+        if r["cfg"]["kind"] == "sat"
     )
     fig, ax = plt.subplots(figsize=(6, 4.6))
     done = [u for u in unsat if u[2] == "unsat"]
-    ax.plot([u[0] for u in done], [u[1] for u in done], "-o", color=ORANGE, ms=4, lw=1.6)
+    ax.plot(
+        [u[0] for u in done], [u[1] for u in done], "-o", color=ORANGE, ms=4, lw=1.6
+    )
     open_ = [u for u in unsat if u[2] != "unsat"]
-    ax.plot([u[0] for u in open_], [u[1] for u in open_], "x", color=ORANGE, ms=8, mew=2)
+    ax.plot(
+        [u[0] for u in open_], [u[1] for u in open_], "x", color=ORANGE, ms=8, mew=2
+    )
     ax.plot([s[0] for s in sat], [s[1] for s in sat], "-o", color=BLUE, ms=4, lw=1.6)
-    ax.text(done[-1][0], done[-1][1], t["php_unsat"], color=ORANGE, fontsize=8.5, ha="right", va="bottom")
-    ax.text(sat[-1][0], sat[-1][1], t["php_sat"], color=BLUE, fontsize=8.5, ha="right", va="bottom")
-    if open_:
-        ax.text(open_[-1][0], open_[-1][1], t["php_to"], color=ORANGE, fontsize=8, ha="right", va="top")
+    for row, (text, color) in enumerate(
+        ((t["php_unsat"], ORANGE), (t["php_sat"], BLUE), (t["php_to"], ORANGE))
+    ):
+        ax.text(
+            0.04,
+            0.93 - 0.075 * row,
+            text,
+            transform=ax.transAxes,
+            color=color,
+            fontsize=8.5,
+            ha="left",
+        )
     _style(ax, t["php_x"], t["seconds"], t["php_title"], False, True)
     return fig
 

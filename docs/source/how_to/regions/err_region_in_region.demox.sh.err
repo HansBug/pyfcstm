@@ -1,0 +1,4 @@
+Failed to parse input DSL file err_region_in_region.fcstm: Found 3 errors during parsing:
+Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
+Error 2: Syntax error at line 3, column 21, near '{': Invalid syntax - check for missing semicolons, braces, or operators
+Error 3: Syntax error at line 7, column 8, near '[*]': Unexpected token '[*]'

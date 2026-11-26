@@ -1,0 +1,4 @@
+== watch_regions.fcstm
+go=0 -> Plant{Earlier: Waiting, Trigger: Quiet, Later: Waiting}
+go=1 -> Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}
+go=1 -> Plant{Earlier: Saw, Trigger: Fired, Later: Saw}

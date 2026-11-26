@@ -1,0 +1,22 @@
+input int a_ready;
+input int b_ready;
+input int gate;
+output int ticks = 0;
+
+state Job {
+    [*] -> Work;
+    state Work {
+        region A {
+            [*] -> Run;
+            state Run;
+            Run -> [*] : if [a_ready != 0];
+        }
+        region B {
+            [*] -> Run;
+            state Run { during { ticks = ticks + 1; } }
+            Run -> [*] : if [b_ready != 0];
+        }
+    }
+    state Next;
+    Work -> Next : if [gate != 0];
+}

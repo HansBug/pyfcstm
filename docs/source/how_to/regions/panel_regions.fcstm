@@ -1,0 +1,19 @@
+input int hot;
+input int open;
+
+state Panel {
+    region Temperature {
+        [*] -> Cool;
+        state Cool;
+        state Hot;
+        Cool -> Hot : if [hot != 0];
+        Hot -> Cool : if [hot == 0];
+    }
+    region Door {
+        [*] -> Closed;
+        state Closed;
+        state Open;
+        Closed -> Open : if [open != 0];
+        Open -> Closed : if [open == 0];
+    }
+}

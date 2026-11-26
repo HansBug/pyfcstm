@@ -1,0 +1,27 @@
+output int ancestor = 0;
+output int left = 0;
+output int right = 0;
+output int work = 0;
+
+state Plant {
+    event End;
+    >> during before { ancestor = ancestor + 1; }
+    [*] -> Run;
+    state Run {
+        region Left {
+            >> during before { left = left + 1; }
+            [*] -> A;
+            state A { during { work = work + 1; } }
+            A -> [*] : /End;
+        }
+        region Right {
+            >> during before { right = right + 1; }
+            [*] -> B;
+            state B;
+        }
+        region Third {
+            [*] -> C;
+            state C { during { work = work + 10; } }
+        }
+    }
+}

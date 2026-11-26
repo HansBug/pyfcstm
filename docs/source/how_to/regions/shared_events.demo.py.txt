@@ -1,0 +1,5 @@
+shared_event ['/Start'] -> Rig{Left: Busy, Right: Busy}
+shared_event ['Start'] -> refused: Position-dependent event name 'Start' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+scoped_event ['Rig.Left.Ping'] -> Rig{Left: Busy, Right: Idle}
+scoped_event ['Ping'] -> refused: Position-dependent event name 'Ping' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+scoped_event ['Rig.Left.Ping', 'Rig.Right.Ping'] -> Rig{Left: Busy, Right: Busy}

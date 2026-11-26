@@ -1,0 +1,5 @@
+cycle 1 - -> Plant.Run{Left: A, Right: B, Third: C} {'ancestor': 1, 'left': 1, 'right': 1, 'work': 11}
+cycle 2 - -> Plant.Run{Left: A, Right: B, Third: C} {'ancestor': 2, 'left': 2, 'right': 2, 'work': 22}
+cycle 3 ['/End'] -> Plant.Run{Left: [done], Right: B, Third: C} {'ancestor': 3, 'left': 2, 'right': 3, 'work': 32}
+cycle 4 - -> Plant.Run{Left: [done], Right: B, Third: C} {'ancestor': 4, 'left': 2, 'right': 4, 'work': 42}
+cycle 5 - -> Plant.Run{Left: [done], Right: B, Third: C} {'ancestor': 5, 'left': 2, 'right': 5, 'work': 52}

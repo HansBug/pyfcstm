@@ -1,0 +1,12 @@
+state Root {
+    [*] -> Owner;
+    state Owner {
+        [H] -> A;
+        state A {
+            region R {
+                [*] -> X;
+                state X;
+            }
+        }
+    }
+}

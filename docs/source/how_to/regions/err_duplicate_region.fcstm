@@ -1,0 +1,10 @@
+state Root {
+    region R {
+        [*] -> X;
+        state X;
+    }
+    region R {
+        [*] -> Y;
+        state Y;
+    }
+}

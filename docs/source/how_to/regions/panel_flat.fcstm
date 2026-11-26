@@ -1,0 +1,18 @@
+input int hot;
+input int open;
+
+state Panel {
+    [*] -> CoolClosed;
+    state CoolClosed;
+    state CoolOpen;
+    state HotClosed;
+    state HotOpen;
+    CoolClosed -> HotClosed : if [hot != 0];
+    CoolClosed -> CoolOpen : if [open != 0];
+    CoolOpen -> HotOpen : if [hot != 0];
+    CoolOpen -> CoolClosed : if [open == 0];
+    HotClosed -> CoolClosed : if [hot == 0];
+    HotClosed -> HotOpen : if [open != 0];
+    HotOpen -> CoolOpen : if [hot == 0];
+    HotOpen -> HotClosed : if [open == 0];
+}

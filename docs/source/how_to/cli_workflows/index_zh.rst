@@ -14,23 +14,25 @@
 ------------------
 
 当需要真实输入时，本页使用仓库内的 quick-start 源文件
-``docs/source/tutorials/quick_start/traffic_light.fcstm``。项目脚本中请替换成自己的状态机文件。
+``docs/source/tutorials/quick_start/traffic_light.fcstm``\ 。第一条命令把它复制到工作目录，所以后面的命令都把它当作 ``traffic_light.fcstm`` 读取。项目脚本中请把这个名字替换成自己的状态机文件。
 
-先运行一个命令，确认命令行、解析器和模型导入器看到的是同一份源码：
+先运行一个命令，确认命令行、解析器和模型导入器看到的是同一份源码。\ ``...`` 省掉了这一步不讨论的统计信息：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm
+   $ cp docs/source/tutorials/quick_start/traffic_light.fcstm .
+   $ pyfcstm inspect -i traffic_light.fcstm
+   [OK] FCSTM Inspect Report: traffic_light.fcstm
 
-预期成功信号：
-
-.. code-block:: text
-
-   [OK] FCSTM Inspect Report: docs/source/tutorials/quick_start/traffic_light.fcstm
-   root: TrafficLight
-   states: 4 total / 3 leaf
-   transitions: 4
-   diagnostics: 0 errors / 0 warnings / 0 infos
+   Summary
+     status: ok
+     root: TrafficLight
+     states: 4 total / 3 leaf
+     transitions: 4
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
+   No diagnostics.
 
 如果命令在摘要前失败，先修复这一层，再尝试模拟、生成或可视化。文件不可读、解析错误、模型验证错误都属于更早的层；渲染器或模板配置无法修复这些问题。
 
@@ -79,22 +81,22 @@
      - 文件副作用
      - 第一排查步骤
    * - 模拟一条短路径。
-     - ``pyfcstm simulate -i docs/source/tutorials/quick_start/traffic_light.fcstm -e "current; cycle; current"``
+     - ``pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"``
      - 周期后输出包含 ``Current State: TrafficLight.Red``。
      - 无；除非 shell 重定向标准输出。
      - 先运行 ``inspect``；若检查干净，再看批处理命令拼写和事件名。
    * - 导出机器事实。
-     - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format json -o /tmp/traffic.inspect.json``
+     - ``pyfcstm inspect -i traffic_light.fcstm --format json -o traffic.inspect.json``
      - JSON 含有 ``"root_state_path": "TrafficLight"``，且 ``diagnostics`` 列表为空。
      - 写出指定报告文件。
      - 先查 ``--format`` 拼写和验证策略选项，不要马上假设模型错误。
    * - 生成 Python 文件。
-     - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
+     - ``pyfcstm generate -i traffic_light.fcstm --template python -o traffic-python --clear``
      - 输出目录包含生成的 Python 运行时文件和生成 README 指引。
      - 带 ``--clear`` 时会替换输出目录。
      - 确认只使用 ``--template`` 或 ``--template-dir`` 其中之一，并确认输出目录可安全删除。
    * - 导出 PlantUML 源码。
-     - ``pyfcstm plantuml -i docs/source/tutorials/quick_start/traffic_light.fcstm -o /tmp/traffic.puml``
+     - ``pyfcstm plantuml -i traffic_light.fcstm -o traffic.puml``
      - 文件以 ``@startuml`` 开头，并包含 ``state "TrafficLight"``。
      - 只写出指定的 ``.puml`` 文件。
      - 若失败，排查 DSL/模型错误；这里不涉及渲染器。
@@ -104,23 +106,66 @@
      - 不读取 DSL 文件，也不写图表文件。
      - 本地失败时提供 ``--plantuml-jar`` 或 ``PLANTUML_JAR``；远程失败时检查远程主机。
    * - 渲染图表。
-     - ``pyfcstm visualize -i docs/source/tutorials/quick_start/traffic_light.fcstm -t svg -o /tmp/traffic.svg --no-open``
+     - ``pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic.svg --no-open``
      - 指定 SVG 存在且非空。
      - 写出渲染产物，并可能使用渲染器缓存目录。
      - 先运行 ``plantuml``，把源码导出失败和渲染器失败分开。
+
+前四张卡片的运行结果如下。两张渲染器卡片不在文档检查里运行，因为它们需要 PlantUML 渲染器（Java 加 jar 包，或者远程服务）：
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"
+   ...
+   Cycle: 1
+   Current State: TrafficLight.Red
+   ...
+   $ pyfcstm inspect -i traffic_light.fcstm --format json -o traffic.inspect.json
+   $ pyfcstm generate -i traffic_light.fcstm --template python -o traffic-python --clear
+   $ LC_ALL=C ls traffic-python
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm plantuml -i traffic_light.fcstm -o traffic.puml
+   $ cat traffic.puml
+   @startuml
+   ...
+   state "TrafficLight" as traffic_light <<composite>> {
+   ...
+   @enduml
+
+.. testcode::
+
+   import json
+
+   report = json.load(open("traffic.inspect.json"))
+   print(report["root_state_path"], report["diagnostics"])
+
+.. testoutput::
+
+   TrafficLight []
 
 查看命令帮助
 ------------
 
 先看顶层帮助，再看准备运行的子命令：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm --help
-   pyfcstm inspect --help
-   pyfcstm generate --help
+   $ pyfcstm --help
+   Usage: pyfcstm [OPTIONS] COMMAND [ARGS]...
+   ...
+   $ pyfcstm inspect --help
+   Usage: pyfcstm inspect [OPTIONS]
+   ...
+   $ pyfcstm generate --help
+   Usage: pyfcstm generate [OPTIONS]
+   ...
+   $ python -m pyfcstm --help
+   Usage: pyfcstm [OPTIONS] COMMAND [ARGS]...
+   ...
 
-帮助输出也是环境检查。如果找不到 ``pyfcstm``，用同一环境试 ``python -m pyfcstm --help``，然后回到
+帮助输出也是环境检查。如果找不到 ``pyfcstm``\ ，用同一环境试 ``python -m pyfcstm --help``\ （上面最后一条命令），然后回到
 :doc:`/how_to/installation/index_zh` 排查安装问题。
 
 运行短模拟
@@ -128,79 +173,150 @@
 
 需要写入文档、持续集成（CI）日志或问题报告的记录时，使用批处理模式：
 
+.. code-block:: console
+
+   $ pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"
+   ...
+   Cycle: 0
+   Current State: TrafficLight
+   Variables:
+     timer = 0
+   ...
+   >>> cycle
+   ...
+   Cycle: 1
+   Current State: TrafficLight.Red
+   Variables:
+     timer = 1
+   ...
+
+手动探索时使用交互模式。文档检查不运行它，因为它要等待终端输入：
+
 .. code-block:: bash
 
-   pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
-
-手动探索时使用交互模式：
-
-.. code-block:: bash
-
-   pyfcstm simulate -i machine.fcstm
+   pyfcstm simulate -i traffic_light.fcstm
 
 实用检查：
 
-* 先运行 ``current``，让记录包含初始活跃路径。
-* 批处理脚本中显式写事件名，例如 ``cycle Start``。
+* 先运行 ``current``\ ，让记录包含初始活跃路径。
+* 批处理脚本中显式写事件名，例如 ``cycle Start``\ 。
 * 只有能提供所有必需变量值时才使用热启动。
 * 不要把模拟结果当成生成目标代码正确性的证明；它是生成运行时测试应对齐的参考行为。
 
 导出 inspect 报告
 -----------------
 
-编辑模型时，人类输出最方便：
-
-.. code-block:: bash
-
-   pyfcstm inspect -i machine.fcstm
+编辑模型时，人类输出最方便；它就是第一节的那条命令。
 
 脚本消费指标、诊断或模型事实时，使用完整 JSON：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i machine.fcstm --format json -o machine.inspect.json
+   $ pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
 
-准备把报告贴给 LLM 辅助修复时，使用面向 LLM 的格式：
+.. testcode::
 
-.. code-block:: bash
+   import json
 
-   pyfcstm inspect -i machine.fcstm --format llm-md -o machine.inspect.md
+   report = json.load(open("traffic_light.inspect.json"))
+   print("metrics" in report, "diagnostics" in report)
 
-CI 风格检查要显式并且有边界：
+.. testoutput::
 
-.. code-block:: bash
+   True True
 
-   pyfcstm inspect -i machine.fcstm \
+准备把报告贴给 LLM 辅助修复时，使用面向 LLM 的格式。这份 Markdown 以状态和诊断计数开头：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i traffic_light.fcstm --format llm-md -o traffic_light.inspect.md
+   $ cat traffic_light.inspect.md
+   # FCSTM Inspect Report
+
+   - Status: `ok`
+   - Input: `traffic_light.fcstm`
+   - Diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
+
+CI 风格检查要显式并且有边界。这条命令什么也不打印，只写出报告：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i traffic_light.fcstm \
      --format json \
      --enable-verify \
      --smt-timeout-ms 2000 \
-     -o machine.inspect.json
+     -o traffic_light.verify.json
 
 如果命令在读取模型前失败，先检查验证策略选项。inspect 会解析一部分高成本分类标签，只是为了明确报告自动 inspect 不允许使用它们。
 
 一次修完全部模型错误
 --------------------
 
-默认情况下，一个模型错误就会中止整次运行，因此一个含多处错误的文件每次只报出第一处。加上 ``--collect-errors``\ 可以在一份报告里拿到全部错误：
+默认情况下，一个模型错误就会中止整次运行，因此一个含多处错误的文件每次只报出第一处。加上 ``--collect-errors``\ 可以在一份报告里拿到全部错误。下面的模型有两条转换指向不存在的状态；报告被缩减到错误计数和这两处错误：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i machine.fcstm --collect-errors
+   $ printf '%s\n' \
+     'state Machine {' \
+     '    [*] -> Idle;' \
+     '    state Idle;' \
+     '    Idle -> Missing :: Go;' \
+     '    Idle -> Absent :: Stop;' \
+     '}' > two_errors.fcstm
+   $ pyfcstm inspect -i two_errors.fcstm
+   Invalid state machine model in two_errors.fcstm: Unknown to state 'Missing' of transition:
+   Idle -> Missing :: Go; (line 4)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i two_errors.fcstm --collect-errors --color never
+   ...
+     diagnostics: 2 errors / 0 warnings / 0 infos
+   ...
+   [ERROR] E_DANGLING_TRANSITION
+     Unknown to state 'Missing' of transition:
+   Idle -> Missing :: Go;
+     --> two_errors.fcstm:4:5
+   ...
+   [ERROR] E_DANGLING_TRANSITION
+     Unknown to state 'Absent' of transition:
+   Idle -> Absent :: Stop;
+     --> two_errors.fcstm:5:5
+   ...
+   $ echo $?
+   1
 
 命令仍以非零码退出，因此依然可以作为 CI 门禁使用。这类报告背后的模型可能自身并不一致——例如某条迁移的端点无法解析——所以应把报告当作待修清单，而不是模型可用的证据。
 
-这只覆盖模型错误。一个无法解析的文件没有可用来构建模型的语法树，因此语法错误仍会以 ``Failed to parse input DSL file`` 中止运行，不产出报告。
+这只覆盖模型错误。一个无法解析的文件没有可用来构建模型的语法树，因此语法错误仍会以 ``Failed to parse input DSL file`` 中止运行，不产出报告：
+
+.. code-block:: console
+
+   $ printf '%s\n' \
+     'state M {' \
+     '    state A;' \
+     '    A -> B if [x];' \
+     '}' > bad_syntax.fcstm
+   $ pyfcstm inspect -i bad_syntax.fcstm --collect-errors
+   Failed to parse input DSL file bad_syntax.fcstm: Found 1 errors during parsing:
+   Error 1: Syntax error at line 3, column 11, near 'if': Unexpected token 'if'
+   $ echo $?
+   1
 
 从内置模板生成代码
 ------------------
 
 普通用户优先使用打包内置模板：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear
+   $ LC_ALL=C ls generated/python
+   README.md
+   README_zh.md
+   machine.py
 
-只有在你明确维护自定义模板时，才使用自定义模板目录：
+只有在你明确维护自定义模板时，才使用自定义模板目录。文档检查不运行这条命令，因为它需要你自己的模板目录：
 
 .. code-block:: bash
 
@@ -209,39 +325,35 @@ CI 风格检查要显式并且有边界：
 生成检查清单：
 
 * 把领域特定语言（DSL）源文件和生成命令一起记录在项目说明或构建规则中。
-* 只对可以安全替换的输出目录使用 ``--clear``。
+* 只对可以安全替换的输出目录使用 ``--clear``\ 。
 * 提交生成文件前先审阅。
-* 如果输出按需重建，把生成目录放进 ``.gitignore``，不要提交过期产物。
+* 如果输出按需重建，把生成目录放进 ``.gitignore``\ ，不要提交过期产物。
 * 生成的 README 是运行时集成和冒烟检查的下一入口。
 
 导出 PlantUML 源码
 ------------------
 
-需要可审阅、可提交、可由其他工具渲染的确定性源码时，使用 ``plantuml``：
+需要可审阅、可提交、可由其他工具渲染的确定性源码时，使用 ``plantuml``\ 。先选细节级别，再加覆盖项；只有图表确实需要时，才加入窄范围的 ``-c`` 覆盖项：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i machine.fcstm -o machine.puml
-
-先选细节级别，再加覆盖项：
-
-.. code-block:: bash
-
-   pyfcstm plantuml -i machine.fcstm -l full -o machine.full.puml
-
-只有图表确实需要时，才加入窄范围配置覆盖：
-
-.. code-block:: bash
-
-   pyfcstm plantuml -i machine.fcstm \
+   $ pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+   $ pyfcstm plantuml -i traffic_light.fcstm -l full -o traffic_light.full.puml
+   $ pyfcstm plantuml -i traffic_light.fcstm \
      -c show_events=true \
      -c max_depth=2 \
-     -o machine.focused.puml
+     -o traffic_light.focused.puml
+   $ LC_ALL=C ls traffic_light*.puml
+   traffic_light.focused.puml
+   traffic_light.full.puml
+   traffic_light.puml
 
 渲染图表产物
 ------------
 
-渲染环境不确定时，先用 ``visualize --check``：
+文档检查不运行本节的命令，因为它们需要 PlantUML 渲染器：本地渲染要 Java 加 jar 包，或者使用远程服务。
+
+渲染环境不确定时，先用 ``visualize --check``\ ：
 
 .. code-block:: bash
 
@@ -251,19 +363,19 @@ CI 或无图形界面环境中渲染时不要启动查看器：
 
 .. code-block:: bash
 
-   pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
+   pyfcstm visualize -i traffic_light.fcstm -t svg -o traffic_light.svg --no-open
 
 私有图表优先使用本地渲染：
 
 .. code-block:: bash
 
-   pyfcstm visualize -i machine.fcstm --renderer local -p ./plantuml.jar --no-open
+   pyfcstm visualize -i traffic_light.fcstm --renderer local -p ./plantuml.jar --no-open
 
 只有生成的 PlantUML 源码允许发送到配置服务时，才使用远程渲染：
 
 .. code-block:: bash
 
-   pyfcstm visualize -i machine.fcstm --renderer remote --no-open
+   pyfcstm visualize -i traffic_light.fcstm --renderer remote --no-open
 
 让命令可复现
 ------------
@@ -357,51 +469,56 @@ CI 或无图形界面环境中渲染时不要启动查看器：
 短输出摘录
 ~~~~~~~~~~
 
-批处理模拟输出应类似下面这样，具体边框格式可能随终端变化：
+下面在放着 ``traffic_light.fcstm`` 的工作目录里运行上表的命令。\ ``...`` 省掉终端格式，以及成功信号没有提到的部分：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm simulate -i traffic_light.fcstm -e "current; cycle; current"
+   ...
    >>> current
+   ...
    Cycle: 0
    Current State: TrafficLight
    Variables:
      timer = 0
+   ...
    >>> cycle
+   ...
    Cycle: 1
    Current State: TrafficLight.Red
-
-同一干净模型的人类 inspect 输出很短：
-
-.. code-block:: text
-
+   ...
+   $ pyfcstm inspect -i traffic_light.fcstm
    [OK] FCSTM Inspect Report: traffic_light.fcstm
+
    Summary
      status: ok
      root: TrafficLight
      states: 4 total / 3 leaf
      transitions: 4
      variables: 1
+       timer: control; external supply: none
+   ...
      diagnostics: 0 errors / 0 warnings / 0 infos
-
+   ...
    No diagnostics.
-
-Python 生成输出目录至少应有下面的形状：
-
-.. code-block:: text
-
+   $ pyfcstm generate -i traffic_light.fcstm --template python -o generated/python --clear
+   $ LC_ALL=C ls generated/python
    README.md
    README_zh.md
    machine.py
-
-PlantUML 源码是文本，不是图片：
-
-.. code-block:: text
-
+   $ pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+   $ cat traffic_light.puml
    @startuml
    hide empty description
+
    skinparam state {
      BackgroundColor<<pseudo>> LightGray
+   ...
    }
+   ...
+   state "TrafficLight" as traffic_light <<composite>> {
+   ...
+   @enduml
 
 失败探针
 ~~~~~~~~
@@ -417,25 +534,54 @@ PlantUML 源码是文本，不是图片：
      - 含义
    * - 缺少输入选项。
      - ``pyfcstm inspect``
-     - ``Missing option '-i' / '--input-code'``。
+     - ``Missing option '-i' / '--input-code'``\ ，退出状态为 ``2``\ 。
      - Click 还没有进入 DSL 解析。
    * - inspect 格式非法。
      - ``pyfcstm inspect -i traffic_light.fcstm --format xml``
-     - Click 报告允许的 choices。
+     - Click 报告允许的取值，退出状态为 ``2``\ 。
      - 先修命令语法，再调模型。
    * - 可视化后缀不匹配。
      - ``pyfcstm visualize -i traffic_light.fcstm -o traffic_light.svg -t png --no-open``
-     - 输出说明 ``Output file suffix '.svg' does not match render type 'png'.``。
+     - 输出说明 ``Output file suffix '.svg' does not match render type 'png'.``\ ，退出状态为 ``1``\ 。
      - 先修输出命名，再调 PlantUML。
    * - 模拟器命令层失败。
      - ``pyfcstm simulate -i traffic_light.fcstm -e "rewind"``
-     - 转录显示 ``Unknown command: rewind``，但批处理模式仍以退出状态 ``0`` 结束。
+     - 转录显示 ``Unknown command: rewind``，批处理模式以退出状态 ``1`` 结束。
      - 把转录当作失败信号，并修正模拟器命令脚本。
    * - 渲染器可用性。
      - ``pyfcstm visualize --check --renderer local``
-     - 本地不可用时报告缺少 Java、PlantUML jar 或后端失败。
+     - 本地不可用时报告缺少 Java、PlantUML jar 或后端失败。结果取决于具体机器，所以文档检查不运行它。
      - 配置本地渲染器或切换到允许的远程渲染器。
 
+不依赖渲染器的探针运行结果如下。每条失败的命令后面都跟着它的退出状态：
+
+.. code-block:: console
+
+   $ pyfcstm inspect
+   Usage: pyfcstm inspect [OPTIONS]
+   Try 'pyfcstm inspect --help' for help.
+
+   Error: Missing option '-i' / '--input-code'.
+   $ echo $?
+   2
+   $ pyfcstm inspect -i traffic_light.fcstm --format xml
+   Usage: pyfcstm inspect [OPTIONS]
+   Try 'pyfcstm inspect --help' for help.
+
+   Error: Invalid value for '--format': 'xml' is not one of 'human', 'json', 'llm-json', 'llm-md'.
+   $ echo $?
+   2
+   $ pyfcstm visualize -i traffic_light.fcstm -o traffic_light.svg -t png --no-open
+   Output file suffix '.svg' does not match render type 'png'.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i traffic_light.fcstm -e "rewind"
+   ...
+   >>> rewind
+   ...
+   Unknown command: rewind. Type 'help' for available commands.
+   $ echo $?
+   1
 
 端到端验收卡片
 --------------
@@ -523,6 +669,16 @@ PlantUML 源码是文本，不是图片：
        permit: control; external supply: none
        motor: output; external supply: none
    ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+   ...
    $ pyfcstm bmc -i controller.fcstm -q region_motion.fbmcq --json -o bmc.json
 
 .. testcode::
@@ -576,7 +732,7 @@ PlantUML 源码是文本，不是图片：
 
 1. *simulate。* 位置按配置文本打印。第 1 个周期是 ``Controller.Idle``；``/Start`` 事件进入 ``Running``，两个区域按书写顺序初始化（``Motion: Off``）；下一个周期 ``Motion`` 打开；
    ``fault=1`` 在同一个周期里把它关掉。
-2. *inspect。* 摘要列出 ``regions: 2`` 及其顺序（``order 0`` 是 ``Safety``）和变量。``status: warning`` 来自这个小模型上的普通警告，不是区域造成的。
+2. *inspect。* 摘要列出 ``regions: 2`` 及其顺序（``order 0`` 是 ``Safety``）和变量。``status: warning`` 来自 ``diagnostics:`` 一行统计的四条普通警告（三条常量 ``during`` 赋值，一个没有出边的叶子状态），不是区域造成的。
 3. *bmc。* ``sat witness_found``、``replay ok: True``，帧的配置就是仿真走过的位置。每个满足性见证（witness）都先在仿真器上回放，再报告结论。
 4. *generate。* ``machine.py`` 与两份 README 文件存在。
 5. *plantuml。* 一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。

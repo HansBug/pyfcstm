@@ -526,16 +526,56 @@ JSON 中重点看：
 
 1. **在复合状态内部声明历史**\ （这个复合状态称为历史的所有者）。\ ``[H] -> Idle;``\ 声明浅历史，\ ``[H*] -> Wash.Fill;``\ 声明深历史。箭头右侧只是所有者还没有记录时的去向：浅历史的默认目标必须是直接子状态，深历史的默认目标可以是相对所有者书写的任意后代路径。
 2. **在所有者的父作用域里通过历史进入。**\ 把所有者写成目标并加上标记：\ ``Paused -> Program.[H] :: Shallow;``\ 。所有普通转换写法都接受历史目标：事件与守卫触发、组合触发、\ ``effect``\ 块、\ ``!State``\ 与 ``!*`` 强制转换、父状态的初始转换 ``[*] -> Program.[H*];``\ ，以及外部自环 ``!Program -> Program.[H*] :: Reenter;``\ 。
-3. **运行模型。**\ 演示脚本在 ``Agitate`` 暂停，然后分别通过两种历史各恢复一次：
+3. **运行模型。**\ 这个模型在 ``Agitate`` 暂停，然后分别通过两种历史各恢复一次：
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
-      :language: bash
-      :caption: ``history_washer.demo.sh``
+   .. code-block:: bash
 
-   由脚本生成的输出：
+      pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Deep; \
+      current"
+      pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Shallow; \
+      current"
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
-      :language: text
+   这两条命令读取本页目录之外的模型，所以不在文档检查里运行；下面的输出来自真实运行，每份只保留最后的 ``current`` 报告（深历史在前，浅历史在后）：
+
+   .. code-block:: text
+
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Agitate
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 2
+        fill_entries = 1
+        program_entries = 2
+        wash_initials = 1
+
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Fill
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 1
+        fill_entries = 2
+        program_entries = 2
+        wash_initials = 2
 
    深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。\ ``__forced_0``\ 是执行 ``!Program`` 这条强制转换用的隐藏变量，状态机停驻时它总是 0。
 4. **检查模型。**\ 检查按作者书写的模型进行判断，因此历史本身不会产生额外的诊断：

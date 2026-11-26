@@ -122,17 +122,12 @@ The diagram gives the same model shape visually:
    no generated states, which makes it a useful baseline before you study
    combo or forced expansion.
 
-Inspect it from the repository root:
+Run inspect (``...`` leaves out statistics and report parts that this step does not discuss):
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
-
-Expected short output:
-
-.. code-block:: text
-
-   [OK] FCSTM Inspect Report: docs/source/tutorials/dsl/first_thermostat.fcstm
+   $ pyfcstm inspect -i first_thermostat.fcstm --format human --color never
+   [OK] FCSTM Inspect Report: first_thermostat.fcstm
 
    Summary
      status: ok
@@ -140,8 +135,9 @@ Expected short output:
      states: 3 total / 2 leaf
      transitions: 3
      variables: 1
+   ...
      diagnostics: 0 errors / 0 warnings / 0 infos
-
+   ...
    No diagnostics.
 
 If this command reports errors, fix those before trying simulation or code
@@ -153,23 +149,20 @@ Step 5: run two cycles
 
 Run a short batch simulation:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i docs/source/tutorials/dsl/first_thermostat.fcstm --no-color -e "cycle; cycle; current"
-
-The important lines are:
-
-.. code-block:: text
-
+   $ pyfcstm simulate -i first_thermostat.fcstm --no-color -e "cycle; cycle; current"
+   ...
    Cycle: 1
    Current State: Thermostat.Idle
    Variables:
      temperature = 19
-
+   ...
    Cycle: 2
    Current State: Thermostat.Heating
    Variables:
      temperature = 21
+   ...
 
 The first cycle enters ``Idle`` and runs its ``during`` action. On the second
 cycle the ``Idle -> Heating`` guard is true, so the transition fires and
@@ -186,17 +179,15 @@ intentionally bad fixture fails:
    :language: fcstm
    :caption: Intentional parser error; expected excerpt: ``Unexpected token 'if'``.
 
-Run it as a normal input file:
+Run it as a normal input file. Inspect exits with a non-zero status; the useful part is the position of the syntax error and the unexpected token:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt --format human --color never
-
-The useful excerpt is:
-
-.. code-block:: text
-
-   Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ pyfcstm inspect -i event_guard_mixed_invalid.fcstm.txt --format human --color never
+   Failed to parse input DSL file event_guard_mixed_invalid.fcstm.txt: Found 1 errors during parsing:
+   Error 1: Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ echo $?
+   1
 
 Repair it by using combo syntax when both an event term and a guard term are
 part of the same trigger:
@@ -264,9 +255,13 @@ fixture each keep their own text through AST and Model export.
 
 Run the normal parser and inspect entry point against the fixture:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/documentation_blocks.fcstm --format human --color never
+   $ pyfcstm inspect -i documentation_blocks.fcstm --format human --color never
+   [WARN] FCSTM Inspect Report: documentation_blocks.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
 
 The canonical export is the round-trip authority. It normalizes each non-empty
 block to a multiline ``/*`` form, while preserving ``None``, an empty string,

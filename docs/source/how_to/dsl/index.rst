@@ -576,17 +576,57 @@ model.
    combo triggers, ``effect`` blocks, forced ``!State`` and ``!*`` transitions,
    a parent's initial ``[*] -> Program.[H*];`` and an external self transition
    ``!Program -> Program.[H*] :: Reenter;``.
-3. **Run the model.** The demo pauses in ``Agitate`` and resumes once through
+3. **Run the model.** The model pauses in ``Agitate`` and resumes once through
    each history:
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
-      :language: bash
-      :caption: ``history_washer.demo.sh``
+   .. code-block:: bash
 
-   Output, generated from the script:
+      pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Deep; \
+      current"
+      pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Shallow; \
+      current"
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
-      :language: text
+   These commands read a model outside this page's directory, so the documentation checks do not run them. The output below comes from a real run and keeps only the final ``current`` report of each (deep history first, shallow history second):
+
+   .. code-block:: text
+
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Agitate
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 2
+        fill_entries = 1
+        program_entries = 2
+        wash_initials = 1
+
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Fill
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 1
+        fill_entries = 2
+        program_entries = 2
+        wash_initials = 2
 
    Deep history resumes ``Wash.Agitate`` exactly: ``fill_entries`` stays 1 and
    ``wash_initials`` stays 1 because the initials on the restored path do not

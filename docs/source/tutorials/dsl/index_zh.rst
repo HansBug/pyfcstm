@@ -111,17 +111,12 @@
    DSL 中的 ``Idle -> Heating`` 和 ``Heating -> Idle``；初始边 ``[*] -> Idle`` 表示进入模型时先停在
    ``Idle``。这张图没有生成状态，适合作为后续理解组合转换和强制转换展开的基线。
 
-从仓库根目录运行检查命令：
+运行检查命令（``...`` 省掉与本步骤无关的统计和报告内容）：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
-
-关键输出应为：
-
-.. code-block:: text
-
-   [OK] FCSTM Inspect Report: docs/source/tutorials/dsl/first_thermostat.fcstm
+   $ pyfcstm inspect -i first_thermostat.fcstm --format human --color never
+   [OK] FCSTM Inspect Report: first_thermostat.fcstm
 
    Summary
      status: ok
@@ -129,8 +124,9 @@
      states: 3 total / 2 leaf
      transitions: 3
      variables: 1
+   ...
      diagnostics: 0 errors / 0 warnings / 0 infos
-
+   ...
    No diagnostics.
 
 如果这里出现错误，应先修复再进入仿真（simulation）或代码生成（code generation）。后文只称仿真和代码生成。警告和信息也值得阅读，
@@ -141,23 +137,20 @@
 
 运行批处理仿真（batch simulation）：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i docs/source/tutorials/dsl/first_thermostat.fcstm --no-color -e "cycle; cycle; current"
-
-关键输出为：
-
-.. code-block:: text
-
+   $ pyfcstm simulate -i first_thermostat.fcstm --no-color -e "cycle; cycle; current"
+   ...
    Cycle: 1
    Current State: Thermostat.Idle
    Variables:
      temperature = 19
-
+   ...
    Cycle: 2
    Current State: Thermostat.Heating
    Variables:
      temperature = 21
+   ...
 
 第一个周期进入 ``Idle`` 并执行 ``Idle.during``。第二个周期中 ``Idle -> Heating`` 的守卫条件为真，因此转换触发，
 然后执行 ``Heating.enter``。
@@ -171,17 +164,15 @@
    :language: fcstm
    :caption: 故意解析错误；预期摘录：``Unexpected token 'if'``\ 。
 
-把它当普通输入文件运行：
+把它当普通输入文件运行；检查命令以非零状态退出，关键信息是语法错误的位置和不期望的记号：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt --format human --color never
-
-关键摘录为：
-
-.. code-block:: text
-
-   Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ pyfcstm inspect -i event_guard_mixed_invalid.fcstm.txt --format human --color never
+   Failed to parse input DSL file event_guard_mixed_invalid.fcstm.txt: Found 1 errors during parsing:
+   Error 1: Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ echo $?
+   1
 
 当同一个触发器需要同时包含事件项和守卫项时，用组合语法修复：
 
@@ -244,9 +235,13 @@
 
 对该夹具运行普通解析和检查入口：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/documentation_blocks.fcstm --format human --color never
+   $ pyfcstm inspect -i documentation_blocks.fcstm --format human --color never
+   [WARN] FCSTM Inspect Report: documentation_blocks.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
 
 canonical export 是 round-trip 的权威形式。它会把每个非空文档规范化为
 多行 ``/*`` 块，同时保持 ``None``、空字符串和字面量 ``*`` 的区别。``//``

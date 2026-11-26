@@ -529,10 +529,15 @@ Known gaps in what regions look like, none of which changes what the model does:
 
 * A collapsed region keeps the size it had when expanded; the owner does not
   shrink around it.
-* The editor has no region-specific support beyond the preview: the outline and
-  the breadcrumbs treat a region like a state, its details are labelled
+* The editor supports regions in three ways besides the preview: it reports
+  ``E_REGION_STRUCTURE``, ``E_DUPLICATE_REGION`` and ``E_ACTIVE_QUERY_TARGET``,
+  it folds ``region`` blocks and it formats them. What it does not have is
+  region-specific handling in symbols (outline and breadcrumbs), hover,
+  references and rename: the code behind those features has no region case, and
+  the recorded behaviour is that a region shows up like a state, its details say
   ``composite``, renaming a state does not update ``active("...")`` strings that
-  name it, and hovering shows nothing.
+  name it, and hovering shows nothing. The recorded behaviour was not re-checked in
+  a running editor while writing this page.
 * A model that uses history is drawn as written by PlantUML and by the Python
   snapshot, and the editor preview still draws the expanded machine; see
   `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_.

@@ -134,8 +134,8 @@ braces, such as ``Controller.Running{Safety: Watching, Motion: Off}``.
 
 ``controller_swapped.fcstm`` has the same two regions, with ``Motion``
 written before ``Safety``. Nothing else differs. Run the same scenario, but
-raise the fault in two consecutive cycles. The first three cycles print the
-same values as before and are left out here:
+raise the fault in two consecutive cycles. Cycles 1 and 2 are left out; cycle 3
+is shown so that you can compare it with the same cycle above:
 
 .. code-block:: console
 
@@ -146,6 +146,18 @@ same values as before and are left out here:
    cycle --input fault=1 --input requested=1; \
    cycle --input fault=1 --input requested=1"
    ...
+   >>> cycle --input fault=0 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Controller.Running{Motion: On, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
    Cycle: 4
    Current State: Controller.Running{Motion: On, Safety: Watching}
    Variables:
@@ -192,18 +204,28 @@ long, so only its beginning is shown:
        Controller.Running.Safety: order 0 in Controller.Running; 1 states
        Controller.Running.Motion: order 1 in Controller.Running; 2 states
    ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+   ...
 
 The summary lists ``regions: 2`` with the order of each region in its owner
-(``order 0`` is the first one written). The rest of the report has four
-warnings about the constant ``during`` assignments of this example and a leaf
+(``order 0`` is the first one written). The ``diagnostics:`` line counts four
+warnings and no infos: three ``W_DURING_CONST_ASSIGN`` warnings about constant
+``during`` assignments and one ``W_LEAF_NO_OUTGOING_TRANSITION`` for a leaf
 without an outgoing transition. They are about this example's style, not about
 regions, and they do not affect the scenario.
 
-The swapped model gets one more diagnostic, at the end of its report:
+The swapped model has the same four warnings and one more diagnostic. Its
+``diagnostics:`` line counts one info, and the report ends with it:
 
 .. code-block:: console
 
    $ pyfcstm inspect -i controller_swapped.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 1 infos
    ...
    [INFO] I_REGION_BACKWARD_READ
      Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
@@ -414,15 +436,17 @@ stacked one above the other:
    by a dashed line.
 
 ``pyfcstm diagram`` writes the interactive viewer, a single self-contained HTML
-file that needs no network access:
+file that needs no network access. The documentation checks do not run this
+command, because writing the viewer needs the packaged viewer assets and
+opening it needs a browser:
 
 .. code-block:: bash
 
    pyfcstm diagram -i controller.fcstm -o viewer.html
 
 Open ``viewer.html`` in a browser. Check that the frame of ``Running`` holds
-the two regions side by side, titled ``region 1: Safety`` and
-``region 2: Motion`` and separated by a dashed line.
+the two regions, titled ``region 1: Safety`` and ``region 2: Motion`` and
+separated by a dashed line.
 
 8. Where to go next
 -------------------

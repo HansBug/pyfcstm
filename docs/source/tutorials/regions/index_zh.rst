@@ -105,7 +105,7 @@
 3. 对调区域顺序
 ---------------
 
-``controller_swapped.fcstm`` 有同样两个区域，只是 ``Motion`` 写在 ``Safety`` 前面，其余完全相同。运行同一场景，但让故障连续出现两个周期。前三个周期打印的值和上一次相同，这里省略：
+``controller_swapped.fcstm`` 有同样两个区域，只是 ``Motion`` 写在 ``Safety`` 前面，其余完全相同。运行同一场景，但让故障连续出现两个周期。周期 1 和 2 省略；周期 3 保留，方便和上面同一个周期比较：
 
 .. code-block:: console
 
@@ -116,6 +116,18 @@
    cycle --input fault=1 --input requested=1; \
    cycle --input fault=1 --input requested=1"
    ...
+   >>> cycle --input fault=0 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Controller.Running{Motion: On, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
    Cycle: 4
    Current State: Controller.Running{Motion: On, Safety: Watching}
    Variables:
@@ -156,14 +168,22 @@
        Controller.Running.Safety: order 0 in Controller.Running; 1 states
        Controller.Running.Motion: order 1 in Controller.Running; 2 states
    ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+   ...
 
-摘要里有 ``regions: 2``，并列出每个区域在拥有者里的顺序（\ ``order 0`` 是写在最前面的）。报告的其余部分有四条警告，分别针对这个示例里常量的 ``during`` 赋值和一个没有出边的叶子状态。它们说的是这个示例的写法，与区域无关，也不影响上面的场景。
+摘要里有 ``regions: 2``，并列出每个区域在拥有者里的顺序（\ ``order 0`` 是写在最前面的）。``diagnostics:`` 一行统计出四条警告、没有提示：三条 ``W_DURING_CONST_ASSIGN`` 针对常量的 ``during`` 赋值，一条 ``W_LEAF_NO_OUTGOING_TRANSITION`` 针对一个没有出边的叶子状态。它们说的是这个示例的写法，与区域无关，也不影响上面的场景。
 
-对调后的模型在报告末尾多一条诊断：
+对调后的模型有同样的四条警告，外加一条诊断：它的 ``diagnostics:`` 一行统计出一条提示，报告以它结尾：
 
 .. code-block:: console
 
    $ pyfcstm inspect -i controller_swapped.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 1 infos
    ...
    [INFO] I_REGION_BACKWARD_READ
      Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
@@ -341,13 +361,13 @@ It prints:
 
    ``Running`` 里 ``region 1: Safety`` 在 ``region 2: Motion`` 上方，中间用虚线隔开。
 
-``pyfcstm diagram`` 写出交互式查看器，它是一个不需要网络的自包含 HTML 文件：
+``pyfcstm diagram`` 写出交互式查看器，它是一个不需要网络的自包含 HTML 文件。文档检查不运行这条命令，因为写出查看器需要打包好的查看器资源，打开它还需要浏览器：
 
 .. code-block:: bash
 
    pyfcstm diagram -i controller.fcstm -o viewer.html
 
-在浏览器里打开 ``viewer.html``。检查 ``Running`` 的外框里并排放着两个区域，标题分别是 ``region 1: Safety`` 和 ``region 2: Motion``，中间用虚线隔开。
+在浏览器里打开 ``viewer.html``。检查 ``Running`` 的外框里有两个区域，标题分别是 ``region 1: Safety`` 和 ``region 2: Motion``，中间用虚线隔开。
 
 8. 下一步
 ---------

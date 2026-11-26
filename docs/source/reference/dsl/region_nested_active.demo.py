@@ -18,3 +18,17 @@ print('cycle %d  %s' % (runtime.cycle_count, runtime.configuration))
 for event in ['/Go', '/Trip', '/Stop', '/Resume']:
     runtime.cycle(event)
     print('cycle %d  %-8s %s' % (runtime.cycle_count, event, runtime.configuration))
+
+
+def trace(machine):
+    run = SimulationRuntime(machine)
+    rows = []
+    for event in [None, '/Go', '/Trip', '/Stop', '/Resume', '/Trip', '/Stop', '/Resume']:
+        run.cycle(event)
+        rows.append((str(run.configuration), dict(run.vars)))
+    return rows
+
+
+reloaded = load_state_machine_from_text(str(model.to_ast_node()))
+print('model loaded from its to_ast_node() text gives the same configurations and variables over %d cycles: %s' % (
+    len(trace(model)), trace(model) == trace(reloaded)))

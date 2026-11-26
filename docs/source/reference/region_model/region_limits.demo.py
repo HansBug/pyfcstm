@@ -130,6 +130,6 @@ print('after /Go the machine is in %s' % runtime.configuration)
 section('generated C: default capacities')
 controller = load_state_machine_from_text(open('../../tutorials/regions/controller.fcstm').read())
 flat_machine = load_state_machine_from_text('state Root { [*] -> A; state A; state B; A -> B :: Go; }')
-for label, machine in (('controller (6 states, 2 regions)', controller), ('flat machine (3 states)', flat_machine)):
+for label, machine in (('controller (7 states after lowering, 2 regions)', controller), ('flat machine (3 states)', flat_machine)):
     lines = [line for line in render_c_storage_macros(machine, 'M').splitlines() if line.startswith('#define M_')]
     print('%s: %s' % (label, '; '.join(line.replace('#define M_', '') for line in lines[:2])))

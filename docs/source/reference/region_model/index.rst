@@ -361,7 +361,9 @@ its issue and not re-run for this page.
      - ``..._ARENA_CAPACITY`` defaults to ``8`` for a model without regions,
        pseudo states and composite states, otherwise ``max(24, 12 * scopes)``, and
        ``..._TRAIL_CAPACITY`` to ``4`` or ``16 + 4 * scopes``, where scopes is the
-       number of states plus the number of regions. The values are an empirical
+       number of states after lowering (hidden gate states such as
+       ``__forced_gate_0`` included) plus the number of regions; the tutorial
+       controller has 7 states after lowering and 2 regions, so 9 scopes. The values are an empirical
        formula, not a proven bound; a cycle that needs more fails with
        ``Speculative search exceeded the capacity safety limit`` naming the macro.
        Raise the macro for every translation unit

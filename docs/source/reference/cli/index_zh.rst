@@ -724,6 +724,12 @@ JSON 写入标准输出，其余格式都需要 ``-o``；HTML 写到请求路径
      - 输出可移植 JSON，或 HTML、SVG、PNG、PDF。
      - 每个区域是其拥有者的子节点，带 ``region: true`` 和按书写顺序从 1 数起的 ``ordinal``。
      - ``0``。
+   * - ``visualize``
+     - 构建与 ``plantuml`` 相同的 PlantUML 源码并交给渲染器，所以含区域的模型与其他模型一样被画出来。
+     - ``plantuml`` 输出里的分区和 ``region N: Name`` 注释出现在渲染出的图里。本页不运行它：它需要 Java 与 PlantUML jar，或可访问的服务器。
+     - ``0``；没有可用渲染器时非零。
+
+``expand-svg`` 没有对应的行，因为它读取的是 SVG 文件而不是模型。
 
 ``generate`` 的拒绝：
 

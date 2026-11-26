@@ -321,7 +321,7 @@ Two rules differ between ``c`` / ``cpp`` and ``c_poll`` / ``cpp_poll``:
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
      - 8
-     - How many configurations and pending work items one decision of a cycle may examine. The default depends on the model.
+     - How many configurations and pending work items one decision of a cycle may examine. The default depends on the model: ``max(24, 12 * scopes)`` for ``region_controller.fcstm``, whose 7 states after lowering and 2 regions make 9 scopes.
    * - ``<PREFIX>_TRAIL_CAPACITY``
      - 52
      - 4

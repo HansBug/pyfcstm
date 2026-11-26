@@ -292,7 +292,7 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
      - 已记录
    * - 生成的 C 系运行时：容量
      - ``..._ARENA_CAPACITY`` 对没有区域、伪状态和复合状态的模型默认是 ``8``，否则是 ``max(24, 12 * scopes)``；``..._TRAIL_CAPACITY`` 是 ``4`` 或 ``16 + 4 * scopes``，
-       其中 scopes 是状态数加区域数。这些值是经验公式，不是证明过的上界；一个周期需要更多时失败，报 ``Speculative search exceeded the capacity safety limit`` 并点名对应的宏。
+       其中 scopes 是降级之后的状态数（含 ``__forced_gate_0`` 这类隐藏的门状态）加区域数；教程里的控制器降级后有 7 个状态和 2 个区域，所以是 9。这些值是经验公式，不是证明过的上界；一个周期需要更多时失败，报 ``Speculative search exceeded the capacity safety limit`` 并点名对应的宏。
        要在所有编译单元里调大该宏（\ `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_\ ）。
      - ``pyfcstm/render/c_kernel.py`` 的 ``_plan_capacity``；``test/render/test_c_kernel.py``。
      - :ref:`region-limits-run-zh`、:doc:`/reference/builtin_templates/index_zh`

@@ -1,6 +1,0 @@
---- start_all_done.fbmcq
-init state("Root.Job{A: [done], B: [done]}");
-check reach <= 1: true;
-$ pyfcstm bmc -i joint.fcstm -q start_all_done.fbmcq
-Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Root.Job'; a finished owner cannot be hot-started.
-exit=1

@@ -1,3 +1,0 @@
-max_group_reentries=16: built, 1 step(s)
-max_group_reentries=7: built, 1 step(s)
-max_group_reentries=6: BmcBuildError: state 'Root.Spin' re-enters its own group more than 6 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.

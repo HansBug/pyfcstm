@@ -147,7 +147,7 @@ model:
 - A model with regions has no ``current_state_id``, ``current_state_path`` or
   ``current_state_name``; using one is a compile error.
 - The generated text changes for models without regions; the behavior does not.
-- Code size, RAM and the first-cycle time of a generated machine change for
+- Code size, RAM and the time per cycle of a generated machine change for
   models without regions as well, because they now run on the same kernel. The
   measured size and speed ratios against the previous template, with their
   method, are in the section *Generated C runtime* of

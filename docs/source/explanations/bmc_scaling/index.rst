@@ -416,9 +416,9 @@ The per-context cost differs between the two campaigns. For :math:`N=100`,
 :math:`k=5`, the original campaign built in 19.3 to 19.6 s at :math:`V=4`, 76.4
 to 78.1 s at :math:`V=16` and 87.9 to 88.8 s at :math:`V=64`. That is about 6 ms
 per context at :math:`V=4` and 16, but 1.7 ms at :math:`V=64`, so the original
-scan flattens where the retest stays linear, and the original is about four
-times slower than the retest at :math:`V=4` and :math:`V=16` and 1.4 times at
-:math:`V=64`. The original ran 56 processes at once and had no warm-up; whether
+scan flattens where the retest stays linear, and the original is about 4 to
+4.6 times slower than the retest at :math:`V=4` and :math:`V=16` and about 1.3 to
+1.4 times at :math:`V=64`. The original ran 56 processes at once and had no warm-up; whether
 either causes the gap was not tested, and the gap is not explained. The retest
 figures match :eq:`bmc-scaling-contexts`; treat the original figures as the
 pessimistic case.

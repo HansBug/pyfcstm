@@ -62,7 +62,7 @@ C 系运行时（``c``、``c_poll``、``cpp``、``cpp_poll``）现在运行在�
 - 新增 ``hot_start_at``、``hot_start_at_with_parameters`` 和 ``get_configuration``，配置值可以查询、校验，并格式化成与模拟器相同的文本；文本解析可以用 ``PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT`` 关掉。C++ 包装增加了对应成员以及 ``operator==`` / ``operator!=``。
 - 含区域的模型没有 ``current_state_id``、``current_state_path`` 和 ``current_state_name``，使用它们是编译错误。
 - 不含区域的模型，生成文本会变，行为不变。
-- 不含区域的模型也运行在同一个内核上，所以生成机器的代码体积、内存与第一个周期的耗时同样会变化。相对旧模板的体积与速度比值及其测量方法，见 :doc:`/explanations/region_performance/index_zh` 的“生成的 C 运行时”一节；剩余的代价记录在 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
+- 不含区域的模型也运行在同一个内核上，所以生成机器的代码体积、内存与每个周期的耗时同样会变化。相对旧模板的体积与速度比值及其测量方法，见 :doc:`/explanations/region_performance/index_zh` 的“生成的 C 运行时”一节；剩余的代价记录在 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
 
 区域的画法
 ~~~~~~~~~~

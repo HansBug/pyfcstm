@@ -123,6 +123,8 @@ offline replay contract.
 | `drawbridge_plc_sequence` | drawbridge PLC control | EFSM | T0 | no | Covers ship detection, road barriers, bridge actuator sequence, and traffic signal restoration. |
 | `vtol_mission_supervision` | VTOL UAV mission manager | HSM | T0 | yes | Covers hierarchical `Mission Mode` / `Command Mode`, supervisory commands, and global exits. |
 | `landing_gear_sequence_boundary` | aircraft landing gear | EFSM | T1 boundary | no | Covers interruptible extend/retract sequences, pilot indicators, timing guards, and failure-light thresholds. |
+| `press_cell_interlock` | stamping press cell | EFSM | T0 | no | Covers a supervisor decision that the press logic consumes in the same cycle, a periodic counter duty, and a stop command that interrupts every running duty. |
+| `dishwasher_program_completion` | dishwasher program | EFSM | T0 | no | Covers two sequences that finish independently, completion only after both have finished with an immediate hand-over, and an abort that discards both. |
 
 The fixed minimum live smoke set is:
 

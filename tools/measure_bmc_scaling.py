@@ -21,6 +21,18 @@ Sub-commands:
     one process at a time, after a warm-up compile of a two-state model inside
     that process.  Small points are repeated and the median is recorded.
 
+``import-original``
+    Slim the raw records of the earlier, concurrent measurement campaign down
+    to the fields the page uses and write ``original_measurements.jsonl``.
+
+``range-table``
+    Print, per dimension, the largest measured size that finished within 10, 60
+    and 300 seconds, taken from the original measurements.
+
+``compare-retest``
+    Print the ratio of every retest point to the original measurement of the
+    same configuration.
+
 ``fit``
     Recompute the closed forms and the power-law fits from the data files and
     print them, so that a number in the page can be traced to its derivation.
@@ -195,7 +207,9 @@ def plain_depth_model(depth, width=2):
             else:
                 lines.append(pad + "state C%d_%d;" % (index, w))
         for w in range(width - 1):
-            lines.append(pad + "C%d_%d -> C%d_%d : if [d == 0];" % (index, w, index, w + 1))
+            lines.append(
+                pad + "C%d_%d -> C%d_%d : if [d == 0];" % (index, w, index, w + 1)
+            )
         return lines
 
     return "\n".join(["input int d;", "state Root {"] + level(1, 1) + ["}"])
@@ -377,9 +391,7 @@ def measure_one(cfg):
         t0 = time.perf_counter()
         status = original_check(self, *args, **kwargs)
         stats = {
-            key: val
-            for key, val in self.statistics()
-            if isinstance(val, (int, float))
+            key: val for key, val in self.statistics() if isinstance(val, (int, float))
         }
         checks.append(
             {"status": str(status), "t": time.perf_counter() - t0, "stats": stats}
@@ -487,7 +499,12 @@ def environment():
 
 def _run_once(cfg, timeout_s):
     """Run one configuration in a fresh interpreter and return its record."""
-    command = [sys.executable, str(Path(__file__).resolve()), "measure", json.dumps(cfg)]
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "measure",
+        json.dumps(cfg),
+    ]
     try:
         completed = subprocess.run(
             command,
@@ -500,7 +517,9 @@ def _run_once(cfg, timeout_s):
     except subprocess.TimeoutExpired:
         # TimeoutExpired: the whole process exceeded the wall-clock cap.
         return {"cfg": cfg, "error": "timeout", "cap_s": timeout_s}
-    lines = [line for line in completed.stdout.splitlines() if line.startswith("RESULT ")]
+    lines = [
+        line for line in completed.stdout.splitlines() if line.startswith("RESULT ")
+    ]
     if not lines:
         return {"cfg": cfg, "error": (completed.stderr or "")[-400:].strip()}
     return json.loads(lines[-1][len("RESULT ") :])
@@ -588,13 +607,28 @@ def plan_unit_cost():
     ]
 
 
+def plan_unit_cost_time():
+    """Unprofiled times of the points whose call counts ``unit-cost`` records."""
+    return [
+        _cfg("regions", {"R": 96, "S": 4}, 3),
+        _cfg("regions", {"R": 256, "S": 4}, 3),
+    ]
+
+
 def plan_variables():
     """Variable-write cost: contexts, counts and time on flat machines."""
     cfgs = []
     for mode in ("time", "count"):
         for n, v, k in ((100, 0, 5), (100, 4, 5), (100, 16, 5), (100, 64, 5)):
             cfgs.append(_cfg("flat", {"N": n, "T": 2, "V": v}, k, mode=mode))
-        for n, v, k in ((40, 4, 2), (40, 4, 5), (40, 4, 10), (80, 4, 5), (40, 8, 5), (40, 16, 5)):
+        for n, v, k in (
+            (40, 4, 2),
+            (40, 4, 5),
+            (40, 4, 10),
+            (80, 4, 5),
+            (40, 8, 5),
+            (40, 16, 5),
+        ):
             cfgs.append(_cfg("flat", {"N": n, "T": 2, "V": v}, k, mode=mode))
     cfgs.append(_cfg("flat", {"N": 100, "T": 2, "V": 0}, 5, mode="time"))
     return cfgs
@@ -603,18 +637,41 @@ def plan_variables():
 def plan_timing():
     """Sweeps over states, transitions, variables, regions, bound and nesting."""
     cfgs = []
-    cfgs += [_cfg("flat", {"N": n, "T": 2}, 5) for n in (100, 200, 400, 800, 1600, 3200, 6400, 12800)]
+    cfgs += [
+        _cfg("flat", {"N": n, "T": 2}, 5)
+        for n in (100, 200, 400, 800, 1600, 3200, 6400, 12800)
+    ]
     cfgs += [_cfg("flat", {"N": 400, "T": 2}, k) for k in (2, 4, 8, 16, 32, 64, 128)]
     cfgs += [_cfg("flat", {"N": 1600, "T": 2}, 20)]
-    cfgs += [_cfg("flat", {"N": 100, "T": t}, 5) for t in (1, 2, 4, 8, 16, 32, 64, 128, 256)]
-    cfgs += [_cfg("flat", {"N": 50, "T": 2, "V": v}, 5) for v in (1, 2, 4, 8, 16, 32, 64, 128, 256)]
-    cfgs += [_cfg("regions", {"R": r, "S": 4}, 3) for r in (8, 16, 32, 64, 96, 128, 256, 512, 768, 1024)]
-    cfgs += [_cfg("regions", {"R": 4, "S": s}, 3) for s in (4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048)]
+    cfgs += [
+        _cfg("flat", {"N": 100, "T": t}, 5) for t in (1, 2, 4, 8, 16, 32, 64, 128, 256)
+    ]
+    cfgs += [
+        _cfg("flat", {"N": 50, "T": 2, "V": v}, 5)
+        for v in (1, 2, 4, 8, 16, 32, 64, 128, 256)
+    ]
+    cfgs += [
+        _cfg("regions", {"R": r, "S": 4}, 3)
+        for r in (8, 16, 32, 64, 96, 128, 256, 512, 768, 1024)
+    ]
+    cfgs += [
+        _cfg("regions", {"R": 4, "S": s}, 3)
+        for s in (4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048)
+    ]
     cfgs += [_cfg("regions", {"R": 4, "S": 40}, k) for k in (2, 4, 8, 16, 32, 64)]
     cfgs += [_cfg("regions", {"R": 4, "S": 200}, k) for k in (16, 32, 48)]
-    cfgs += [_cfg("regions", {"R": 4, "S": 8, "T": t}, 3) for t in (1, 2, 4, 8, 16, 32, 64, 128, 256)]
-    cfgs += [_cfg("calls", {"R": r, "S": 4, "filter": True}, 3) for r in (8, 16, 32, 64, 96, 128, 192)]
-    cfgs += [_cfg("calls", {"R": r, "S": 4, "filter": False}, 3) for r in (8, 16, 32, 64, 128, 256, 512, 1024)]
+    cfgs += [
+        _cfg("regions", {"R": 4, "S": 8, "T": t}, 3)
+        for t in (1, 2, 4, 8, 16, 32, 64, 128, 256)
+    ]
+    cfgs += [
+        _cfg("calls", {"R": r, "S": 4, "filter": True}, 3)
+        for r in (8, 16, 32, 64, 96, 128, 192)
+    ]
+    cfgs += [
+        _cfg("calls", {"R": r, "S": 4, "filter": False}, 3)
+        for r in (8, 16, 32, 64, 128, 256, 512, 1024)
+    ]
     cfgs += [_cfg("nested", {"D": d}, 3) for d in (2, 4, 8, 16, 32, 48, 64, 96)]
     cfgs += [_cfg("plain_depth", {"D": d}, 3) for d in (8, 32, 62, 64)]
     return cfgs
@@ -624,9 +681,21 @@ def plan_pigeonhole():
     """Mutually exclusive regions: unsatisfiable family and satisfiable control."""
     cfgs = []
     for n in range(3, 13):
-        cfgs.append(_cfg("pigeonhole", {"holes": n, "pigeons": n + 1}, 2, "unsat", solve_timeout_s=280))
+        cfgs.append(
+            _cfg(
+                "pigeonhole",
+                {"holes": n, "pigeons": n + 1},
+                2,
+                "unsat",
+                solve_timeout_s=280,
+            )
+        )
     for n in range(3, 13):
-        cfgs.append(_cfg("pigeonhole", {"holes": n, "pigeons": n}, 2, "sat", solve_timeout_s=280))
+        cfgs.append(
+            _cfg(
+                "pigeonhole", {"holes": n, "pigeons": n}, 2, "sat", solve_timeout_s=280
+            )
+        )
     return cfgs
 
 
@@ -634,6 +703,7 @@ _PLANS = {
     "formula-grid": (plan_formula_grid, 1, 120),
     "solve-law": (plan_solve_law, 1, 320),
     "unit-cost": (plan_unit_cost, 1, 1800),
+    "unit-cost-time": (plan_unit_cost_time, 3, 420),
     "variables": (plan_variables, 3, 600),
     "timing": (plan_timing, 3, 420),
     "pigeonhole": (plan_pigeonhole, 1, 420),
@@ -792,21 +862,33 @@ def command_fit(args):
     grid = load_records(data, "formula_grid.jsonl")
     timing_grid = _select(grid, "flat", "time", where=lambda r: _param(r, "V") is None)
     names = ["N", "T", "k"]
-    getters = [lambda r: _param(r, "N"), lambda r: _param(r, "T", 2), lambda r: r["cfg"]["k"]]
+    getters = [
+        lambda r: _param(r, "N"),
+        lambda r: _param(r, "T", 2),
+        lambda r: r["cfg"]["k"],
+    ]
     print("== flat, no written variables (%d grid points)" % len(timing_grid))
     for label, value, degrees in (
         ("DAG nodes", lambda r: r["nodes"], [1, 1, 1]),
-        ("boolean variables", lambda r: r["checks"][0]["stats"].get("mk bool var", 0), [1, 1, 2]),
+        (
+            "boolean variables",
+            lambda r: r["checks"][0]["stats"].get("mk bool var", 0),
+            [1, 1, 2],
+        ),
     ):
         ex, co, res = _lstsq(timing_grid, getters, value, degrees)
-        print("%s: max|residual|=%.3g\n    %s" % (label, res, _format_poly(names, ex, co)))
+        print(
+            "%s: max|residual|=%.3g\n    %s" % (label, res, _format_poly(names, ex, co))
+        )
     counts = _select(grid, "flat", "count", where=lambda r: _param(r, "V") is None)
     ex, co, res = _lstsq(counts, getters, lambda r: r["z3_calls"], [1, 2, 2])
     print(
         "z3 calls: max|residual|=%.3g rel=%.2g\n    %s"
         % (res, res / max(r["z3_calls"] for r in counts), _format_poly(names, ex, co))
     )
-    variables = _select(grid, "flat", "time", where=lambda r: _param(r, "V") is not None)
+    variables = _select(
+        grid, "flat", "time", where=lambda r: _param(r, "V") is not None
+    )
     ex, co, res = _lstsq(
         variables,
         [lambda r: _param(r, "N"), lambda r: _param(r, "V"), lambda r: r["cfg"]["k"]],
@@ -814,56 +896,382 @@ def command_fit(args):
         [1, 1, 1],
     )
     print("== flat with V written variables (%d points)" % len(variables))
-    print("DAG nodes: max|residual|=%.3g\n    %s" % (res, _format_poly(["N", "V", "k"], ex, co)))
+    print(
+        "DAG nodes: max|residual|=%.3g\n    %s"
+        % (res, _format_poly(["N", "V", "k"], ex, co))
+    )
     region_names = ["R", "S", "k"]
-    region_getters = [lambda r: _param(r, "R"), lambda r: _param(r, "S"), lambda r: r["cfg"]["k"]]
+    region_getters = [
+        lambda r: _param(r, "R"),
+        lambda r: _param(r, "S"),
+        lambda r: r["cfg"]["k"],
+    ]
     regions = _select(grid, "regions", "time")
     print("== regions (%d points)" % len(regions))
     for label, value, degrees in (
         ("DAG nodes", lambda r: r["nodes"], [1, 1, 1]),
-        ("boolean variables", lambda r: r["checks"][0]["stats"].get("mk bool var", 0), [1, 1, 1]),
+        (
+            "boolean variables",
+            lambda r: r["checks"][0]["stats"].get("mk bool var", 0),
+            [1, 1, 1],
+        ),
     ):
         ex, co, res = _lstsq(regions, region_getters, value, degrees)
-        print("%s: max|residual|=%.3g\n    %s" % (label, res, _format_poly(region_names, ex, co)))
+        print(
+            "%s: max|residual|=%.3g\n    %s"
+            % (label, res, _format_poly(region_names, ex, co))
+        )
     region_counts = _select(grid, "regions", "count")
-    ex, co, res = _lstsq(region_counts, region_getters, lambda r: r["z3_calls"], [2, 1, 1])
+    ex, co, res = _lstsq(
+        region_counts, region_getters, lambda r: r["z3_calls"], [2, 1, 1]
+    )
     print(
         "z3 calls: max|residual|=%.3g rel=%.2g\n    %s"
-        % (res, res / max(r["z3_calls"] for r in region_counts), _format_poly(region_names, ex, co))
+        % (
+            res,
+            res / max(r["z3_calls"] for r in region_counts),
+            _format_poly(region_names, ex, co),
+        )
     )
     return 0
 
 
+def nodes_regions(r, s, k):
+    """Fitted node count of the region family (non-integer coefficients)."""
+    return 23 * r * s * k - 18 * r * s + 22.29 * r * k + 2.904 * r + 46.17 * k + 17.61
+
+
+def calls_flat(n, k):
+    """Fitted z3 call count of the formula construction, two transitions per state."""
+    return 1680 * n * k - 1578 * n + 1698 * k + 449
+
+
+def calls_regions(r, s, k):
+    """Fitted z3 call count of the formula construction of the region family."""
+    return (
+        r * s * (1754 * k - 1418)
+        + r * (976 * k + 440)
+        + r * r * (151 * k - 96)
+        + 2561 * k
+        + 439
+    )
+
+
+def _median(values):
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
 def command_check(args):
-    """Check the closed forms against the committed data and exit non-zero on a miss."""
+    """Check the closed forms against the committed data and exit non-zero on a miss.
+
+    A report is printed first so that every number the page quotes can be read
+    from this output.
+    """
+    import math
+
     data = Path(args.data)
     failures = []
+    report = []
     grid = load_records(data, "formula_grid.jsonl")
-    flat = _select(grid, "flat", "time", where=lambda r: _param(r, "V") is None and _param(r, "T", 2) == 2)
-    for r in flat:
+    timing = load_records(data, "timing.jsonl")
+    original = load_records(data, "original_measurements.jsonl")
+    large = [r for r in timing + original if "error" not in r and r.get("nodes")]
+
+    def no_vars(r):
+        return _param(r, "V") is None
+
+    # Region-free node counts: exact on the grid and on every large point.
+    exact = _select(
+        grid, "flat", "time", where=lambda r: no_vars(r) and _param(r, "T", 2) == 2
+    )
+    for r in exact:
         got, want = r["nodes"], nodes_flat(_param(r, "N"), r["cfg"]["k"])
         if got != want:
-            failures.append("flat nodes %s k=%s: %d != %d" % (r["cfg"]["params"], r["cfg"]["k"], got, want))
-    for r in _select(grid, "flat", "time", where=lambda r: _param(r, "V") is not None):
+            failures.append(
+                "flat nodes %s k=%s: %d != %d"
+                % (r["cfg"]["params"], r["cfg"]["k"], got, want)
+            )
+    report.append(
+        "flat nodes, grid: %d points, all equal to the closed form" % len(exact)
+    )
+    far = [
+        r
+        for r in large
+        if r["cfg"]["family"] == "flat"
+        and no_vars(r)
+        and _param(r, "T", 2) == 2
+        and r["cfg"]["kind"] == "unsat"
+        and r["cfg"]["k"] >= 2
+    ]
+    bad = [r for r in far if r["nodes"] != nodes_flat(_param(r, "N"), r["cfg"]["k"])]
+    for r in bad:
+        failures.append(
+            "flat out-of-sample %s k=%s" % (r["cfg"]["params"], r["cfg"]["k"])
+        )
+    report.append(
+        "flat nodes, out of sample: %d points up to N=%d, k=%d, %d differ"
+        % (
+            len(far),
+            max(_param(r, "N") for r in far),
+            max(r["cfg"]["k"] for r in far),
+            len(bad),
+        )
+    )
+    with_vars = _select(grid, "flat", "time", where=lambda r: not no_vars(r))
+    for r in with_vars:
         got = r["nodes"]
         want = nodes_flat_vars(_param(r, "N"), r["cfg"]["k"], _param(r, "V"))
         if got != want:
-            failures.append("flat+V nodes %s k=%s: %d != %d" % (r["cfg"]["params"], r["cfg"]["k"], got, want))
-    for r in _select(grid, "flat", "time", where=lambda r: _param(r, "V") is None):
+            failures.append(
+                "flat+V nodes %s k=%s: %d != %d"
+                % (r["cfg"]["params"], r["cfg"]["k"], got, want)
+            )
+    report.append(
+        "flat nodes with written variables, grid: %d points, all equal" % len(with_vars)
+    )
+    booleans = _select(grid, "flat", "time", where=no_vars)
+    for r in booleans:
         got = r["checks"][0]["stats"].get("mk bool var", 0)
         want = bool_vars(_param(r, "N"), _param(r, "T", 2), r["cfg"]["k"])
         if got != want:
-            failures.append("bool vars %s k=%s: %d != %d" % (r["cfg"]["params"], r["cfg"]["k"], got, want))
-    for r in _select(grid, "flat", "count", where=lambda r: _param(r, "V") is not None):
+            failures.append(
+                "bool vars %s k=%s: %d != %d"
+                % (r["cfg"]["params"], r["cfg"]["k"], got, want)
+            )
+    report.append(
+        "z3 boolean variables, grid: %d points (T in 1,2,4), all equal" % len(booleans)
+    )
+
+    # A power-law fit of the exact linear closed form reproduces a super-linear k.
+    import numpy as np
+
+    if far:
+        design = np.array(
+            [[1, math.log(_param(r, "N")), math.log(r["cfg"]["k"])] for r in far]
+        )
+        target = np.log([r["nodes"] for r in far])
+        coef = np.linalg.lstsq(design, target, rcond=None)[0]
+        report.append(
+            "power-law fit of the %d out-of-sample flat points: nodes = %.1f * N^%.2f * k^%.2f"
+            % (len(far), math.exp(coef[0]), coef[1], coef[2])
+        )
+
+    # Region family: fitted coefficients, so a tolerance rather than equality.
+    regions = _select(grid, "regions", "time")
+    residual = max(
+        abs(r["nodes"] - nodes_regions(_param(r, "R"), _param(r, "S"), r["cfg"]["k"]))
+        for r in regions
+    )
+    report.append(
+        "region nodes, grid: %d points, max |residual| = %.1f nodes"
+        % (len(regions), residual)
+    )
+    if residual > 12:
+        failures.append("region node residual %.1f > 12" % residual)
+    far = [
+        r
+        for r in large
+        if r["cfg"]["family"] == "regions"
+        and r["cfg"]["kind"] == "unsat"
+        and not _param(r, "calls")
+        and _param(r, "T", 2) == 2
+    ]
+    errors = [
+        abs(nodes_regions(_param(r, "R"), _param(r, "S"), r["cfg"]["k"]) - r["nodes"])
+        / r["nodes"]
+        for r in far
+    ]
+    report.append(
+        "region nodes, out of sample: %d points up to R=%d, S=%d, k=%d; median error %.2f%%, max %.2f%%"
+        % (
+            len(far),
+            max(_param(r, "R") for r in far),
+            max(_param(r, "S") for r in far),
+            max(r["cfg"]["k"] for r in far),
+            100 * _median(errors),
+            100 * max(errors),
+        )
+    )
+    if max(errors) > 0.015:
+        failures.append(
+            "region node extrapolation error %.2f%% > 1.5%%" % (100 * max(errors))
+        )
+
+    # Variable writes: contexts are exact, W = N - 1 writing transitions.
+    contexts = _select(grid, "flat", "count", where=lambda r: not no_vars(r))
+    contexts += _select(
+        load_records(data, "variables.jsonl"),
+        "flat",
+        "count",
+        where=lambda r: not no_vars(r),
+    )
+    for r in contexts:
         n, v, k = _param(r, "N"), _param(r, "V"), r["cfg"]["k"]
         want = 2 * (n - 1) * v * (k - 1)
         if r["z3_contexts"] != want:
-            failures.append("contexts N=%d V=%d k=%d: %d != %d" % (n, v, k, r["z3_contexts"], want))
-    timing = load_records(data, "timing.jsonl")
-    for r in _select(timing, "flat", "time", where=lambda r: _param(r, "V") is None and _param(r, "T", 2) == 2):
-        got, want = r["nodes"], nodes_flat(_param(r, "N"), r["cfg"]["k"])
-        if abs(got - want) > 0:
-            failures.append("flat out-of-sample %s k=%s: %d != %d" % (r["cfg"]["params"], r["cfg"]["k"], got, want))
+            failures.append(
+                "contexts N=%d V=%d k=%d: %d != %d" % (n, v, k, r["z3_contexts"], want)
+            )
+    report.append("contexts 2*W*V*(k-1), W=N-1: %d points, all equal" % len(contexts))
+
+    # Call counts: fitted, so relative tolerance.
+    flat_counts = _select(
+        grid, "flat", "count", where=lambda r: no_vars(r) and _param(r, "T", 2) == 2
+    )
+    rel = [
+        abs(calls_flat(_param(r, "N"), r["cfg"]["k"]) - r["z3_calls"]) / r["z3_calls"]
+        for r in flat_counts
+    ]
+    report.append(
+        "flat z3 calls, grid: %d points, max relative error %.2f%%"
+        % (len(rel), 100 * max(rel))
+    )
+    if max(rel) > 0.01:
+        failures.append("flat call count error %.2f%% > 1%%" % (100 * max(rel)))
+    region_counts = _select(grid, "regions", "count")
+    rel = [
+        abs(
+            calls_regions(_param(r, "R"), _param(r, "S"), r["cfg"]["k"]) - r["z3_calls"]
+        )
+        / r["z3_calls"]
+        for r in region_counts
+    ]
+    report.append(
+        "region z3 calls, grid: %d points, max relative error %.2f%%"
+        % (len(rel), 100 * max(rel))
+    )
+    if max(rel) > 0.01:
+        failures.append("region call count error %.2f%% > 1%%" % (100 * max(rel)))
+    for r in load_records(data, "unit_cost.jsonl"):
+        p = r["cfg"]["params"]
+        if r["cfg"]["family"] == "flat":
+            want = calls_flat(p["N"], r["cfg"]["k"])
+        else:
+            want = calls_regions(p["R"], p["S"], r["cfg"]["k"])
+        error = (want - r["z3_calls"]) / r["z3_calls"]
+        report.append(
+            "z3 calls %s k=%d: measured %d, closed form %.0f (%+.1f%%)"
+            % (p, r["cfg"]["k"], r["z3_calls"], want, 100 * error)
+        )
+        if abs(error) > 0.05:
+            failures.append(
+                "call count extrapolation error %.1f%% at %s" % (100 * error, p)
+            )
+
+    # Solve time against propagations.
+    xs, ys = [], []
+    for r in load_records(data, "solve_law.jsonl"):
+        check = r["checks"][0]
+        prop = check["stats"].get("propagations", 0)
+        if prop > 2e4:
+            xs.append(prop)
+            ys.append(check["t"])
+    lx, ly = np.log(xs), np.log(ys)
+    slope, intercept = np.polyfit(lx, ly, 1)
+    fitted = slope * lx + intercept
+    r2 = 1 - ((ly - fitted) ** 2).sum() / ((ly - ly.mean()) ** 2).sum()
+    ns = sorted(y / x * 1e9 for x, y in zip(xs, ys))
+    report.append(
+        "solve time vs propagations (>2e4): %d checks, exponent %.2f, R^2 %.2f, ns per propagation p10 %.0f median %.0f p90 %.0f"
+        % (len(xs), slope, r2, ns[len(ns) // 10], _median(ns), ns[(len(ns) * 9) // 10])
+    )
+
+    # Mutually exclusive regions.
+    php = [
+        r
+        for r in load_records(data, "pigeonhole.jsonl")
+        if r["cfg"]["kind"] == "unsat" and r["status"] == "unsat"
+    ]
+    php.sort(key=lambda r: r["cfg"]["params"]["pigeons"])
+    ratios = []
+    for before, after in zip(php, php[1:]):
+        ratios.append(
+            (
+                after["cfg"]["params"]["pigeons"],
+                after["checks"][0]["stats"]["conflicts"]
+                / before["checks"][0]["stats"]["conflicts"],
+            )
+        )
+    report.append(
+        "pigeonhole conflict ratio per added region: "
+        + ", ".join("%d: x%.1f" % x for x in ratios)
+    )
+    tail = [x for n, x in ratios if n >= 7]
+    report.append(
+        "pigeonhole conflict ratio from 7 regions on: geometric mean x%.1f"
+        % math.exp(sum(math.log(x) for x in tail) / len(tail))
+    )
+
+    # Cost of one throw-away context, from the variable-write time records.
+    variables = [r for r in load_records(data, "variables.jsonl") if "error" not in r]
+    counts = {
+        (_param(r, "N"), _param(r, "V"), r["cfg"]["k"]): r["z3_contexts"]
+        for r in variables
+        if r["cfg"]["mode"] == "count"
+    }
+    base = {
+        (_param(r, "N"), r["cfg"]["k"]): r["t_compile"]
+        for r in variables
+        if r["cfg"]["mode"] == "time" and _param(r, "V") == 0
+    }
+    for r in variables:
+        if r["cfg"]["mode"] != "time" or not _param(r, "V"):
+            continue
+        key = (_param(r, "N"), _param(r, "V"), r["cfg"]["k"])
+        if key in counts and (key[0], key[2]) in base:
+            extra = r["t_compile"] - base[(key[0], key[2])]
+            report.append(
+                "context cost N=%d V=%d k=%d: %d contexts, build %.1f s (%.1f s without variables), %.2f ms per context"
+                % (
+                    key
+                    + (
+                        counts[key],
+                        r["t_compile"],
+                        base[(key[0], key[2])],
+                        1000 * extra / counts[key],
+                    )
+                )
+            )
+    # Seconds per counted z3 call: counts from unit_cost.jsonl, unprofiled time
+    # from unit_cost_time.jsonl (regions) and timing.jsonl (ring).
+    seconds = {}
+    for r in load_records(data, "unit_cost_time.jsonl") + timing:
+        if "error" not in r and r.get("t_compile"):
+            seconds[_config_key(r)] = r["t_compile"]
+    for r in load_records(data, "unit_cost.jsonl"):
+        key = _config_key(r)
+        if key in seconds:
+            report.append(
+                "build seconds per z3 call %s k=%d: %.2f s for %d calls, %.2f microseconds per call"
+                % (
+                    r["cfg"]["params"],
+                    r["cfg"]["k"],
+                    seconds[key],
+                    r["z3_calls"],
+                    1e6 * seconds[key] / r["z3_calls"],
+                )
+            )
+    for family in ("flat", "regions"):
+        shares = [
+            r["t_compile"] / (r["t_compile"] + r["t_solve"])
+            for r in original
+            if r["cfg"]["family"] == family
+            and r["status"] in ("sat", "unsat")
+            and r["t_compile"] + r["t_solve"] > 1.0
+        ]
+        report.append(
+            "share of build time, original points above 1 s, %s: %d points, median %.0f%%, range %.0f%% to %.0f%%"
+            % (
+                family,
+                len(shares),
+                100 * _median(shares),
+                100 * min(shares),
+                100 * max(shares),
+            )
+        )
+    print("\n".join(report))
     if failures:
         print("closed forms disagree with the data:")
         print("\n".join(failures))
@@ -872,30 +1280,250 @@ def command_check(args):
     return 0
 
 
+# --------------------------------------------------------------------------
+# Original measurement campaign: import, range table, retest comparison
+# --------------------------------------------------------------------------
+
+ORIGINAL_COMMIT = "560b7dc4"
+ORIGINAL_NOTE = "56 concurrent processes, Python 3.11.15, z3 4.15.4"
+ORIGINAL_MACHINE = "Intel Xeon Platinum 8581C, Linux"
+
+
+def command_import_original(args):
+    """Write the slim original measurement file from the raw ``results*.jsonl``."""
+    out = []
+    for name in ("results1.jsonl", "results2.jsonl", "results3.jsonl"):
+        with open(Path(args.source) / name, encoding="utf-8") as handle:
+            for line in handle:
+                raw = json.loads(line)
+                if raw.get("status") not in ("sat", "unsat", "timeout"):
+                    continue
+                cfg = dict(raw["cfg"])
+                cfg.pop("solve_timeout_s", None)
+                cfg["mode"] = "time"
+                rec = {"cfg": cfg, "status": raw["status"], "reps": raw.get("reps")}
+                for key in ("t_compile", "t_solve", "nodes", "rss_mb"):
+                    if raw.get(key) is not None:
+                        rec[key] = raw[key]
+                rec.update(
+                    commit=ORIGINAL_COMMIT,
+                    machine=ORIGINAL_MACHINE,
+                    conditions=ORIGINAL_NOTE,
+                    source="original",
+                )
+                out.append(rec)
+    with open(args.output, "w", encoding="utf-8") as handle:
+        for rec in out:
+            handle.write(json.dumps(rec, sort_keys=True) + "\n")
+    print("wrote %d records to %s" % (len(out), args.output))
+    return 0
+
+
+def _total(rec):
+    return rec.get("t_compile", 0.0) + rec.get("t_solve", 0.0)
+
+
+# (label, family, dimension, fixed parameters, fixed k or None, extra filter)
+_RANGE_ROWS = (
+    ("flat: leaf states N (T=2, k=5)", "flat", "N", {"T": 2}, 5, None),
+    ("flat: bound k (N=400, T=2)", "flat", "k", {"N": 400, "T": 2}, None, None),
+    ("flat: transitions per state T (N=100, k=5)", "flat", "T", {"N": 100}, 5, None),
+    ("flat: written variables V (N=50, k=5)", "flat", "V", {"N": 50}, 5, "writes"),
+    ("regions: R (S=4, k=3)", "regions", "R", {"S": 4}, 3, "plain"),
+    ("regions: S (R=4, k=3)", "regions", "S", {"R": 4}, 3, "plain"),
+    ("regions: bound k (R=4, S=40)", "regions", "k", {"R": 4, "S": 40}, None, "plain"),
+    (
+        "regions: bound k (R=4, S=200)",
+        "regions",
+        "k",
+        {"R": 4, "S": 200},
+        None,
+        "plain",
+    ),
+    ("regions: T (R=4, S=8, k=3)", "regions", "T", {"R": 4, "S": 8}, 3, "plain"),
+    ("calls with where filter: R (S=4, k=3)", "regions", "R", {"S": 4}, 3, "filter"),
+    ("calls without where: R (S=4, k=3)", "regions", "R", {"S": 4}, 3, "nofilter"),
+)
+
+
+def _row_points(records, family, dim, fixed, k, extra):
+    """Group the unsatisfiable records of one range-table row by the swept value."""
+    points = {}
+    for rec in records:
+        cfg, params = rec["cfg"], rec["cfg"]["params"]
+        if cfg["family"] != family or cfg["kind"] != "unsat":
+            continue
+        if dim != "k" and k is not None and cfg["k"] != k:
+            continue
+        if any(
+            params.get(name, 2 if name == "T" else None) != val
+            for name, val in fixed.items()
+        ):
+            continue
+        is_calls = bool(params.get("calls"))
+        if extra == "plain" and (is_calls or dim != "T" and "T" in params):
+            continue
+        if extra == "writes" and (not params.get("V") or params.get("eff") is False):
+            continue
+        if extra == "filter" and (not is_calls or params.get("filter") == "none"):
+            continue
+        if extra == "nofilter" and (not is_calls or params.get("filter") != "none"):
+            continue
+        if family == "flat" and dim != "V" and params.get("V"):
+            continue
+        value = cfg["k"] if dim == "k" else params.get(dim, 2 if dim == "T" else None)
+        points.setdefault(value, []).append(rec)
+    return points
+
+
+def range_rows(records):
+    """Compute the range table: one dict per dimension.
+
+    :param records: Original measurement records.
+    :type records: list
+    :return: Rows with the best finished size per budget and the first failure.
+    :rtype: list
+    """
+    rows = []
+    for label, family, dim, fixed, k, extra in _RANGE_ROWS:
+        points = _row_points(records, family, dim, fixed, k, extra)
+        finished, failed = {}, []
+        for value, recs in points.items():
+            done = [r for r in recs if r["status"] == "unsat"]
+            if done:
+                finished[value] = statistics_median([_total(r) for r in done])
+            elif any(r["status"] == "timeout" for r in recs):
+                failed.append(value)
+        row = {
+            "label": label,
+            "budgets": {},
+            "first_unfinished": min(failed) if failed else None,
+        }
+        for budget in (10, 60, 300):
+            fits = [v for v, t in finished.items() if t <= budget]
+            if fits:
+                best = max(fits)
+                row["budgets"][budget] = (best, finished[best])
+        rows.append(row)
+    return rows
+
+
+def statistics_median(values):
+    """Return the median of a non-empty list."""
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def command_range_table(args):
+    """Print the practical-range table from the original measurements."""
+    records = load_records(args.data, "original_measurements.jsonl")
+    print("largest measured size that finished within the budget (total seconds)")
+    print(
+        "%-44s %-14s %-14s %-15s %s"
+        % ("dimension", "10 s", "60 s", "300 s", "first timeout")
+    )
+    for row in range_rows(records):
+        cells = []
+        for budget in (10, 60, 300):
+            hit = row["budgets"].get(budget)
+            cells.append("%s (%.0f s)" % hit if hit else "-")
+        stop = row["first_unfinished"]
+        print(
+            "%-44s %-14s %-14s %-15s %s"
+            % ((row["label"],) + tuple(cells) + (stop if stop is not None else "-",))
+        )
+    return 0
+
+
+def _config_key(rec):
+    cfg = rec["cfg"]
+    return (
+        cfg["family"],
+        json.dumps(cfg["params"], sort_keys=True),
+        cfg["k"],
+        cfg["kind"],
+    )
+
+
+def command_compare_retest(args):
+    """Print retest/original time ratios for configurations measured both times."""
+    original = {}
+    for rec in load_records(args.data, "original_measurements.jsonl"):
+        if rec["status"] == "unsat":
+            original.setdefault(_config_key(rec), []).append(_total(rec))
+    print("%-34s %9s %9s %6s" % ("configuration", "original", "retest", "ratio"))
+    for rec in load_records(args.data, "timing.jsonl"):
+        if "error" in rec or rec.get("status") != "unsat":
+            continue
+        key = _config_key(rec)
+        if key not in original:
+            continue
+        before, after = statistics_median(original[key]), _total(rec)
+        print(
+            "%-34s %8.1fs %8.1fs %6.2f"
+            % (
+                "%s k=%d"
+                % (json.dumps(rec["cfg"]["params"], sort_keys=True), rec["cfg"]["k"]),
+                before,
+                after,
+                after / before,
+            )
+        )
+    return 0
+
+
 def _build_parser():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("generate", help="print a synthetic model and query")
-    gen.add_argument("family", choices=("flat", "regions", "calls", "nested", "plain_depth", "pigeonhole"))
+    gen.add_argument(
+        "family",
+        choices=("flat", "regions", "calls", "nested", "plain_depth", "pigeonhole"),
+    )
     for name in ("N", "T", "V", "R", "S", "D", "holes", "pigeons"):
         gen.add_argument("--" + name, type=int)
     gen.add_argument("--k", type=int, default=3)
     gen.add_argument("--kind", choices=("sat", "unsat"), default="unsat")
     gen.set_defaults(handler=command_generate)
-    one = sub.add_parser("measure", help="measure one JSON configuration in this process")
+    one = sub.add_parser(
+        "measure", help="measure one JSON configuration in this process"
+    )
     one.add_argument("config")
     one.set_defaults(handler=command_measure)
-    run = sub.add_parser("run", help="execute a named plan, one fresh process per point")
+    run = sub.add_parser(
+        "run", help="execute a named plan, one fresh process per point"
+    )
     run.add_argument("plan", choices=sorted(_PLANS))
     run.add_argument("--output", required=True)
     run.add_argument("--append", action="store_true")
-    run.add_argument("--repeats", type=int, default=0, help="runs of a fast point (default per plan)")
-    run.add_argument("--limit", type=int, default=0, help="run only the first N configurations")
+    run.add_argument(
+        "--repeats", type=int, default=0, help="runs of a fast point (default per plan)"
+    )
+    run.add_argument(
+        "--limit", type=int, default=0, help="run only the first N configurations"
+    )
     run.set_defaults(handler=command_run)
+    imp = sub.add_parser(
+        "import-original", help="slim the raw original campaign records"
+    )
+    imp.add_argument("--source", required=True, help="directory with results1-3.jsonl")
+    imp.add_argument("--output", required=True)
+    imp.set_defaults(handler=command_import_original)
+    table = sub.add_parser("range-table", help="print the practical-range table")
+    table.add_argument("--data", default=str(_DEFAULT_DATA))
+    table.set_defaults(handler=command_range_table)
+    cmp_ = sub.add_parser("compare-retest", help="print retest/original ratios")
+    cmp_.add_argument("--data", default=str(_DEFAULT_DATA))
+    cmp_.set_defaults(handler=command_compare_retest)
     fit = sub.add_parser("fit", help="recompute closed forms from the data files")
     fit.add_argument("--data", default=str(_DEFAULT_DATA))
     fit.set_defaults(handler=command_fit)
-    check = sub.add_parser("check-formulas", help="compare closed forms with the data files")
+    check = sub.add_parser(
+        "check-formulas", help="compare closed forms with the data files"
+    )
     check.add_argument("--data", default=str(_DEFAULT_DATA))
     check.set_defaults(handler=command_check)
     return parser

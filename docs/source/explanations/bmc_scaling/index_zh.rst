@@ -1,0 +1,583 @@
+:orphan:
+
+BMC 的代价怎样随状态、区域与上界增长
+====================================
+
+你对一个模型运行 ``pyfcstm bmc`` 时，想知道三件事：查询能不能算完，时间花在哪，能不能在开始之前就估出来。本页用合成模型上的实测、与实测逐点核对过的闭式，以及明确没有公式的部分来回答。
+
+**哪些量可以提前算出来，哪些不能。**
+
+.. list-table:: 哪些量可以预测
+   :header-rows: 1
+   :widths: 24 20 56
+
+   * - 量
+     - 能否预测
+     - 做法
+   * - 公式规模（Z3 节点数、Z3 布尔变量数）
+     - 能
+     - 不含区域的状态机有精确闭式；含区域（region）的状态机有带误差说明的拟合闭式
+       （\ :eq:`bmc-scaling-nodes-flat`\ 、\ :eq:`bmc-scaling-nodes-regions`\ ）。
+   * - 构造公式的耗时
+     - 能，量级上
+     - 先由闭式得到 Z3 调用次数，再乘以你在自己机器上测一次的单位成本
+       （\ :eq:`bmc-scaling-compile-time`\ ）。
+   * - 峰值内存
+     - 能，量级上
+     - 随公式规模增长，见 :ref:`内存 <bmc-scaling-memory>`\ 。
+   * - 求解耗时
+     - 不能
+     - 没有闭式。它与求解器的传播次数成正比，而传播次数本身没有公式
+       （\ :eq:`bmc-scaling-solve-time`\ ）。
+
+下面每个数字都来自脚本生成的合成模型，不是你的模型。请把数字当作代价的形状，而不是承诺。含有复杂算术、位运算或大量相互作用的条件的模型，求解步骤可能比这里任何一行都慢得多。
+
+测量是怎样做的
+--------------
+
+本页用到两批测量，每张表和每张图都会说明用的是哪一批。
+
+.. list-table:: 两批测量
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * - 项目
+     - 原始测量
+     - 重测
+   * - 代码
+     - 提交 ``560b7dc4``
+     - 提交 ``b054fbe3``
+   * - 机器
+     - Intel Xeon Platinum 8581C，Linux
+     - 同型号机器，与其他作业共用；取样时负载均值约在 10 到 20 之间
+   * - 软件
+     - Python 3.11.15，z3 4.15.4
+     - Python 3.11.15，z3 4.15.4
+   * - 并发
+     - 同时运行 56 个进程
+     - 一次只运行一个进程
+   * - 进程方式
+     - 每个点一个全新进程
+     - 每个点一个全新进程，进程内先编译一个两状态模型作预热
+   * - 重复
+     - 小于 8 秒的点跑 3 次取中位数，更大的点跑 1 次
+     - 同样的规则
+   * - 数据
+     - ``data/original_measurements.jsonl``
+     - ``data/timing.jsonl`` 与其他 ``data/*.jsonl`` 文件
+
+重测在计划的 99 个计时点中只完成了 15 个，因为剩下的每个点在共用机器上最多要跑 300 秒。这 15 个点是对原始测量的抽查，不能代替原始测量。所有关于公式规模、调用次数、传播次数和互斥区域的数字都来自重测数据。\ ``data/`` 里的每条记录都带有提交、机器、Python 与 z3 版本、重复次数和保留的统计量。工具 ``tools/measure_bmc_scaling.py`` 可以重新生成这些文件并检验闭式：
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py --help
+
+符号
+----
+
+.. list-table:: 本页使用的符号
+   :header-rows: 1
+   :widths: 12 88
+
+   * - 符号
+     - 含义
+   * - :math:`R`
+     - 一个拥有者（owner）的区域数。
+   * - :math:`S`
+     - 每个区域的叶子状态数。
+   * - :math:`T`
+     - 每个状态的转换数。
+   * - :math:`D`
+     - 区域的嵌套层数。
+   * - :math:`V`
+     - 被转换写入的变量数。
+   * - :math:`k`
+     - BMC 的步数上界：查询写作 ``check reach <= k: ...``\ 。
+   * - :math:`N`
+     - 不含区域的状态机的叶子状态数。
+   * - :math:`W`
+     - 带赋值的转换数。
+   * - :math:`P`
+     - Z3 为主检查报告的传播次数。
+   * - :math:`C_{\mathrm{ctx}}`
+     - 构造公式期间创建的一次性 Z3 上下文数。
+
+合成模型
+--------
+
+所有模型都由工具生成，所以图上的每个点都可以复现。
+
+* ``flat``\ ：由 :math:`N` 个叶子状态组成的环。状态 ``Si`` 在 ``d == 0`` 时转到 ``S(i+1)``\ ；每个状态的其余 :math:`T-1` 条转换是带条件的回边。当 :math:`V>0` 时，除最后一条以外的每条环上转换把 :math:`V` 个变量各加 1，因此 :math:`W=N-1`\ 。
+* ``regions``\ ：一个拥有者 ``Run``\ ，含 :math:`R` 个区域，每个区域有 :math:`S` 个叶子状态，区域内部按同样方式构造。
+* ``pigeonhole``\ ：\ :math:`m` 个区域，每个区域从 :math:`m-1` 个状态里选一个；查询要求它们互不相同。
+
+查询要求一件在 :math:`k` 步内不会发生的事，所以求解器必须证明“不可达”。这是代价最高、也最诚实的情形：可满足的查询在求解器找到一条见证（witness）时就结束了。
+
+.. literalinclude:: generate_regions.demo.sh
+   :language: bash
+   :caption: ``generate_regions.demo.sh``
+
+.. literalinclude:: generate_regions.demo.sh.txt
+   :language: text
+   :caption: 输出：两个区域、每个三个状态，以及目标不可达的查询
+
+**它展示了什么。** 每个区域都有 ``d == 0`` 上的链 ``P0 -> P1 -> P2``\ ，以及 ``d == 1`` 上每个状态一条回边。查询要求两个区域都到达 ``P2``\ ，这需要多于 ``k = 2`` 步。\ **可以得出的结论。** 生成器很小且是确定的：相同参数得到相同模型。\ **不能得出的结论。** 这些模型无法说明你自己模型里的条件会怎样相互作用。
+
+公式规模：能精确的地方就精确
+----------------------------
+
+Z3 公式的规模只取决于结构和 :math:`k`\ ，所以可以精确计数。数一数 ``compile_bmc_query`` 返回的 ``solve_formula`` 这个公式有向无环图里互不相同的节点。对每个状态有两条转换、没有变量的 :math:`N` 个状态的环，节点数为：
+
+.. math::
+   :label: bmc-scaling-nodes-flat
+
+   \mathrm{nodes}_{\mathrm{flat}}(N,k) = 21\,N k - 18\,N + 33\,k + 6
+
+这个闭式在 :math:`k \ge 2` 且查询的目标状态存在时成立；对这里用的查询，目标状态存在要求 :math:`N \ge k+3`\ 。当环上每条转换都写 :math:`V` 个变量时，节点数变为：
+
+.. math::
+   :label: bmc-scaling-nodes-flat-vars
+
+   \mathrm{nodes}_{\mathrm{flat},V}(N,k) = 23\,N k - 20\,N + 4\,V k + 35\,k + 9
+
+你可以用公开接口自己核对第一个闭式。下面的脚本对三种规模建环，对四个上界编译查询，通过 Z3 自带的 Python 接口数节点，并与 :eq:`bmc-scaling-nodes-flat` 比较。
+
+.. literalinclude:: node_count.demo.py
+   :language: python
+   :caption: ``node_count.demo.py``
+
+.. literalinclude:: node_count.demo.py.txt
+   :language: text
+   :caption: ``node_count.demo.py`` 的输出
+
+**每一部分做什么。** ``chain_machine`` 写出环；\ ``count_nodes`` 遍历一次表达式有向无环图，按 Z3 的 id 给每个节点计数；\ ``compile_bmc_query(...).solve_formula`` 是求解器收到的公式。\ **你看到什么。** 12 行都是 ``True``\ ：实测节点数与 :math:`21Nk-18N+33k+6` 完全相等。\ **可以得出的结论。** 对这一族模型，不必运行求解器就知道公式规模。\ **不能得出的结论。** 闭式对其他模型没有任何说明。节点计数用的是维护工具里同样的做法，它不是 pyfcstm 的公开函数。
+
+含区域的状态机，节点数的拟合系数不是整数：
+
+.. math::
+   :label: bmc-scaling-nodes-regions
+
+   \mathrm{nodes}_{\mathrm{reg}}(R,S,k) \approx 23\,R S k - 18\,R S + 22.3\,R k + 2.9\,R + 46.2\,k + 17.6
+
+Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 都是精确的：
+
+.. math::
+   :label: bmc-scaling-bool-vars
+
+   \mathrm{boolvars}(N,T,k) = 1 + 8k + T(k-1) + N(4k-2) + 3\,N T (k-1)
+
+把主导项放在一起看，公式规模随状态数、转换数与上界的乘积增长，而区域之间是相加的：
+
+.. math::
+   :label: bmc-scaling-size-order
+
+   |\Phi_k| = \Theta(N\,T\,k) \quad\text{without regions},
+   \qquad
+   |\Phi_k| = \Theta(R\,S\,T\,k) \quad\text{with regions}
+
+公式规模里没有 :math:`R^2` 项。区域是相加，不是相乘。
+
+.. list-table:: 哪些系数是精确的，在哪里核对过
+   :header-rows: 1
+   :widths: 30 20 50
+
+   * - 闭式
+     - 系数
+     - 核对（见下文 ``check_formulas.demo.sh.txt``\ ）
+   * - :eq:`bmc-scaling-nodes-flat`
+     - 整数，精确
+     - 16 个网格点全部相等；另有 60 个点（最大到 :math:`N=6400`\ 、\ :math:`k=128`\ ）全部相等
+   * - :eq:`bmc-scaling-nodes-flat-vars`
+     - 整数，精确
+     - 24 个网格点全部相等
+   * - :eq:`bmc-scaling-bool-vars`
+     - 整数，精确
+     - 48 个网格点全部相等，\ :math:`T` 取 1、2、4
+   * - :eq:`bmc-scaling-nodes-regions`
+     - 拟合，不是整数
+     - 48 个网格点的残差最大 11.2 个节点；另有 95 个点（最大到 :math:`R=768`\ 、\ :math:`S=1024`\ 、\ :math:`k=48`\ ），中位误差 0.12%，最大 0.92%
+
+网格点列在 ``data/formula_grid.jsonl`` 里；另外的点来自原始测量和重测。对 :eq:`bmc-scaling-nodes-flat` 的精确数据做幂律拟合，得到节点数 :math:`\approx 14.6\,N^{0.98}k^{1.14}`\ 。\ :math:`k` 的指数大于 1 是假象，来自负的 :math:`-18N` 项，它让曲线在 :math:`k` 小时更陡。对 :math:`k` 的真实增长是线性的。
+
+.. figure:: nodes_zh.plot.py.svg
+   :alt: 实测节点数对闭式的散点图，点落在对角线上。
+   :width: 60%
+
+   Z3 实测节点数（横轴）对 :eq:`bmc-scaling-nodes-flat`\ （纵轴），对象是不含区域的状态机，两个坐标轴都是对数坐标。这张图说明点在三个数量级上都落在对角线上；它不说明任何关于耗时的事。数据：\ ``formula_grid.jsonl``\ 、\ ``timing.jsonl`` 与 ``original_measurements.jsonl``\ ；节点数是确定的，因此每个点只跑一次。
+
+.. _bmc-scaling-memory:
+
+**内存。** 峰值常驻内存随节点数增长。重测里，8.9 千个节点时为 107 MB，55.7 万个节点时为 857 MB，107 万个节点时为 1429 MB。原始测量里最大的公式有 203 万个节点，需要 1395 MB。这些是整个进程的峰值常驻内存，记录在 ``rss_mb`` 里。
+
+构造公式的耗时
+--------------
+
+构造公式是调用 Z3 C 接口的 Python 代码。调用次数是确定的，并且有系数为拟合值的闭式。对每个状态两条转换的环：
+
+.. math::
+   :label: bmc-scaling-calls-flat
+
+   \mathrm{calls}_{\mathrm{flat}}(N,k) \approx 1680\,N k - 1578\,N + 1698\,k + 449
+
+含区域的状态机有一个真实的 :math:`R^2` 项：
+
+.. math::
+   :label: bmc-scaling-calls-regions
+
+   \mathrm{calls}_{\mathrm{reg}}(R,S,k) \approx R S\,(1754 k - 1418) + R\,(976 k + 440) + R^2\,(151 k - 96) + 2561 k + 439
+
+在 :eq:`bmc-scaling-calls-regions` 中，当 :math:`R` 大于约 :math:`1754\,S/151`\ ，即约 :math:`S` 的 11.6 倍时，\ :math:`R^2` 项超过 :math:`R S` 项。\ :math:`S=4` 时这发生在 :math:`R=46` 附近。低于它，构造公式的耗时看起来对区域数是线性的；高于它，曲线向上弯。公式规模本身仍是线性增长（\ :eq:`bmc-scaling-size-order`\ ），所以 :math:`R^2` 的代价花在 Python 的工作上，不在公式节点上。这一项的来源还没有定位清楚（见 :ref:`已知的优化空间 <bmc-scaling-room>`\ ）。
+
+调用次数在网格和三个大点上核对过。
+
+.. literalinclude:: check_formulas.demo.sh.txt
+   :language: text
+   :caption: ``check_formulas.demo.sh`` 的输出：每个闭式对照已提交的数据
+
+**它展示了什么。** 每一行写出一个闭式、与它比较的点数以及结果。写着“all equal”的行是精确的；给出误差的行是拟合的。\ **可以得出的结论。** 拟合的调用次数在网格上误差在 0.3% 以内，在大点上误差在 3% 以内。\ **不能得出的结论。** 区域调用次数的网格只到 :math:`R=8`\ 、\ :math:`S=24`\ 、\ :math:`k=8`\ ；超出以后误差缓慢增大，\ :math:`R=96` 与 :math:`R=256` 的 :math:`-2.2\%` 和 :math:`-3.0\%` 两行就是例子。
+
+**变量写入。** 带赋值的转换会增加另一种代价。构造期间编译器会发出可满足性检查，每次检查都新建一个 Z3 上下文（这是有意为之：它让答案不依赖进程先前求解过什么）。上下文的个数是精确的：
+
+.. math::
+   :label: bmc-scaling-contexts
+
+   C_{\mathrm{ctx}} = 2\,W\,V\,(k-1)
+
+公式规模几乎不随 :math:`V` 变化，因为 :eq:`bmc-scaling-nodes-flat-vars` 里的 :math:`4Vk` 很小，但上下文个数随 :math:`V` 线性增长。重测里，\ :math:`N=100`\ 、\ :math:`k=5` 在没有变量时构造约 0.5 秒，\ :math:`V=4`\ 、16、64 时分别是 4.9 秒、16.7 秒、65.6 秒，折合每个上下文 1.3 到 1.4 毫秒。合起来：
+
+.. math::
+   :label: bmc-scaling-compile-time
+
+   t_{\mathrm{build}} \approx c_{\mathrm{call}}\cdot \mathrm{calls} + c_{\mathrm{ctx}}\cdot C_{\mathrm{ctx}}
+
+其中 :math:`c_{\mathrm{call}}` 是一次 Z3 调用的成本，\ :math:`c_{\mathrm{ctx}}` 是一个上下文的成本。重测里，构造 :math:`R=96` 与 :math:`R=256`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）的区域状态机，分别用了 2.72 秒和 14.8 秒，对应 520 万与 2910 万次调用，折合每次调用 0.52 微秒与 0.51 微秒；构造 :math:`N=1600`\ 、\ :math:`k=5` 的环用了 17.9 秒，对应 1090 万次调用，折合每次调用 1.63 微秒。所以 :math:`c_{\mathrm{call}}` 属于模型的类别，而不只取决于机器，你应当在自己这一类的小模型上测一次。每个上下文的成本并非处处不变：原始测量没有预热，且同时运行 56 个进程，\ :math:`V=64` 时构造用了 89 秒，这个差别的原因没有查清。
+
+.. figure:: phases_zh.plot.py.svg
+   :alt: 各类机器构造公式耗时占总耗时比例的散点图。
+   :width: 70%
+
+   构造公式占总耗时的比例（纵轴，线性坐标，百分数）对构造加求解的耗时（横轴，对数坐标，秒），取原始测量中大于 1 秒的点。蓝点是不含区域的状态机，橙点是含区域的状态机。这张图说明不含区域的状态机大部分时间花在构造公式上（中位数 96%，134 个点），含区域的状态机约一半（中位数 49%，113 个点）；它不说明具体是哪些 Python 代码行造成的。方法：每个点一个全新进程，小于 8 秒取 3 次中位数，同时运行 56 个进程。
+
+求解耗时：没有公式
+------------------
+
+主检查的求解耗时与 Z3 报告的传播次数近似成正比：
+
+.. math::
+   :label: bmc-scaling-solve-time
+
+   t_{\mathrm{solve}} \approx \tau\,P, \qquad \tau \approx 0.2\ \mu\mathrm{s}
+
+重测里每次传播的中位数是 222 纳秒，第 10 与第 90 百分位分别为 176 纳秒与 365 纳秒。对数坐标上的拟合给出：
+
+.. math::
+   :label: bmc-scaling-propagation-fit
+
+   \log t_{\mathrm{solve}} = \beta \log P + \alpha, \qquad \beta \approx 0.92
+
+在 37 次检查（传播次数多于 :math:`2\cdot 10^4` 的那些）上，决定系数是 0.98。所以 :eq:`bmc-scaling-propagation-fit` 很好地描述了求解器，但它不是预测：\ :math:`P` 本身没有闭式，也不随模型规模单调。对 :math:`k=8` 的环，\ :math:`N=400` 需要 1,329,691 次传播，而 :math:`N=800` 只要 621,198 次。
+
+.. figure:: fit_zh.plot.py.svg
+   :alt: 求解秒数对传播次数的散点图，带一条表示正比的虚线。
+   :width: 60%
+
+   主检查的求解秒数（纵轴）对 Z3 报告的传播次数（横轴），两个坐标轴都是对数坐标。虚线是每次传播成本的中位数。这张图说明两者成正比；它不能让你预测 :math:`P`\ 。方法：42 个点，\ ``solve_law.jsonl``\ ，每个点在预热后的全新进程里跑一次；其中 37 个点的传播次数多于 :math:`2\cdot 10^4`\ 。
+
+文献能让你说的，只有上界或存在性结论。下表列出完整读过原文的出处，以及每一条对模型意味着什么。
+
+.. list-table:: 文献给出的边界
+   :header-rows: 1
+   :widths: 40 32 28
+
+   * - 结论
+     - 出处
+     - 对模型意味着什么
+   * - 有界 LTL 检查属于 NP；完备阈值可达状态变量数的指数。
+     - Biere 等，TACAS 1999；\ `Clarke、Kroening、Ouaknine、Strichman，VMCAI 2004
+       <https://people.mpi-sws.org/~joel/publications/compbmc04.pdf>`_
+     - 最坏情况的时间只有指数界。
+   * - 没有变量的单个层次状态机，可达性是线性时间；并发使分析指数级变难。
+     - `Alur 与 Yannakakis，TOPLAS 2001 <https://www.cis.upenn.edu/~alur/Fse98.pdf>`_
+     - 互相约束的区域没有多项式保证。
+   * - 只接受有限语言的 DFA，求交是否非空是 NP 完全问题。
+     - `Rampersad 与 Shallit，IPL 2010，定理 1 <https://arxiv.org/pdf/0906.3220>`_
+     - 在有界步数内跨多个区域的可达性，最坏情况是 NP 难。
+   * - 带随机决策与重启的 CDCL 求解器，在存在窄宽度反驳时冲突数有多项式界。
+     - `Atserias、Fichte、Thurley，JAIR 2011，推论 18 <https://arxiv.org/abs/1401.3868>`_
+     - 多项式界只覆盖理想化或随机的决策，不覆盖 Z3 实际的启发式。
+   * - 展开后公式的树宽可以无界。
+     - `Ferrara、Pan、Vardi，LPAR 2005，定理 2.4 <https://www.cs.rice.edu/~vardi/papers/lpar052.pdf>`_
+     - 结构宽度不能给 BMC 一个通用的多项式界。
+   * - 求解器运行时间只能靠学习得到的模型预测。
+     - Leyton-Brown 等，JACM 2009
+     - 目前没有已知的 CDCL 或 SMT 运行时间的解析预测器。
+   * - 公式和版本不变时，Z3 的资源计数可以复现，但输入的小改动可能影响很大。
+     - Wintersteiger 在 F* 议题跟踪器中的说明（议题 767）
+     - 这些计数只报告一次运行，不能预测另一次。
+
+最坏情形：互斥的区域
+--------------------
+
+求解的代价取决于区域之间互相约束的强弱，而不是区域的个数。互不相干的区域很便宜：原始测量里，768 个各有四个状态的区域在 280 秒内算完。反面是鸽巢结构：取 :math:`m` 个区域，每个区域由自己的输入进入 :math:`m-1` 个状态中的一个，问所有区域能否落在互不相同的状态里。这不可能，求解器必须证明这一点。
+
+.. literalinclude:: pigeonhole.demo.sh
+   :language: bash
+   :caption: ``pigeonhole.demo.sh``
+
+.. literalinclude:: pigeonhole.demo.sh.txt
+   :language: text
+   :caption: 输出：三个区域、各两个状态，以及要求互不相同的查询
+
+**它展示了什么。** 每个区域 ``P0``\ 、\ ``P1``\ 、\ ``P2`` 从 ``W`` 进入 ``H0`` 或 ``H1``\ ；查询要求每个区域都处于某个 ``H`` 状态，且任意两个区域不处于同一个。三个区域、两个状态时这不可能。\ **可以得出的结论。** 这一族对每个 :math:`m` 都不可满足。\ **不能得出的结论。** 只测了一种互斥结构，别的结构可能表现不同。
+
+.. list-table:: 互斥区域，不可满足，重测
+   :header-rows: 1
+   :widths: 14 22 22 42
+
+   * - 区域数
+     - 求解秒数
+     - 冲突数
+     - 结果
+   * - 8
+     - 0.17
+     - 5,422
+     - unsat
+   * - 9
+     - 1.15
+     - 28,060
+     - unsat
+   * - 10
+     - 9.99
+     - 170,696
+     - unsat
+   * - 11
+     - 126
+     - 1,612,287
+     - unsat
+   * - 12
+     - 280
+     - 3,178,719
+     - 280 秒限制到时仍为 unknown
+   * - 13
+     - 280
+     - 3,164,362
+     - 280 秒限制到时仍为 unknown
+
+从 7 个区域起，每多一个区域，冲突数增长的倍数接近 6：
+
+.. math::
+   :label: bmc-scaling-conflict-growth
+
+   \mathrm{conflicts}(m) \approx c\,\rho^{m}, \qquad \rho \approx 6
+
+对照组结构相同但查询可满足（\ :math:`m` 个区域、\ :math:`m` 个状态），12 个区域只需 0.24 秒。这个倍数是对已判定的点的拟合，不是定理；两个未判定的行只说明求解器超时了。
+
+.. figure:: pigeonhole_zh.plot.py.svg
+   :alt: 求解秒数对互斥区域个数的曲线，附可满足的对照组。
+   :width: 60%
+
+   求解秒数（纵轴，对数坐标）对互斥区域个数（横轴）。橙线是不可满足的结构，叉号是 280 秒内没有判定的运行；蓝线是同样形状、可满足的对照组。这张图说明只要几个互斥的区域，证明不可能就已经很贵；它不说明你的区域是互斥的。方法：\ ``pigeonhole.jsonl``\ ，每个点一个全新进程，每个点只跑一次。
+
+该预期多少时间
+--------------
+
+下表是每个时间预算内跑完的最大规模，取自原始测量（提交 ``560b7dc4``\ ，同时运行 56 个进程，8 秒以上的点只跑一次）。每个查询都是不可满足的 ``check reach``\ ，耗时是构造加求解。每个规模都是“实测的最大值”，所以真正的极限落在它与下一个实测规模之间。
+
+.. list-table:: 每个时间预算内实测的最大规模
+   :header-rows: 1
+   :widths: 40 16 16 16 12
+
+   * - 维度（其余固定）
+     - 10 秒
+     - 60 秒
+     - 300 秒
+     - 首次超时
+   * - 不含区域，叶子状态数 :math:`N`\ （\ :math:`T=2`\ 、\ :math:`k=5`\ ）
+     - 800 (8 s)
+     - 1600 (22 s)
+     - 6400 (216 s)
+     - 12800
+   * - 不含区域，上界 :math:`k`\ （\ :math:`N=400`\ ）
+     - 8 (6 s)
+     - 32 (30 s)
+     - 64 (118 s)
+     - 128
+   * - 不含区域，每个状态的转换数 :math:`T`\ （\ :math:`N=100`\ 、\ :math:`k=5`\ ）
+     - 16 (6 s)
+     - 64 (50 s)
+     - 128 (175 s)
+     - 256
+   * - 不含区域，被写入的变量数 :math:`V`\ （\ :math:`N=50`\ 、\ :math:`k=5`\ ）
+     - 8 (10 s)
+     - 64 (45 s)
+     - 256 (144 s)
+     - 没有测到
+   * - 区域数 :math:`R`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）
+     - 128 (10 s)
+     - 256 (35 s)
+     - 768 (280 s)
+     - 1024
+   * - 每个区域的状态数 :math:`S`\ （\ :math:`R=4`\ 、\ :math:`k=3`\ ）
+     - 128 (4 s)
+     - 512 (37 s)
+     - 1024 (96 s)
+     - 2048
+   * - 上界 :math:`k`\ （\ :math:`R=4`\ 、\ :math:`S=40`\ ）
+     - 16 (7 s)
+     - 32 (18 s)
+     - 32 (18 s)
+     - 没有测到
+   * - 上界 :math:`k`\ （\ :math:`R=4`\ 、\ :math:`S=200`\ ）
+     - 无
+     - 无
+     - 48 (258 s)
+     - 64
+   * - 每个状态的转换数 :math:`T`\ （\ :math:`R=4`\ 、\ :math:`S=8`\ 、\ :math:`k=3`\ ）
+     - 32 (4 s)
+     - 128 (43 s)
+     - 256 (163 s)
+     - 没有测到
+   * - 带 ``where active(...)`` 的调用，区域数 :math:`R`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）
+     - 32 (6 s)
+     - 96 (60 s)
+     - 128 (109 s)
+     - 192
+   * - 不带 ``where`` 的调用，区域数 :math:`R`\ （\ :math:`S=4`\ 、\ :math:`k=3`\ ）
+     - 64 (4 s)
+     - 256 (37 s)
+     - 512 (126 s)
+     - 1024
+
+这些行由 ``range_table.demo.sh`` 打印：
+
+.. literalinclude:: range_table.demo.sh.txt
+   :language: text
+   :caption: ``range_table.demo.sh`` 的输出
+
+.. figure:: time_flat_zh.plot.py.svg
+   :alt: 不含区域的状态机，构造、求解与总计秒数对状态数、上界与每个状态的转换数的曲线。
+
+   构造耗时（蓝）、求解耗时（橙）及两者之和（灰色虚线），单位为秒，横轴依次是叶子状态数 :math:`N`\ （左）、上界 :math:`k`\ （中）和每个状态的转换数 :math:`T`\ （右），对象是不含区域的状态机，所有坐标轴都是对数坐标。黑色叉号是同样的点在重测中的总耗时。这张图说明总耗时在每个规模上都跟随构造耗时，求解只在 :math:`k` 很大时才追上来；它不给出闭式。方法：原始测量，每个点一个全新进程，同时运行 56 个进程，小于 8 秒取 3 次中位数，更大的点跑 1 次（\ ``original_measurements.jsonl``\ ）；叉号来自 ``timing.jsonl``\ 。
+
+.. figure:: time_regions_zh.plot.py.svg
+   :alt: 含区域的状态机，构造、求解与总计秒数对区域数、每个区域的状态数与上界的曲线。
+
+   含区域的状态机的同样三条曲线，横轴依次是区域数 :math:`R`\ （左，\ :math:`S=4`\ 、\ :math:`k=3`\ ）、每个区域的状态数 :math:`S`\ （中，\ :math:`R=4`\ 、\ :math:`k=3`\ ）和上界 :math:`k`\ （右，\ :math:`R=4`\ 、\ :math:`S=40`\ ），所有坐标轴都是对数坐标。这张图说明含区域的状态机的构造与求解耗时量级相同，并且随 :math:`R` 增大都向上弯；它不能把 :math:`R^2` 构造项与线性项分开。方法同上；含区域的状态机没有重测点。
+
+嵌套受固定的安全上限限制，而不是受时间限制。拥有者嵌套 64 层、每层两个区域（共 128 个区域）用了 8.7 秒。到 96 层时，见证回放在仿真器的分组初始化上限 64 处停止（\ ``pyfcstm bmc`` 以退出码 1 结束，打印意外错误的回溯，而不是给出结论）。不含区域的复合状态嵌套 62 层用了 0.1 秒；64 层时编译以 ``macro-step expansion exceeded the stack-depth safety limit.`` 停止。这些嵌套点是原始测量里 :math:`k=2` 的可满足查询。
+
+**重测抽查。** 有原始对应点的 13 个重测点，列出重测与原始的比值：
+
+.. literalinclude:: compare_retest.demo.sh.txt
+   :language: text
+   :caption: ``compare_retest.demo.sh`` 的输出
+
+重测的每个点都更快，比值在 0.75 到 0.94 之间，中位数 0.82。原始测量同时运行 56 个进程，每个点都与其他进程共用内存带宽和缓存；重测只有自己一个进程，但机器仍与其他作业共用。另有两个重测点没有跑完：\ :math:`N=12800` 超过了进程的 420 秒限制，\ :math:`N=400`\ 、\ :math:`k=128` 在 250 秒求解限制后以 ``unknown`` 结束。两者都与原始测量的超时不矛盾。每个点都只跑一次，所以比值只是粗略的核对，不是修正系数。
+
+怎样让查询算得动
+----------------
+
+具体的操作步骤在 :doc:`/how_to/bmc/index_zh`\ ；这里是它们背后的道理。
+
+* **先数，再跑。** 数叶子状态、每个状态的转换数、被写入的变量和 :math:`k`\ 。用 :eq:`bmc-scaling-nodes-flat` 与 :eq:`bmc-scaling-calls-flat` 可以估出公式规模和构造耗时，内存随节点数增长。
+* **限制被转换写入的变量。** 每个被写入的变量按 :math:`W\,(k-1)` 的比例增加上下文（\ :eq:`bmc-scaling-contexts`\ ）。只写性质需要的变量。
+* **逐步加深上界。** 先用小的 :math:`k`\ 。公式规模随它线性增长，在 :math:`k` 大时发生弯曲的是求解步骤（\ :math:`N=400` 时，重测里求解所占时间的比例从 :math:`k=2` 的 5% 升到 :math:`k=64` 的 63%）。
+* **为超时做准备。** 使用求解时间限制，把 ``unknown`` 或超时当作预期内的结果，而不是模型的错误。
+* **留意互斥的区域。** 少数几个互相排斥的区域，代价可能超过数百个互不相干的区域（\ :eq:`bmc-scaling-conflict-growth`\ ）。缩小性质里互斥的部分，或者把这些区域分开验证。
+
+.. _bmc-scaling-room:
+
+已知的优化空间
+--------------
+
+维护者把优化想法收集在 `议题 #600 <https://github.com/HansBug/pyfcstm/issues/600>`_ 里。其中没有一项属于本页描述的行为，本页也不承诺其中任何一项。与本页测量有关的想法有：跳过构造期间对空约束集发出的可满足性检查（上文计数的上下文就来自它）、只构造转换关系的一步并改名复用到其余各步、缓存编译好的查询、减少 Z3 中间对象、找出 :math:`R^2` 构造项的来源，以及对互斥区域的情形尝试其他求解配置或编码。
+
+本页没有做的事
+--------------
+
+* 不预测求解耗时；没有闭式，文献表列出了原因。
+* 不涉及真实模型：所有测量用的合成模型，其条件只依赖一个输入。
+* 耗时是在共用机器上的单次测量，原始测量还同时运行了 56 个进程。
+* :math:`R^2` 构造项的来源，以及单个上下文成本为什么变化，都没有查清。
+* 只测了一种互斥区域结构。
+* 没有测 ``max_group_reentries``\ 、多线程求解，以及见证的解码与回放（replay）。
+
+公式台账
+--------
+
+.. list-table:: 从公式到代码、检验与数据
+   :header-rows: 1
+   :widths: 20 24 20 20 16
+
+   * - 标签
+     - 主张
+     - 实现
+     - 检验与可运行命令
+     - 数据追溯
+   * - ``bmc-scaling-nodes-flat``
+     - 环的节点数，无变量
+     - ``compile_bmc_query``\ 、\ ``BmcPropertyFormula.solve_formula``
+     - ``check-formulas``\ ；\ ``node_count.demo.py``
+     - ``formula_grid.jsonl``\ 、\ ``timing.jsonl``
+   * - ``bmc-scaling-nodes-flat-vars``
+     - 带被写入变量的节点数
+     - 同上
+     - ``check-formulas``
+     - ``formula_grid.jsonl``
+   * - ``bmc-scaling-nodes-regions``
+     - 含区域的节点数（拟合）
+     - 同上
+     - ``check-formulas``
+     - ``formula_grid.jsonl``\ 、\ ``original_measurements.jsonl``
+   * - ``bmc-scaling-bool-vars``
+     - 第一次检查的 Z3 布尔变量数
+     - ``solve_bmc_property``\ 、\ ``z3.Solver.statistics``
+     - ``check-formulas``
+     - ``formula_grid.jsonl``
+   * - ``bmc-scaling-size-order``
+     - 公式规模的量级
+     - 上面四个公式的读法
+     - 用 ``generate`` 生成模型
+     - 同上
+   * - ``bmc-scaling-calls-flat``
+     - 构造环所需的 Z3 调用数
+     - ``cProfile`` 下的 ``compile_bmc_query``
+     - ``check-formulas``
+     - ``formula_grid.jsonl``\ 、\ ``unit_cost.jsonl``
+   * - ``bmc-scaling-calls-regions``
+     - 含区域的 Z3 调用数，带 :math:`R^2` 项
+     - 同上
+     - ``check-formulas``
+     - 同上
+   * - ``bmc-scaling-contexts``
+     - 每个被写入变量创建的上下文数
+     - ``pyfcstm.solver.logical.is_sat``
+     - ``check-formulas``
+     - ``variables.jsonl``\ 、\ ``formula_grid.jsonl``
+   * - ``bmc-scaling-compile-time``
+     - 构造耗时模型
+     - ``compile_bmc_query``
+     - ``check-formulas``\ （每个上下文的成本）
+     - ``variables.jsonl``\ 、\ ``unit_cost_time.jsonl``
+   * - ``bmc-scaling-solve-time``
+     - 每次传播的求解耗时
+     - ``solve_bmc_property``
+     - ``check-formulas``
+     - ``solve_law.jsonl``
+   * - ``bmc-scaling-propagation-fit``
+     - 求解耗时的对数拟合
+     - 同上
+     - ``check-formulas``
+     - ``solve_law.jsonl``
+   * - ``bmc-scaling-conflict-growth``
+     - 每多一个互斥区域的冲突数倍数
+     - ``solve_bmc_property``
+     - ``check-formulas``\ ；\ ``pigeonhole.demo.sh``
+     - ``pigeonhole.jsonl``
+
+接下来读什么
+------------
+
+* :doc:`/how_to/bmc/index_zh`\ ：设置时间限制与上界的命令。
+* :doc:`/explanations/bmc_solving/index_zh`\ ：求解结果的含义。
+* :doc:`/reference/bmc_query/index_zh`\ ：这里每个测量所用的查询语言。

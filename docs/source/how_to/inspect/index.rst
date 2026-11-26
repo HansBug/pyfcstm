@@ -405,6 +405,111 @@ real deployment risk without applying to every target.
 **Reference link.** Target-specific numeric diagnostics are cataloged in
 :doc:`../../reference/diagnostics_codes/index`.
 
+13. Read and repair ``I_REGION_BACKWARD_READ``
+----------------------------------------------
+
+**Input.** ``region_read_back.fcstm``: ``Reader`` is written before
+``Writer`` and reads ``level``, which ``Writer`` assigns.  Regions run in
+writing order, so ``Reader`` sees ``level`` from the previous cycle.
+
+.. literalinclude:: region_read_back.fcstm
+   :language: fcstm
+   :caption: region_read_back.fcstm
+
+**Command or code.** ``region_order_diagnostics.demo.sh`` prints the block of
+one diagnostic code from a report, or says that the code is not reported:
+
+.. literalinclude:: region_order_diagnostics.demo.sh
+   :language: bash
+
+.. literalinclude:: region_order_diagnostics.demo.sh.txt
+   :language: text
+   :end-before: == region_blind_overwrite.fcstm
+
+**Expected signal.** The first model gets an ``[INFO] I_REGION_BACKWARD_READ``
+naming the reading region, the variable and the later region that writes it,
+with the span of the read.  The second model, ``region_read_back_fixed.fcstm``,
+declares ``Writer`` first and reports nothing for this code.  The message is a
+note: keep the order when the previous-cycle value is what you want
+(``confirm_order``), and reorder when you need this cycle's value
+(``reorder_regions``).  The same code is reported when an earlier region asks
+``active()`` about a state of a later region.
+
+**File side effect.** None; the reports go to stdout.
+
+**First failure check.** If the code does not disappear after the reorder,
+check that no other earlier region still reads a value produced by a later one
+(the report lists one diagnostic per reading site).
+
+**Reference link.** :doc:`/reference/inspect_report/index`.
+
+14. Read and repair ``W_REGION_BLIND_OVERWRITE``
+------------------------------------------------
+
+**Input.** ``region_blind_overwrite.fcstm``: ``Early`` writes ``out = 1`` in
+every cycle and ``Late`` assigns ``out = y + 2`` in every cycle without reading
+``out``, so the first write is always lost.
+
+.. literalinclude:: region_blind_overwrite.fcstm
+   :language: fcstm
+   :caption: region_blind_overwrite.fcstm
+
+**Command or code.** The same script as above; this is its second half:
+
+.. literalinclude:: region_order_diagnostics.demo.sh.txt
+   :language: text
+   :start-after: region_read_back_fixed.fcstm: I_REGION_BACKWARD_READ is not reported
+
+**Expected signal.** The warning points at the overwriting statement in
+``Late`` and, in the machine-readable report, ``previous_write_span`` names the
+lost write.  The repair suggested by the report is either to combine the
+values (``out = out + y + 2;`` in ``region_blind_overwrite_fixed.fcstm``, after
+which the code is not reported) or to give each region its own variable.  The
+warning is deliberately narrow: a conditional overwrite, an overwrite by only
+some states, a region that can finish, an abstract action, or a read of the
+variable in a region in between all silence it.
+
+**File side effect.** None.
+
+**First failure check.** If you expected the warning and do not get it, check
+that every leaf state of the later region writes the variable at the top level
+of its ``during`` and that nothing reads it first.
+
+**Reference link.** :doc:`/reference/inspect_report/index`.
+
+15. Understand ``owner_never_completes``
+----------------------------------------
+
+**Input.** ``region_never_completes.fcstm``: ``Job`` owns two regions.
+``A`` can finish with ``Run -> [*]``; ``B`` has no ``-> [*]``.  The ordinary
+transition ``Job -> Next`` runs only after every region is done.
+
+.. literalinclude:: region_never_completes.fcstm
+   :language: fcstm
+   :caption: region_never_completes.fcstm
+
+**Command or code.**
+
+.. literalinclude:: region_owner_never_completes.demo.sh
+   :language: bash
+
+.. literalinclude:: region_owner_never_completes.demo.sh.txt
+   :language: text
+
+**Expected signal.** ``W_UNREACHABLE_TRANSITION`` with the reason
+``owner_never_completes`` on ``Job -> Next``.  Give ``B`` a way to finish
+(``region_owner_completes_fixed.fcstm``) and the count of reports with that
+reason becomes ``0``.  A forced transition on the owner is always reachable
+and is not affected.  With ``--enable-verify`` the structural analyses read the
+same rule.
+
+**File side effect.** None.
+
+**First failure check.** List the regions in the report summary and check that
+each has a ``-> [*]`` whose guard or event can happen.
+
+**Reference link.** :doc:`/reference/inspect_report/index`.
+
 Troubleshooting quick reference
 -------------------------------
 

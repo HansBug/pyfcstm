@@ -1,0 +1,15 @@
+[WARN] W_UNREACHABLE_TRANSITION
+  Authored transition 'Root.Job' -> 'Root.Next' is unreachable for reasons: owner_never_completes.
+  --> region_never_completes.fcstm:17:5
+    |
+ 16 |     state Next;
+ 17 |     Job -> Next;
+    |     ^^^^^^^^^^^^
+ 18 | }
+    |
+   = source: inspect-static
+   = why: This authored transition is unreachable under the available analysis evidence. The reason list distinguishes source-state reachability, event-consumer reachability, forced expansion, guards, shadowing, and redundancy.
+   = fix: kind: inspect_transition; target: transition; rationale: Check each entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior.
+   = do-not: Do not remove a transition solely because this warning is present; verify that the reported reason matches the intended runtime model.
+== region_owner_completes_fixed.fcstm
+0

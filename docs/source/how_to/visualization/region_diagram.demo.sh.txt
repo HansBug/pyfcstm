@@ -1,0 +1,10 @@
+.region_diagram/machine.json
+Controller [state]
+  Controller.Idle [state]
+  Controller.Running [state]
+    Controller.Running.Safety [region 1]
+      Controller.Running.Safety.Watching [state]
+    Controller.Running.Motion [region 2]
+      Controller.Running.Motion.Off [state]
+      Controller.Running.Motion.On [state]
+{'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}

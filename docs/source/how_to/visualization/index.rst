@@ -455,3 +455,138 @@ Why the viewer behaves this way
 what the snapshot is detached from, why one document carries everything, why ``--open``
 blocks until its window closes, why the privacy boundary is a directory rather than a
 file, and when a temporary directory is reclaimed.
+
+Tasks for models with regions
+-----------------------------
+
+A region is drawn as a concurrent partition, not as a state.  The cards below
+use ``region_controller.fcstm`` (the interlock controller of
+:doc:`/tutorials/regions/index`) and state the same six facts: **Input**,
+**Command or code**, **Expected signal**, **File side effect**, **First
+failure check** and **Reference link**.  The four places that draw regions
+(PlantUML export, ``pyfcstm diagram``, the HTML viewer and the VS Code preview)
+follow the same conventions; each has its own entry point and limits, described
+below.  The modeling tasks are on :doc:`/how_to/regions/index`.
+
+Export PlantUML for a model with regions and render it
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``region_controller.fcstm``.  The export separates the regions of
+an owner with ``--`` and starts each partition with a note
+``region N: Name``, where ``N`` is the writing order, which is also the
+execution order.  ``max_depth`` counts a region as one level.  Event paths pass
+through the region (``/Left.Ping``).  ``region_events.fcstm`` declares a
+``Ping`` event in each of two regions.
+
+**Command or code.**
+
+.. literalinclude:: region_plantuml.demo.sh
+   :language: bash
+
+.. literalinclude:: region_plantuml.demo.sh.txt
+   :language: text
+
+**Expected signal.** The default export has one ``--`` and two
+``region N:`` notes, in writing order.  With ``max_depth=3`` the output is the
+same; ``max_depth=2`` keeps the two partitions but collapses their states into
+``...``; ``max_depth=1`` collapses the whole owner.  The legend shows the two
+``Ping`` events as different events with their own root-based paths.  Render the
+source with any PlantUML setup; the default Graphviz layout puts the
+partitions side by side:
+
+.. figure:: region_controller.fcstm.puml.svg
+   :alt: PlantUML drawing of the interlock controller with two concurrent partitions in Running
+   :width: 80%
+
+   ``Running`` is drawn as two partitions, ``region 1: Safety`` and ``region 2:
+   Motion``, separated by a dashed line.
+
+**File side effect.** ``pyfcstm plantuml -o`` writes only the named file; the
+script writes to a scratch directory and removes it.
+
+**First failure check.** If a partition is missing from the picture, open the
+``.puml`` file and count the ``--`` lines (one fewer than the regions of the
+owner); the next card covers the one known renderer limit.
+
+**Reference link.** :doc:`/reference/visualization_options/index`.
+
+See regions in the HTML viewer and the VS Code preview
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``region_controller.fcstm``.  ``pyfcstm diagram`` writes portable
+JSON or a self-contained HTML viewer.  In the viewer, the regions of one owner
+sit side by side inside the owner's frame: equal height in a top-to-bottom
+layout and equal width in a left-to-right layout, separated by dashed dividers,
+with no frame of their own and the title ``region N: Name``.  The order follows
+the direction of the diagram: left to right in a top-to-bottom layout and top
+to bottom in a left-to-right one.  Collapsing, details and export work on a
+region like on a state.  The viewer does not highlight the current
+configuration.
+
+**Command or code.** The portable JSON carries each region as a node with
+``region: true`` and its writing order in ``ordinal``:
+
+.. literalinclude:: region_diagram.demo.sh
+   :language: bash
+
+.. literalinclude:: region_diagram.demo.sh.txt
+   :language: text
+
+The viewer and the editor preview are not run in this guide's build: they need
+the packaged viewer assets (a development checkout builds them with ``make
+build_assets``) or a desktop editor.
+
+.. code-block:: bash
+
+   pyfcstm diagram -i region_controller.fcstm -o viewer.html
+   pyfcstm diagram -i region_controller.fcstm --open
+
+In VS Code, open the ``.fcstm`` file and run ``Open Preview to the Side`` (the
+command ``fcstm.preview.open``) from the command palette.  The preview follows
+the same conventions as the viewer.
+
+**Expected signal.** The JSON shows ``Running`` with two children marked
+``region``, ordinals 1 and 2, in writing order.  ``viewer.html`` is a
+self-contained file that opens offline and shows the two partitions side by
+side; ``--open`` opens it in a Chromium-family app window (the command and
+this description are the documented behavior; they were not run here).
+
+**File side effect.** ``-o`` writes the named file.  ``--open`` also writes
+the HTML first and then opens a window.
+
+**First failure check.** If ``pyfcstm diagram`` reports a missing packaged
+resource, you are in a development checkout: run ``make build_assets``.  If
+no browser opens, use the file and omit ``--open``.
+
+**Reference link.** :doc:`/reference/visualization_options/index`.
+
+Avoid the Smetana layout for models with regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** A PlantUML pipeline.  PlantUML's built-in Smetana layout does not
+support concurrent partitions and drops every region after the first.
+``pyfcstm`` never writes a layout directive, so you meet this only if you or
+your tooling force it (for example with ``!pragma layout smetana``).  This
+limit comes from PlantUML itself; it was not reproduced here because no
+PlantUML renderer is available in this build.
+
+**Command or code.** Check that the exported source carries no layout
+directive, and render with the default Graphviz layout:
+
+.. literalinclude:: region_layout.demo.sh
+   :language: bash
+
+.. literalinclude:: region_layout.demo.sh.txt
+   :language: text
+
+**Expected signal.** No layout directive, and one ``--`` between the two
+partitions.  If your pipeline injected a directive, remove it and render
+again; every partition comes back.
+
+**File side effect.** None beyond the scratch directory the script removes.
+
+**First failure check.** If only the first partition is drawn, search the
+source that was rendered (not the one exported) for ``pragma layout``, and
+check that Graphviz is the layout in use.
+
+**Reference link.** :doc:`/reference/visualization_options/index`.

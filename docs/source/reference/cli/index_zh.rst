@@ -556,7 +556,7 @@ JSON 写入标准输出，其余格式都需要 ``-o``；HTML 写到请求路径
   ``TEMP`` 无法检测，且用 python.org 的安装包时目录权限只从 3.12.4 起才被应用。不希望
   文档落在共享位置时，请用 ``-o`` 指定路径。
 * SVG、PNG 和 PDF 由可选的渲染运行时产出。缺少运行时、缩放超出范围、导出超过大小上限都会作为错误报告并以非零状态退出。这些导出事实来自
-  ``pyfcstm/entry/diagram.py``；本页的演示脚本不运行它们，因为它们需要渲染资源。
+  ``pyfcstm/entry/diagram.py``；本页的例子不运行它们，因为它们需要渲染资源。
 * 无效格式、未知选项、输入不可读、解析/模型错误和打包资源缺失都会以对应错误类别非零退出。
 
 ``expand-svg``
@@ -741,8 +741,7 @@ JSON 写入标准输出，其余格式都需要 ``-o``；HTML 写到请求路径
 含区域模型的验收命令序列
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-下面的命令依次在控制器上运行。脚本把输入复制到临时目录，所以不会留下文件。只有一部分输出重要时，命令行里会写明，并用 ``grep`` 或 ``sed`` 选出这一部分；BMC 的求解耗时从不收录。
-记录由本页旁边的 ``region_acceptance.demo.sh`` 生成。
+下面的命令依次在控制器上运行，运行位置是本页目录的一份副本，所以不会留下文件。只有一部分输出重要时，其余部分用 ``...`` 表示；BMC 的求解耗时从不收录。
 
 BMC 步骤用到的两个查询：
 
@@ -752,25 +751,118 @@ BMC 步骤用到的两个查询：
 .. literalinclude:: motor_needs_permit.fbmcq
    :language: text
 
-.. literalinclude:: region_acceptance.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   $ pyfcstm inspect -i controller.fcstm --color never
+   [WARN] FCSTM Inspect Report: controller.fcstm
+   ...
+     regions: 2
+       Controller.Running.Safety: order 0 in Controller.Running; 1 states
+       Controller.Running.Motion: order 1 in Controller.Running; 2 states
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q motor_reach.fbmcq
+   BMC reach <= 4: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   ...
+   $ pyfcstm generate -i controller.fcstm --template python -o out
+   $ LC_ALL=C ls out
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm generate -i controller.fcstm -t listed_template -o listed_out
+   $ cat listed_out/summary.txt
+   states: 7
+   regions: 2
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+   ...
+
+图形数据里的 ``region`` 和 ``ordinal`` 用公开的 Python 接口从同一个模型读出，因为 ``pyfcstm diagram`` 把整份可移植 JSON 打印在一行里：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   diagram = load_state_machine_from_file("controller.fcstm").diagram().to_dict()
+   running = diagram["rootState"]["children"][1]
+   for child in running["children"]:
+       print(child["qualifiedName"], child["region"], child["ordinal"])
+
+.. testoutput::
+
+   Controller.Running.Safety True 1
+   Controller.Running.Motion True 2
 
 每一块说明了什么：
 
 * ``simulate``：``/Start`` 之后位置里有两个区域；故障周期在同一个周期里关断电机（``Motion`` 回到 ``Off``）。
-* ``inspect``：两个区域按书写顺序出现，顺序正确时没有区域诊断；调换顺序的模型报 ``I_REGION_BACKWARD_READ``。
+* ``inspect``：两个区域按书写顺序出现；调换顺序的模型报 ``I_REGION_BACKWARD_READ``\ 。
 * ``bmc``：电机可以运行，并且从不在没有许可时运行；每个 SAT 结果都经过回放。
 * ``generate``：打包的 Python 模板写出 ``machine.py`` 和两个 README 文件；列出 ``region`` 的模板目录渲染出区域个数和状态个数。
 * ``plantuml`` 与 ``diagram``：同样的两个区域按书写顺序出现，两处输出都从 1 数起。
 
 这个序列不运行生成出的 ``machine.py``，也不渲染 PlantUML 文本或 HTML 查看器；这些由模板测试和图形检查负责。
 
-失败或报告否定结论的命令在第二份记录里，由 ``region_acceptance.demox.sh`` 生成：
+失败或报告否定结论的命令在第二份记录里：
 
-.. literalinclude:: region_acceptance.demox.sh.txt
-   :language: text
+.. code-block:: console
 
-第一块是拒绝：退出状态 ``1``，且没有 ``out`` 目录。第二块用同一个性质检查调换了区域顺序的控制器：``Motion`` 先于 ``Safety`` 运行，看到的是上一个周期的许可，
+   $ pyfcstm generate -i controller.fcstm -t plain_template -o out_plain
+   generate with template directory '...plain_template' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_plain || echo "out_plain was not created"
+   out_plain was not created
+   $ pyfcstm bmc -i controller_swapped.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ echo $?
+   1
+
+第一条命令是拒绝：退出状态 ``1``，且没有输出目录。第二条命令用同一个性质检查调换了区域顺序的控制器：``Motion`` 先于 ``Safety`` 运行，看到的是上一个周期的许可，
 所以电机可能在 ``permit == 0`` 时运行；否定结论以 ``1`` 退出，见证已被回放。
 
 命令证据卡片

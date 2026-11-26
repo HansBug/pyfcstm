@@ -112,11 +112,15 @@
 使用交互命令行
 --------------
 
-省略 ``-e`` 即可启动交互命令行。交互会话无法由文档检查重放，所以这条命令只展示、不运行：
+省略 ``-e`` 即可启动交互命令行。交互会话无法由文档检查重放，所以这条命令只展示、不运行。请下载后面几节使用的模型 :download:`simple_machine.fcstm </_models/simple_machine.fcstm>`：
+
+.. literalinclude:: /_models/simple_machine.fcstm
+   :language: fcstm
+   :caption: simple_machine.fcstm
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/_models/simple_machine.fcstm --no-color
+   pyfcstm simulate -i simple_machine.fcstm --no-color
 
 然后逐条输入命令：
 
@@ -171,23 +175,61 @@
 在状态上热启动
 --------------
 
-当你需要检查后续状态但不想重放所有早期周期时，可以使用交互命令行的 ``init`` 命令：
+当你需要检查后续状态但不想重放所有早期周期时，可以使用 ``init`` 命令。在 ``simple_machine.fcstm`` 上，从 ``Running`` 起步并设 ``counter=10``，再发送 ``Stop``：
 
-.. code-block:: text
+.. code-block:: console
 
-   init System.Active counter=10 flag=1
-   cycle
-   current
+   $ pyfcstm simulate -i simple_machine.fcstm --no-color -e "\
+   init SimpleMachine.Running counter=10; \
+   cycle Stop; \
+   current"
+   ────────────────────────────────────────────────────────────
+   >>> init SimpleMachine.Running counter=10
+   ────────────────────────────────────────────────────────────
+   Initialized from state: SimpleMachine.Running
+   Cycle: 0
+   Current State: SimpleMachine.Running
+   Variables:
+     counter = 10
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Stop
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Stopped
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Stopped
+   Variables:
+     counter = 11
 
 在测试中嵌入同样逻辑时，使用 Python 应用程序接口：
 
-.. code-block:: python
+.. testcode::
 
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("simple_machine.fcstm")
    runtime = SimulationRuntime(
-       sm,
-       initial_state="System.Active",
-       initial_vars={"counter": 10, "flag": 1},
+       model,
+       initial_state="SimpleMachine.Running",
+       initial_vars={"counter": 10},
    )
+   print(runtime.configuration, dict(runtime.vars))
+   runtime.cycle(["Stop"])
+   print(runtime.configuration, dict(runtime.vars))
+
+.. testoutput::
+
+   SimpleMachine.Running {'counter': 10}
+   SimpleMachine.Stopped {'counter': 11}
+
 
 热启动有明确边界：
 
@@ -284,11 +326,37 @@
 一个紧凑调试循环是：
 
 1. 如果怀疑解析或诊断问题，先运行 ``pyfcstm inspect``。
-2. 用 ``pyfcstm simulate -i docs/source/_models/simple_machine.fcstm -e "cycle; events; current" --no-color``
-   获得稳定转录。
+2. 用一小段批处理命令（见下）获得稳定转录。
 3. 每次只增加一个事件。
 4. 失败后使用 ``history`` 或 ``export``。
 5. 如果热启动失败，先检查是否提供了所有变量和结构深度；若首周期得到 Delta，检查目标是否确实需要事件或存在稳定无进展边界。
+
+针对第 2 步，在交互命令行一节的 ``simple_machine.fcstm`` 上运行：
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i simple_machine.fcstm -e "cycle; events; current" --no-color
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Idle
+   Variables:
+     counter = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Start (SimpleMachine.Idle.Start)
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Idle
+   Variables:
+     counter = 0
 
 不要把仿真输出当作目标运行时测试的替代品。它是快速模型级检查；依赖目标语言行为时，还应搭配生成运行时测试。
 
@@ -330,48 +398,48 @@
 
    model = load_state_machine_from_file("controller.fcstm")
    variables = {"permit": 1, "motor": 1, "__forced_0": 0}
+   # one source is shared by all runtimes below, so it holds its last value
+   inputs = {
+       "fault": SequenceInput([0], end="hold"),
+       "requested": SequenceInput([1], end="hold"),
+   }
+   text = "Controller.Running{Safety: Watching, Motion: On}"
    motion_on = model.root_state.substates["Running"].regions["Motion"].substates["On"]
    forms = {
-       "configuration text": "Controller.Running{Safety: Watching, Motion: On}",
-       "Configuration object": Configuration.parse(
-           model, "Controller.Running{Safety: Watching, Motion: On}"
-       ),
+       "configuration text": text,
+       "Configuration object": Configuration.parse(model, text),
        "dotted path": "Controller.Running.Motion.On",
        "tuple path": ("Controller", "Running", "Motion", "On"),
        "State object": motion_on,
        "owner only": "Controller.Running",
    }
-   for label, initial_state in forms.items():
+   for label, form in forms.items():
        runtime = SimulationRuntime(
-           model,
-           initial_state=initial_state,
-           initial_vars=variables,
-           input_source={"fault": SequenceInput([0]), "requested": SequenceInput([1])},
+           model, initial_state=form, initial_vars=variables, input_source=inputs
        )
-       before = runtime.configuration
+       print(label)
+       print("  at start    ", runtime.configuration)
        runtime.cycle()
-       print(f"{label}:")
-       print(f"  at start     {before}")
-       print(f"  after cycle  {runtime.configuration}")
+       print("  after cycle ", runtime.configuration)
 
 .. testoutput::
 
-   configuration text:
+   configuration text
      at start     Controller.Running{Safety: Watching, Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   Configuration object:
+   Configuration object
      at start     Controller.Running{Safety: Watching, Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   dotted path:
+   dotted path
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   tuple path:
+   tuple path
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   State object:
+   State object
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   owner only:
+   owner only
      at start     Controller.Running{Safety: [init], Motion: [init]}
      after cycle  Controller.Running{Safety: Watching, Motion: Off}
 
@@ -422,8 +490,34 @@
    after one cycle: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
    runtime.vars: {'__active_Plant_Trigger_Fired': 1}
 
+同一个位置，隐藏变量分别设为 ``1`` 和 ``0``。只有查询为真时 ``Earlier`` 才会进入 ``Saw``：
+
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("hot_watch.fcstm")
+   config = Configuration.parse(
+       model, "Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}"
+   )
+   for value in (1, 0):
+       runtime = SimulationRuntime(
+           model,
+           initial_state=config,
+           initial_vars={"__active_Plant_Trigger_Fired": value},
+           input_source={"go": SequenceInput([1])},
+       )
+       runtime.cycle()
+       print(value, runtime.configuration)
+
+.. testoutput::
+
+   1 Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+   0 Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}
+
 **预期信号。** ``model.active_queries`` 列出查询及其变量名；``model.active_variables(config)`` 算出与位置匹配的取值。运行时接受它们作为
-``initial_vars``，并在 ``runtime.vars`` 里显示。若传入与位置不一致的值，运行时按你传入的值运行。
+``initial_vars``，并在 ``runtime.vars`` 里显示。若传入与位置不一致的值，运行时按你传入的值运行，见第二个脚本。
 
 **文件副作用。** 无。
 
@@ -560,31 +654,28 @@
            initial_state="Root.Pair{Left: Busy}",
            initial_vars={"flag": flag, "work": 0},
        )
-       print(f"flag={flag} at start: {runtime.configuration}")
        result = runtime.cycle(diagnostics=True)
-       print(f"  delta={result.delta} outcome={result.diagnostics.outcome}")
-       print(f"  after cycle: {runtime.configuration} vars={dict(runtime.vars)}")
+       print(f"flag={flag}: delta={result.delta} outcome={result.diagnostics.outcome}")
+       print(f"  {runtime.configuration} {dict(runtime.vars)}")
        for item in result.diagnostics.decisions:
-           print(
-               f"  check #{item.id} {item.transition_label.split('::')[0]} -> "
-               f"{item.outcome}; guard={item.guard} result={item.guard_result}"
-           )
+           print(f"  #{item.id} {item.transition_label}")
+           print(f"     {item.outcome}: {item.guard} is {item.guard_result}")
 
 .. testoutput::
 
    Cycle 1 completed as Delta - State: Root.Pair{Left: Busy, Right: [init]}; no stoppable successor was committed
-   flag=0 at start: Root.Pair{Left: Busy, Right: [init]}
-     delta=True outcome=delta
-     after cycle: Root.Pair{Left: Busy, Right: [init]} vars={'flag': 0, 'work': 0}
-     check #1 Root.Pair.Right -> guard_false; guard=flag > 0 result=False
-   flag=1 at start: Root.Pair{Left: Busy, Right: [init]}
-     delta=False outcome=cycle
-     after cycle: Root.Pair{Left: Busy, Right: Ready} vars={'flag': 1, 'work': 1}
-     check #1 Root.Pair.Right -> selected; guard=flag > 0 result=True
-     check #2 Root.Pair.Right -> selected; guard=flag > 0 result=True
+   flag=0: delta=True outcome=delta
+     Root.Pair{Left: Busy, Right: [init]} {'flag': 0, 'work': 0}
+     #1 Root.Pair.Right::0::INIT_STATE->Ready
+        guard_false: flag > 0 is False
+   flag=1: delta=False outcome=cycle
+     Root.Pair{Left: Busy, Right: Ready} {'flag': 1, 'work': 1}
+     #1 Root.Pair.Right::0::INIT_STATE->Ready
+        selected: flag > 0 is True
+     #2 Root.Pair.Right::0::INIT_STATE->Ready
+        selected: flag > 0 is True
 
-**预期信号。** ``flag=0`` 时这个周期是 Delta：``delta=True``，配置和变量都不变，连 ``Left`` 的 ``during``\ （本会让 ``work`` 增加）也被回滚。第一条检查指出失败的转换
-（``guard_false``，``flag > 0``）。``flag=1`` 时同一个调用让 ``Right`` 就位并执行 ``Left`` 的 ``during``。Delta 是整个周期没有提交；各区域只是原地停留的周期不是 Delta。
+**预期信号。** ``flag=0`` 时这个周期是 Delta：``delta=True``，配置和变量都不变，连 ``Left`` 的 ``during``\ （本会让 ``work`` 增加）也被回滚。第一条检查指出失败的转换：``Root.Pair.Right::0::INIT_STATE->Ready`` 是 ``Right`` 的初始转换，它以 ``guard_false`` 结束，守卫是 ``flag > 0``。``flag=1`` 时同一个调用让 ``Right`` 就位并执行 ``Left`` 的 ``during``。Delta 是整个周期没有提交；各区域只是原地停留的周期不是 Delta。
 命令行用 ``pyfcstm simulate --diagnostics`` 与 ``why`` 给出同样的证据，见 :doc:`diagnostics_zh`。
 
 **文件副作用。** 无；Delta 的警告输出到标准错误。

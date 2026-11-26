@@ -982,6 +982,8 @@ pyfcstm is designed for a wide range of applications where state machines are es
 - **BMC Transition Semantics**: [Bounded Transition System](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_semantics/index.html)
 - **BMC Property Semantics**: [Objectives, Definedness, and Bounds](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_properties/index.html)
 - **BMC Solving and Replay**: [Solver, Witness, and Replay](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_solving/index.html)
+- **BMC and Regions**: [How Regions Enter the Bounded Transition System](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_regions/index.html)
+- **BMC Scaling**: [How BMC Cost Grows with States, Regions and Bounds](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_scaling/index.html)
 - **FBMCQ Reference**: [Query Language](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_query/index.html)
 - **BMC Result Protocol**: [CLI, JSON, and Exit Status](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html)
 - **CLI Reference**: [Every command and per-option decision card](https://pyfcstm.readthedocs.io/en/latest/reference/cli/index.html)

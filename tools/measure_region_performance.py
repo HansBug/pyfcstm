@@ -26,6 +26,24 @@ Parameters of the generated sweep models (see :func:`sweep_model`): ``R``
 regions per owner, ``S`` states per region, ``T`` transitions per state, ``D``
 owner nesting levels, ``V`` variables written by every transition.
 
+The module contains:
+
+* :class:`Writer` - JSON Lines writer that stamps every record with the commit
+  and a machine description
+* :func:`sweep_model`, :func:`product_model`, :func:`expanded_model`,
+  :func:`coupled_models`, :func:`flat_family` - generators of the measured models
+* :func:`count_model`, :func:`load_model` - model loading and size counting
+* :func:`measure_sim`, :func:`measure_python_runtime`, :func:`measure_c` -
+  per-engine measurement of one model
+* :func:`linear_fit`, :func:`poly_fit`, :func:`power_fit` - dependency-free fits
+* :func:`cmd_e1`, :func:`cmd_e2`, :func:`cmd_e3`, :func:`cmd_e4`,
+  :func:`cmd_fit`, :func:`build_parser`, :func:`main` - the command line
+
+.. note::
+   Timing needs a quiet machine. Pin the process with ``--core`` and treat
+   differences below the run-to-run noise (about 2 % to 16 % in the recorded
+   data) as no difference.
+
 Example::
 
     $ python tools/measure_region_performance.py e2 --out data/e2.jsonl --core 3
@@ -75,8 +93,18 @@ def repo_root():
     """
     Return the root of the checkout that contains this tool.
 
-    :return: Absolute path.
+    The tool lives in ``tools/`` of the repository, so the root is two directory
+    levels above this file. It is used to ask git for the commit that a measurement
+    belongs to, which is why it follows the file and not the working directory.
+
+    :return: Absolute path of the repository root.
     :rtype: str
+
+    Example::
+
+        >>> import os
+        >>> os.path.isfile(os.path.join(repo_root(), "setup.py"))
+        True
     """
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -85,8 +113,17 @@ def git_commit():
     """
     Return the short commit hash of the checkout, or ``unknown``.
 
-    :return: Hash string.
+    The hash goes into every data record so that a number can be traced to the code
+    that produced it. When git is missing or the directory is not a checkout, the
+    tool still runs and records the string ``unknown`` instead of failing.
+
+    :return: Eight hexadecimal characters, or ``unknown``.
     :rtype: str
+
+    Example::
+
+        >>> len(git_commit()) in (7, 8)
+        True
     """
     try:
         out = subprocess.run(
@@ -105,8 +142,18 @@ def machine_info():
     """
     Describe the machine, the Python version and the C compiler.
 
-    :return: Plain dictionary, deterministic across runs on one machine.
+    The description is stored with every record. The processor name comes from
+    ``/proc/cpuinfo`` where it exists, otherwise from :func:`platform.processor`.
+    ``gcc`` is ``None`` when the compiler is not installed, which only matters for
+    the ``e4`` sub-command.
+
+    :return: Dictionary with the keys ``cpu``, ``os``, ``python`` and ``gcc``.
     :rtype: dict
+
+    Example::
+
+        >>> sorted(machine_info())
+        ['cpu', 'gcc', 'os', 'python']
     """
     cpu = platform.processor() or "unknown"
     try:
@@ -136,10 +183,18 @@ def pin_core(core):
     """
     Pin the process to one core where the platform allows it.
 
+    Pinning removes migration between cores from the timings. On platforms without
+    ``os.sched_setaffinity`` (macOS, Windows) the call does nothing, so the
+    measurement still runs but is noisier.
+
     :param core: Core number, or ``None`` to leave the affinity alone.
     :type core: Optional[int]
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        >>> pin_core(None)
     """
     if core is not None and hasattr(os, "sched_setaffinity"):
         os.sched_setaffinity(0, {core})
@@ -149,13 +204,47 @@ class Writer:
     """
     Append JSON Lines records that all carry the same provenance fields.
 
-    :param path: Output file; it is truncated when the writer is created.
+    Every record written through :meth:`write` also contains the fields given at
+    construction, the commit of the checkout and the machine description, so a data
+    file can be interpreted without the command line that produced it. The file is
+    truncated when the writer is created; one writer owns one file.
+
+    :param path: Output file; it is truncated when the writer is created, and its
+        directory is created when missing.
     :type path: str
-    :param extra: Fields added to every record.
-    :type extra: dict
+    :param extra: Fields added to every record, defaults to ``None`` (none).
+    :type extra: Optional[dict]
+
+    :ivar path: Output file path.
+    :vartype path: str
+    :ivar base: Fields stamped on every record: ``extra``, ``commit`` and
+        ``machine``.
+    :vartype base: dict
+
+    Example::
+
+        >>> import json, os, tempfile
+        >>> with tempfile.TemporaryDirectory() as directory:
+        ...     writer = Writer(os.path.join(directory, "out.jsonl"), {"experiment": "demo"})
+        ...     writer.write(value=1)
+        ...     with open(writer.path) as handle:
+        ...         record = json.loads(handle.readline())
+        {"value": 1}
+        >>> sorted(record)
+        ['commit', 'experiment', 'machine', 'value']
     """
 
     def __init__(self, path, extra=None):
+        """
+        Create the output directory, truncate the file and prepare the stamp fields.
+
+        :param path: Output file path.
+        :type path: str
+        :param extra: Fields added to every record, defaults to ``None`` (none).
+        :type extra: Optional[dict]
+        :return: ``None``.
+        :rtype: None
+        """
         self.path = path
         self.base = dict(extra or {})
         self.base["commit"] = git_commit()
@@ -167,11 +256,25 @@ class Writer:
 
     def write(self, **fields):
         """
-        Append one record.
+        Append one record and echo it to standard output.
 
-        :param fields: Record fields.
+        The record is the stamp fields updated with ``fields``; a key in ``fields``
+        wins over a stamp key of the same name. The echo leaves out ``model`` to keep
+        progress lines short; the file keeps it. Keys are written sorted so that two
+        runs on identical values produce identical lines.
+
+        :param fields: Record fields. All values must be JSON serialisable.
+        :type fields: object
         :return: ``None``.
         :rtype: None
+        :raises TypeError: If a field value is not JSON serialisable.
+
+        Example::
+
+            >>> import os, tempfile
+            >>> with tempfile.TemporaryDirectory() as directory:
+            ...     Writer(os.path.join(directory, "out.jsonl")).write(n=3)
+            {"n": 3}
         """
         row = dict(self.base)
         row.update(fields)
@@ -189,22 +292,54 @@ def input_sequence(T, seed=1, length=SEQ_LEN):
     """
     Return the deterministic input sequence shared by all engines.
 
-    Each value is in ``0..T``; ``0`` makes no transition fire.
+    Each value is in ``0..T``: ``0`` makes no transition fire and ``c >= 1`` makes
+    the ``c``-th guard of a sweep model true. The simulator, the generated Python
+    runtime and the generated C driver all read the same sequence (the C driver
+    gets it as a table), so their final variables can be compared.
 
-    :param T: Transitions per state.
+    :param T: Transitions per state; the largest value in the sequence.
     :type T: int
-    :param seed: Random seed.
+    :param seed: Random seed, defaults to ``1``.
     :type seed: int
-    :param length: Sequence length.
+    :param length: Sequence length, defaults to ``SEQ_LEN`` (1024).
     :type length: int
-    :return: Values.
+    :return: ``length`` integers in ``0..T``.
     :rtype: list
+
+    Example::
+
+        >>> input_sequence(2, length=6)
+        [0, 2, 0, 1, 0, 1]
+        >>> input_sequence(2, seed=2, length=6)
+        [0, 0, 0, 1, 0, 2]
     """
     rng = random.Random(seed)
     return [rng.randint(0, T) for _ in range(length)]
 
 
 def _ring(prefix, S, T, V, indent):
+    """
+    Return the DSL lines of one ring region body for :func:`sweep_model`.
+
+    The ring has ``S`` states ``<prefix>0`` .. ``<prefix>{S-1}``, each with a
+    ``during`` that adds one to ``n``, the initial transition to the first state and
+    ``T`` guarded transitions per state to the next ``T`` states around the ring.
+    Every transition writes ``v0`` .. ``v{V-1}``. The ring must have ``T <= S - 1``
+    so that the targets differ; the caller checks that.
+
+    :param prefix: Name prefix of the states.
+    :type prefix: str
+    :param S: Number of states.
+    :type S: int
+    :param T: Transitions per state.
+    :type T: int
+    :param V: Variables written by every transition.
+    :type V: int
+    :param indent: Indentation put in front of every line.
+    :type indent: str
+    :return: DSL lines without trailing newlines.
+    :rtype: list
+    """
     lines = []
     writes = " ".join("v%d = v%d + 1;" % (k, k) for k in range(V))
     for j in range(S):
@@ -228,7 +363,8 @@ def sweep_model(R, S, T, D, V, with_ring_at_bottom=True):
     ``R - 1`` regions are rings; the deepest owner has ``R`` rings. A ring has
     ``S`` states, every state has ``T`` outgoing transitions guarded by
     ``a == 1`` .. ``a == T`` and every transition writes ``V`` variables. With
-    ``R = 1`` and ``D > 1`` the model is a pure chain of owners.
+    ``R = 1`` and ``D > 1`` the model is a pure chain of owners. The input ``a`` is
+    the only input, so one input sequence drives the whole family.
 
     :param R: Regions per owner.
     :type R: int
@@ -240,10 +376,19 @@ def sweep_model(R, S, T, D, V, with_ring_at_bottom=True):
     :type D: int
     :param V: Variables written by every transition.
     :type V: int
-    :param with_ring_at_bottom: Kept for readability of callers; always true.
+    :param with_ring_at_bottom: Kept for readability of callers; always true,
+        defaults to ``True``.
     :type with_ring_at_bottom: bool
     :return: DSL text.
     :rtype: str
+    :raises ValueError: If ``T`` is larger than ``S - 1``.
+
+    Example::
+
+        >>> sweep_model(1, 3, 1, 1, 1).splitlines()[:3]
+        ['input int a;', 'def int n = 0;', 'def int v0 = 0;']
+        >>> sweep_model(2, 8, 2, 3, 1).count("region ")
+        6
     """
     if T > S - 1:
         raise ValueError("T must be at most S - 1")
@@ -278,7 +423,9 @@ def product_model(R, S, T):
     One owner with ``R`` regions of ``S`` states. Region ``i`` reads only its own
     input ``x<i>`` (values ``0..T``): value ``c >= 1`` fires the ``c``-th
     transition of the current state, which adds ``c`` to counter ``c<i>``; ``0``
-    fires none and the ``during`` action adds one to ``u<i>``.
+    fires none and the ``during`` action adds one to ``u<i>``. Because no region
+    reads another region's variables, the model is the "independent regions" case
+    whose counts the page derives exactly.
 
     :param R: Number of regions.
     :type R: int
@@ -288,6 +435,12 @@ def product_model(R, S, T):
     :type T: int
     :return: DSL text.
     :rtype: str
+
+    Example::
+
+        >>> text = product_model(2, 3, 1)
+        >>> text.count("region "), text.count(" -> ")
+        (2, 9)
     """
     lines = ["input int x%d;" % i for i in range(R)]
     lines += ["def int c%d = 0;\ndef int u%d = 0;" % (i, i) for i in range(R)]
@@ -320,7 +473,8 @@ def expanded_model(R, S, T):
     effect applies the fired effects. The ``during`` of a product state applies
     every region's action: a cycle that takes a transition runs the ``during`` of
     the state it arrives in, so the regions that stay and the regions that fired
-    each get one ``during`` in that cycle, as in the region form.
+    each get one ``during`` in that cycle, as in the region form. The size grows as
+    ``S**R`` states, so keep ``R`` and ``S`` small.
 
     :param R: Number of regions.
     :type R: int
@@ -330,6 +484,12 @@ def expanded_model(R, S, T):
     :type T: int
     :return: DSL text.
     :rtype: str
+
+    Example::
+
+        >>> text = expanded_model(2, 3, 1)
+        >>> text.count("state P_"), text.count(" -> ")
+        (9, 28)
     """
     import itertools
 
@@ -371,8 +531,15 @@ def coupled_models():
     cycle) and the substituted expansion (the guard reads ``x0``, which is what
     ``W`` writes to ``p`` earlier in the same cycle).
 
-    :return: Mapping from label to DSL text.
+    :return: Mapping from label to DSL text. The labels are
+        ``regions_reader_after_writer``, ``regions_reader_before_writer``,
+        ``flat_naive`` and ``flat_substituted``.
     :rtype: dict
+
+    Example::
+
+        >>> sorted(coupled_models())
+        ['flat_naive', 'flat_substituted', 'regions_reader_after_writer', 'regions_reader_before_writer']
     """
     decl = "input int x0;\ndef int p = 0;\ndef int c = 0;\ndef int d = 0;\n"
 
@@ -420,10 +587,21 @@ def load_model(text):
     """
     Parse FCSTM text into a state machine model.
 
+    This is the public parse path (grammar entry ``state_machine_dsl`` followed by
+    the model conversion) written out so that the tool does not depend on a
+    convenience wrapper.
+
     :param text: DSL text.
     :type text: str
     :return: Model.
     :rtype: pyfcstm.model.model.StateMachine
+    :raises pyfcstm.dsl.error.GrammarParseError: If the text is not valid FCSTM.
+
+    Example::
+
+        >>> model = load_model(product_model(2, 3, 1))
+        >>> [state.name for state in model.walk_states()][:3]
+        ['Root', 'P', 'S0']
     """
     from pyfcstm.dsl import parse_with_grammar_entry
     from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -437,13 +615,19 @@ def count_model(model):
     Count leaf states, ordinary transitions and regions of a model.
 
     Transitions that start at the initial pseudo state ``[*]`` are not counted,
-    because they only choose where an owner or a state machine starts.
+    because they only choose where an owner or a state machine starts. Transitions
+    are read from states and from regions, since a region owns its transitions.
 
     :param model: Model.
     :type model: pyfcstm.model.model.StateMachine
     :return: Dictionary with ``leaf_states``, ``all_states``, ``transitions`` and
         ``regions``.
     :rtype: dict
+
+    Example::
+
+        >>> count_model(load_model(product_model(2, 3, 1)))
+        {'leaf_states': 6, 'all_states': 8, 'transitions': 6, 'regions': 2}
     """
     states = list(model.walk_states())
     leaves = [s for s in states if s.is_leaf_state]
@@ -468,6 +652,18 @@ def count_model(model):
 
 def _is_state_name(from_state):
     # ``[*]`` is represented by a non-string marker; real sources are names.
+    """
+    Tell a real transition source from the initial marker.
+
+    The model stores the source of an initial transition as a marker object and the
+    source of every other transition as the state name string, so a ``str`` check
+    separates them.
+
+    :param from_state: ``Transition.from_state`` value.
+    :type from_state: object
+    :return: ``True`` for a named source state.
+    :rtype: bool
+    """
     return isinstance(from_state, str)
 
 
@@ -480,10 +676,16 @@ def summarize(samples):
     """
     Summarize repeated measurements.
 
-    :param samples: Measured values.
+    :param samples: Measured values, at least one.
     :type samples: list
     :return: ``min``, ``median`` and ``max``.
     :rtype: dict
+    :raises ValueError: If ``samples`` is empty.
+
+    Example::
+
+        >>> summarize([3, 1, 2])
+        {'min': 1, 'median': 2, 'max': 3}
     """
     return {
         "min": min(samples),
@@ -496,16 +698,27 @@ def pick_cycles(per_cycle_s, target_s=0.2, lo=20, hi=200000):
     """
     Choose how many cycles one repeat runs so that it lasts about ``target_s``.
 
+    A repeat that is too short is dominated by timer resolution and one that is too
+    long wastes time, so the count is derived from a probe of the per-cycle cost and
+    then clamped.
+
     :param per_cycle_s: Estimated seconds per cycle.
     :type per_cycle_s: float
-    :param target_s: Wanted seconds per repeat.
+    :param target_s: Wanted seconds per repeat, defaults to ``0.2``.
     :type target_s: float
-    :param lo: Lower bound.
+    :param lo: Lower bound, defaults to ``20``.
     :type lo: int
-    :param hi: Upper bound.
+    :param hi: Upper bound, defaults to ``200000``.
     :type hi: int
     :return: Cycle count.
     :rtype: int
+
+    Example::
+
+        >>> pick_cycles(0.001)
+        200
+        >>> pick_cycles(1.0), pick_cycles(1e-9)
+        (20, 200000)
     """
     return max(lo, min(hi, int(target_s / max(per_cycle_s, 1e-9))))
 
@@ -514,12 +727,25 @@ def sweep_points(only=None, depth=True):
     """
     Enumerate ``(sweep_name, params)`` of the one-dimensional sweeps.
 
-    :param only: Restrict to these sweep names, or ``None``.
+    Each sweep changes one parameter of ``BASE`` and keeps the others; points with
+    ``T > S - 1`` are skipped because a ring cannot have that many distinct targets.
+    The depth sweeps ``D_chain`` (``R = 1``) and ``D_branch`` (``R = 2``) follow the
+    four parameter sweeps.
+
+    :param only: Restrict to these sweep names, or ``None`` for all, defaults to
+        ``None``.
     :type only: Optional[list]
-    :param depth: Include the depth sweeps.
+    :param depth: Include the depth sweeps, defaults to ``True``.
     :type depth: bool
-    :return: List of pairs.
+    :return: List of pairs of a sweep name and a parameter dictionary.
     :rtype: list
+
+    Example::
+
+        >>> len(sweep_points()), len(sweep_points(depth=False))
+        (47, 29)
+        >>> sweep_points(["D_chain"])[0]
+        ('D_chain', {'R': 1, 'S': 8, 'T': 2, 'D': 1, 'V': 1})
     """
     points = []
     for name, values in SWEEPS.items():
@@ -547,6 +773,22 @@ def sweep_points(only=None, depth=True):
 
 
 def _run_vars(model, seq_by_cycle, names):
+    """
+    Run a model on given inputs and record the variables after every cycle.
+
+    The runtime keeps one history entry (``history_size=1``) so that long runs do not
+    grow memory. The inputs are supplied per cycle, so the construction-time source
+    only needs a placeholder value for each name.
+
+    :param model: Model with the inputs named in ``names``.
+    :type model: pyfcstm.model.model.StateMachine
+    :param seq_by_cycle: One input mapping per cycle.
+    :type seq_by_cycle: list
+    :param names: Input names of the model.
+    :type names: list
+    :return: One variable dictionary per cycle, in order.
+    :rtype: list
+    """
     from pyfcstm.simulate import SimulationRuntime
 
     runtime = SimulationRuntime(
@@ -562,6 +804,26 @@ def _run_vars(model, seq_by_cycle, names):
 
 
 def _time_plain(model, names, seq, repeats, cycles=100):
+    """
+    Time simulator cycles of a model on a given input sequence.
+
+    The sequence repeats when it is shorter than the run. Thirty warm-up cycles run
+    first; the index into the sequence is shared between warm-up and batches so
+    that the batches continue where the warm-up stopped.
+
+    :param model: Model with the inputs named in ``names``.
+    :type model: pyfcstm.model.model.StateMachine
+    :param names: Input names of the model.
+    :type names: list
+    :param seq: Per-cycle input mappings.
+    :type seq: list
+    :param repeats: Number of timed batches.
+    :type repeats: int
+    :param cycles: Cycles per batch, defaults to ``100``.
+    :type cycles: int
+    :return: ``min``, ``median`` and ``max`` seconds per cycle.
+    :rtype: dict
+    """
     from pyfcstm.simulate import SimulationRuntime
 
     runtime = SimulationRuntime(
@@ -582,10 +844,22 @@ def cmd_e1(args):
     """
     Run experiment 1.
 
-    :param args: Parsed command line.
+    For every grid point it builds the region form and the flat expansion, counts
+    both, compares the counts with the closed formulas, checks that both give the
+    same variables after every cycle on random input sequences, and (with
+    ``--repeats`` above zero) times the two forms. It then runs the coupled-read
+    models and compares their variables pairwise. One JSON line is written per
+    grid point and per comparison.
+
+    :param args: Parsed command line with ``out``, ``cycles``, ``seeds``,
+        ``max_flat_transitions``, ``repeats`` and ``core``.
     :type args: argparse.Namespace
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        $ python tools/measure_region_performance.py e1 --out data/e1.jsonl --core 3
     """
     pin_core(args.core)
     writer = Writer(args.out, {"experiment": "e1"})
@@ -685,6 +959,18 @@ def cmd_e1(args):
 
 
 def _time_cycles(step, cycles, repeats):
+    """
+    Time ``step`` in batches and return seconds per cycle for each batch.
+
+    :param step: Callable that runs the given number of cycles.
+    :type step: Callable[[int], None]
+    :param cycles: Cycles per batch; the divisor of the batch time.
+    :type cycles: int
+    :param repeats: Number of batches.
+    :type repeats: int
+    :return: One value per batch, in seconds per cycle.
+    :rtype: list
+    """
     samples = []
     for _ in range(repeats):
         start = time.perf_counter()
@@ -694,6 +980,19 @@ def _time_cycles(step, cycles, repeats):
 
 
 def _sim_factory(model, seq):
+    """
+    Return a function that builds a fresh simulator runtime for ``model``.
+
+    Every runtime reads the input ``a`` from the looped sequence ``seq`` and keeps
+    one history entry, so the runtimes are independent and equally configured.
+
+    :param model: Model with the single input ``a``.
+    :type model: pyfcstm.model.model.StateMachine
+    :param seq: Input values for ``a``; the sequence loops when exhausted.
+    :type seq: list
+    :return: Zero-argument factory.
+    :rtype: Callable[[], pyfcstm.simulate.runtime.SimulationRuntime]
+    """
     from pyfcstm.simulate import SequenceInput, SimulationRuntime
 
     def make():
@@ -710,17 +1009,28 @@ def measure_sim(model, T, repeats, warmup=50):
     """
     Time :meth:`pyfcstm.simulate.SimulationRuntime.cycle` on one model.
 
+    The first cycle is timed on freshly built runtimes (it enters every owner) and
+    the steady state on one runtime after a warm-up. The number of cycles per batch
+    is chosen from a probe by :func:`pick_cycles`. The final variables after
+    ``SEQ_LEN`` cycles are returned so that other engines can be compared.
+
     :param model: Model with one input ``a``.
     :type model: pyfcstm.model.model.StateMachine
     :param T: Transitions per state, which bounds the input values.
     :type T: int
     :param repeats: Number of timed batches.
     :type repeats: int
-    :param warmup: Cycles run before timing.
+    :param warmup: Cycles run before timing, defaults to ``50``.
     :type warmup: int
     :return: ``steady`` summary in seconds per cycle, ``first_cycle`` summary in
         seconds, ``cycles`` per batch and the final variables.
     :rtype: dict
+
+    Example::
+
+        >>> result = measure_sim(load_model(sweep_model(1, 3, 1, 1, 1)), 1, 1)
+        >>> sorted(result)
+        ['cycles', 'final_vars', 'first_cycle', 'steady']
     """
     seq = input_sequence(T)
     make = _sim_factory(model, seq)
@@ -758,10 +1068,19 @@ def cmd_e2(args):
     """
     Run experiment 2.
 
-    :param args: Parsed command line.
+    Measures the simulator on every point of :func:`sweep_points` and writes one
+    record per point with the steady-state and first-cycle summaries and the final
+    variables.
+
+    :param args: Parsed command line with ``out``, ``core``, ``repeats`` and
+        ``only``.
     :type args: argparse.Namespace
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        $ python tools/measure_region_performance.py e2 --out data/e2.jsonl --core 3 --only R
     """
     pin_core(args.core)
     writer = Writer(args.out, {"experiment": "e2", "engine": "simulator"})
@@ -784,6 +1103,16 @@ def cmd_e2(args):
 
 
 def _import_generated(path, name):
+    """
+    Import a generated ``machine.py`` from a path under a private module name.
+
+    :param path: Path of the generated module.
+    :type path: str
+    :param name: Module name to register the import under.
+    :type name: str
+    :return: The executed module.
+    :rtype: types.ModuleType
+    """
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -794,6 +1123,11 @@ def generate_with_cli(text, template, directory):
     """
     Generate a runtime with ``python -m pyfcstm generate --template``.
 
+    The model text is written next to ``directory`` (as ``<directory>.fcstm``) and
+    the command is run with the current interpreter, so the same code path as a
+    user's command line is measured. A built-in template needs the packaged
+    templates (``make tpl``); a directory is passed with ``-t``.
+
     :param text: DSL text.
     :type text: str
     :param template: Built-in template name or ``-t`` directory.
@@ -802,6 +1136,16 @@ def generate_with_cli(text, template, directory):
     :type directory: str
     :return: ``None``.
     :rtype: None
+    :raises subprocess.CalledProcessError: If ``pyfcstm generate`` fails.
+
+    Example::
+
+        >>> import os, tempfile
+        >>> with tempfile.TemporaryDirectory() as workdir:
+        ...     out = os.path.join(workdir, "out")
+        ...     generate_with_cli(sweep_model(1, 3, 1, 1, 1), "python", out)
+        ...     os.path.isfile(os.path.join(out, "machine.py"))
+        True
     """
     src = directory + ".fcstm"
     with open(src, "w") as handle:
@@ -820,6 +1164,11 @@ def measure_python_runtime(text, T, repeats, workdir, warmup=50):
     """
     Generate the Python runtime of ``text`` and time its ``cycle``.
 
+    The runtime is generated with :func:`generate_with_cli`, imported, and driven
+    with ``cycle(inputs={"a": ...})`` from the shared input sequence. As in
+    :func:`measure_sim` the first cycle is timed on fresh machines, the steady state
+    after a warm-up, and the final variables after ``SEQ_LEN`` cycles are returned.
+
     :param text: DSL text with one input ``a``.
     :type text: str
     :param T: Transitions per state.
@@ -828,11 +1177,20 @@ def measure_python_runtime(text, T, repeats, workdir, warmup=50):
     :type repeats: int
     :param workdir: Scratch directory.
     :type workdir: str
-    :param warmup: Warm-up cycles.
+    :param warmup: Warm-up cycles, defaults to ``50``.
     :type warmup: int
     :return: Dictionary like :func:`measure_sim` plus ``import_seconds`` and
         ``machine_bytes``.
     :rtype: dict
+    :raises subprocess.CalledProcessError: If the runtime cannot be generated.
+
+    Example::
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as workdir:
+        ...     result = measure_python_runtime(sweep_model(1, 3, 1, 1, 1), 1, 1, workdir)
+        >>> sorted(result)
+        ['cycles', 'final_vars', 'first_cycle', 'import_seconds', 'machine_bytes', 'steady']
     """
     out = os.path.join(workdir, "py")
     generate_with_cli(text, "python", out)
@@ -890,10 +1248,19 @@ def cmd_e3(args):
     """
     Run experiment 3.
 
-    :param args: Parsed command line.
+    Measures the generated Python runtime on every point of :func:`sweep_points`.
+    With ``--sim-data`` it also records whether the final variables equal those of
+    the simulator measurement of the same point.
+
+    :param args: Parsed command line with ``out``, ``core``, ``repeats``, ``only``
+        and ``sim_data``.
     :type args: argparse.Namespace
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        $ python tools/measure_region_performance.py e3 --out data/e3.jsonl --core 3 --sim-data data/e2.jsonl
     """
     pin_core(args.core)
     writer = Writer(args.out, {"experiment": "e3", "engine": "generated_python"})
@@ -983,10 +1350,19 @@ def c_names(text):
     """
     Return the C class prefix and macro prefix of a generated machine.
 
+    Every sweep model has the root state ``Root``, so the names are constants; the
+    parameter exists so that a model with another root can be supported by changing
+    one function.
+
     :param text: DSL text whose root state is ``Root``.
     :type text: str
-    :return: ``("RootMachine", "ROOT_MACHINE")``.
+    :return: Class prefix and macro prefix.
     :rtype: tuple
+
+    Example::
+
+        >>> c_names(sweep_model(1, 3, 1, 1, 1))
+        ('RootMachine', 'ROOT_MACHINE')
     """
     return "RootMachine", "ROOT_MACHINE"
 
@@ -994,6 +1370,11 @@ def c_names(text):
 def build_c(text, template, workdir, T):
     """
     Generate the C runtime, compile it with the driver and measure its size.
+
+    The driver (``DRIVER``) is written next to the generated files, filled with the
+    class and macro names and the shared input table, and compiled with
+    ``gcc -O2 -std=c99``. The sizes come from ``size`` on a separate object built
+    from ``machine.c`` alone, so the driver is not counted.
 
     :param text: DSL text with input ``a`` and root ``Root``.
     :type text: str
@@ -1003,8 +1384,18 @@ def build_c(text, template, workdir, T):
     :type workdir: str
     :param T: Transitions per state; bounds the input values.
     :type T: int
-    :return: ``exe``, ``text``, ``data``, ``bss`` and the generation seconds.
+    :return: ``exe``, ``text``, ``data``, ``bss`` and ``generate_seconds``.
     :rtype: dict
+    :raises subprocess.CalledProcessError: If generation, compilation or ``size``
+        fails (for example when ``gcc`` is missing the C library headers).
+
+    Example::
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as workdir:
+        ...     built = build_c(sweep_model(1, 3, 1, 1, 1), "c", workdir, 1)
+        >>> sorted(built)
+        ['bss', 'data', 'exe', 'generate_seconds', 'text']
     """
     out = os.path.join(workdir, "c")
     start = time.perf_counter()
@@ -1058,16 +1449,29 @@ def run_c(exe, cycles, core, repeats):
     """
     Run the compiled driver several times and keep every result.
 
-    :param exe: Executable.
+    Each run prints one JSON line; the lines are parsed in order. With ``core`` set
+    the run is wrapped in ``taskset -c``.
+
+    :param exe: Executable built by :func:`build_c`.
     :type exe: str
     :param cycles: Cycles per run.
     :type cycles: int
-    :param core: Core to pin to, or ``None``.
+    :param core: Core to pin to, or ``None`` for no pinning.
     :type core: Optional[int]
     :param repeats: Number of runs.
     :type repeats: int
-    :return: Parsed JSON results.
+    :return: Parsed JSON results, one dictionary per run.
     :rtype: list
+    :raises subprocess.CalledProcessError: If a run exits with a non-zero status.
+
+    Example::
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as workdir:
+        ...     built = build_c(sweep_model(1, 3, 1, 1, 1), "c", workdir, 1)
+        ...     results = run_c(built["exe"], 2000, None, 1)
+        >>> sorted(results[0])
+        ['arena', 'first_cycle_ns', 'ns_per_cycle', 'sizeof_machine', 'storage_bytes', 'trail', 'vars_hash']
     """
     results = []
     for _ in range(repeats):
@@ -1083,20 +1487,35 @@ def measure_c(text, template, T, core, repeats, workdir):
     """
     Measure one model in generated C.
 
+    A probe run of 2000 cycles fixes the cycle count of the measured runs so that
+    each lasts about 0.25 s; the reported time per cycle is the minimum over
+    ``repeats`` runs, because noise on a shared machine only ever adds time.
+
     :param text: DSL text.
     :type text: str
     :param template: Template name or directory.
     :type template: str
     :param T: Transitions per state.
     :type T: int
-    :param core: Core to pin to.
+    :param core: Core to pin to, or ``None``.
     :type core: Optional[int]
     :param repeats: Number of runs; the minimum is the reported value.
     :type repeats: int
     :param workdir: Scratch directory.
     :type workdir: str
-    :return: Dictionary of fields for a record.
+    :return: Dictionary of fields for a record, among them ``ns_per_cycle``,
+        ``first_cycle_ns``, ``sizeof_machine``, the capacity macros and the code
+        sizes.
     :rtype: dict
+    :raises subprocess.CalledProcessError: If building or running fails.
+
+    Example::
+
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as workdir:
+        ...     result = measure_c(sweep_model(1, 3, 1, 1, 1), "c", 1, None, 1, workdir)
+        >>> result["stat"], result["repeats"]
+        ('min', 1)
     """
     built = build_c(text, template, workdir, T)
     probe = run_c(built["exe"], 2000, core, 1)[0]
@@ -1128,10 +1547,19 @@ def flat_family(n):
     """
     Build a region-free ring of ``n`` sibling states (input ``a``).
 
+    The ring is the baseline family for comparing the current C template with the
+    one before regions: no regions, one transition per state and one written
+    variable.
+
     :param n: Number of states.
     :type n: int
     :return: DSL text.
     :rtype: str
+
+    Example::
+
+        >>> flat_family(4).count("state S")
+        4
     """
     lines = ["input int a;", "def int n = 0;", "state Root {"]
     lines += _ring("S", n, 1, 1, "    ")
@@ -1144,10 +1572,21 @@ def cmd_e4(args):
     """
     Run experiment 4.
 
-    :param args: Parsed command line.
+    ``--part speed`` measures the sweep models in generated C, ``capacity`` reads
+    the default capacity macros of a model grid from the generated header without
+    compiling, and ``baseline`` compares the current C template with an earlier one
+    (``--old-template``) on region-free rings.
+
+    :param args: Parsed command line with ``out``, ``core``, ``repeats``, ``part``
+        and ``old_template``.
     :type args: argparse.Namespace
     :return: ``None``.
     :rtype: None
+    :raises SystemExit: If ``baseline`` is requested without ``--old-template``.
+
+    Example::
+
+        $ python tools/measure_region_performance.py e4 --out data/e4.jsonl --core 3 --part speed capacity
     """
     pin_core(args.core)
     writer = Writer(args.out, {"experiment": "e4", "engine": "generated_c"})
@@ -1218,12 +1657,18 @@ def linear_fit(xs, ys):
     """
     Fit ``y = a + b x`` by least squares.
 
-    :param xs: Abscissae.
+    :param xs: Abscissae, at least two distinct values.
     :type xs: list
-    :param ys: Ordinates.
+    :param ys: Ordinates, as many as ``xs``.
     :type ys: list
     :return: ``intercept``, ``slope`` and ``r2``.
     :rtype: dict
+    :raises ZeroDivisionError: If all abscissae are equal.
+
+    Example::
+
+        >>> {k: round(v, 6) for k, v in linear_fit([1, 2, 3], [2, 4, 6]).items()}
+        {'intercept': 0.0, 'slope': 2.0, 'r2': 1.0}
     """
     n = len(xs)
     mx, my = sum(xs) / n, sum(ys) / n
@@ -1244,6 +1689,10 @@ def poly_fit(xs, ys, degree):
     """
     Fit a polynomial by least squares (normal equations, no dependencies).
 
+    The normal equations are solved by Gauss-Jordan elimination with partial
+    pivoting. They are ill-conditioned for high degrees and wide abscissae; the tool
+    only uses degree two.
+
     :param xs: Abscissae.
     :type xs: list
     :param ys: Ordinates.
@@ -1252,6 +1701,14 @@ def poly_fit(xs, ys, degree):
     :type degree: int
     :return: ``coefficients`` from the constant term up and ``r2``.
     :rtype: dict
+    :raises ZeroDivisionError: If the system is singular (fewer distinct abscissae
+        than ``degree + 1``).
+
+    Example::
+
+        >>> fit = poly_fit([1, 2, 3, 4], [1, 4, 9, 16], 2)
+        >>> [round(c, 6) + 0.0 for c in fit["coefficients"]], round(fit["r2"], 6)
+        ([0.0, 0.0, 1.0], 1.0)
     """
     n = degree + 1
     mat = [
@@ -1284,6 +1741,12 @@ def power_fit(xs, ys):
     :type ys: list
     :return: ``exponent``, ``coefficient`` and ``r2`` on log axes.
     :rtype: dict
+    :raises ValueError: If a value is not positive.
+
+    Example::
+
+        >>> {k: round(v, 6) for k, v in power_fit([1, 2, 4], [2, 16, 128]).items()}
+        {'exponent': 3.0, 'coefficient': 2.0, 'r2': 1.0}
     """
     fit = linear_fit([math.log(x) for x in xs], [math.log(y) for y in ys])
     return {
@@ -1294,6 +1757,14 @@ def power_fit(xs, ys):
 
 
 def _rows(path):
+    """
+    Read a JSON Lines file into a list of dictionaries, skipping blank lines.
+
+    :param path: File to read.
+    :type path: str
+    :return: One dictionary per non-empty line.
+    :rtype: list
+    """
     with open(path) as handle:
         return [json.loads(line) for line in handle if line.strip()]
 
@@ -1302,10 +1773,18 @@ def cmd_fit(args):
     """
     Fit the sweeps in the data directory.
 
-    :param args: Parsed command line.
+    For each of ``e2.jsonl``, ``e3.jsonl`` and ``e4.jsonl`` that exists, and for
+    every sweep in it with at least three points, a linear, a quadratic and a power
+    fit are computed and written to one JSON file keyed ``<experiment>/<sweep>``.
+
+    :param args: Parsed command line with ``data_dir`` and ``out``.
     :type args: argparse.Namespace
     :return: ``None``.
     :rtype: None
+
+    Example::
+
+        $ python tools/measure_region_performance.py fit --data-dir data --out data/fits.json
     """
     result = {}
     for exp, key in (
@@ -1339,8 +1818,17 @@ def build_parser():
     """
     Build the command line parser.
 
+    The parser has one sub-command per experiment (``e1`` .. ``e4``) and ``fit``.
+    The description is the first paragraph of the module docstring, so keep that
+    paragraph stable: it is part of the ``--help`` output.
+
     :return: Parser.
     :rtype: argparse.ArgumentParser
+
+    Example::
+
+        >>> build_parser().parse_args(["fit", "--data-dir", "d", "--out", "o"]).command
+        'fit'
     """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1402,10 +1890,14 @@ def main(argv=None):
     """
     Entry point.
 
-    :param argv: Arguments, or ``None`` for ``sys.argv``.
+    :param argv: Arguments, or ``None`` for ``sys.argv``, defaults to ``None``.
     :type argv: Optional[list]
-    :return: Exit code.
+    :return: Exit code, always ``0``; failures raise.
     :rtype: int
+
+    Example::
+
+        $ python tools/measure_region_performance.py --help
     """
     args = build_parser().parse_args(argv)
     args.func(args)

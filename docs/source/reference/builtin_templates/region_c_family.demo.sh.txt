@@ -1,0 +1,43 @@
+== c: model with regions (region_controller.fcstm)
+cycle 1: Controller.Idle | at=1 regions=[0, 0] | motor=0
+cycle 2 (/Start): Controller.Running{Safety: Watching, Motion: Off} | at=2 regions=[3, 4] | motor=0
+cycle 3: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+REGION_COUNT = 2
+Safety status = 2 (LIVE is 2)
+Running active = 1, Idle active = 0
+leaf count = 2
+leaf ids = 3, 5
+parsed: Controller.Running{Safety: [init], Motion: On}
+refused: kind=5 position=0 message=Path passes through the regions of 'Controller.Running' at byte 0.
+refused: kind=6 position=19 message=Unknown region 'Speed' at byte 19.
+refused: kind=7 position=31 message=Duplicate region 'Motion' at byte 31.
+after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+cycle after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+ARENA_CAPACITY = 108, TRAIL_CAPACITY = 52, STORAGE_BYTES = 14272
+sizeof(machine) >= STORAGE_BYTES: 1
+== c: hook context (region_probe.fcstm)
+Boot: state_id=0 active_leaf_state_id=0 configuration=Line
+Tick: state_id=2 active_leaf_state_id=2 configuration=Line.Work{Left: L, Right: [init]}
+state ids: Line=0 Work=1 Left.L=2 Right.R=3
+== c: model without regions (region_plain.fcstm)
+PlainMachine_current_state_id
+PlainMachine_current_state_name
+PlainMachine_current_state_path
+== c: model with regions (current_state_* functions in machine.h)
+0
+== cpp: wrapper over the same core
+after three cycles: Controller.Running{Safety: Watching, Motion: On} | motor=1
+Safety status = 2
+valid = 1
+saved == parsed: 0
+saved != parsed: 1
+refused: kind=3 message=Unknown name 'Idle' at byte 27.
+after hot start: Controller.Running{Safety: Watching, Motion: On} | motor=1
+== c_poll: event checks are queried during the cycle
+cycle 1: Controller.Idle | start checks so far=0 stop checks so far=0
+cycle 2: Controller.Idle | start checks so far=1 stop checks so far=0
+cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2 stop checks so far=0
+== cpp_poll: wrapper over the polling core
+cycle 1: Controller.Idle | start checks so far=0
+cycle 2: Controller.Idle | start checks so far=1
+cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2

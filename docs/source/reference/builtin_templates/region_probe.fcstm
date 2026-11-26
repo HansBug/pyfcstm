@@ -1,0 +1,17 @@
+input int fault;
+control int total = 0;
+state Line {
+    enter abstract Boot;
+    [*] -> Work;
+    state Work {
+        region Left {
+            [*] -> L;
+            state L { during abstract Tick; }
+        }
+        region Right {
+            [*] -> R;
+            state R { during { total = total + 1; } }
+        }
+        >> during after abstract Settle;
+    }
+}

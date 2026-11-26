@@ -1,0 +1,33 @@
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->P
+  enter  P
+  take   P.A  [*]->Q
+  enter  P.A.Q
+  take   P.A.Q.X  [*]->X1
+  enter  P.A.Q.X.X1
+  aspect P  before   [seq 0->1]
+  aspect P.A  before   [seq 1->12]
+  aspect P.A.Q  before   [seq 12->123]
+  do     P.A.Q.X.X1  during   [seq 123->1234]
+  take   P.A.Q.Y  [*]->Y1
+  enter  P.A.Q.Y.Y1
+  do     P.A.Q.Y.Y1  during   [seq 1234->12345]
+  aspect P.A.Q  after   [seq 12345->123457]
+  aspect P.A  after   [seq 123457->1234578]
+  take   P.B  [*]->B1
+  enter  P.B.B1
+  do     P.B.B1  during   [seq 1234578->12345786]
+  aspect P  after   [seq 12345786->123457869]
+  => Root.P{A: Q{X: X1, Y: Y1}, B: B1}   seq=123457869
+cycle 2  events: -  inputs: -
+  aspect P  before   [seq 123457869->1234578691]
+  aspect P.A  before   [seq 1234578691->12345786912]
+  aspect P.A.Q  before   [seq 12345786912->123457869123]
+  do     P.A.Q.X.X1  during   [seq 123457869123->1234578691234]
+  do     P.A.Q.Y.Y1  during   [seq 1234578691234->12345786912345]
+  aspect P.A.Q  after   [seq 12345786912345->123457869123457]
+  aspect P.A  after   [seq 123457869123457->1234578691234578]
+  do     P.B.B1  during   [seq 1234578691234578->12345786912345786]
+  aspect P  after   [seq 12345786912345786->123457869123457869]
+  => Root.P{A: Q{X: X1, Y: Y1}, B: B1}   seq=123457869123457869

@@ -1,0 +1,13 @@
+def int never = 0;
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; }
+    }
+    state Blocked { [*] -> In : if [never > 0]; state In; }
+    state Open;
+    !P -> Blocked : /Stop;
+    !P -> Open : /Stop;
+}

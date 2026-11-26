@@ -1,0 +1,20 @@
+────────────────────────────────────────────────────────────
+>>> init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0
+────────────────────────────────────────────────────────────
+Initialized from state: Controller.Running{Safety: Watching, Motion: On}
+Cycle: 0
+Current State: Controller.Running{Safety: Watching, Motion: On}
+Variables:
+  __forced_0 = 0
+  motor = 1
+  permit = 1
+
+────────────────────────────────────────────────────────────
+>>> cycle --input fault=1 --input requested=1
+────────────────────────────────────────────────────────────
+Cycle: 1
+Current State: Controller.Running{Safety: Watching, Motion: Off}
+Variables:
+  __forced_0 = 0
+  motor = 0
+  permit = 0

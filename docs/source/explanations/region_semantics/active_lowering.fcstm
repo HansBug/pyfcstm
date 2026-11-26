@@ -1,0 +1,17 @@
+state Root {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> A1;
+            state A1;
+            state A2;
+            A1 -> A2 :: Go;
+        }
+        region B {
+            [*] -> B1;
+            state B1;
+            state B2;
+            B1 -> B2 : if [active("Root.P.A.A2")];
+        }
+    }
+}

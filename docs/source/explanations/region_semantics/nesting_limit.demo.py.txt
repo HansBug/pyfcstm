@@ -1,0 +1,2 @@
+deepest chain that starts in one cycle: 64 owners (P and 63 inside it)
+one more: Group initialization nested deeper than the structural safety limit (64) within one cycle; the state machine either enters more than 64 groups inside one another or one after another in the same cycle, or re-enters a group without bound.

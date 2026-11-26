@@ -1,0 +1,12 @@
+both regions work, no region is done
+Go                                   -> Controller.Running{Safety: Watching, Motion: On}  consumed ['Controller.Running.Motion.Off.Go']
+Trip                                 -> Controller.Running{Safety: Tripped, Motion: Off}  consumed ['Controller.Running.Safety.Watching.Trip']
+Ping                                 refused: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+Stop                                 refused: Position-dependent event name 'Stop' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+Reset                                refused: Position-dependent event name 'Reset' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+..Stop                               -> Controller.Running{Safety: Tripped, Motion: On}  consumed ['Controller.Running.Stop', 'Controller.Running.Stop']
+/Running.Stop                        -> Controller.Running{Safety: Tripped, Motion: On}  consumed ['Controller.Running.Stop', 'Controller.Running.Stop']
+Controller.Running.Motion.Off.Ping   -> Controller.Running{Safety: Watching, Motion: Off}  consumed ['Controller.Running.Motion.Off.Ping']
+
+Safety is done, so only Motion has an active leaf
+Ping                                 -> Controller.Running{Safety: [done], Motion: Off}  consumed ['Controller.Running.Motion.Off.Ping']

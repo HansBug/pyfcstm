@@ -1,0 +1,25 @@
+input int fault;
+input int requested;
+state Controller {
+    event Start;
+    >> during before abstract Tick;
+    [*] -> Idle;
+    state Idle;
+    state Running {
+        >> during before abstract GroupPre;
+        region Safety {
+            >> during before abstract SafetyPre;
+            [*] -> Normal;
+            state Normal { during abstract Watch; }
+            state Tripped;
+            Normal -> Tripped : if [fault != 0];
+        }
+        region Motion {
+            [*] -> Off;
+            state Off;
+            state On { during abstract Drive; }
+            Off -> On : if [requested != 0];
+        }
+    }
+    Idle -> Running : /Start;
+}

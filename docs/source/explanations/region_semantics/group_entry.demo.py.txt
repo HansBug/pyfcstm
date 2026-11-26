@@ -1,0 +1,41 @@
+owner_actions.fcstm: the lifecycle actions of an owner around its regions
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->P
+  enter  P
+  do     P  enter action   [seq 0->1]
+  take   P.A  [*]->A1
+  do     P  during before   [seq 1->12]
+  enter  P.A.A1
+  do     P.A.A1  enter action   [seq 12->125]
+  take   P.B  [*]->B1
+  enter  P.B.B1
+  do     P.B.B1  enter action   [seq 125->1257]
+  => Root.P{A: A1, B: B1}   seq=1257
+cycle 2  events: -  inputs: -
+  => Root.P{A: A1, B: B1}   seq=1257
+cycle 3  events: Root.Stop  inputs: -
+  do     P.A.A1  exit action   [seq 1257->12576]
+  exit   P.A.A1
+  take   P.A.A1  A1->[*]
+  do     P.B.B1  exit action   [seq 12576->125768]
+  exit   P.B.B1
+  take   P.B.B1  B1->[*]
+  do     P  during after   [seq 125768->1257683]
+  do     P  exit action   [seq 1257683->12576834]
+  exit   P
+  take   P  P->Off
+  enter  Off
+  => Root.Off   seq=12576834
+
+group_entry.fcstm: a later region that cannot start does not make an earlier region choose again
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->Idle
+  enter  Idle
+  => Root.Idle   k=0
+cycle 2  events: Root.Idle.Go  inputs: -
+  exit   Idle
+  take   Idle  Idle->Fallback
+  enter  Fallback
+  => Root.Fallback   k=0

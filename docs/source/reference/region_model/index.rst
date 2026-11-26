@@ -89,45 +89,59 @@ path cannot bypass a parallel owner to select only one of its regions.
 explicitly as ``[init]`` by ``str()``. The old configuration marker ``[*]`` is
 rejected; the DSL still uses ``[*]`` for initial and final transitions.
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> from pyfcstm.model import Configuration, load_state_machine_from_text
-   >>> source = '''state Root {
-   ...     region Left { state Idle; [*] -> Idle; Idle -> [*]; }
-   ...     region Right { state Working; [*] -> Working; }
-   ... }'''
-   >>> model = load_state_machine_from_text(source)
-   >>> config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
-   >>> str(config)
-   'Root{Left: [done], Right: Working}'
-   >>> [state.path for state in config.leaves]
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
+   print(config)
+   print([state.path for state in config.leaves])
+   print(config.is_active('Root'), config.is_active('Root.Left.Idle'))
+   print(config.region_status('Root.Left'), config.region_status('Root.Right'))
+   print(Configuration.from_dict(model, config.to_dict()) == config)
+
+.. testoutput::
+
+   Root{Left: [done], Right: Working}
    [('Root', 'Right', 'Working')]
-   >>> config.is_active('Root'), config.is_active('Root.Left.Idle')
-   (True, False)
-   >>> config.region_status('Root.Left'), config.region_status('Root.Right')
-   ('done', 'live')
-   >>> Configuration.from_dict(model, config.to_dict()) == config
+   True False
+   done live
    True
 
 ``str(config)`` is canonical position text. ``repr(config)`` also shows the
 validation mode for debugging; it is not an executable constructor expression
 or accepted parser input. Reparse a non-stable value with its explicit mode:
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> pending = Configuration.parse(model, 'Root', mode='initialization')
-   >>> str(pending)
-   'Root{Left: [init], Right: [init]}'
-   >>> repr(pending)
-   "Configuration(mode='initialization', position='Root{Left: [init], Right: [init]}')"
-   >>> Configuration.parse(model, str(pending), mode=pending.mode) == pending
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   pending = Configuration.parse(model, 'Root', mode='initialization')
+   print(pending)
+   print(repr(pending))
+   print(Configuration.parse(model, str(pending), mode=pending.mode) == pending)
+   mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
+   print(mixed)
+   print(mixed.region_status('Root.Left'), mixed.region_status('Root.Right'))
+   print(Configuration.parse(model, str(mixed), mode=mixed.mode) == mixed)
+
+.. testoutput::
+
+   Root{Left: [init], Right: [init]}
+   Configuration(mode='initialization', position='Root{Left: [init], Right: [init]}')
    True
-   >>> mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
-   >>> str(mixed)
-   'Root{Left: [done], Right: [init]}'
-   >>> mixed.region_status('Root.Left'), mixed.region_status('Root.Right')
-   ('done', 'pending')
-   >>> Configuration.parse(model, str(mixed), mode=mixed.mode) == mixed
+   Root{Left: [done], Right: [init]}
+   done pending
    True
 
 Tokens accept surrounding whitespace, including newlines. Identifiers use
@@ -142,18 +156,24 @@ available stack. Long token/path excerpts are shortened, nonprinting characters
 are escaped, and unfinished input is described as ``end of input``. Applications
 can catch ``ValueError`` to report invalid text without exposing a traceback.
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> Configuration.parse(model, 'Root{\n Left: @\n}', mode='transient')
-   Traceback (most recent call last):
-       ...
-   ValueError: Expected a configuration identifier at line 2, column 8, got '@'.
+   from pyfcstm.model import Configuration, load_state_machine_from_text
 
-   >>> try:
-   ...     Configuration.parse(model, 'Root{Left: Working', mode='transient')
-   ... except ValueError as error:
-   ...     # ValueError: the input is missing its closing region-block brace.
-   ...     print(error)
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   for text in ('Root{\n Left: @\n}', 'Root{Left: Working'):
+       try:
+           Configuration.parse(model, text, mode='transient')
+       except ValueError as error:
+           print(error)
+
+.. testoutput::
+
+   Expected a configuration identifier at line 2, column 8, got '@'.
    Expected '}' at line 1, column 19, got end of input.
 
 ``is_active`` accepts State paths, including active ancestors, but rejects
@@ -183,13 +203,25 @@ the whole owner awaits initialization. ``[init]`` and ``[done]`` are text
 markers, not JSON string values. Omitted outer ``mode`` defaults to ``stable``. Text does not
 encode the mode: pass it again when reparsing a non-stable value.
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> pending.to_dict()
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   pending = Configuration.parse(model, 'Root', mode='initialization')
+   mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
+   print(pending.to_dict())
+   print(mixed.to_dict())
+   print(Configuration.from_dict(model, mixed.to_dict()) == mixed)
+
+.. testoutput::
+
    {'mode': 'initialization', 'state': 'Root', 'regions': []}
-   >>> mixed.to_dict()
    {'mode': 'transient', 'state': 'Root', 'regions': [{'name': 'Left', 'configuration': None}]}
-   >>> Configuration.from_dict(model, mixed.to_dict()) == mixed
    True
 
 Activity queries
@@ -216,13 +248,18 @@ enter/exit actions maintain flags without modifying named action bodies.
 ``model.active_variables(config)`` derives the flag values for a configuration
 constructed against that exact model; it does not execute any actions.
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> model = load_state_machine_from_text('state Root { during { if [active("Root")] {} } }')
-   >>> config = Configuration.parse(model, 'Root')
-   >>> query, = model.active_queries
-   >>> query.state_path, model.active_variables(config)[query.variable_name]
-   (('Root',), 1)
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   model = load_state_machine_from_text('state Root { during { if [active("Root")] {} } }')
+   config = Configuration.parse(model, 'Root')
+   query, = model.active_queries
+   print(query.state_path, model.active_variables(config)[query.variable_name])
+
+.. testoutput::
+
+   ('Root',) 1
 
 ``to_ast_node()`` exports the current model, including lowering. It must not be
 treated as a lossless source-text roundtrip. Configuration JSON is a separate
@@ -234,9 +271,8 @@ Limits and known gaps
 ---------------------
 
 The table lists every limit and known gap that touches models with regions. A
-number appears only where a real run produced it: ``region_limits.demo.py`` next
-to this page reproduces the limits and the checked gaps, and its output follows
-the table. A row whose last column says *recorded* describes a gap taken from
+number appears only where a real run produced it: the examples after the
+table reproduce the limits and the checked gaps. A row whose last column says *recorded* describes a gap taken from
 its issue and not re-run for this page.
 
 .. list-table:: Limits and known gaps of models with regions
@@ -335,14 +371,14 @@ its issue and not re-run for this page.
        `issue #578 <https://github.com/HansBug/pyfcstm/issues/578>`_).
        The same issue records a second defect, handler calls inside a Delta cycle;
        that one was not re-run.
-     - ``limits_composite_loop.fcstm`` and the demo output.
+     - ``limits_composite_loop.fcstm`` and the terminal record below it.
      - :ref:`region-limits-run`
    * - Exported text of a forced declaration over regions
      - ``to_ast_node()`` text loads to a machine that behaves the same on the
        reproduction of `issue #580 <https://github.com/HansBug/pyfcstm/issues/580>`_
        (exit order and result agree, output below); the issue records the earlier
        behavior.
-     - ``region_limits.demo.py``.
+     - The script under :ref:`region-limits-run`.
      - :ref:`region-limits-run`
    * - Behavioral inspect diagnostics and sugar
      - Which diagnostic codes belong to the model as written and which to the
@@ -370,7 +406,7 @@ its issue and not re-run for this page.
        (`issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_).
      - ``_plan_capacity`` in ``pyfcstm/render/c_kernel.py``;
        ``test/render/test_c_kernel.py``.
-     - :ref:`region-limits-run`, :doc:`/reference/builtin_templates/index`
+     - :doc:`/reference/builtin_templates/index`
    * - Generated Python runtime
      - Every generated ``machine.py`` carries the general search kernel (position
        parsing, memoization, group initialization) whether or not the model uses
@@ -391,27 +427,198 @@ its issue and not re-run for this page.
 Reproducing the limits
 ~~~~~~~~~~~~~~~~~~~~~~
 
+Download :download:`limits_composite_loop.fcstm <limits_composite_loop.fcstm>`
+and :download:`limits_history_default.fcstm <limits_history_default.fcstm>` into
+an empty directory to run the two terminal records. The scripts need nothing
+but ``pyfcstm``. None of the numbers is a performance figure.
+
+Owners entered inside one another within one cycle: 64 levels run, the 65th is
+refused.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
+
+   for depth in (64, 65):
+       name, text = 'Leaf', 'state Leaf;'
+       for index in range(depth):
+           text = 'state S%d { region R { [*] -> %s; %s } }' % (index, name, text)
+           name = 'S%d' % index
+       model = load_state_machine_from_text('state Root { [*] -> %s; %s }' % (name, text))
+       try:
+           SimulationRuntime(model).cycle()
+           print(depth, 'nested owners: the first cycle runs')
+       except SimulationRuntimeDfsError as error:
+           print(depth, 'nested owners:', str(error).split(';')[0])
+
+.. testoutput::
+
+   64 nested owners: the first cycle runs
+   65 nested owners: Group initialization nested deeper than the structural safety limit (64) within one cycle
+
+Steps in one cycle: a pseudo state that turns 500 times needs more than 1000
+speculative steps.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
+
+   chain = ('def int n = 0; state Root { [*] -> p; pseudo state p; state Done; '
+            'p -> p : if [n < 500] effect { n = n + 1; }; p -> Done; }')
+   try:
+       SimulationRuntime(load_state_machine_from_text(chain)).cycle()
+   except SimulationRuntimeDfsError as error:
+       print(str(error).split(';')[0])
+
+.. testoutput::
+
+   Speculative DFS exceeded the step safety limit (1000) without reaching a stoppable state or pruning
+
+BMC re-entries of one owner: the default bound of 16 builds a model whose
+counter stops at 3 and refuses one that stops at 20, and the option lowers the
+bound for the first model as well.
+
+.. testcode::
+
+   from pyfcstm.bmc import BmcOptions, build_bmc_core_formula, prepare_bmc_query
+   from pyfcstm.bmc.errors import BmcBuildError
+   from pyfcstm.model import load_state_machine_from_text
+
+   text = ('def int n = 0; state Root { [*] -> O; '
+           'state O { region A { [*] -> p; pseudo state p; p -> [*]; } } state Done; '
+           'O -> O : if [n < %d] effect { n = n + 1; }; O -> Done; }')
+   query = 'check reach <= 1: active("Root.Done");'
+   for limit, options in [(3, BmcOptions()), (20, BmcOptions()), (3, BmcOptions(max_group_reentries=2))]:
+       context = prepare_bmc_query(load_state_machine_from_text(text % limit), query, options)
+       try:
+           build_bmc_core_formula(context)
+           print('n < %d, max_group_reentries=%d: built' % (limit, options.max_group_reentries))
+       except BmcBuildError as error:
+           print('n < %d, max_group_reentries=%d: %s' % (limit, options.max_group_reentries, error))
+
+.. testoutput::
+
+   n < 3, max_group_reentries=16: built
+   n < 20, max_group_reentries=16: state 'Root.O' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   n < 3, max_group_reentries=2: state 'Root.O' re-enters its own group more than 2 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+BMC expression depth: 98 prefix negations in front of one comparison are
+accepted and 99 are refused.
+
+.. testcode::
+
+   from pyfcstm.bmc import prepare_bmc_query
+   from pyfcstm.bmc.errors import InvalidBmcQuery
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text('def int x = 0; state Root { [*] -> A; state A; }')
+   for count in (98, 99):
+       try:
+           prepare_bmc_query(model, 'check reach <= 1: ' + '!' * count + '(x == 0);')
+           print(count, 'prefix negations: accepted')
+       except InvalidBmcQuery as error:
+           print(count, 'prefix negations:', error)
+
+.. testoutput::
+
+   98 prefix negations: accepted
+   99 prefix negations: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+
+A history owner whose subtree contains a region is rejected.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   try:
+       load_state_machine_from_text(
+           'state Root { [*] -> P; state P { [*] -> Q; [H] -> Q; '
+           'state Q { region A { state L; [*] -> L; } } } }')
+   except ModelValidationError as error:
+       print(', '.join('%s (%s)' % (item.code, item.refs['reason']) for item in error.diagnostics))
+
+.. testoutput::
+
+   E_REGION_STRUCTURE (history_boundary)
+
+A composite candidate that only loops, in a model without regions
+(``limits_composite_loop.fcstm``). The two ``Root.Go`` cycles end as Delta
+although ``S -> T`` could fire; the machine stays in ``Root.S`` with ``x``
+unchanged.
+
 .. literalinclude:: limits_composite_loop.fcstm
    :language: fcstm
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i limits_composite_loop.fcstm -e "cycle; cycle Root.Go; cycle Root.Go; cycle"
+   ...
+   [WARNING] Cycle 2 completed as Delta ...
+   ...
+   [WARNING] Cycle 3 completed as Delta ...
+   ...
+   Cycle: 4
+   Current State: Root.S
+   Variables:
+     x = 2
+
+The text of ``to_ast_node()`` runs like the machine it came from, for a forced
+declaration over regions: both machines give the same exit order and result.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   text = '''def int seq = 0;
+   state Root {
+       event Stop;
+       [*] -> Run;
+       state Run {
+           region A { [*] -> A1; state A1 { exit { seq = seq * 10 + 1; } } }
+           region B { [*] -> B1; state B1 { exit { seq = seq * 10 + 2; } } }
+       }
+       state Idle;
+       !Run -> Idle : /Stop;
+   }'''
+   original = load_state_machine_from_text(text)
+   reloaded = load_state_machine_from_text(str(original.to_ast_node()))
+   for machine in (original, reloaded):
+       runtime = SimulationRuntime(machine)
+       runtime.cycle()
+       runtime.cycle(['Root.Stop'])
+       print(runtime.configuration, runtime.vars['seq'])
+
+.. testoutput::
+
+   Root.Idle 12
+   Root.Idle 12
+
+A state entered only through a history default is never reported as
+unreachable (``limits_history_default.fcstm``). ``P`` is entered only through
+its history default ``B`` and has no way out, so nothing ever records ``A``,
+yet ``inspect`` prints ``unreachable: 0``.
 
 .. literalinclude:: limits_history_default.fcstm
    :language: fcstm
 
-.. literalinclude:: region_limits.demo.py.txt
-   :language: text
+.. code-block:: console
 
-Read the blocks in order. The depth block shows the boundary between 64 and 65
-nested owners; the step block shows the refusal of a 500-turn chain; the BMC
-blocks show the default bound of 16 re-entries (``n < 3`` builds, ``n < 20``
-does not) and that the option lowers or raises it, and the 98/99 boundary of
-expression depth; the history block shows the rejection. The composite block
-shows the cycle that becomes a Delta (``delta=True`` on both ``Root.Go`` cycles)
-although ``S -> T`` could fire; the export block shows both machines agreeing; the
-inspect block shows ``unreachable: 0`` for a model in which ``Root.P.A`` cannot be
-entered, because ``P`` is entered only through its history default ``B`` and has
-no way out, so nothing ever records ``A``. The capacity block prints the defaults
-the C templates use for the tutorial controller and for a flat machine. None of
-these numbers is a performance figure.
+   $ pyfcstm inspect -i limits_history_default.fcstm --color never
+   ...
+     unreachable: 0 leaf states / 0 transitions
+   ...
+   $ pyfcstm simulate -i limits_history_default.fcstm -e "cycle; cycle /Go"
+   ...
+   Cycle: 2
+   Current State: Root.P.B
+   ...
+
+The default capacities of the generated C family are not run here: the row of
+the table is recorded from ``_plan_capacity`` in ``pyfcstm/render/c_kernel.py``.
 
 Related references: :doc:`../dsl/index`, :doc:`../diagnostics_codes/index`,
 and :doc:`/api_doc_en`.

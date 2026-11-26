@@ -573,19 +573,28 @@ def test_fbmcq_guide_region_examples_bind_compile_solve_and_replay(
 
 
 @pytest.mark.unittest
-def test_fbmcq_guide_region_invalid_blocks_fail_at_binding(fbmcq_region_model):
-    """Region Guide counterexamples fail with the diagnostic codes the Guide names."""
+def test_fbmcq_guide_region_invalid_blocks_fail_with_their_declared_code(
+    fbmcq_region_model,
+):
+    """Each region counterexample fails with the diagnostic code the Guide names for it."""
     guide = llm.get_fbmcq_language_guide_prompt_for_llm()
     examples = _REGION_INVALID_MODEL_BLOCK_RE.findall(guide)
-    codes = []
+    expected_codes = {
+        "[done]": "invalid_start_position",
+        "{Speed: On}": "invalid_active_pattern",
+        "Controller.Idle{Motion: On}": "invalid_active_pattern",
+        "Motion: Flying": "invalid_start_position",
+    }
 
-    assert len(examples) >= 2
-    for example in examples:
-        query = parse_bmc_query(example)
+    assert len(examples) == len(expected_codes)
+    for marker, code in expected_codes.items():
+        matching = [example for example in examples if marker in example]
+        assert len(matching) == 1, marker
+        # The Guide names the code in the paragraph right before the block.
+        before = guide.split(matching[0], 1)[0]
+        before = before.rsplit("```fbmcq-region-invalid-model", 1)[0]
+        assert f"`{code}`" in before.rstrip().rsplit("\n\n", 1)[-1]
+        query = parse_bmc_query(matching[0])
         bind_bmc_query_structure(query)
-        with pytest.raises(InvalidBmcQuery) as err_info:
+        with pytest.raises(InvalidBmcQuery, match=code):
             bind_bmc_query(query, model=fbmcq_region_model)
-        codes.append(str(err_info.value))
-
-    assert any("invalid_start_position" in code for code in codes)
-    assert any("invalid_active_pattern" in code for code in codes)

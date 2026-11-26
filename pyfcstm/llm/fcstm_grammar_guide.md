@@ -168,8 +168,9 @@ state TrafficController {
 Use `state Name;` for a leaf state and `state Name { ... }` for a composite
 state. A composite state must choose its first active child with an initial
 transition. A state that must run several control parts at once holds
-`region Name { ... }` blocks instead of child states; see Regions. Use `pseudo state Name;` only for a leaf state that should skip
-ancestor `>> during before` and `>> during after` aspect actions.
+`region Name { ... }` blocks instead of child states; see Regions. Use
+`pseudo state Name;` only for a leaf state that should skip ancestor
+`>> during before` and `>> during after` aspect actions.
 
 ```fcstm
 def int link_ok = 1;

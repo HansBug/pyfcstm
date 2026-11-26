@@ -55,8 +55,10 @@ past discussions:
 - T1/timing-heavy source material that must be approximated as legal FCSTM
   because current FCSTM syntax is not a timed-automata language.
 
-All source references are pinned to the `research_ideas` repository at commit
-`02171240d7690c275232bb0dfabc363aeb691083`. Fixtures summarize only the
+Every fixture except `press_cell_interlock` and `dishwasher_program_completion`
+is pinned to the `research_ideas` repository at commit
+`02171240d7690c275232bb0dfabc363aeb691083`; those two are original scenarios
+written for this evaluation and cite no external source. Fixtures summarize only the
 natural-language modeling task and source traceability; they do not copy source
 papers or long external documents.
 
@@ -108,7 +110,8 @@ see only the prompt packet and fixture source, not the repository tree.
 evaluates raw `.fbmcq` authoring against seven property kinds, full-source and
 known-fact task inputs, nominal outcomes, one-defect mutations, and mandatory
 witness replay. Its private fixture convention is not a public input schema.
-See [fbmcq/README.md](fbmcq/README.md) for the strict 42-case matrix and
+See [fbmcq/README.md](fbmcq/README.md) for the strict 54-case matrix (42 for the seven property kinds plus 12 for
+the region tasks) and
 offline replay contract.
 
 ## Fixture Coverage Matrix

@@ -996,7 +996,7 @@ scale、边长与像素三条限额，不衡量自身输出。
 有序区域的画法
 --------------
 
-含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm.txt``\ （反例）。
+含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域（region）没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者（owner）与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm.txt``\ （反例）。
 
 PlantUML 导出
 ~~~~~~~~~~~~~
@@ -1014,7 +1014,7 @@ PlantUML 导出
    * - 写在区域内的 ``>> during before`` / ``>> during after``
      - 只在切面可见时作为该区域注释里的额外行：``-l full``，或 ``-c show_lifecycle_actions=True``\ （切面跟随它）；``-c show_lifecycle_actions=True -c show_aspect_actions=False`` 再次隐藏它们；生命周期动作被隐藏时，单独写 ``-c show_aspect_actions=True`` 没有效果。``normal`` 预设下注释只有标题行。
    * - 写在拥有者或祖先上的 ``>> during before`` / ``>> during after``
-     - 拥有者状态的一行描述（``line__work : >> during before {...}``），与任何复合状态相同，不会复制到各区域里。
+     - 拥有者状态的一行描述（``line__work : >> during before {...}``），与任何复合状态相同，只在切面可见时出现（``-l full``，或 ``-c show_lifecycle_actions=True`` 且没有 ``-c show_aspect_actions=False``）；不会复制到各区域里。
    * - 区域内的状态与转换
      - 画在该区域注释之后、下一个 ``--`` 之前；区域的 ``[*] -->`` 初始箭头属于它自己的分区。
    * - 写在区域内的事件

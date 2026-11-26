@@ -286,7 +286,7 @@ group of regions, so they neither use nor shield the earlier value and are
 ignored. The diagnostic points at the overwriting statement; ``previous_write_span``
 names the lost write.
 
-The demo below runs the six models of each code through ``pyfcstm inspect --format json``
+The demo below runs six models of ``I_REGION_BACKWARD_READ`` and eight of ``W_REGION_BLIND_OVERWRITE`` through ``pyfcstm inspect --format json``
 and prints only ``I_REGION_BACKWARD_READ``, ``W_REGION_BLIND_OVERWRITE`` and the
 two unreachable codes. A model that prints ``(none of the four codes)`` triggers
 none of them.

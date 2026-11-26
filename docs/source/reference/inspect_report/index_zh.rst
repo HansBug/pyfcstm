@@ -232,7 +232,7 @@ Inspect 报告参考
 
 声明在拥有者或更外层的切面，每周期只在整组区域外围执行一次，既不用到旧值，也不保护旧值，因此被忽略。诊断指向做覆盖的语句，\ ``previous_write_span`` 指出被丢掉的写入。
 
-下面的演示对每条诊断码各六个模型运行 ``pyfcstm inspect --format json``\ ，只输出 ``I_REGION_BACKWARD_READ``、\ ``W_REGION_BLIND_OVERWRITE`` 和两条不可达诊断码。输出 ``(none of the four codes)`` 的模型没有触发其中任何一条。
+下面的演示对 ``I_REGION_BACKWARD_READ`` 的六个模型与 ``W_REGION_BLIND_OVERWRITE`` 的八个模型运行 ``pyfcstm inspect --format json``\ ，只输出 ``I_REGION_BACKWARD_READ``、\ ``W_REGION_BLIND_OVERWRITE`` 和两条不可达诊断码。输出 ``(none of the four codes)`` 的模型没有触发其中任何一条。
 
 .. literalinclude:: region_findings.demo.sh
    :language: bash

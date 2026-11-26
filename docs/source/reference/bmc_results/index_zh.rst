@@ -1265,7 +1265,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - 字符串数组
      - 解码诊断。
 
-含区域的模型里，帧、步、起点与调用记录还带有可选字段，见\ :ref:`含区域的模型一节 <bmc-results-region-fields-zh>`\ ；不含区域的模型里它们从不出现。
+含区域（region）的模型里，帧、步、起点与调用记录还带有可选字段，见\ :ref:`含区域的模型一节 <bmc-results-region-fields-zh>`\ ；不含区域的模型里它们从不出现。
 
 每个事件对象有 ``path``\ （全限定事件路径）、``reason``\ （解码来源）和布尔值
 ``model_value``。重放的 ``input_events`` 只包含值为真且原因为
@@ -1349,7 +1349,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - 该步运行的情形，按执行顺序排列。不含区域的模型里没有。
    * - ``local_cases[].scope``
      - 字符串或 ``null``
-     - 该情形所在的拥有者或区域的路径；在所有区域之外运行的情形为 ``null``。
+     - 该情形所在的拥有者（owner）或区域的路径；在所有区域之外运行的情形为 ``null``。
    * - ``local_cases[].kind``
      - ``initial``、``transition`` 或 ``fallback``
      - 封闭集合。``fallback`` 表示状态留在原地（区域里没有移动、只执行 ``during``）。
@@ -1549,7 +1549,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
    stderr, first line: Unexpected error found when running pyfcstm!
    stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
 
-末尾那条 Python 异常的措辞随解释器版本而变（Python 3.11 及以后输出 ``integer modulo by zero``\ ，更早的版本输出 ``integer division or modulo by zero``\ ）。
+末尾那条 Python 异常的措辞随解释器版本而变（措辞随解释器版本（含补丁版本）而变，``integer modulo by zero`` 与 ``integer division or modulo by zero`` 都会出现）。
 
 不要把那里的退出状态 ``1`` 读成性质结论：没有产生任何结果。不含区域的模型也有同样的两种情形，运行时安全检查同样会报告它们。
 

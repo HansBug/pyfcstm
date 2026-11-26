@@ -40,10 +40,11 @@ Example::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field, fields, is_dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 from .ast import (
+    BmcExpr,
     Active,
     BmcCondExpr,
     BmcNumExpr,
@@ -84,6 +85,9 @@ from .query import (
     InitialSpec,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - only names a type
+    from .region_start import RegionStart
+
 _CanonicalDict = Dict[str, Any]
 _INITIAL_MODES = {"cold", "terminated", "state"}
 _FRAME_ASSUMPTION_KINDS = {"always", "at"}
@@ -122,7 +126,46 @@ def _require_query(query: object) -> BmcQuery:
             "query must be a BmcQuery object.",
         )
     _validate_query_shape(query)
+    _validate_expression_depth(query)
     return query
+
+
+MAX_EXPRESSION_DEPTH = 100
+"""Deepest nesting of one query expression that the BMC pipeline accepts.
+
+Every pass over an expression follows its nesting, so a chain of a few hundred
+operators would exhaust the interpreter's call stack inside one of them.  A
+query this deep is refused with the diagnostic ``expression_too_deep``, which
+leaves room for the call stack of the caller.
+"""
+
+
+def _validate_expression_depth(query: BmcQuery) -> None:
+    """Refuse a query whose expressions nest deeper than :data:`MAX_EXPRESSION_DEPTH`.
+
+    The depth is measured without recursion, so that measuring a deep query is
+    safe in itself: it follows every dataclass and sequence of the query and counts
+    the :class:`pyfcstm.bmc.ast.BmcExpr` nodes on the way down.
+
+    :raises pyfcstm.bmc.errors.InvalidBmcQuery: With code ``expression_too_deep``.
+    """
+    pending = [(query, 0)]
+    while pending:
+        node, depth = pending.pop()
+        if isinstance(node, BmcExpr):
+            depth += 1
+            if depth > MAX_EXPRESSION_DEPTH:
+                _raise_binding_error(
+                    "expression_too_deep",
+                    "query",
+                    "an expression nests deeper than %d levels; split the chain "
+                    "of operators across several assume or check clauses."
+                    % MAX_EXPRESSION_DEPTH,
+                )
+        if is_dataclass(node) and not isinstance(node, type):
+            pending.extend((getattr(node, item.name), depth) for item in fields(node))
+        elif isinstance(node, (list, tuple)):
+            pending.extend((item, depth) for item in node)
 
 
 @dataclass(frozen=True)
@@ -269,6 +312,11 @@ class BoundInitialSpec:
         declaration initializers are skipped, or ``None`` when no domain was
         supplied, defaults to ``None``.
     :type resolved_havoc_variables: Tuple[str, ...], optional
+    :param resolved_start: For a hot start of a model with regions, where every
+        region rests when the trace begins; ``resolved_state_id`` is then the id
+        of the state the machine rests in outside every region.  ``None`` for any
+        other start, defaults to ``None``.
+    :type resolved_start: pyfcstm.bmc.region_start.RegionStart, optional
 
     Example::
 
@@ -279,6 +327,7 @@ class BoundInitialSpec:
     source: InitialSpec
     resolved_state_id: Optional[int] = None
     resolved_havoc_variables: Optional[Tuple[str, ...]] = None
+    resolved_start: Optional["RegionStart"] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, InitialSpec):
@@ -373,6 +422,11 @@ class BoundInitialSpec:
                 ),
             }
         )
+        if self.resolved_start is not None:
+            result["resolved_start"] = {
+                "main": self.resolved_start.main,
+                "positions": dict(sorted(self.resolved_start.positions.items())),
+            }
         return result
 
 
@@ -950,6 +1004,39 @@ def _resolve_state(
     return entry.id
 
 
+def _bind_active(ctx: _BindingContext, expr: Active, path: str) -> None:
+    """Bind an ``active(...)`` atom: a state path, or a configuration pattern.
+
+    A text with region blocks is read as a pattern and checked against the
+    model, and every state it names is recorded as a reference.
+    """
+    _validate_current_frame(expr.frame, path + ".frame")
+    if "{" not in expr.state_path:
+        _resolve_state(ctx, expr.state_path, path, "active")
+        return
+    # The binding layer does not import the model package; reading a pattern is
+    # the one place besides a hot start that needs it.
+    from .region_pattern import ActivePattern, parse_active_pattern
+    from pyfcstm.model.configuration import read_configuration_pattern
+
+    try:
+        if not ctx.has_domain:
+            read_configuration_pattern(expr.state_path)
+            ctx.add_reference("state", expr.state_path, path, "active")
+            return
+        pattern = parse_active_pattern(ctx.domain, expr.state_path)
+    except (InvalidBmcQuery, ValueError) as err:
+        # InvalidBmcQuery: the text is not a pattern of this model; ValueError:
+        # it is not configuration text at all (no model to read it against).
+        _raise_binding_error("invalid_active_pattern", path, str(err))
+    pending = [pattern]
+    while pending:
+        node = pending.pop()
+        entry = ctx.domain.state_by_path(node.state_path)
+        ctx.add_reference("state", node.state_path, path, "active", entry.id)
+        pending.extend(item for _, item in node.regions if isinstance(item, ActivePattern))
+
+
 def _resolve_event(
     ctx: _BindingContext, event_path: str, path: str, spelling: str
 ) -> Optional[int]:
@@ -1005,6 +1092,9 @@ def _iter_model_actions(model: object):
             "on_during_aspects",
         ):
             actions.extend(getattr(state, attr_name, ()) or ())
+        # A ``>> during`` aspect can also be declared in the body of a region.
+        for region in (getattr(state, "regions", None) or {}).values():
+            actions.extend(region.on_during_aspects)
     return tuple(actions)
 
 
@@ -1199,12 +1289,15 @@ def _bind_call_where_condition(
         _bind_call_where_condition(ctx, expr.if_true, path + ".if_true")
         _bind_call_where_condition(ctx, expr.if_false, path + ".if_false")
         return
-    if isinstance(expr, (Active, Terminated, Event, Case, Called)):
+    if isinstance(expr, Active):
+        _bind_active(ctx, expr, path)
+        return
+    if isinstance(expr, (Terminated, Event, Case, Called)):
         _raise_binding_error(
             "call_where_atom_not_allowed",
             path,
             "call where filters may only use snapshot variables, literals, "
-            "numeric operators, comparisons, and logical operators.",
+            "numeric operators, comparisons, logical operators and active().",
         )
     _raise_binding_error(
         "unsupported_call_where_condition_expr",
@@ -1353,8 +1446,7 @@ def _bind_condition_expr(
         _bind_condition_expr(ctx, expr.if_false, path + ".if_false", rules)
         return
     if isinstance(expr, Active):
-        _validate_current_frame(expr.frame, path + ".frame")
-        _resolve_state(ctx, expr.state_path, path, "active")
+        _bind_active(ctx, expr, path)
         return
     if isinstance(expr, Terminated):
         _validate_current_frame(expr.frame, path + ".frame")
@@ -1439,12 +1531,49 @@ def _bind_initial_variable_policy(
     return tuple(sorted(resolved, key=lambda name: domain_order[name]))
 
 
+def _resolve_region_start(
+    ctx: _BindingContext, start: str, path: str, spelling: str
+) -> Tuple[int, "RegionStart"]:
+    """Resolve the start position of a hot start of a model with regions.
+
+    The start may be a configuration text or a dotted state path that passes
+    through regions; see :func:`pyfcstm.bmc.region_start.resolve_region_start`.
+
+    :raises InvalidBmcQuery: With code ``unknown_state`` for a path that names no
+        state, and ``invalid_start_position`` for text that is not a position of
+        the model or leaves every region of an owner done.
+    """
+    _require_non_empty_field(start, path, "state path")
+    # The binding layer does not import the model package; reading a start position
+    # of a model with regions is the one place that needs it.
+    from .region_start import resolve_region_start
+
+    try:
+        resolved = resolve_region_start(ctx.domain, start)
+    except InvalidBmcQuery as err:
+        # InvalidBmcQuery: the start is not a position of this model, names a
+        # state that does not exist, or leaves every region of an owner done.
+        unknown = "{" not in start and "all regions" not in str(err)
+        _raise_binding_error(
+            "unknown_state" if unknown else "invalid_start_position", path, str(err)
+        )
+    entry = ctx.domain.state_by_path(resolved.main)
+    ctx.add_reference("state", start, path, spelling, entry.id)
+    return entry.id, resolved
+
+
 def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpec:
     resolved_state_id = None
+    resolved_start = None
     if initial.mode == "state":
-        resolved_state_id = _resolve_state(
-            ctx, initial.state_path or "", "initial.state_path", "state_path"
-        )
+        if ctx.has_domain and ctx.domain.regions:
+            resolved_state_id, resolved_start = _resolve_region_start(
+                ctx, initial.state_path or "", "initial.state_path", "state_path"
+            )
+        else:
+            resolved_state_id = _resolve_state(
+                ctx, initial.state_path or "", "initial.state_path", "state_path"
+            )
     resolved_havoc_variables = _bind_initial_variable_policy(
         ctx, initial.variable_policy
     )
@@ -1455,7 +1584,9 @@ def _bind_initial(ctx: _BindingContext, initial: InitialSpec) -> BoundInitialSpe
             "initial.predicate",
             _ConditionRules.frame_local(allow_cycle=False),
         )
-    return BoundInitialSpec(initial, resolved_state_id, resolved_havoc_variables)
+    return BoundInitialSpec(
+        initial, resolved_state_id, resolved_havoc_variables, resolved_start
+    )
 
 
 def _bind_frame_assumption(

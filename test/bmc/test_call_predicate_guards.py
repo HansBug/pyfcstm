@@ -356,9 +356,9 @@ def test_call_where_binding_traverses_snapshot_expression_shapes():
             id="nested-call-count",
         ),
         pytest.param(
-            'check reach <= 3: called("Hook", where active("Root"));',
+            'check reach <= 3: called("Hook", where terminated());',
             "call_where_atom_not_allowed",
-            id="active-atom",
+            id="terminated-atom",
         ),
         pytest.param(
             'check reach <= 3: called("Hook", where cycle == 0);',
@@ -461,7 +461,6 @@ def test_property_call_context_validation_rejects_forged_call_where_atoms():
     )
 
     for where_expr, message in (
-        (Active("Root.A"), "active"),
         (Terminated(), "terminated"),
         (NumericComparison(Cycle(), "==", IntLiteral("0")), "cycle"),
     ):

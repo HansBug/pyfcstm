@@ -324,7 +324,7 @@
           "type": ["string", "null"],
           "enum": [
             "algorithm_not_closed", "complexity_tier_exceeds_policy",
-            "call_count_scaling_exceeds_policy", "requires_single_active_path",
+            "call_count_scaling_exceeds_policy",
             null
           ]
         },
@@ -339,7 +339,7 @@
             "reason_code": {
               "enum": [
                 "algorithm_not_closed", "complexity_tier_exceeds_policy",
-                "call_count_scaling_exceeds_policy", "requires_single_active_path"
+                "call_count_scaling_exceeds_policy"
               ]
             },
             "reason": { "const": null },

@@ -6,6 +6,12 @@ pyfcstm.bmc.engine
 .. automodule:: pyfcstm.bmc.engine
 
 
+DEFAULT\_MAX\_GROUP\_REENTRIES
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_MAX_GROUP_REENTRIES
+
+
 \_\_all\_\_
 -----------------------------------------------------
 
@@ -16,7 +22,7 @@ BmcOptions
 -----------------------------------------------------
 
 .. autoclass:: BmcOptions
-    :members: __post_init__,to_canonical,max_bound,cone_slicing
+    :members: __post_init__,to_canonical,max_bound,cone_slicing,max_group_reentries
 
 
 BmcPreparedContext

@@ -595,6 +595,37 @@ The legal selector boundary ``active("Root.A", current)`` is equivalent to
 omitting the selector.  In contrast, ``event("Root.Tick")`` is syntax-invalid
 because an event atom must name its step selector.
 
+For a model with regions the string of ``active(...)`` can also be the text of a
+configuration, the way a witness prints it, and then the atom is a *pattern*:
+the regions it writes have to be where it says, and the regions it leaves out
+are not constrained.
+
+.. code-block:: fbmcq
+
+   check reach <= 3: active("Controller.Running{Motion: On}");              // Safety is free
+   check reach <= 3: active("Controller.Running{Safety: Watching, Motion: On}");
+   check reach <= 3: active("Root.Run{Motion: [done]}");                    // Motion finished
+   check reach <= 1: active("Root.Run{Motion: [init]}");                    // waits for its start
+   check reach <= 3: active("Root.Run{Work: Inner{X: x1}}");                // a nested owner
+
+A path without braces is the pattern that writes no region, so ``active("Root.Run")``
+means what it always meant.  ``init state(...)`` differs on purpose: a start
+*constructs* a position, so a region it leaves out waits for initialization,
+while a pattern *matches* one, so a region it leaves out is free.  A position
+built by an ``init state(...)`` text always matches the same text as a pattern.
+``[init]`` also holds, for the regions that have not started yet, in a call made
+while their owner is being entered.
+
+Inside the ``where`` of a call filter ``active(...)`` describes the machine at the
+moment of the call, the position the handler is handed as
+``ctx.configuration``: regions that moved earlier in the same cycle show their
+new place and regions that have not started show ``[init]``.  In a model
+without regions that is the state the action runs in and its ancestors.
+
+.. code-block:: fbmcq
+
+   check reach <= 4: called("Root.B.Work", where active("Root{A: Done}"));
+
 Thus these grammar-valid forms are binding-invalid:
 
 .. code-block:: fbmcq
@@ -751,7 +782,7 @@ Invalid filters and unsupported call-``where`` atoms:
    check reach <= 3: called(step=3);                         // out of range when N=3
    check reach <= 3: called("A", stage="middle");           // call_stage
    check reach <= 3: called("A", where cycle == 0);         // cycle_not_allowed
-   check reach <= 3: called("A", where active("Root.A"));   // call_where_atom_not_allowed
+   check reach <= 3: called("A", where terminated());       // call_where_atom_not_allowed
 
 Properties
 ----------
@@ -1015,9 +1046,21 @@ names exist.
    * - ``call_stage`` / ``call_role``
      - A filter value is outside its documented closed set.
    * - ``call_where_atom_not_allowed`` / ``cycle_not_allowed``
-     - A call snapshot predicate uses a trace atom or bare cycle.
+     - A call snapshot predicate uses a trace atom other than ``active(...)``
+       (``terminated()``, ``event()``, ``case()``, ``called()``) or a bare
+       ``cycle``.
+   * - ``invalid_active_pattern``
+     - The configuration pattern in ``active(...)`` is not a pattern of the
+       model: a syntax error, an unknown state, a region the state does not own,
+       a region written twice, or region blocks in a model without regions.
    * - ``unknown_call_action`` / ``unknown_named_ref``
      - A model-aware call metadata path does not exist.
+   * - ``invalid_start_position``
+     - An ``init state(...)`` text is not a position of a model with regions, or
+       leaves every region of an owner finished.
+   * - ``expression_too_deep``
+     - One expression nests deeper than 100 levels, for example a chain of
+       several hundred ``&&``; split it across several clauses.
 
 Source and test traceability
 ----------------------------

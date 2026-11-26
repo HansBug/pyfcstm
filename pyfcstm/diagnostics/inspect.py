@@ -2785,6 +2785,7 @@ def _build_reachability_graph(
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
         regions: Sequence[RegionInfo] = (),
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
 ) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
     """Return the default inspect reachability graph and the owners that never complete.
 
@@ -2810,10 +2811,15 @@ def _build_reachability_graph(
         regions. The owner's ordinary outgoing transitions (which run when
         every region is done) are followed only when each region can reach
         its ``[*]`` exit; the owner's forced transitions are always followed.
+        A composite state without regions is the case of one region: its own
+        ordinary transitions are followed only when a child of it can reach
+        ``[*]``.
     :type regions: Sequence[RegionInfo], optional
     :return: Mapping from every state path to reachable state paths, and the
-        paths of the states that own regions of which some can never reach
-        ``[*]`` (their ordinary outgoing transitions are never taken).
+        paths of the composite states that can never be over: a state that owns
+        regions of which some can never reach ``[*]``, or a plain composite state
+        none of whose children can (their ordinary outgoing transitions are never
+        taken).
     :rtype: Tuple[Dict[str, Tuple[str, ...]], Set[str]]
 
     Examples::
@@ -2837,10 +2843,12 @@ def _build_reachability_graph(
         ('Root.A', 'Root.B')
         >>> graph['Root.A']
         ('Root.B',)
-        >>> never_completing
-        set()
+        >>> sorted(never_completing)
+        ['Root']
     """
-    return _reachability_with_completion(states, transitions, history_defaults, regions)
+    return _reachability_with_completion(
+        states, transitions, history_defaults, regions, forced_transitions,
+    )
 
 
 def _reachability_with_completion(
@@ -2848,6 +2856,7 @@ def _reachability_with_completion(
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]],
         regions: Sequence[RegionInfo],
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
 ) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
     """Compute the reachability graph and the owners that can never complete.
 
@@ -2858,10 +2867,16 @@ def _reachability_with_completion(
 
     :return: The reachability graph and the paths of owners that never complete.
     """
-    owners = {region.owner_path for region in regions}
     regions_of: Dict[str, List[RegionInfo]] = {}
     for region in regions:
         regions_of.setdefault(region.owner_path, []).append(region)
+    # A composite state without regions is the case of one branch: it takes its
+    # own outgoing transitions once its children can leave through ``[*]``.
+    branches_of: Dict[str, List[Any]] = dict(regions_of)
+    for state in states:
+        if state.is_composite and state.path not in regions_of:
+            branches_of[state.path] = [state]
+    owners = set(branches_of)
     completable: Set[str] = set()
     while True:
         graph = _reachability_pass(
@@ -2871,8 +2886,11 @@ def _reachability_with_completion(
             owner for owner in owners
             if owner not in completable
             and all(
-                _region_can_finish(region, transitions, graph, owners, completable)
-                for region in regions_of[owner]
+                _region_can_finish(
+                    branch, transitions, graph, owners, completable, history_defaults,
+                    forced_transitions,
+                )
+                for branch in branches_of[owner]
             )
         }
         if not grown:
@@ -2880,16 +2898,45 @@ def _reachability_with_completion(
         completable |= grown
 
 
-def _region_can_finish(region, transitions, graph, owners, completable) -> bool:
+def _region_can_finish(
+        region, transitions, graph, owners, completable, history_defaults=None,
+        forced_transitions=(),
+) -> bool:
     """Whether some state of ``region`` that is reachable can reach ``[*]``."""
     mapping, region_entries = graph
-    reachable = set(region_entries[region.path])
+    entries = region_entries.get(region.path)
+    if entries is None:
+        # A composite state without regions: its branch starts at its own initial
+        # targets, and at the child a history default restores when some
+        # transition enters the composite state through that history.
+        entries = {
+            item['target'] for item in region.initial_targets
+            if item['target'] != _EXIT_MARK
+        }
+        for (owner, kind), path in (history_defaults or {}).items():
+            if owner == region.path and any(
+                    transition.to_path == owner and transition.target_history == kind
+                    for transition in transitions
+            ):
+                entries.add(path[0])
+    reachable = set(entries)
     for start in tuple(reachable):
         reachable |= set(mapping.get(start, ()))
+    # The expansion of ``!S -> T`` lets every state below ``S`` leave through
+    # ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
+    # hand the machine to that forced transition, so they do not let ``S`` go on
+    # through its ordinary transitions. A forced exit counts only where a
+    # declaration written in this very scope has ``[*]`` as its target.
+    authored_exits = {
+        (declaration.state_path, declaration.original_raw)
+        for declaration in forced_transitions if declaration.to_path == _EXIT_MARK
+    }
     for transition in transitions:
         if transition.to_path != _EXIT_MARK or transition.from_path == _INIT_MARK:
             continue
         if transition.from_path.rsplit('.', 1)[0] != region.path:
+            continue
+        if transition.is_forced and (region.path, transition.forced_origin) not in authored_exits:
             continue
         if transition.from_path not in reachable:
             continue
@@ -4662,9 +4709,9 @@ def inspect_model(
     reachability graph follows region entry and joint completion; and the two
     ordering diagnostics ``I_REGION_BACKWARD_READ`` and
     ``W_REGION_BLIND_OVERWRITE`` judge sibling regions. With ``enable_verify``
-    the single-active-path topology algorithms are reported as ``not_run`` with
-    the reason ``requires_single_active_path`` for such a model, and no hidden
-    ``active()`` flag variable appears in the report itself.
+    the topology algorithms run on such a model too, reading every state that
+    owns regions as branches that must all be over before it goes on, and no
+    hidden ``active()`` flag variable appears in the report itself.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4919,6 +4966,7 @@ def _inspect_pass(
             for kind, path in owner.defaults.items()
         },
         regions,
+        forced_transitions,
     )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect
@@ -4951,7 +4999,6 @@ def _inspect_pass(
         verify_plan = _project_verify_inspect_eligibility(
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
-            has_regions=bool(regions),
         )
         verify_results = _run_verify_inspect_algorithms(
             machine,

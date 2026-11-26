@@ -381,7 +381,6 @@ def project_inspect_eligibility(
     max_complexity_tier: ComplexityTier = "structural",
     max_call_count_scaling: CallCountScaling = "linear_in_transitions",
     registry: Optional[Mapping[str, VerifyAlgorithmMeta]] = None,
-    has_regions: bool = False,
 ) -> Tuple[InspectEligibility, ...]:
     """Project inspect eligibility for every algorithm in registry order.
 
@@ -396,11 +395,6 @@ def project_inspect_eligibility(
     :param registry: Optional alternate registry. ``None`` uses the built-in
         verify registry.
     :type registry: Optional[Mapping[str, VerifyAlgorithmMeta]]
-    :param has_regions: Whether the inspected model declares regions, defaults
-        to ``False``. The structural topology algorithms follow one active
-        leaf path and cannot judge a model whose regions run side by side, so
-        they are excluded with the reason ``requires_single_active_path``.
-    :type has_regions: bool, optional
     :return: Complete policy projection in registry order.
     :rtype: Tuple[InspectEligibility, ...]
 
@@ -432,10 +426,6 @@ def project_inspect_eligibility(
                 meta,
                 max_complexity_tier,
                 max_call_count_scaling,
-            ) or (
-                "requires_single_active_path"
-                if has_regions and meta.complexity_tier == "structural"
-                else None
             ),
         )
     )
@@ -873,10 +863,8 @@ def run_inspect_algorithms(
     results when they are otherwise eligible, and never emits diagnostics-layer
     objects directly.
 
-    A machine with regions is verified as far as the algorithms allow:
-    the structural topology algorithms follow one active leaf path and are not
-    run (they are left out of the results, as
-    :func:`project_inspect_eligibility` reports with ``has_regions=True``), the
+    A machine with regions is verified like any other: the structural topology
+    algorithms read it as branches (see :mod:`pyfcstm.verify.topology`), the
     solver-local algorithms visit the transitions of regions as well, and the
     initial-lifecycle check of a state inside a region returns an
     ``undecidable_skip`` result.
@@ -916,8 +904,6 @@ def run_inspect_algorithms(
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
 
-    has_regions = machine.has_regions
-
     if registry is None:
         from .registry import REGISTRY
 
@@ -928,7 +914,6 @@ def run_inspect_algorithms(
         max_complexity_tier=max_complexity_tier,
         max_call_count_scaling=max_call_count_scaling,
         registry=registry,
-        has_regions=has_regions,
     ):
         if not item.eligible:
             continue

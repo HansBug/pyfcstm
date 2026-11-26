@@ -565,7 +565,7 @@ def test_data_flow_checks_see_variables_used_only_inside_regions():
 
 # ------------------------------------------------------------ verify bridge
 
-def test_verify_excludes_single_path_algorithms_with_an_explicit_reason():
+def test_verify_runs_the_topology_algorithms_on_a_model_with_regions():
     report = inspect_text(
         PLANT, enable_verify=True, max_complexity_tier='smt_undecidable_heuristic',
         max_call_count_scaling='quadratic_in_states', smt_timeout_ms=5000,
@@ -574,8 +574,7 @@ def test_verify_excludes_single_path_algorithms_with_an_explicit_reason():
     for name in ('topological_reachable_set', 'unreachable_states', 'strongly_connected_components',
                  'topological_finite', 'topological_inevitable_terminator',
                  'event_emission_to_consumer_reachable'):
-        assert by_name[name].result_kind == 'not_run'
-        assert by_name[name].reason_code == 'requires_single_active_path'
+        assert by_name[name].result_kind != 'not_run', name
     assert by_name['dead_guard'].result_kind != 'not_run'
     assert by_name['enter_postcondition_implies_during_precondition'].result_kind == 'undecidable_skip'
     assert 'region' in by_name['enter_postcondition_implies_during_precondition'].reason
@@ -624,8 +623,9 @@ def test_initial_guard_gap_inside_a_region_is_found_by_the_solver():
 
 def test_models_without_regions_keep_their_verification_report():
     report = inspect_text('state Root { state A; [*] -> A; A -> [*]; }', enable_verify=True)
-    assert all(item.reason_code != 'requires_single_active_path'
-               for item in report.verification.algorithms)
+    assert all(item.result_kind != 'not_run'
+               for item in report.verification.algorithms
+               if item.algorithm_name.startswith('topological'))
 
 
 # ---------------------------------------------------------------------- CLI
@@ -961,3 +961,45 @@ def test_a_write_in_a_nested_branch_does_not_hide_a_later_read_of_the_old_value(
     source = two_regions(
         'state B { during { if [y > 0] { if [z > 0] { x = 2; } } else { x = 3; } z = x; } } [*] -> B;')
     assert 'W_REGION_BLIND_OVERWRITE' not in codes(inspect_text(source))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        """
+        state Root {
+            [*] -> S1;
+            state S1 {
+                region A { [*] -> X; state X; }
+                region B { [*] -> Y; state Y; }
+            }
+            state S3;
+            !S1 -> S3 : /E2;
+        }
+        """,
+        """
+        state Root {
+            [*] -> S1;
+            state S1 {
+                [*] -> S4;
+                state S4 {
+                    region A { [*] -> X; state X; }
+                    region B { [*] -> Y; state Y; }
+                }
+            }
+            state S3;
+            !S1 -> S3 : /E2;
+        }
+        """,
+    ],
+)
+def test_a_forced_transition_out_of_a_composite_with_regions_below_it_has_a_consumer(text):
+    # The simulator takes ``!S1 -> S3`` on ``/E2`` from the resting group, so no
+    # report, with or without the verify findings, calls it unreachable.
+    for enable_verify in (False, True):
+        report = inspect_model(load_state_machine_from_text(text), enable_verify=enable_verify)
+        assert not any(
+            item.code in ("W_UNREACHABLE_TRANSITION", "W_EVENT_UNREACHABLE_EMIT")
+            for item in report.diagnostics
+        ), enable_verify
+        assert report.structure_statistics.unreachable_transitions == 0

@@ -164,11 +164,19 @@ Public module structure:
      - :class:`RegionUnitFormal`, :class:`RegionCase`,
        :func:`expand_leaf_unit`, :func:`expand_init_unit`,
        :func:`expand_continue_unit`, :func:`expand_cold_unit`,
-       :func:`expand_flush_unit`, :class:`RegionCaseRelation`, :class:`RegionStepRelation`,
-       :func:`region_frame_constraints`
+       :func:`expand_flush_unit`, :func:`expand_wait_unit`, :class:`RegionCaseRelation`,
+       :class:`RegionFlushRelation`, :class:`RegionStepRelation`,
+       :func:`region_frame_constraints`, :func:`region_error_analysis`,
+       :class:`RegionStart`, :func:`resolve_region_start`,
+       :class:`ActivePattern`, :func:`parse_active_pattern`, :class:`RegionCall`,
+       :class:`RegionStepSummary`, :class:`RegionStepTrace`,
+       :func:`frame_configuration`, :func:`summarize_region_step`,
+       :func:`trace_region_step`
      - Expand a model with regions one region at a time and lower the units
        into one step relation in which every region has its own position
-       symbol and the regions advance in declaration order.
+       symbol and the regions advance in declaration order; locate the
+       runtime errors of its cycles, and decode the paths and abstract calls
+       of a cycle from a solved model.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
@@ -333,6 +341,7 @@ _DOMAIN_EXPORTS = {
     "STATE_TERMINATE_ID",
     "REGION_DONE_ID",
     "REGION_INACTIVE_ID",
+    "REGION_PENDING_ID",
     "RegionDomainEntry",
     "StateDomainEntry",
     "EventDomainEntry",
@@ -368,12 +377,34 @@ _REGION_EXPAND_EXPORTS = {
     "expand_continue_unit",
     "expand_cold_unit",
     "expand_flush_unit",
+    "expand_wait_unit",
 }
 
 _REGION_RELATION_EXPORTS = {
     "RegionCaseRelation",
+    "RegionFlushRelation",
     "RegionStepRelation",
+    "region_error_analysis",
     "region_frame_constraints",
+}
+
+_REGION_START_EXPORTS = {
+    "RegionStart",
+    "resolve_region_start",
+}
+
+_REGION_PATTERN_EXPORTS = {
+    "ActivePattern",
+    "parse_active_pattern",
+}
+
+_REGION_WITNESS_EXPORTS = {
+    "RegionCall",
+    "RegionStepSummary",
+    "RegionStepTrace",
+    "frame_configuration",
+    "summarize_region_step",
+    "trace_region_step",
 }
 
 _MACRO_EXPORTS = {
@@ -436,6 +467,7 @@ _WITNESS_EXPORTS = {
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
     "BmcWitnessFrame",
+    "BmcWitnessLocalCase",
     "BmcWitnessStep",
     "BmcWitnessTrace",
     "BmcRuntimeFrame",
@@ -487,6 +519,9 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
     "pyfcstm.bmc.region_expand": _REGION_EXPAND_EXPORTS,
     "pyfcstm.bmc.region_relation": _REGION_RELATION_EXPORTS,
+    "pyfcstm.bmc.region_start": _REGION_START_EXPORTS,
+    "pyfcstm.bmc.region_pattern": _REGION_PATTERN_EXPORTS,
+    "pyfcstm.bmc.region_witness": _REGION_WITNESS_EXPORTS,
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
     "pyfcstm.bmc.relation": _RELATION_EXPORTS,
     "pyfcstm.bmc.safety": _SAFETY_EXPORTS,
@@ -551,6 +586,9 @@ def __dir__():
         | _EXPAND_EXPORTS
         | _REGION_EXPAND_EXPORTS
         | _REGION_RELATION_EXPORTS
+        | _REGION_START_EXPORTS
+        | _REGION_PATTERN_EXPORTS
+        | _REGION_WITNESS_EXPORTS
         | _ENGINE_EXPORTS
         | _RELATION_EXPORTS
         | _SAFETY_EXPORTS
@@ -620,6 +658,7 @@ __all__ = [
     "STATE_TERMINATE_ID",
     "REGION_DONE_ID",
     "REGION_INACTIVE_ID",
+    "REGION_PENDING_ID",
     "RegionDomainEntry",
     "StateDomainEntry",
     "EventDomainEntry",
@@ -672,9 +711,22 @@ __all__ = [
     "expand_continue_unit",
     "expand_cold_unit",
     "expand_flush_unit",
+    "expand_wait_unit",
     "RegionCaseRelation",
+    "RegionFlushRelation",
     "RegionStepRelation",
+    "region_error_analysis",
     "region_frame_constraints",
+    "RegionStart",
+    "resolve_region_start",
+    "ActivePattern",
+    "parse_active_pattern",
+    "RegionCall",
+    "RegionStepSummary",
+    "RegionStepTrace",
+    "frame_configuration",
+    "summarize_region_step",
+    "trace_region_step",
     "BmcRuntimeSafetyResult",
     "check_runtime_safety",
     "runtime_error_formula",
@@ -690,6 +742,7 @@ __all__ = [
     "BmcWitnessEvent",
     "BmcWitnessCallRecord",
     "BmcWitnessFrame",
+    "BmcWitnessLocalCase",
     "BmcWitnessStep",
     "BmcWitnessTrace",
     "BmcRuntimeFrame",

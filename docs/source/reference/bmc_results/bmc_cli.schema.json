@@ -4604,6 +4604,35 @@
         },
         "snapshot": {
           "$ref": "#/$defs/stringMap"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "localCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "kind",
+        "label"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "kind": {
+          "enum": [
+            "initial",
+            "transition",
+            "fallback"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "pattern": "^[^:]+::[^:]+::[^:]+::[0-9]+$"
         }
       }
     },
@@ -4641,6 +4670,10 @@
         },
         "vars": {
           "$ref": "#/$defs/stringMap"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -4680,10 +4713,16 @@
           "minimum": 0
         },
         "case_label": {
-          "type": "string"
+          "$ref": "#/$defs/nullableString"
         },
         "case_kind": {
           "type": "string"
+        },
+        "local_cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localCase"
+          }
         },
         "progress": {
           "type": "string"
@@ -4842,6 +4881,10 @@
               "additionalProperties": {
                 "type": "number"
               }
+            },
+            "configuration": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },
@@ -5009,6 +5052,10 @@
               "additionalProperties": {
                 "type": "number"
               }
+            },
+            "configuration": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },
@@ -5296,6 +5343,10 @@
         },
         "vars": {
           "$ref": "#/$defs/stringMap"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

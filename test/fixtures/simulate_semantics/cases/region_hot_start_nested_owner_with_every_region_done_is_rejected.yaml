@@ -6,8 +6,6 @@ categories:
 - regions
 - runtime
 - hot_start
-exclude_runners:
-- bmc_core
 initial:
   configuration: 'W.Job{A: Q{A1: [done], A2: [done]}, B: Comp.In1}'
   vars:

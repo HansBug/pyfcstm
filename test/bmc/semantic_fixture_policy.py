@@ -176,69 +176,20 @@ REGION_CORE_EXCLUDE_CASES = {
     "region_forced_transition_back_into_its_own_state_takes_nothing_when_the_state_cannot_be_entered_again": "action_dependent_loop",
     # The group re-enters itself on changing values past the depth the relation unrolls.
     "region_start_with_groups_tried_repeatedly_stays_a_delta": "group_reentry_limit",
-    # The case starts from a hot-start position, and the region relation only starts cold.
-    "region_event_name_ambiguous_between_leaves_is_refused": "hot_start",
-    "region_event_name_counting_levels_up_reaches_one_event_from_every_leaf": "hot_start",
-    "region_event_name_finished_region_does_not_take_part": "hot_start",
-    "region_event_name_from_the_root_does_not_depend_on_the_position": "hot_start",
-    "region_event_name_nobody_has_it_is_refused": "hot_start",
-    "region_event_name_short_name_resolves_from_the_leaf_that_has_it": "hot_start",
-    "region_event_name_two_names_in_one_cycle_are_resolved_each_on_its_own": "hot_start",
-    "region_hot_start_composite_without_a_child_waits_for_its_initial_transition": "hot_start",
-    "region_hot_start_done_region_stays_done_and_does_no_work": "hot_start",
-    "region_hot_start_every_leaf_in_place_runs_no_enter": "hot_start",
-    "region_hot_start_every_region_done_is_rejected": "hot_start",
-    "region_hot_start_hidden_variable_given_one_matches_the_position": "hot_start",
-    "region_hot_start_hidden_variable_given_zero_is_what_runs": "hot_start",
-    "region_hot_start_hidden_variable_has_to_be_given": "hot_start",
-    "region_hot_start_missing_variable_is_rejected": "hot_start",
-    "region_hot_start_nested_owner_waits_while_the_rest_works": "hot_start",
-    "region_hot_start_nested_owner_with_every_region_done_is_rejected": "hot_start",
-    "region_hot_start_one_waiting_region_of_a_nested_owner_is_initialized": "hot_start",
-    "region_hot_start_owner_path_alone_waits_for_initialization_as_a_whole": "hot_start",
-    "region_hot_start_pseudo_state_is_left_in_the_first_cycle": "hot_start",
-    "region_hot_start_region_left_out_waits_for_initialization": "hot_start",
-    "region_hot_start_state_path_into_a_region_leaves_the_other_regions_waiting": "hot_start",
-    "region_hot_start_unknown_state_is_rejected": "hot_start",
-    "region_hot_start_waiting_and_done_regions_together": "hot_start",
-}
-
-# Region fixtures that the relation runner takes with one kind of observation
-# left unchecked.  The relation does not report the abstract calls of a region
-# model with the configuration at the moment of each call, so everything else
-# the case asserts -- configuration, variables, Delta, end of the run -- is
-# checked and the handler calls are not.
-REGION_CORE_PARTIAL_CASES = {
-    "region_abstract_aspects_at_root_owner_and_region_report_the_wrapped_scope": (
-        "handler_calls",
-    ),
-    "region_choice_in_a_composite_is_decided_alike_when_tried_and_taken": (
-        "handler_calls",
-    ),
-    "region_cold_start_delta_calls_no_handlers_even_for_regions_entered_before_the_failure": (
-        "handler_calls",
-    ),
-    "region_leaf_abstract_during_reports_the_leaf_and_the_moment_of_the_call": (
-        "handler_calls",
-    ),
-    "region_owner_enter_exit_handlers_see_group_entry_and_declaration_order_exit": (
-        "handler_calls",
-    ),
-    "region_pseudo_state_enter_handler_sees_the_pseudo_state_in_the_configuration": (
-        "handler_calls",
-    ),
-    "region_root_group_that_cannot_start_leaves_nothing_behind": ("handler_calls",),
-    "region_single_region_owner_aspect_handler_reports_the_leaf": ("handler_calls",),
-    "region_transient_configuration_texts_during_group_entry_and_completion": (
-        "handler_calls",
-    ),
+    # A hot start of the simulator has to give every variable and refuses an incomplete one.
+    "region_hot_start_hidden_variable_has_to_be_given": "init_variables_given_by_caller",
+    "region_hot_start_missing_variable_is_rejected": "init_variables_given_by_caller",
+    # The simulator refuses a short event name that no leaf has or that two leaves resolve differently.
+    "region_event_name_ambiguous_between_leaves_is_refused": "event_name_resolution",
+    "region_event_name_nobody_has_it_is_refused": "event_name_resolution",
 }
 
 REGION_CORE_EXCLUDE_REASONS = {
     "search_limit": "The runtime raises a search-limit error here, which a bounded relation cannot express.",
     "action_dependent_loop": "The macro expander refuses a path that returns to a state while running actions.",
     "group_reentry_limit": "The group re-enters itself on changing values past the depth the relation unrolls.",
-    "hot_start": "The case starts from a hot-start position, and the region relation only starts cold.",
+    "init_variables_given_by_caller": "A hot start of the simulator has to give every variable and refuses an incomplete one; a query takes the declared initializers or havoc, so it has no incomplete start to refuse.",
+    "event_name_resolution": "The simulator refuses a short event name that no active leaf has or that two leaves resolve differently; a query names events by their full path, so it has no such name to refuse.",
 }
 
 BMC_CORE_FIXTURE_LEDGER_CASES = (
@@ -279,15 +230,6 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
                 mode="temporary_exclude",
                 bucket="regions_" + bucket,
                 reason=REGION_CORE_EXCLUDE_REASONS[bucket],
-            )
-        if case_id in REGION_CORE_PARTIAL_CASES:
-            return BmcSemanticFixturePolicy(
-                mode="region_core",
-                bucket="regions_handler_calls_unchecked",
-                reason="Region cases are checked against the per-region trace relation; "
-                "the relation does not report the configuration at the moment of an abstract call, "
-                "so the handler calls the case asserts are not compared.",
-                ignored_expect_fields=REGION_CORE_PARTIAL_CASES[case_id],
             )
         return BmcSemanticFixturePolicy(
             mode="region_core",

@@ -58,7 +58,7 @@ import pathlib
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 
 import click
 
@@ -195,10 +195,7 @@ def _load_model(input_code_file: str) -> StateMachine:
         reason (``Failed to read``).
     """
     try:
-        from pyfcstm.model.support import require_supported_model
-        model = load_state_machine_from_file(input_code_file)
-        require_supported_model(model, 'bmc')
-        return model
+        return load_state_machine_from_file(input_code_file)
     except FileNotFoundError:
         # load_state_machine_from_file raises FileNotFoundError for a missing
         # primary FCSTM input.
@@ -212,7 +209,7 @@ def _load_model(input_code_file: str) -> StateMachine:
         raise ClickErrorException("Failed to parse FCSTM model: %s" % err)
     except ModelValidationError as err:
         # Model construction raises ModelValidationError for semantic model
-        # errors after parsing; the support check rejects unsupported BMC features.
+        # errors after parsing.
         raise ClickErrorException("Invalid FCSTM model: %s" % err)
     except OSError as err:
         # The loader raises OSError subclasses for primary/imported file access
@@ -427,6 +424,8 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
 
 def _human_frame_label(witness: BmcWitnessTrace, frame_index: int) -> str:
     frame = witness.frames[frame_index]
+    if frame.configuration is not None:
+        return frame.configuration
     if frame.state is not None:
         return frame.state
     if frame.sentinel is not None:
@@ -440,6 +439,85 @@ def _human_compact_values(values: Tuple[str, ...]) -> str:
     if len(values) > len(visible):
         text += ",+%d more" % (len(values) - len(visible))
     return text
+
+
+def _human_base(scope: Optional[str], states: Sequence[str]) -> Optional[str]:
+    """Return the first of ``states`` that is ``scope`` or contains it, else ``None``.
+
+    :param scope: Path of the owner or region a local case ran in, or ``None``.
+    :type scope: str, optional
+    :param states: Candidate states, in order of preference.
+    :type states: Sequence[str]
+    :return: The state the scope is written relative to.
+    :rtype: str, optional
+
+    Example::
+
+        >>> _human_base('Root.Run.A', ['Root.Idle', 'Root.Run'])
+        'Root.Run'
+        >>> _human_base('Root.Run.A', ['Root.Idle']) is None
+        True
+    """
+    return next(
+        (
+            state
+            for state in states
+            if scope is not None and (scope == state or scope.startswith(state + "."))
+        ),
+        None,
+    )
+
+
+def _human_local_case(case, main: Optional[str] = None) -> str:
+    """Render one local case of a cycle of a model with regions as one line.
+
+    Paths are shown relative to the scope the case ran in, and a region that
+    finished reads ``[done]``: ``Motion: Off -> On [transition]``.  The scope
+    itself is shown relative to ``main``, the state the machine rests in outside
+    every region, so that regions with the same name below different owners
+    read differently: ``Inner.X: A -> B [transition]``; the owner itself reads as
+    its own name.
+
+    :param case: Local case of a witness step.
+    :type case: pyfcstm.bmc.witness.BmcWitnessLocalCase
+    :param main: Path of the state the machine rests in outside every region,
+        defaults to ``None`` for the full scope path.
+    :type main: str, optional
+    :return: One line of the human trace.
+    :rtype: str
+
+    Example::
+
+        >>> from pyfcstm.bmc.witness import BmcWitnessLocalCase
+        >>> case = BmcWitnessLocalCase('Root.Run.Motion', 'transition', 'Root.Run.Motion.Off::transition::Root.Run.Motion.On::0')
+        >>> _human_local_case(case, 'Root.Run')
+        'Motion: Off -> On [transition]'
+        >>> _human_local_case(case)
+        'Root.Run.Motion: Off -> On [transition]'
+    """
+    scope = case.scope
+
+    def relative(path: str) -> str:
+        if path == "__region_done__":
+            return "[done]"
+        if path == "__init__":
+            return "[start]"
+        if scope is not None and path == scope:
+            return "[start]"
+        if scope is not None and path.startswith(scope + "."):
+            return path[len(scope) + 1 :]
+        return path
+
+    line = "%s -> %s [%s]" % (relative(case.source), relative(case.target), case.kind)
+    if scope is None:
+        return line
+    inside = main is not None and scope.startswith(main + ".")
+    label = (
+        scope[len(main) + 1 :]
+        if inside
+        else (scope.rsplit(".", 1)[-1] if scope == main else scope)
+    )
+    return "%s: %s" % (label, line)
 
 
 def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
@@ -460,14 +538,38 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
             details.append("events=%s" % _human_compact_values(event_paths))
         if call_names:
             details.append("calls=%s" % _human_compact_values(call_names))
-        lines.append(
-            "  %d: %s -> %s [%s]"
-            % (
-                step.index,
-                _human_frame_label(witness, step.source_frame),
-                _human_frame_label(witness, step.target_frame),
-                "; ".join(details),
+        if step.local_cases is None:
+            lines.append(
+                "  %d: %s -> %s [%s]"
+                % (
+                    step.index,
+                    _human_frame_label(witness, step.source_frame),
+                    _human_frame_label(witness, step.target_frame),
+                    "; ".join(details),
+                )
             )
+            continue
+        # A cycle of a model with regions is the local cases of its regions, one
+        # line each, below the frames it goes from and to.
+        lines.append("  %d: %s" % (step.index, _human_frame_label(witness, step.source_frame)))
+        lines.append(
+            "       -> %s [%s]"
+            % (_human_frame_label(witness, step.target_frame), "; ".join(details))
+        )
+        # A cycle that leaves the group, or the machine, ends outside the state its
+        # local cases ran in, so a scope is written relative to whichever of the
+        # state it started from and the state it ends in contains it.
+        ends = tuple(
+            state
+            for state in (
+                witness.frames[step.target_frame].state,
+                witness.frames[step.source_frame].state,
+            )
+            if state is not None
+        )
+        lines.extend(
+            "       %s" % _human_local_case(case, _human_base(case.scope, ends))
+            for case in step.local_cases
         )
     if error is not None:
         if error["step"] is None:

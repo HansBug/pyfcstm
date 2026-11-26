@@ -69,6 +69,7 @@ from .expand import (
 from .macro import (
     ActionBlock,
     BoolTemplate,
+    EvaluationPoint,
     EventUse,
     GuardRequirement,
     PriorityExclusion,
@@ -131,6 +132,34 @@ class RegionCase:
         that owns the region is still waiting for a real child to be entered
         once the path ends; only an init unit starts with it pending.
     :type plain_pending_after: bool, optional
+    :param scope: Where the path runs, for reports: the path of the region the
+        leaf belongs to for a work unit (``None`` for a leaf outside every
+        region), the path of the owner for the start of its regions and for its
+        continuation, ``None`` for the cold start and for a flush; defaults to
+        ``None``.
+    :type scope: str, optional
+    :param public_label: Label users write in ``case(...)``:
+        ``source::kind::target::ordinal`` where the source is the leaf for a
+        work unit, the owner for a start or a continuation and ``__init__`` for
+        the cold start.  It does not name the unit and is the same for every
+        copy of a unit that the aspect flags split; empty for a flush, which
+        has no public label; defaults to ``''``.
+    :type public_label: str, optional
+    :param home: Path of the region whose stack the unit runs in, or ``None``
+        when it runs in the main namespace.  It is the region of the leaf for a
+        work unit, the region that starts for an init unit and the region the
+        owner sits in for a continuation; defaults to ``None``.
+    :type home: str, optional
+    :param owed_leaves: For every scope in ``owed``, the path of the leaf whose
+        during work made it owe, as ``(scope, leaf)`` pairs sorted by scope.  The
+        handler of the scope's ``>> during after`` action is told a state that
+        this leaf determines; defaults to ``()``.
+    :type owed_leaves: Tuple[Tuple[str, str], ...], optional
+    :param transitions: Labels of the transitions the path commits, in the order
+        it commits them and in the format the simulator's execution trace uses
+        (``owner::index::source->target``); replay compares them with what the
+        simulator committed; defaults to ``()``.
+    :type transitions: Tuple[str, ...], optional
 
     Example::
 
@@ -157,6 +186,11 @@ class RegionCase:
     before_done: FrozenSet[str] = frozenset()
     owed: FrozenSet[str] = frozenset()
     plain_pending_after: bool = False
+    scope: Optional[str] = None
+    public_label: str = ""
+    home: Optional[str] = None
+    owed_leaves: Tuple[Tuple[str, str], ...] = ()
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -172,17 +206,25 @@ class RegionUnitFormal:
     :param failed: Conditions under which a candidate was tried and rejected;
         diagnostic only.
     :type failed: Tuple[pyfcstm.bmc.macro.BoolTemplate, ...]
+    :param evaluation_points: Every guard check and action block the runtime
+        evaluates while it runs the unit, in evaluation order: also the ones on
+        candidates that dead-end or lose to a higher priority, which never become
+        a path but can still raise; defaults to ``()``.
+    :type evaluation_points: Tuple[pyfcstm.bmc.macro.EvaluationPoint, ...], optional
 
     Example::
 
         >>> RegionUnitFormal('work:Root.P', 'work', (), ()).kind
         'work'
+        >>> RegionUnitFormal('work:Root.P', 'work', (), ()).evaluation_points
+        ()
     """
 
     unit_id: str
     kind: str
     cases: Tuple[RegionCase, ...]
     failed: Tuple[BoolTemplate, ...] = ()
+    evaluation_points: Tuple[EvaluationPoint, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -191,6 +233,8 @@ class _RegionFrontier(_MacroFrontier):
 
     before_done: FrozenSet[str] = frozenset()
     owed: FrozenSet[str] = frozenset()
+    # For every scope in ``owed``, the leaf whose during work made it owe.
+    owed_leaves: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -318,7 +362,13 @@ class _RegionExpander(_MacroExpander):
                 for scope in scopes
                 if scope.list_on_during_aspects(aspect="after")
             }
-            current = replace(current, owed=current.owed | owed)
+            leaves = dict(current.owed_leaves)
+            leaves.update((path, ".".join(state.path)) for path in owed)
+            current = replace(
+                current,
+                owed=current.owed | owed,
+                owed_leaves=tuple(sorted(leaves.items())),
+            )
         return current
 
     def _clear_parent_plain_before_pending_after_pseudo_exit(
@@ -367,7 +417,8 @@ class _RegionExpander(_MacroExpander):
 
         The label survives the copies the base class makes of an outcome, so the case
         built from it can carry the before actions that ran, the scopes that owe an
-        after action and whether the plain during-before of the owner is pending.
+        after action, whether the plain during-before of the owner is pending and
+        the leaf that made each scope owe.
         """
         bottom = frontier.stack[0] if frontier.stack else None
         self._ledger_by_label[outcome.label] = (
@@ -378,6 +429,7 @@ class _RegionExpander(_MacroExpander):
                 and isinstance(bottom.state, Region)
                 and bottom.plain_before_pending
             ),
+            getattr(frontier, "owed_leaves", ()),
         )
         return outcome
 
@@ -430,6 +482,19 @@ class _RegionExpander(_MacroExpander):
             ):
                 return ".".join(state.path)
         return runtime_state_path
+
+    def _stack_states(self, frontier: _MacroFrontier) -> Optional[Tuple[str, ...]]:
+        """Return the paths of the states on the stack, outermost first.
+
+        Region frames are not states and are skipped.  A unit that runs inside a
+        region holds that region's states only, so the result is empty while a
+        region has not entered its first state.
+        """
+        return tuple(
+            ".".join(frame.state.path)
+            for frame in frontier.stack
+            if not isinstance(frame.state, Region)
+        )
 
     def _finalize_exit_to_parent(self, frontier: _MacroFrontier) -> _MacroFrontier:
         """Finish an ``[*]`` exit once the leaving state has been popped.
@@ -514,6 +579,7 @@ class _RegionExpander(_MacroExpander):
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _owner_outcome(self, frontier: _MacroFrontier, owner: State) -> _MacroOutcome:
@@ -538,6 +604,7 @@ class _RegionExpander(_MacroExpander):
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def classify_target(self, outcome: _MacroOutcome) -> str:
@@ -552,11 +619,52 @@ class _RegionExpander(_MacroExpander):
     # ------------------------------------------------------------------
     # unit expansion
     # ------------------------------------------------------------------
-    def expand_unit(self, unit_id: str, unit_kind: str, frontiers) -> RegionUnitFormal:
-        """Expand the given start frontiers into the cases of one unit."""
+    def public_label_of(self, unit_id: str, label: str, public_source: str) -> str:
+        """Return the label users write for a path of a unit.
+
+        The label of a path is ``<unit id>::<kind>::<target>::<ordinal>``; the
+        public label keeps the last three parts and puts the source users know
+        in front of them.
+
+        :param unit_id: Identifier of the unit the label belongs to.
+        :param label: Label allocated for the path by the expander.
+        :param public_source: Leaf, owner or start marker to name as the source.
+        :return: The public label of the path.
+        """
+        prefix = unit_id + "::"
+        if not label.startswith(prefix):  # pragma: no cover - labels start with the unit id.
+            raise InvalidBmcEncoding(
+                "label %r does not start with its unit %r." % (label, unit_id)
+            )
+        return "%s::%s" % (public_source, label[len(prefix) :])
+
+    def expand_unit(
+        self,
+        unit_id: str,
+        unit_kind: str,
+        frontiers,
+        public_source: str,
+        scope: Optional[str] = None,
+        home: Optional[str] = None,
+    ) -> RegionUnitFormal:
+        """Expand the given start frontiers into the cases of one unit.
+
+        :param unit_id: Identifier of the unit.
+        :param unit_kind: ``"work"``, ``"init"``, ``"cont"`` or ``"cold"``.
+        :param frontiers: Frontiers the unit starts from.
+        :param public_source: Source named in the public labels of the paths.
+        :param scope: Scope the paths report, defaults to ``None``.
+        :param home: Region whose stack the unit runs in, defaults to ``None``.
+        """
         expansion = self._merge_expansions(
             self._expand_frontier(frontier) for frontier in frontiers
         )
+        ledgers = {
+            outcome.label: self._ledger_by_label.get(
+                outcome.label, (frozenset(), frozenset(), False, ())
+            )
+            for outcome in expansion.outcomes
+        }
         cases = tuple(
             RegionCase(
                 outcome.case_kind,
@@ -572,13 +680,18 @@ class _RegionExpander(_MacroExpander):
                 outcome.priority_exclusions,
                 outcome.consumed_events,
                 outcome.failed_conditions,
-                *self._ledger_by_label.get(
-                    outcome.label, (frozenset(), frozenset(), False)
-                ),
+                *ledgers[outcome.label][:3],
+                scope,
+                self.public_label_of(unit_id, outcome.label, public_source),
+                home,
+                ledgers[outcome.label][3],
+                outcome.transitions,
             )
             for outcome in expansion.outcomes
         )
-        return RegionUnitFormal(unit_id, unit_kind, cases, expansion.failed)
+        return RegionUnitFormal(
+            unit_id, unit_kind, cases, expansion.failed, tuple(self._points)
+        )
 
 
 def _base_frontier(
@@ -646,6 +759,18 @@ def _leaf_state(domain: BmcDomain, path: str) -> State:
     return {".".join(state.path): state for state in domain.model.walk_states()}[path]
 
 
+def _enclosing_region(domain: BmcDomain, state_path: str) -> Optional[str]:
+    """Return the path of the region that holds a state at any depth, if any.
+
+    ``StateDomainEntry.region_path`` is only set for a state that sits directly in
+    a region; a state below a composite state of the region has to climb to it.
+    """
+    entry = domain.state_by_path(state_path)
+    while entry.region_path is None and entry.parent_path is not None:
+        entry = domain.state_by_path(entry.parent_path)
+    return entry.region_path
+
+
 def expand_leaf_unit(
     domain: BmcDomain,
     leaf_path: str,
@@ -704,7 +829,14 @@ def expand_leaf_unit(
         _CASE_KIND_TRANSITION,
         before_done=done,
     )
-    return expander.expand_unit(unit_id, "work", (frontier,))
+    return expander.expand_unit(
+        unit_id,
+        "work",
+        (frontier,),
+        leaf_path,
+        _enclosing_region(domain, leaf_path),
+        _enclosing_region(domain, leaf_path),
+    )
 
 
 def expand_init_unit(
@@ -762,6 +894,9 @@ def expand_init_unit(
         domain, unit_id, "init", options, entries[region_path].owner_id
     )
     region = expander.region_of(region_path)
+    # The runtime picks the first start path of a region that can be committed, in
+    # declaration order, and does not evaluate the others: unlike the initial
+    # transitions of a plain composite state, they are not probed.
     frontier = _RegionFrontier(
         (_FormalStackFrame(region, "init_wait", plain_before_pending=plain_pending),),
         BoolTemplate.true(),
@@ -772,7 +907,10 @@ def expand_init_unit(
         _CASE_KIND_INITIAL,
         before_done=done,
     )
-    return expander.expand_unit(unit_id, "init", (frontier,))
+    owner_path = entries[region_path].owner_path
+    return expander.expand_unit(
+        unit_id, "init", (frontier,), owner_path, owner_path, region_path
+    )
 
 
 def expand_continue_unit(
@@ -834,6 +972,11 @@ def expand_continue_unit(
     unit_id = _variant_id("cont:%s" % owner_path, done)
     expander = _make_expander(domain, unit_id, "cont", options, entry.id)
     owner = expander.states_by_path[owner_path]
+    # The outgoing transitions of an owner are chosen after its regions finished, as
+    # a later choice of the cycle: the runtime validates all of their candidates
+    # before it commits to one, so the expansion starts at depth one, which is what
+    # makes it record the probes of the lower-priority candidates as evaluation
+    # points.
     frontier = _RegionFrontier(
         expander.owner_frames(owner),
         BoolTemplate.true(),
@@ -843,12 +986,20 @@ def expand_continue_unit(
         (),
         _CASE_KIND_TRANSITION,
         before_done=done,
+        depth=1,
     )
     for on_during_after in owner.list_on_durings(aspect="after"):
         frontier = expander._record_func(
             frontier, owner, on_during_after, "state_action", "plain_during_after"
         )
-    return expander.expand_unit(unit_id, "cont", (frontier,))
+    return expander.expand_unit(
+        unit_id,
+        "cont",
+        (frontier,),
+        owner_path,
+        owner_path,
+        _enclosing_region(domain, owner_path),
+    )
 
 
 def expand_cold_unit(
@@ -885,7 +1036,91 @@ def expand_cold_unit(
     frontiers = expander._enter_state(
         _base_frontier(_CASE_KIND_INITIAL, done), expander.model.root_state
     )
-    return expander.expand_unit(unit_id, "cold", frontiers)
+    return expander.expand_unit(unit_id, "cold", frontiers, INIT_CASE_PATH)
+
+
+def expand_wait_unit(
+    domain: BmcDomain,
+    state_path: str,
+    options: Optional[MacroExpansionOptions] = None,
+    before_done: Iterable[str] = (),
+) -> RegionUnitFormal:
+    """Expand the cycle of a branch that rests in a state it can only leave.
+
+    A hot start can leave a branch in a plain composite state, which waits for its
+    initial transition, or in a pseudo state, which is left through its outgoing
+    transitions: neither is a state the machine rests in, so the first cycle has to
+    move on from it.  The state may sit in the main namespace or inside a region.
+
+    :param domain: Region-aware domain of the model.
+    :type domain: pyfcstm.bmc.domain.BmcDomain
+    :param state_path: Dot-separated path of a composite state without regions or
+        of a pseudo state.
+    :type state_path: str
+    :param options: Expansion safety options, defaults to ``None``.
+    :type options: pyfcstm.bmc.expand.MacroExpansionOptions, optional
+    :param before_done: Paths of the scopes whose ``>> during before`` actions
+        have already run in this cycle, defaults to ``()``.
+    :type before_done: Iterable[str], optional
+    :return: The paths of the unit.
+    :rtype: RegionUnitFormal
+    :raises pyfcstm.bmc.errors.InvalidBmcEncoding: If ``state_path`` is not a
+        state of the domain's model, is a stoppable leaf or owns regions.
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the expansion cannot be bounded.
+
+    Example::
+
+        >>> from pyfcstm.bmc.domain import build_bmc_domain
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A {
+        ...         [*] -> C;
+        ...         state C { [*] -> L; state L; }
+        ...     }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> unit = expand_wait_unit(build_bmc_domain(model, 1), 'Root.A.C')
+        >>> [(case.kind, case.target_state_path) for case in unit.cases]
+        [('initial', 'Root.A.C.L')]
+    """
+    if not isinstance(domain, BmcDomain):
+        raise InvalidBmcEncoding("domain must be BmcDomain.")
+    try:
+        entry = domain.state_by_path(state_path)
+    except InvalidBmcDomain as err:
+        # InvalidBmcDomain: BmcDomain lookup rejects paths that are not states.
+        raise InvalidBmcEncoding(str(err)) from err
+    if entry.is_stoppable or entry.owns_regions:
+        raise InvalidBmcEncoding(
+            "a wait unit starts at a composite state without regions or at a pseudo state."
+        )
+    done = frozenset(before_done)
+    unit_id = _variant_id("wait:%s" % state_path, done)
+    expander = _make_expander(domain, unit_id, "wait", options, entry.id)
+    state = expander.states_by_path[state_path]
+    frames = list(expander.namespace_frames(state))
+    if not state.is_leaf_state:
+        frames[-1] = _FormalStackFrame(state, "init_wait", plain_before_pending=False)
+    frontier = _RegionFrontier(
+        tuple(frames),
+        BoolTemplate.true(),
+        (),
+        (),
+        (),
+        (),
+        _CASE_KIND_TRANSITION if state.is_leaf_state else _CASE_KIND_INITIAL,
+        before_done=done,
+    )
+    return expander.expand_unit(
+        unit_id,
+        "wait",
+        (frontier,),
+        state_path,
+        _enclosing_region(domain, state_path),
+        _enclosing_region(domain, state_path),
+    )
 
 
 def expand_flush_unit(
@@ -985,5 +1220,6 @@ __all__ = [
     "expand_continue_unit",
     "expand_cold_unit",
     "expand_flush_unit",
+    "expand_wait_unit",
     "FLUSH_CASE_PATH",
 ]

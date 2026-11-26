@@ -58,21 +58,28 @@ BmcWitnessCallRecord
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessCallRecord
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,ordinal,action_name,stage,role,state,active_leaf,named_ref,snapshot
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,ordinal,action_name,stage,role,state,active_leaf,named_ref,snapshot,configuration
+
+
+BmcWitnessLocalCase
+-----------------------------------------------------
+
+.. autoclass:: BmcWitnessLocalCase
+    :members: __post_init__,source,target,to_canonical,pretty_print,to_text,__str__,scope,kind,label
 
 
 BmcWitnessFrame
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessFrame
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state_id,state,sentinel,terminated,vars
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state_id,state,sentinel,terminated,vars,configuration
 
 
 BmcWitnessStep
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessStep
-    :members: __post_init__,input_event_paths,to_canonical,pretty_print,to_text,__str__,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls,consumed_events,unconsumed_events,inputs,input_reads
+    :members: __post_init__,input_event_paths,to_canonical,pretty_print,to_text,__str__,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls,consumed_events,unconsumed_events,inputs,input_reads,local_cases,transitions
 
 
 BmcWitnessTrace
@@ -86,14 +93,14 @@ BmcRuntimeFrame
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeFrame
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state,terminated,vars
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,state,terminated,vars,configuration
 
 
 BmcRuntimeStep
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeStep
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta,inputs
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta,inputs,transitions
 
 
 BmcRuntimeTrace

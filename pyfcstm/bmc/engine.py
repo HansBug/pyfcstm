@@ -50,6 +50,9 @@ from pyfcstm.model import StateMachine
 _CanonicalDict = Dict[str, Any]
 _QueryInput = Union[str, BmcQuery]
 
+DEFAULT_MAX_GROUP_REENTRIES = 16
+"""Default of :attr:`BmcOptions.max_group_reentries`."""
+
 
 @dataclass(frozen=True)
 class BmcOptions:
@@ -64,21 +67,45 @@ class BmcOptions:
     :type max_bound: Optional[int], optional
     :param cone_slicing: Conservatively remove unobserved writes, defaults to ``False``.
     :type cone_slicing: bool, optional
-    :raises pyfcstm.bmc.errors.BmcBuildError: If ``cone_slicing`` is not Boolean or ``max_bound`` is not ``None``
-        and not a positive integer.
+    :param max_group_reentries: For a model with regions: how many times one state
+        that owns regions may be entered inside the entry of itself within one
+        cycle before the build gives up, defaults to ``16``.  A group that
+        re-enters itself keeps going until a value stops it, so the depth depends
+        on data; past this depth the formula would no longer describe the
+        runtime, and the build fails with
+        :class:`pyfcstm.bmc.errors.BmcBuildError` instead of guessing.  The value
+        has no effect on a model without regions and is left out of the canonical
+        form while it is the default.
+    :type max_group_reentries: int, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If ``cone_slicing`` is not Boolean,
+        ``max_bound`` is not ``None`` and not a positive integer, or
+        ``max_group_reentries`` is not a positive integer.
 
     Example::
 
         >>> BmcOptions(max_bound=3).to_canonical()["max_bound"]
         3
+        >>> BmcOptions().max_group_reentries
+        16
+        >>> BmcOptions(max_group_reentries=0)
+        Traceback (most recent call last):
+            ...
+        pyfcstm.bmc.errors.BmcBuildError: max_group_reentries must be a positive integer.
     """
 
     max_bound: Optional[int] = None
     cone_slicing: bool = False
+    max_group_reentries: int = DEFAULT_MAX_GROUP_REENTRIES
 
     def __post_init__(self) -> None:
         if not isinstance(self.cone_slicing, bool):
             raise BmcBuildError("cone_slicing must be bool.")
+        if (
+            isinstance(self.max_group_reentries, bool)
+            or not isinstance(self.max_group_reentries, int)
+            or self.max_group_reentries <= 0
+        ):
+            raise BmcBuildError("max_group_reentries must be a positive integer.")
         if self.max_bound is None:
             return
         if isinstance(self.max_bound, bool) or not isinstance(self.max_bound, int):
@@ -97,11 +124,14 @@ class BmcOptions:
             >>> BmcOptions().to_canonical()
             {'node': 'bmc_options', 'max_bound': None, 'cone_slicing': False}
         """
-        return {
+        canonical = {
             "node": "bmc_options",
             "max_bound": self.max_bound,
             "cone_slicing": self.cone_slicing,
         }
+        if self.max_group_reentries != DEFAULT_MAX_GROUP_REENTRIES:
+            canonical["max_group_reentries"] = self.max_group_reentries
+        return canonical
 
 
 def _require_field(value: object, field_name: str, field_type: type) -> None:

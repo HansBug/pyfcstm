@@ -838,16 +838,146 @@ state Root {
     state Orphan {
         state A;
         [*] -> A;
+        A -> [*];
     }
     state Live;
     [*] -> Live;
     Orphan -> Live;
 }
 `));
-            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
             assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
-                unreachable_source_state: 1,
+                unreachable_source_state: 2,
             });
+        });
+
+        it('treats a composite whose children cannot leave as never taking its transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Working {
+        state Idle;
+        [*] -> Idle;
+    }
+    state Done;
+    [*] -> Working;
+    Working -> Done;
+}
+`));
+            assert.ok(report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Done',
+            ));
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                owner_never_completes: 1,
+            });
+        });
+
+        it('does not let the exits of a forced transition complete a composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Reset;
+    [*] -> Run;
+    state Run { state A; [*] -> A; }
+    state Done;
+    state Idle;
+    Run -> Done;
+    !Run -> Idle : /Reset;
+}
+`));
+            const unreachable = report.diagnostics
+                .filter((diag) => diag.code === 'W_UNREACHABLE_STATE')
+                .map((diag) => diag.refs.state_path);
+            assert.deepEqual(unreachable, ['Root.Done']);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                owner_never_completes: 1,
+            });
+        });
+
+        it('keeps the inner exit when the same forced declaration is written in two scopes', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Eb;
+    [*] -> S2;
+    state S1 { [*] -> S0; state S0; }
+    state S2 { [*] -> S0; state S0; !* -> [*] :: Eb; }
+    S2 -> S1;
+    !* -> [*] :: Eb;
+}
+`));
+            assert.ok(!report.diagnostics.some((diag) => diag.code === 'W_UNREACHABLE_STATE'));
+        });
+
+        it('lets an authored forced exit complete a composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Reset;
+    [*] -> Run;
+    state Run { state A; [*] -> A; !A -> [*] :: Reset; }
+    state Done;
+    Run -> Done;
+}
+`));
+            assert.ok(!report.diagnostics.some((diag) => diag.code === 'W_UNREACHABLE_STATE'));
+        });
+
+        it('treats a history default as an entry of a composite that can complete', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    event Go;
+    [*] -> Off;
+    state Off;
+    state C {
+        [*] -> A;
+        [H] -> B;
+        state A;
+        state B;
+        B -> [*];
+    }
+    state Fin;
+    Off -> C.[H] :: Go;
+    C -> Fin;
+}
+`));
+            assert.ok(!report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Fin',
+            ));
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});
+        });
+
+        it('does not let a history default nothing enters complete a composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    [*] -> C;
+    state C {
+        [*] -> A;
+        [H] -> B;
+        state A;
+        state B;
+        B -> [*];
+    }
+    state Fin;
+    C -> Fin;
+}
+`));
+            assert.ok(report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Fin',
+            ));
+        });
+
+        it('lets a forced transition leave a composite that cannot complete', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Working {
+        state Idle;
+        [*] -> Idle;
+    }
+    state Done;
+    [*] -> Working;
+    !Working -> Done :: Stop;
+}
+`));
+            assert.ok(!report.diagnostics.some(
+                (diag) => diag.code === 'W_UNREACHABLE_STATE' && diag.refs.state_path === 'Root.Done',
+            ));
         });
 
         it('does not count excluded event-bearing initial edges', async () => {

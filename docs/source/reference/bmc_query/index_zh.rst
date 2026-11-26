@@ -557,6 +557,24 @@ BMC 原子及上下文合法性
 合法选择器边界 ``active("Root.A", current)`` 与省略选择器等价。相反，
 ``event("Root.Tick")`` 缺少必需的步选择器，属于语法错误。
 
+对含区域的模型，``active(...)`` 的字符串也可以是配置文本，写法与见证里打印的一致，这时这个原子是一个\ **模式**\ ：文本里写出的区域必须在所写的位置，没有写出的区域不受约束。
+
+.. code-block:: fbmcq
+
+   check reach <= 3: active("Controller.Running{Motion: On}");              // Safety 不受约束
+   check reach <= 3: active("Controller.Running{Safety: Watching, Motion: On}");
+   check reach <= 3: active("Root.Run{Motion: [done]}");                    // Motion 已完成
+   check reach <= 1: active("Root.Run{Motion: [init]}");                    // 等待启动
+   check reach <= 3: active("Root.Run{Work: Inner{X: x1}}");                // 嵌套的拥有者
+
+不带花括号的路径就是不写任何区域的模式，所以 ``active("Root.Run")`` 的含义与以前相同。它与 ``init state(...)`` 的差别是有意的：起点是在\ **构造**\ 一个位置，没写的区域等待初始化；模式是在\ **匹配**\ 一个位置，没写的区域不受约束。由 ``init state(...)`` 的文本构造出的位置，一定匹配同一段文本写成的模式。拥有者正在被进入时发出的调用里，还没启动的区域同样满足 ``[init]``。
+
+在调用过滤器的 ``where`` 里，``active(...)`` 描述调用那一刻机器所在的位置，也就是处理器拿到的 ``ctx.configuration``：同一周期里先走的区域显示新位置，还没启动的区域显示 ``[init]``。不含区域的模型里，它就是动作所在的状态及其祖先。
+
+.. code-block:: fbmcq
+
+   check reach <= 4: called("Root.B.Work", where active("Root{A: Done}"));
+
 所以下列形式虽然通过文法解析，却在绑定时非法：
 
 .. code-block:: fbmcq
@@ -705,7 +723,7 @@ BMC 原子及上下文合法性
    check reach <= 3: called(step=3);                         // N=3 时越界
    check reach <= 3: called("A", stage="middle");           // call_stage
    check reach <= 3: called("A", where cycle == 0);         // cycle_not_allowed
-   check reach <= 3: called("A", where active("Root.A"));   // call_where_atom_not_allowed
+   check reach <= 3: called("A", where terminated());       // call_where_atom_not_allowed
 
 性质
 ----
@@ -952,9 +970,15 @@ BMC 原子及上下文合法性
    * - ``call_stage`` / ``call_role``
      - 过滤器值不属于文档规定的闭集。
    * - ``call_where_atom_not_allowed`` / ``cycle_not_allowed``
-     - 调用快照谓词使用了轨迹原子或裸 cycle。
+     - 调用快照谓词使用了除 ``active(...)`` 之外的轨迹原子（``terminated()``、``event()``、``case()``、``called()``）或裸 ``cycle``。
+   * - ``invalid_active_pattern``
+     - ``active(...)`` 里的配置模式不是该模型的模式：语法错误、状态不存在、状态没有这个区域、同一区域写了两次，或者在没有区域的模型里写了区域块。
    * - ``unknown_call_action`` / ``unknown_named_ref``
      - 模型感知调用元数据路径不存在。
+   * - ``invalid_start_position``
+     - ``init state(...)`` 的文本不是含区域模型的一个位置，或者让某个拥有者的全部区域都已完成。
+   * - ``expression_too_deep``
+     - 一个表达式的嵌套超过 100 层，例如几百个 ``&&`` 连成的链；请拆成几条子句。
 
 源码与测试可追溯性
 ------------------

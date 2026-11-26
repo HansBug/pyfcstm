@@ -257,14 +257,18 @@ only when each region can reach its ``[*]`` exit; otherwise they are reported
 by ``W_UNREACHABLE_TRANSITION`` with the reason ``owner_never_completes``.
 Forced transitions declared on the owner are always reachable with the owner.
 
-With ``--enable-verify`` the single-active-path topology algorithms
+With ``--enable-verify`` the topology algorithms
 (``topological_reachable_set``, ``unreachable_states``,
 ``strongly_connected_components``, ``topological_finite``,
 ``topological_inevitable_terminator`` and
-``event_emission_to_consumer_reachable``) are reported as ``not_run`` with the
-``reason_code`` ``requires_single_active_path`` for a model with regions. The
-solver-local algorithms run inside regions, and the lifecycle check of a state
-inside a region is skipped.
+``event_emission_to_consumer_reachable``) run on a model with regions as they run
+on any other model: every state that owns regions, and every plain composite
+state, is read as branches that must all be over before the state goes on.  A
+state is unreachable when no reachable position holds it, a leaf has no way out
+when the branches around it cannot all finish (the report calls that a
+deadlock), and the topology is non-terminating when some reachable position can
+repeat or cannot move.  The solver-local algorithms run inside regions, and the
+lifecycle check of a state inside a region is skipped.
 
 Which machine a finding is judged on
 ------------------------------------

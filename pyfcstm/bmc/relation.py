@@ -39,7 +39,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     Any,
     Callable,
@@ -90,6 +90,7 @@ from .domain import (
 )
 from .engine import BmcPreparedContext
 from .errors import BmcBuildError, UnsupportedBmcQuery
+from .region_pattern import active_over, parse_active_pattern, pattern_predicate
 from .expand import expand_macro_step_cases
 from .macro import (
     ActionBlock,
@@ -163,6 +164,16 @@ class BmcAbstractCallRecord:
     :param snapshot: Mapping from persistent variable names to call-time Z3
         expressions.
     :type snapshot: Mapping[str, z3.ArithRef]
+    :param scope_path: Path of the state or region that declares the action, only
+        for a model with regions; the handler of an aspect reports the deepest
+        state that aspect wraps, which depends on what runs at that moment, so
+        a witness needs the scope to work it out.  Defaults to ``None`` and is
+        then left out of the canonical form.
+    :type scope_path: str, optional
+    :param stack_states: Paths of the states on the stack of the unit that made
+        the call, outermost first, only for a model with regions; defaults to
+        ``None`` and is then left out of the canonical form.
+    :type stack_states: Tuple[str, ...], optional
 
     Example::
 
@@ -179,6 +190,8 @@ class BmcAbstractCallRecord:
     active_leaf_path: str
     named_ref: Optional[str]
     snapshot: Mapping[str, z3.ArithRef]
+    scope_path: Optional[str] = None
+    stack_states: Optional[Tuple[str, ...]] = None
 
     def __post_init__(self) -> None:
         if isinstance(self.ordinal, bool) or not isinstance(self.ordinal, int):
@@ -207,14 +220,32 @@ class BmcAbstractCallRecord:
                 "call snapshot values must be arithmetic Z3 expressions."
             )
         object.__setattr__(self, "snapshot", snapshot)
+        if self.scope_path is not None and (
+            not isinstance(self.scope_path, str) or not self.scope_path
+        ):
+            raise BmcBuildError("scope_path must be None or a non-empty string.")
+        if self.stack_states is not None:
+            object.__setattr__(self, "stack_states", tuple(self.stack_states))
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable call-record summary.
 
+        ``scope_path`` and ``stack_states`` appear only when they are set, so
+        the record of a model without regions keeps its earlier shape.
+
         :return: Canonical call record.
         :rtype: Dict[str, object]
+
+        Example::
+
+            >>> import z3
+            >>> record = BmcAbstractCallRecord(0, 'A', 'during', 'leaf_during', 'Root', 'Root', None, {'x': z3.Int('x')})
+            >>> sorted(record.to_canonical())[:3]
+            ['action_name', 'active_leaf_path', 'named_ref']
+            >>> 'scope_path' in record.to_canonical()
+            False
         """
-        return {
+        canonical = {
             "node": "bmc_abstract_call_record",
             "ordinal": self.ordinal,
             "action_name": self.action_name,
@@ -227,6 +258,11 @@ class BmcAbstractCallRecord:
                 name: _z3_text(expr) for name, expr in sorted(self.snapshot.items())
             },
         }
+        if self.scope_path is not None:
+            canonical["scope_path"] = self.scope_path
+        if self.stack_states is not None:
+            canonical["stack_states"] = list(self.stack_states)
+        return canonical
 
 
 def _internal_bmc_error(detail: str) -> BmcBuildError:
@@ -1265,10 +1301,20 @@ class BmcTraceSymbols:
             'Bool'
         """
         frame = self.frame_state(frame_index)
+        if "{" in state_path:
+            pattern = parse_active_pattern(self.domain, state_path)
+            return pattern_predicate(
+                self.domain,
+                pattern,
+                frame,
+                lambda path: self.region_position(frame_index, path),
+            )
         target = self.domain.state_by_path(state_path)
         if target.is_sentinel:
             return z3.BoolVal(False)
         target_path = target.path
+        if self.region_positions:
+            return self._region_active_state(frame_index, target)
         active_ids: List[int] = []
         for entry in self.domain.states:
             if entry.id == STATE_INIT_ID:
@@ -1287,6 +1333,20 @@ class BmcTraceSymbols:
                     break
                 current = parent
         return _or(frame == z3.IntVal(state_id) for state_id in active_ids)
+
+    def _region_active_state(self, frame_index: int, target) -> z3.BoolRef:
+        """Return the active predicate of a state of a model with regions.
+
+        See :func:`pyfcstm.bmc.region_pattern.active_over`, which is the one
+        definition of it over any positions; here the positions are the ones of a
+        frame.
+        """
+        return active_over(
+            self.domain,
+            target.path,
+            self.frame_state(frame_index),
+            lambda path: self.region_position(frame_index, path),
+        )
 
     def case_selector(self, step_index: int, label: str) -> z3.BoolRef:
         """Return a case-selector symbol for a step.
@@ -2186,6 +2246,8 @@ def _execute_action_block(
             block.active_leaf_path or block.owner_state_path,
             block.named_ref,
             snapshot,
+            block.owner_state_path if block.stack_states is not None else None,
+            block.stack_states,
         )
         return dict(env), (), (record,)
     execution = execute_operations_domain(
@@ -2276,6 +2338,8 @@ def _prepare_case_lowering(
                         record.active_leaf_path,
                         record.named_ref,
                         record.snapshot,
+                        record.scope_path,
+                        record.stack_states,
                     )
                 )
     return _CaseLowering(
@@ -2660,9 +2724,13 @@ def _point_error_sites(
 
 
 def _initial_source(context: BmcPreparedContext):
-    source = source_from_initial_spec(
-        context.domain, context.bound_query.initial.source
-    )
+    spec = context.bound_query.initial.source
+    start = context.bound_query.initial.resolved_start
+    if start is not None:
+        # A hot start of a model with regions names a whole position; the source
+        # of its first cycle is the state the machine rests in outside every region.
+        spec = replace(spec, state_path=start.main)
+    source = source_from_initial_spec(context.domain, spec)
     if context.bound_query.initial.mode == "state":
         if (
             context.bound_query.initial.resolved_state_id != source.source_state_id

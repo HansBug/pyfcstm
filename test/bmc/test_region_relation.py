@@ -10,7 +10,6 @@ from pyfcstm.bmc import (
     STATE_TERMINATE_ID,
     BmcBuildError,
     BmcEngine,
-    UnsupportedBmcQuery,
     build_bmc_core_formula,
     check_runtime_safety,
     compile_bmc_query,
@@ -517,6 +516,45 @@ class TestNestedAndRepeatedGroups:
         """
         with pytest.raises(BmcBuildError, match="re-enters its own group more than"):
             core_of(text, 1)
+
+    SIX_LAPS = """
+    def int n = 0;
+    state Root {
+        [*] -> O;
+        state O { region A { [*] -> p : if [n < 6]; pseudo state p; p -> [*]; } }
+        state Done;
+        O -> O effect { n = n + 1; };
+        O -> Done;
+    }
+    """
+
+    @pytest.mark.parametrize("limit, built", [(16, True), (7, True), (6, False), (4, False)])
+    def test_the_depth_a_group_may_re_enter_itself_is_an_option(self, limit, built):
+        from pyfcstm.bmc import BmcOptions
+
+        engine = BmcEngine(
+            load_state_machine_from_text(self.SIX_LAPS),
+            BmcOptions(max_group_reentries=limit),
+        )
+        context = engine.prepare("check reach <= 1: terminated();")
+        if built:
+            assert build_bmc_core_formula(context).region_steps
+        else:
+            with pytest.raises(BmcBuildError, match="BmcOptions.max_group_reentries"):
+                build_bmc_core_formula(context)
+
+    @pytest.mark.parametrize("value", [0, -1, 2.5, True, "16"])
+    def test_a_depth_that_is_not_a_positive_integer_is_refused(self, value):
+        from pyfcstm.bmc import BmcOptions
+
+        with pytest.raises(BmcBuildError, match="max_group_reentries"):
+            BmcOptions(max_group_reentries=value)
+
+    def test_the_default_depth_is_not_part_of_the_canonical_options(self):
+        from pyfcstm.bmc import BmcOptions
+
+        assert "max_group_reentries" not in BmcOptions().to_canonical()
+        assert BmcOptions(max_group_reentries=3).to_canonical()["max_group_reentries"] == 3
 
 
 @pytest.mark.unittest
@@ -1201,31 +1239,22 @@ class TestScopeOfTheRelation:
             solver.add(core.core, relation.selector, z3.Not(relation.antecedent))
             assert solver.check() == z3.unsat
 
-    def test_a_hot_start_is_refused(self):
-        with pytest.raises(
-            UnsupportedBmcQuery, match="hot start of a model with regions"
-        ):
-            core_of(
-                self.TEXT, 1, 'init state("Root");\ncheck reach <= 1: terminated();'
-            )
-
-    def test_properties_and_the_runtime_safety_check_are_refused(self):
+    def test_a_property_over_a_model_with_regions_compiles(self):
         model = load_state_machine_from_text(self.TEXT)
-        with pytest.raises(
-            UnsupportedBmcQuery, match="property over a model with regions"
-        ):
-            compile_bmc_query(model, "check reach <= 1: terminated();")
-        core = core_of(self.TEXT, 1)
-        with pytest.raises(
-            UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
-        ):
-            check_runtime_safety(core)
+        compiled = compile_bmc_query(model, "check reach <= 1: terminated();")
+        assert compiled is not None
+
+    def test_a_model_with_regions_and_no_operation_that_can_raise_has_nothing_to_check(
+        self,
+    ):
         from pyfcstm.bmc.safety import runtime_error_formula
 
-        with pytest.raises(
-            UnsupportedBmcQuery, match="runtime-safety check of a model with regions"
-        ):
-            runtime_error_formula(core)
+        core = core_of(self.TEXT, 1)
+        result = check_runtime_safety(core)
+        assert (result.status, result.sites) == ("not_applicable", 0)
+        formula, sites = runtime_error_formula(core)
+        assert z3.is_false(formula)
+        assert sites == ()
 
     def test_an_owner_before_action_over_empty_regions_keeps_the_formula_satisfiable(
         self,
@@ -1343,3 +1372,11 @@ class TestStartValuesAndFlushes:
         # once, after both regions worked. Values come from the simulator.
         trace = frames(core_of(text, 2), [{}, {}], names=("x",))
         assert [item[2] for item in trace[1:]] == [{"x": 21}, {"x": 63}]
+
+
+@pytest.mark.unittest
+def test_a_step_built_without_a_start_position_lists_no_occurrences():
+    from pyfcstm.bmc import RegionStepRelation
+    from pyfcstm.bmc.region_relation import region_occurrences
+
+    assert region_occurrences(RegionStepRelation(0, (), ())) == ()

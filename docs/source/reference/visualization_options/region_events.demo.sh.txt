@@ -1,0 +1,17 @@
+$ pyfcstm plantuml -i region_nested.fcstm -c event_visualization_mode=legend
+legend right
+**Event Scoping**
+----
+<color:#000000>■</color> **Merge** (1 transitions)
+  <size:10><color:gray>/Cell.Left.Merge</color></size>
+endlegend
+
+$ pyfcstm plantuml -i region_pipeline.fcstm -c event_visualization_mode=legend
+legend right
+**Event Scoping**
+----
+<color:#000000>■</color> **Go** (1 transitions)
+  <size:10><color:gray>/Go</color></size>
+<color:#000000>■</color> **Fill** (1 transitions)
+  <size:10><color:gray>/Work.Intake.Fill</color></size>
+endlegend

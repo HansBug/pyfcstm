@@ -1036,6 +1036,178 @@ Environment variables
      - Windows cache output
      - Base directory for omitted ``visualize -o`` outputs on Windows.
 
+Ordered regions in drawings
+---------------------------
+
+A state that owns ``region`` blocks is drawn as a concurrent state, not as a
+group of ordinary child states: a region is never a node with its own border,
+and it is never the source or target of an arrow. The same models are drawn in
+four places with one convention: ``pyfcstm plantuml`` / ``pyfcstm visualize``
+(PlantUML text), ``StateMachine.diagram()`` (portable snapshot), ``pyfcstm
+diagram`` (JSON, HTML viewer or SVG/PNG/PDF export) and the VS Code preview.
+The example models live next to this page: ``region_pipeline.fcstm`` (two
+regions, an aspect on the owner and on a region, a guard that calls
+``active(...)``), ``region_nested.fcstm`` (nested owners, an event declared by
+use inside a region), ``region_single.fcstm`` (one region),
+``region_controller.fcstm`` (a forced transition on the owner) and
+``region_case_alias.fcstm`` (a counterexample).
+
+PlantUML export
+~~~~~~~~~~~~~~~
+
+.. list-table:: How a region is exported
+   :header-rows: 1
+   :widths: 24 76
+
+   * - Model fact
+     - PlantUML text
+   * - A region of an owner
+     - A concurrent section inside the owner's ``state ... {`` block. The first line is a ``note as <alias>`` block whose first row is ``**region N: Name**``. ``N`` is the position in which the region is written, which is also the order in which regions run.
+   * - Separation of two regions
+     - A line containing only ``--`` between the two sections. One region (``region_single.fcstm``) produces no ``--``; the ``region 1:`` note is still written.
+   * - ``>> during before`` / ``>> during after`` written inside a region
+     - Extra rows inside that region's note, only when aspect actions are visible: ``-l full``, or ``-c show_lifecycle_actions=True`` (aspects follow it); ``-c show_lifecycle_actions=True -c show_aspect_actions=False`` hides them again, and ``-c show_aspect_actions=True`` alone changes nothing while lifecycle actions are hidden. With ``normal`` the note has the title row only.
+   * - ``>> during before`` / ``>> during after`` written on the owner or an ancestor
+     - A description line of the owner state (``line__work : >> during before {...}``), as for any composite state. It is not copied into the regions.
+   * - Transitions and states written inside a region
+     - Drawn between the region's note and the next ``--``; the region's ``[*] -->`` initial arrow is part of its section.
+   * - Event written inside a region
+     - Belongs to the region: the legend path is the path from the root (without the root name) through the region, for example ``/Work.Intake.Fill``. The same event name in two regions is two events.
+   * - ``active("Owner.Region.State")`` in a guard
+     - Printed as written, with the full path through the region. The hidden flag variables that model construction adds are not drawn.
+   * - Forced transition on the owner (``!Running -> Idle : /Stop``)
+     - Drawn once, from the owner, in the authored form. The expanded transitions and the hidden ``__forced_*`` variable are not drawn, and the variable legend does not list them.
+   * - ``max_depth``
+     - A region counts as one layer. Collapsed content of a region is a single ``state "..."`` inside the region's section; the region notes and the ``--`` separators stay.
+
+Real output follows. The excerpts start at the first ``state`` line, so the
+skinparam block and the variable legend are not repeated; ``$`` lines are the
+commands as run.
+
+.. literalinclude:: region_export.demo.sh.txt
+   :language: text
+
+Reading the output: the two ``**region N: ...**`` notes carry the writing
+order; ``--`` is the only separator; the ``active(...)`` guard keeps the path
+``Line.Work.Intake.Full``; the owner's ``>> during before`` is a description
+line of ``line__work`` (the literal ``\n`` is the PlantUML line break that
+every action description uses); the region's own aspect appears in its note
+only with ``-l full``. You cannot conclude from the picture how the regions
+interact: the arrows between the sections are guards, not communication.
+
+``max_depth`` counts the region as a layer: ``1`` collapses ``Work``, ``2``
+shows both region notes but collapses what they hold, ``3`` shows everything.
+
+.. literalinclude:: region_depth.demo.sh.txt
+   :language: text
+
+Events written in a region belong to that region (the first command below
+declares nothing on the owner; ``Merge`` is written inside ``Left``). The
+legend shows the path through the region:
+
+.. literalinclude:: region_events.demo.sh.txt
+   :language: text
+
+One region, and nested regions (the inner owner ``Pair`` is itself a section of
+``Left``, and it has its own ``--``):
+
+.. literalinclude:: region_shapes.demo.sh.txt
+   :language: text
+
+A forced transition on the owner is drawn once and the hidden variable does
+not appear (compare the variable legend with the model, which declares four
+variables and no ``__forced_0``):
+
+.. literalinclude:: region_controller.demo.sh.txt
+   :language: text
+
+.. list-table:: PlantUML counterexamples and limits for regions
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Case
+     - What happens
+   * - Two regions or states whose names differ only in letter case (``Alpha`` and ``alpha``)
+     - The model is accepted, but the PlantUML alias is built from the lower-cased path, so both get the same alias (``p__alpha``, ``p__alpha__x`` below). The text is written with exit status ``0`` and the duplicate aliases are for PlantUML to resolve. Do not rely on a picture of such a model; rename one of them. This is the current behavior; it is not rejected by the exporter.
+   * - Forcing PlantUML's built-in Smetana layout
+     - Smetana does not support concurrent sections and draws only the first region. ``pyfcstm`` never emits a layout directive, so only a user who forces it (for example with a ``!pragma layout`` line added by hand) meets this. Use the default Graphviz layout. This is a limitation of PlantUML, recorded here from its behavior; pyfcstm does not test it.
+
+.. literalinclude:: region_alias.demox.sh.txt
+   :language: text
+
+Exit status of the command above: ``0`` (``region_alias.demox.sh.exitcode``).
+Do not copy this model.
+
+Diagram snapshot, JSON and viewer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``StateMachine.diagram()`` and ``pyfcstm diagram -i X.fcstm`` (JSON on stdout
+without ``-o``) put a region into the owner's ``children`` list, after the
+owner's ordinary states. A region node has the keys of a state node, plus
+``"region": true`` and ``"ordinal"`` (one-based, the writing and execution
+order). The two keys are absent from every node of a model without regions, so
+the JSON of such a model is unchanged. A region's states are its ``children``,
+its transitions are its ``transitions`` and its ``>> during`` aspects are its
+``actions``; its ``id`` is the dotted path through the region (``Line.Work.Intake``).
+The guard label keeps ``active("...")`` as written; hidden flag writes are left
+out of ``actions``.
+
+.. literalinclude:: region_snapshot.demo.py
+   :language: python
+
+.. literalinclude:: region_snapshot.demo.py.txt
+   :language: text
+
+Reading the output: ``Intake`` and ``Pack`` are siblings of the states of
+``Work`` in the tree, ordinals ``1`` and ``2``; the aspect of ``Work`` and the
+aspect of ``Intake`` are kept apart (``actions`` of each node); a region id is
+a valid entry of ``collapsed_state_ids`` (``with_view_state`` accepts it and
+reports it back unchanged). Only the node of the region carries ``region`` and
+``ordinal``.
+
+.. list-table:: How the viewer draws a region (``layoutFcstmGraph`` and the SVG renderer in jsfcstm)
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Aspect
+     - Behavior
+   * - Frame
+     - No border of its own. The regions of one owner tile the inside of the owner's frame, below the owner's title bar.
+   * - Separator
+     - A dashed divider on the edge a region shares with the previous region; the first region has none. The divider is vertical in a top-to-bottom diagram (regions side by side) and horizontal in a left-to-right diagram (regions stacked).
+   * - Sizes
+     - Regions of one owner have the same height in a top-to-bottom diagram and the same width in a left-to-right diagram.
+   * - Title
+     - ``region N: Name`` in bold at the region's top-left; ``N`` is the writing order. The title is kept wide enough for the collapse button.
+   * - Order
+     - Along the direction of the diagram: left to right in a top-to-bottom diagram, top to bottom in a left-to-right one. The order is restored after layout, so it does not depend on the layout engine's default ordering. If the engine does not place an owner's regions on one row or column, the layout is repeated with hidden order edges; the hidden edges are not drawn.
+   * - Collapse, details, export, source jump
+     - The region has its own collapse chevron (``data-fcstm-kind="chevron"`` with the region id), a clickable area over its whole slice, and source-range attributes for jumping to the ``region`` block; SVG, PNG and PDF export draw it as the viewer does.
+   * - Not drawn
+     - Live configuration highlighting (which region is where); hidden flag variables; ``active(...)`` flag writes.
+
+Where the four places meet:
+
+.. list-table:: Same model, four entry points
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - Entry point
+     - Region drawing
+     - Limits
+   * - ``pyfcstm plantuml`` / ``visualize``
+     - ``--`` sections, ``region N: Name`` notes; options as in the tables above (``detail_level``, ``max_depth``, ``event_visualization_mode``).
+     - Layout belongs to PlantUML: Graphviz yes, Smetana no. Alias collision for names that differ only in case.
+   * - ``StateMachine.diagram()`` / ``to_dict()`` / ``to_json()``
+     - ``region`` and ``ordinal`` keys on region nodes.
+     - Data only; drawing is left to the consumer. Needs no optional runtime.
+   * - ``pyfcstm diagram -o X.html``, ``Diagram.to_html()``, ``.svg`` / ``.png`` / ``.pdf``
+     - Tiled regions with dashed dividers.
+     - Image export needs the ``pyfcstm[viz]`` runtime and the packaged assets; a development checkout without them raises ``DiagramAssetError`` (run ``make build_assets``).
+   * - VS Code preview
+     - The same jsfcstm graph builder and ``layoutFcstmGraph``, so the same tiled drawing.
+     - The preview's known gap is the drawing of history (`issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_), which is not specific to regions. The preview was not run for this page; the row follows the source (``editors/vscode/src/preview-webview/components/Stage.vue`` imports ``layoutFcstmGraph``).
+
 Behavior boundaries
 -------------------
 

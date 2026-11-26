@@ -1,0 +1,39 @@
+== controller: cold start, then cycles
+first cycle: Controller.Idle
+after /Start: Controller.Running{Safety: Watching, Motion: Off}
+next cycle: Controller.Running{Safety: Watching, Motion: On}
+motor: 1
+leaves: (('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'On'))
+is_active(Controller.Running): True
+is_active(Controller.Idle): False
+region_status(Controller.Running.Safety): live
+region_status(Controller.Running.Motion): live
+== after /Stop
+configuration: Controller.Idle
+region_status(Controller.Running.Safety): inactive
+hidden variable __forced_0: 0
+== controller: attributes that do not exist
+AttributeError: 'ControllerMachine' object has no attribute 'current_state_path'
+ValueError: region_status requires a Region path.
+ValueError: Unknown configuration path: 'Controller.Nowhere'.
+== controller: initial_state spellings
+configuration text: Controller.Running{Safety: Watching, Motion: On} | Safety=live Motion=live
+text, region left out: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+text, region [init]: Controller.Running{Safety: Watching, Motion: [init]} | Safety=live Motion=pending
+dotted path through a region: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+owner path only: Controller.Running{Safety: [init], Motion: [init]} | Safety=pending Motion=pending
+tuple: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+== probe: hook context
+Boot: state_path=Line active_leaf=Line configuration=Line
+Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: [init]}
+Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+cycle 1 configuration: Line.Work{Left: L, Right: R}
+Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: R}
+Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+== plain: no regions
+current_state_path: ('Plain', 'Idle')
+current_state_name: Idle
+configuration: Plain.Idle
+leaves: (('Plain', 'Idle'),)
+has region_status: False

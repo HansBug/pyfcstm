@@ -1,0 +1,14 @@
+--- region_diag_empty_region.fcstm model is None: True
+{"code": "E_REGION_STRUCTURE", "message": "Invalid region structure at Root.Empty (empty_region).", "refs": {"namespace_path": "Root.Empty", "reason": "empty_region", "source_path": null}, "severity": "error", "span": [2, 5, 2, 20]}
+--- region_diag_history_boundary.fcstm model is None: True
+{"code": "E_REGION_STRUCTURE", "message": "Invalid region structure at Root.P (history_boundary).", "refs": {"namespace_path": "Root.P", "reason": "history_boundary", "source_path": null}, "severity": "error", "span": [2, 5, 10, 6]}
+--- region_diag_duplicate.fcstm model is None: True
+{"code": "E_DUPLICATE_REGION", "message": "Duplicate region 'A' in Root.", "refs": {"owner_path": "Root", "previous_span": [2, 5, 2, 42], "region_name": "A", "source_path": null}, "severity": "error", "span": [3, 5, 3, 42]}
+--- region_diag_active_not_found.fcstm model is None: True
+{"code": "E_ACTIVE_QUERY_TARGET", "message": "Invalid active query 'Root.Unknown' (not_found).", "refs": {"reason": "not_found", "source_path": null, "state_path": "Root.Unknown"}, "severity": "error", "span": [2, 28, 2, 50]}
+--- region_diag_active_invalid_path.fcstm model is None: True
+{"code": "E_ACTIVE_QUERY_TARGET", "message": "Invalid active query 'Other.A' (invalid_path).", "refs": {"reason": "invalid_path", "source_path": null, "state_path": "Other.A"}, "severity": "error", "span": [2, 28, 2, 45]}
+--- region_diag_active_region.fcstm model is None: True
+{"code": "E_ACTIVE_QUERY_TARGET", "message": "Invalid active query 'Root.P.R' (region).", "refs": {"reason": "region", "source_path": null, "state_path": "Root.P.R"}, "severity": "error", "span": [2, 28, 2, 46]}
+--- region_diag_active_pseudo.fcstm model is None: True
+{"code": "E_ACTIVE_QUERY_TARGET", "message": "Invalid active query 'Root.G' (pseudo).", "refs": {"reason": "pseudo", "source_path": null, "state_path": "Root.G"}, "severity": "error", "span": [2, 28, 2, 44]}

@@ -1,0 +1,6 @@
+def int seen = 0;
+state Root {
+    state A { during { if [active("/B")] { seen = 1; } } }
+    state B;
+    [*] -> A;
+}

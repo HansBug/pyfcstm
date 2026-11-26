@@ -1,0 +1,5 @@
+state Root {
+    state A { during { if [active("Root.G")] { } } }
+    pseudo state G;
+    [*] -> A;
+}

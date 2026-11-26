@@ -1,0 +1,12 @@
+state Root {
+    state Group {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B :: Flip;
+        B -> [*] :: Flip;
+    }
+    state Next;
+    [*] -> Group;
+    Group -> Next;
+}

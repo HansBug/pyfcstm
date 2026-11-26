@@ -1,0 +1,35 @@
+$ pyfcstm plantuml -i region_pipeline.fcstm
+state "Line" as line <<composite>> {
+    state "Idle" as line__idle
+    state "Work" as line__work <<composite>> {
+        note as line__work__intake
+            **region 1: Intake**
+        end note
+        state "Wait" as line__work__intake__wait
+        state "Full" as line__work__intake__full
+        [*] --> line__work__intake__wait
+        line__work__intake__wait --> line__work__intake__full : Fill
+        line__work__intake__full --> [*]
+        --
+        note as line__work__pack
+            **region 2: Pack**
+        end note
+        state "Hold" as line__work__pack__hold
+        state "Boxed" as line__work__pack__boxed
+        [*] --> line__work__pack__hold
+        line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+    }
+    [*] --> line__idle
+    line__idle --> line__work : Go
+}
+[*] --> line
+line --> [*]
+@enduml
+
+$ pyfcstm plantuml -i region_pipeline.fcstm -l full   (excerpt: the region 1 note and the owner aspect)
+            **region 1: Intake**
+            >> during after {
+                ready = 1;
+            }
+        end note
+    line__work : >> during before {\n    stage = stage + 1;\n}

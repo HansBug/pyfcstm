@@ -1,0 +1,38 @@
+$ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=1
+    state "Work" as line__work <<composite>> {
+        state "..." as line__work___collapsed_
+    }
+
+$ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=2
+    state "Work" as line__work <<composite>> {
+        note as line__work__intake
+            **region 1: Intake**
+        end note
+        state "..." as line__work__intake___collapsed_
+        --
+        note as line__work__pack
+            **region 2: Pack**
+        end note
+        state "..." as line__work__pack___collapsed_
+    }
+
+$ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=3
+    state "Work" as line__work <<composite>> {
+        note as line__work__intake
+            **region 1: Intake**
+        end note
+        state "Wait" as line__work__intake__wait
+        state "Full" as line__work__intake__full
+        [*] --> line__work__intake__wait
+        line__work__intake__wait --> line__work__intake__full : Fill
+        line__work__intake__full --> [*]
+        --
+        note as line__work__pack
+            **region 2: Pack**
+        end note
+        state "Hold" as line__work__pack__hold
+        state "Boxed" as line__work__pack__boxed
+        [*] --> line__work__pack__hold
+        line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+    }
+

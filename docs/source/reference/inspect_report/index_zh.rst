@@ -163,61 +163,188 @@ Inspect 报告参考
 
 区域内的状态、转换、事件和动作出现在普通数组里。区域内状态的 ``parent_path`` 是区域路径；拥有区域的状态的 ``is_composite`` 为真，``substates`` 为空。报告描述的是书写形式的模型，因此 ``active("...")`` 查询不会往 ``variables`` 里增加隐藏标志变量。
 
-.. code-block:: console
+.. list-table:: ``RegionInfo`` 字段
+   :header-rows: 1
+   :widths: 24 76
 
-   $ pyfcstm inspect -i order_demo.fcstm --format json
+   * - 字段
+     - 含义
+   * - ``path``
+     - 区域的点路径，即拥有者（owner）路径加区域名，例如 ``Root.First``\ 。
+   * - ``name``
+     - 区域的书写名字。
+   * - ``owner_path``
+     - 拥有这个区域的状态的点路径。
+   * - ``index``
+     - 在同一拥有者的区域中从 0 开始的声明顺序，也是执行顺序。
+   * - ``substates``
+     - 区域的直接子状态路径。
+   * - ``initial_targets``
+     - 区域内 ``[*] -> ...`` 转换的目标，每项含 ``target``、``guard``、``event`` 和 ``is_unconditional``\ 。
+   * - ``aspect_before`` / ``aspect_after``
+     - 区域内声明的 ``>> during before`` 与 ``>> during after`` 动作的标签。
 
-.. code-block:: fcstm
+下面的模型有两个区域，都写 ``out``\ 。演示脚本依次输出人读报告的开头几行、完整的 ``regions`` 数组、相邻的 ``states`` 事实，以及以 JSON 形式给出的盲目覆盖诊断。
 
-   def int level = 0;
-   def int seen = 0;
-   def int out = 0;
-   def int y = 0;
-   state Root {
-       region Reader {
-           state Idle { during { seen = level; out = 1; } }
-           [*] -> Idle;
-       }
-       region Writer {
-           state Busy { during { level = level + 1; out = y + 2; } }
-           [*] -> Busy;
-       }
-   }
+.. literalinclude:: region_overwrite_basic.fcstm
+   :language: fcstm
+   :caption: region_overwrite_basic.fcstm
 
-第一个区域在 ``regions`` 中的条目，以及两条顺序诊断如下：
+.. literalinclude:: region_report.demo.sh
+   :language: bash
+   :caption: region_report.demo.sh
 
-.. code-block:: json
+.. literalinclude:: region_report.demo.sh.txt
+   :language: text
+   :caption: region_report.demo.sh.txt
 
-   {
-     "path": "Root.Reader", "name": "Reader", "owner_path": "Root", "index": 0,
-     "substates": ["Root.Reader.Idle"],
-     "initial_targets": [{"target": "Root.Reader.Idle", "guard": null, "event": null, "is_unconditional": true}],
-     "aspect_before": [], "aspect_after": []
-   }
+输出这样读。``index`` 为 0 和 1 是声明顺序，所以 ``Root.First`` 先于 ``Root.Second`` 执行。\ ``Root.First.A`` 的 ``parent_path`` 是 ``Root.First``\ ，\ ``Root`` 是复合状态且没有直接的 ``substates``\ 。不含区域的模型根本没有 ``regions`` 键（第三段输出的 ``False``\ ）。完整的人读报告还带有通常的结构统计和 ``W_UNREFERENCED_VAR`` 这类无关警告，本页不再重复。
 
-.. code-block:: json
+.. _inspect-report-region-order-zh:
 
-   {
-     "code": "I_REGION_BACKWARD_READ", "severity": "info",
-     "message": "Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.",
-     "span": {"line": 7, "column": 31, "end_line": 7, "end_column": 44},
-     "refs": {"owner_path": "Root", "reader_region": "Root.Reader", "target_kind": "variable", "target": "level", "writer_regions": ["Root.Writer"]}
-   }
+顺序诊断
+~~~~~~~~~~~~~~~~~
 
-.. code-block:: json
+两条顺序诊断都按书写的模型判断，即 ``active()`` 查询降级成隐藏标志变量之前。它们每次只看同一拥有者的各个区域；嵌套在区域里的区域，在轮到它自己的拥有者时才检查，它的访问也计入外层区域。不含区域的模型不会产生它们。
 
-   {
-     "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
-     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost whenever it runs.",
-     "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
-     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out", "previous_write_span": {"line": 7, "column": 45, "end_line": 7, "end_column": 53}}
-   }
+.. list-table:: 顺序诊断
+   :header-rows: 1
+   :widths: 28 12 60
 
-``I_REGION_BACKWARD_READ`` 是提示级：靠前的区域读取了靠后区域写入或包含（通过 ``active()``\ ）的内容，读到的是上一周期的值。``W_REGION_BLIND_OVERWRITE`` 只在靠后区域\ **每个周期**\ 都覆盖这个变量、而且从不先读它时才报告：它的每个非伪状态叶子都在 ``during`` 最外层无条件地写它，区域里没有任何地方在这次写入之前读它，区域不可能完成，靠前那次写入之后执行的语句也都没有读它。诊断指向覆盖的那条语句，``previous_write_span`` 指出被丢掉的写入。写成 ``out = out + y + 2;``、有条件地覆盖、只有部分状态覆盖（前面给默认值、后面覆盖），或者区域先读了这个变量，都不会被报告。声明在所属状态上的切面每周期只在整组区域外围执行一次，既不用到旧值，也不保护旧值。
+   * - 诊断码
+     - 级别
+     - ``refs`` 字段
+   * - ``I_REGION_BACKWARD_READ``
+     - ``info``
+     - ``owner_path``、``reader_region``、``target_kind``\ （\ ``variable`` 或 ``active``\ ）、\ ``target``\ （变量名，或被查询状态的点路径）、\ ``writer_regions``\ （所有写这个变量或包含被查询状态的靠后区域）。
+   * - ``W_REGION_BLIND_OVERWRITE``
+     - ``warning``
+     - ``owner_path``、\ ``region``\ （靠后的、做覆盖的区域）、\ ``previous_region``\ （同样写这个变量的最近的靠前区域）、\ ``variable``、\ ``previous_write_span``\ （被丢掉的那次写入）。
 
-可达性遵循区域语义。进入拥有区域的状态，会到达每个区域的初始目标。该状态自己的普通出边要等所有区域都完成后才执行，所以只有每个区域都能到达自己的 ``[*]`` 出口时才算可达；否则这些转换由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告。声明在该状态上的强制转换总是随该状态可达。
+当一个区域读取变量，或用 ``active("...")`` 查询某个状态，而同一拥有者里\ **靠后**\ 的区域写这个变量或包含这个状态时，报告 ``I_REGION_BACKWARD_READ``\ 。靠前的区域先运行，所以读到的是上一周期的值。它是提示级，因为这正是有序区域的既定行为；消息只是让作者确认顺序符合本意。读取发生在同一动作链里对同一变量的写入之后（区域读的是自己刚写的值）、写入者是\ **靠前**\ 的区域（正向读取），或者没有靠后区域写这个变量时，不报告。
 
-带 ``--enable-verify`` 时，拓扑算法（``topological_reachable_set``、``unreachable_states``、``strongly_connected_components``、``topological_finite``、``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）对含区域的模型与对其他模型一样运行：每个拥有区域的状态以及每个普通复合状态，都按“分支”理解，即所有分支都结束之后这个状态才继续往下走。没有任何可达位置包含的状态是不可达的；围绕某个叶子的分支不能全部结束时，这个叶子没有出路（报告里称为死锁）；可达位置里存在可以重复或者动不了的位置时，拓扑是非终止的。求解器局部算法会在区域内运行，区域内状态的生命周期检查则被跳过。
+``W_REGION_BLIND_OVERWRITE`` 只在靠前的写入每个周期都必然丢失时才报告，下列条件必须全部成立：
+
+* 靠后区域的每个非伪状态叶子，都在 ``during`` 动作的最外层，或在该区域自己声明的 ``>> during before`` 动作的最外层，无条件地写这个变量；
+* 靠后区域里没有任何地方在这次写入之前读它：没有条件、效果、\ ``enter``、\ ``exit``、右侧表达式、\ ``if`` 条件或更早的语句，也没有不写它的状态；
+* 靠后区域不可能完成（没有 ``[*]`` 出口），不含嵌套的区域拥有者，也没有可供处理器读取该变量的抽象动作或 ``ref`` 动作；
+* 靠前那次写入之后、同一周期内执行的东西都没有读这个变量，两者之间的区域没有读它也没有抽象动作，靠前的区域没有抽象动作。
+
+声明在拥有者或更外层的切面，每周期只在整组区域外围执行一次，既不用到旧值，也不保护旧值，因此被忽略。诊断指向做覆盖的语句，\ ``previous_write_span`` 指出被丢掉的写入。
+
+下面的演示对每条诊断码各六个模型运行 ``pyfcstm inspect --format json``\ ，只输出 ``I_REGION_BACKWARD_READ``、\ ``W_REGION_BLIND_OVERWRITE`` 和两条不可达诊断码。输出 ``(none of the four codes)`` 的模型没有触发其中任何一条。
+
+.. literalinclude:: region_findings.demo.sh
+   :language: bash
+   :caption: region_findings.demo.sh
+
+.. literalinclude:: region_findings.demo.sh.txt
+   :language: text
+   :caption: region_findings.demo.sh.txt
+
+.. list-table:: 各模型为什么报告或保持安静
+   :header-rows: 1
+   :widths: 38 14 48
+
+   * - 模型文件
+     - 是否报告
+     - 原因
+   * - ``region_backward_read_variable.fcstm``
+     - 是
+     - 先声明的 ``Reader`` 在 ``seen = level;`` 里读 ``level``\ ，\ ``Writer`` 写它。
+   * - ``region_backward_read_active.fcstm``
+     - 是
+     - ``active("Root.Writer.Busy")`` 查询靠后区域的状态：\ ``target_kind`` 为 ``active``\ 。
+   * - ``region_backward_read_two_writers.fcstm``
+     - 是
+     - 两个靠后区域都写 ``level``\ ，\ ``writer_regions`` 列出两个（消息把它们连在同一个分句里）。
+   * - ``region_backward_read_own_write.fcstm``
+     - 否
+     - ``level = 5; seen = level;`` 读的是区域自己刚写的值。
+   * - ``region_backward_read_forward.fcstm``
+     - 否
+     - 写入者先声明，读取者看到的是本周期的值。
+   * - ``region_backward_read_no_writer.fcstm``
+     - 否
+     - 靠后的区域里没有任何东西写 ``level``\ 。
+   * - ``region_overwrite_basic.fcstm``
+     - 是
+     - ``Second`` 只有一个叶子，在 ``during`` 最外层写 ``out = y + 2;``\ ，而且不可能完成。
+   * - ``region_overwrite_aspect.fcstm``
+     - 是
+     - 覆盖写在区域级的 ``>> during before`` 动作里，它先于每个 ``during`` 执行。
+   * - ``region_overwrite_skip_middle.fcstm``
+     - 是
+     - ``Middle`` 既不读也不写 ``out``\ ，\ ``previous_region`` 是 ``Root.First``\ 。
+   * - ``region_overwrite_uses_old.fcstm``
+     - 否
+     - ``out = out + y + 2;`` 用到了旧值。
+   * - ``region_overwrite_conditional.fcstm``
+     - 否
+     - 写入在 ``if [y > 0] { ... }`` 里面。
+   * - ``region_overwrite_some_states.fcstm``
+     - 否
+     - ``B2`` 不写 ``out``\ ，区域停在那里时前面的默认值保留。
+   * - ``region_overwrite_can_finish.fcstm``
+     - 否
+     - ``B -> [*]`` 让区域可以完成，而已完成的区域不再写入。
+   * - ``region_overwrite_middle_reads.fcstm``
+     - 覆盖诊断为否
+     - ``Middle`` 在两次写入之间读了 ``out``\ ，所以第一次写入被用到。\ ``Middle`` 读取 ``Last`` 写的值，本身会被报告为 ``I_REGION_BACKWARD_READ``\ 。
+
+分支规则与可达性
+~~~~~~~~~~~~~~~~~
+
+报告的可达性和 ``pyfcstm.verify`` 的结构算法把复合状态理解为\ *分支*\ ：拥有区域的状态每个区域一条分支，普通复合状态是只有一条分支的情形，不含复合状态的模型没有分支。规则如下：
+
+.. list-table:: 分支规则
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 构造
+     - 规则
+   * - 进入拥有区域的状态
+     - 到达每个区域的初始目标。
+   * - 离开复合状态的普通转换（\ ``Job -> Next``\ ）
+     - 只有状态的某个子状态能到达 ``[*]`` 时才算可达（拥有者则要每个区域都能）。否则由 ``W_UNREACHABLE_TRANSITION`` 以原因 ``owner_never_completes`` 报告，它的目标由 ``W_UNREACHABLE_STATE`` 报告。
+   * - 强制转换（\ ``!Group -> Next :: Stop``\ ）
+     - 从状态的每个叶子离开，因此随状态可达。它的展开在状态以下加出的退出，不算子状态自行离开。
+   * - 历史默认目标（\ ``[H] -> Child``\ ，经 ``Owner.[H]`` 进入）
+     - 与初始转换一样，是一条分支的起点。
+
+演示脚本对成对的模型输出不可达的发现。这些发现来自默认的静态报告，不需要 ``--enable-verify``\ 。
+
+.. literalinclude:: region_owner_never_completes.fcstm
+   :language: fcstm
+   :caption: region_owner_never_completes.fcstm
+
+.. literalinclude:: region_reachability.demo.sh
+   :language: bash
+   :caption: region_reachability.demo.sh
+
+.. literalinclude:: region_reachability.demo.sh.txt
+   :language: text
+   :caption: region_reachability.demo.sh.txt
+
+在 ``region_owner_never_completes.fcstm`` 里，\ ``Monitor`` 区域没有 ``[*]`` 出口，所以 ``Job -> Next`` 永远不会执行：\ ``Root.Next`` 不可达，转换得到 ``owner_never_completes``\ 。给 ``Monitor`` 加上出口（\ ``region_owner_completes.fcstm``\ ）后，两条发现都消失。
+
+**不含区域的模型上唯一有意的输出变化。**\ 子状态都无法离开的普通复合状态，永远不会执行它的普通外出转换。\ ``region_branch_plain_stuck.fcstm`` 展示了这一点：\ ``Group -> Next`` 得到 ``owner_never_completes``\ ，\ ``Root.Next`` 不可达，而此前的报告把这个复合状态当作机器可以随意离开的东西。仿真器本来就是这样运行的。\ ``region_branch_plain_exits.fcstm``\ （\ ``B -> [*]``\ ）、\ ``region_branch_forced.fcstm``\ （强制转换）和 ``region_branch_history.fcstm``\ （强制转换加 ``[H]`` 默认目标）什么都不输出。
+
+已知的过近似
+~~~~~~~~~~~~~~~~~
+
+结构分析里保留了三处近似，方向都是\ *漏报*\ ，所以报告为空并不证明可达。
+
+#. 只经 ``Owner.[H]`` 进入的复合状态，它的普通初始子状态仍被视为可达。在 ``region_over_history_initial.fcstm`` 里，\ ``Work`` 只经 ``Work.[H]`` 进入，默认目标是 ``Slow``\ ；\ ``Fast`` 永远进不去，而上面的演示没有为它输出任何发现。
+#. ``pyfcstm.verify`` 的算法判断的是可执行的机器，其中强制转换声明是一个中继，并且对它保持不看守卫的过近似。一个只有强制转换声明能把它带去别处的复合状态，其后的状态仍可能被列为可达。
+#. 单个强制转换声明，只要有一个展开从不可达状态出发，就整体被标记。这是早于区域的有意聚合。
+
+带 ``--enable-verify`` 时，拓扑算法（\ ``topological_reachable_set``、\ ``unreachable_states``、\ ``strongly_connected_components``、\ ``topological_finite``、\ ``topological_inevitable_terminator`` 和 ``event_emission_to_consumer_reachable``\ ）对含区域的模型与对其他模型一样运行。没有任何可达位置包含的状态是不可达的；围绕某个叶子的分支不能全部结束时，这个叶子没有出路（报告里称为死锁）；可达位置里存在可以重复或者动不了的位置时，拓扑是非终止的。求解器局部算法会在区域内运行，区域内状态的生命周期检查则被跳过。
+
+jsfcstm 的边界
+~~~~~~~~~~~~~~~~~
+
+jsfcstm 的结构检查器不为含区域的模型产生报告。对声明了区域或使用 ``active()`` 查询的机器，\ ``isInspectable(machine)`` 返回 ``false``\ ，\ ``inspectModel`` 抛出 ``Error``\ （\ ``inspectModel does not support machines with regions or active() queries``\ ），而不是返回报告。jsfcstm 的语义分析仍会检查这样的模型；上面的可达性规则，包括不含区域的模型上的 ``owner_never_completes``\ ，在 jsfcstm 里同样实现。要得到顺序诊断和 ``regions`` 数组，使用 ``pyfcstm inspect``\ 。
 
 发现按哪台机器判断
 ----------------------------------------

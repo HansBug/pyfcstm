@@ -1,0 +1,15 @@
+state Line id=Line
+  state Idle id=Line.Idle
+  state Work id=Line.Work
+    region Intake id=Line.Work.Intake ordinal=1
+      state Wait id=Line.Work.Intake.Wait
+      state Full id=Line.Work.Intake.Full
+    region Pack id=Line.Work.Pack ordinal=2
+      state Hold id=Line.Work.Pack.Hold
+      state Boxed id=Line.Work.Pack.Boxed
+guard: active("Line.Work.Intake.Full") && ready == 1
+intake actions: ['>> during after {1 op}']
+work actions: ['>> during before {1 op}']
+DiagramViewState(mode='compare', collapsed_state_ids=('Line.Work.Intake',), zoom=None, pan_x=None, pan_y=None)
+Work keys: []
+Intake keys: ['ordinal', 'region']

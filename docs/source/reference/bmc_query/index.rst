@@ -10,8 +10,8 @@ exactly one bounded property.  This page is a lookup reference: examples are
 small enough to use as parser or binder test cases.
 
 Use the local contents below to jump directly to file grammar, initialization,
-assumptions, expressions, atoms, call filters, properties, or the legality
-summary.  For command output, exit status, JSON, witness, and replay fields,
+assumptions, expressions, atoms, call filters, models with regions, properties,
+or the legality summary.  For command output, exit status, JSON, witness, and replay fields,
 use :doc:`../bmc_results/index` instead.
 
 .. contents:: On this page
@@ -155,6 +155,8 @@ Initial frame: ``init``, ``havoc``, and ``where``
      - The named model state, resolved as a stable leaf or entry source.
      - The same declaration-initializer policy applies.  This is a symbolic
        hot start; it does not execute earlier entry actions to derive values.
+       In a model with regions the text may also be a configuration, see
+       :ref:`bmc-query-region-evidence` and the part *Models with regions*.
    * - ``init terminated;``
      - Terminated sentinel.
      - The same declaration-initializer policy applies.
@@ -783,6 +785,415 @@ Invalid filters and unsupported call-``where`` atoms:
    check reach <= 3: called("A", stage="middle");           // call_stage
    check reach <= 3: called("A", where cycle == 0);         // cycle_not_allowed
    check reach <= 3: called("A", where terminated());       // call_where_atom_not_allowed
+
+Models with regions
+-------------------
+
+A model with ``region`` blocks has no single current state.  Everything a query
+can say about *where the machine is* therefore uses the text form of a
+configuration, the same text the simulator prints and a witness records, for
+example ``Job.Run{Prep: Ready, Work: Busy}``.  Models without regions are not
+affected by anything in this section: every form below degrades to the plain
+state path described earlier.  The examples use four small models that sit next
+to this page and were run with the command shown in each excerpt.
+
+.. literalinclude:: region_job.fcstm
+   :language: fcstm
+   :caption: region_job.fcstm: two regions under ``Job.Run``; the owner continues to ``Next`` once both are done
+
+.. literalinclude:: region_nested.fcstm
+   :language: fcstm
+   :caption: region_nested.fcstm: a region ``Work`` whose state ``Inner`` is itself an owner
+
+.. literalinclude:: region_calls.fcstm
+   :language: fcstm
+   :caption: region_calls.fcstm: abstract actions on the owner, on both regions and a group-wide ``>> during after``
+
+The controller model of the region tutorial is repeated as
+``region_controller.fcstm`` and ``region_plain.fcstm`` is a two-state machine
+without regions; both are used only for one example each.  Every query below was
+run through ``pyfcstm bmc -i <model> -q <query>``; the complete output is
+:ref:`included at the end of this section <bmc-query-region-evidence>`.
+
+Configuration text
+~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Forms of the configuration text accepted by ``init state(...)`` and ``active(...)``
+   :header-rows: 1
+   :widths: 30 36 34
+
+   * - Form
+     - Meaning
+     - Example
+   * - ``Path``
+     - A state path; the path may pass through region names.
+     - ``Job.Next``, ``Root.Run.Work.Inner.X.x2``
+   * - ``Owner{Region: State, ...}``
+     - A state that owns regions, with the position of each region written
+       after it.  The region name is the bare region name, the value is the
+       name of a direct child state of that region.
+     - ``Job.Run{Prep: Ready, Work: Busy}``
+   * - ``Region: [done]``
+     - The region has finished (``[done]`` is the text of *Done*).
+     - ``Job.Run{Prep: [done]}``
+   * - ``Region: [init]``
+     - The region is waiting for initialization.
+     - ``Job.Run{Prep: [init]}``
+   * - ``Region: State{...}``
+     - The region's state is itself an owner; its regions nest in the same way
+       to any depth.
+     - ``Root.Run{Work: Inner{X: x2}}``
+
+Whitespace around ``:``, ``,``, ``{`` and ``}`` is ignored.  Region names and state
+names are the model's names, matched exactly (case included).  A text that is
+not of this shape is a syntax error reported with the column in the text.  The
+same grammar is read by :meth:`pyfcstm.model.configuration.Configuration.parse`;
+the difference between the two entries is only what a *left-out* region means,
+which is described next.
+
+``init state(...)``: constructing a start
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An ``init state("...")`` text *constructs* the position of frame 0.  What is
+written is placed without running ``enter`` actions; whatever is not written
+waits for initialization (``[init]``) and takes its ``[*]`` transition in the
+first macro-step.  The model-level rules are those of the simulator's hot start
+(see :doc:`/reference/simulation/index`).
+
+.. list-table:: Legal start positions for ``region_job.fcstm`` (frame 0 and the first steps of the witness)
+   :header-rows: 1
+   :widths: 34 66
+
+   * - ``init state("...")``
+     - Frame 0 configuration, and what the witness does next
+   * - ``Job.Run{Prep: Ready, Work: Busy}``
+     - Every region written: frame 0 is exactly that text.  ``Prep`` finishes
+       in step 0 (``Job.Run{Prep: [done], Work: Busy}``).
+   * - ``Job.Run.Work.Busy``
+     - A path through a region keeps only the branch it passes: frame 0 is
+       ``Job.Run{Prep: [init], Work: Busy}`` and ``Prep`` takes ``[*] -> Wait``
+       in step 0.
+   * - ``Job.Run{Work: Busy}``
+     - Same position as the path form: the region left out waits.
+   * - ``Job.Run``
+     - Owner only: the whole group waits, frame 0 is
+       ``Job.Run{Prep: [init], Work: [init]}`` and both regions initialize, in
+       writing order, in step 0.
+   * - ``Job.Run{Prep: [done], Work: Busy}``
+     - A finished region is a legal start as long as one region still works.
+   * - ``Job.Next`` (not an owner)
+     - A plain state: frame 0 is ``Job.Next``.
+
+Excerpt of ``region_bmc_query.demo.py.txt``:
+
+.. code-block:: text
+
+   query:  init state("Job.Run.Work.Busy"); check reach <= 2: true;
+     frame 0: Job.Run{Prep: [init], Work: Busy}
+     frame 1: Job.Run{Prep: Wait, Work: Busy}
+     frame 2: Job.Run{Prep: Ready, Work: Busy}
+   exit:   0
+
+   query:  init state("Job.Run"); check reach <= 2: true;
+     frame 0: Job.Run{Prep: [init], Work: [init]}
+     frame 1: Job.Run{Prep: Wait, Work: Idle}
+     frame 2: Job.Run{Prep: Wait, Work: Busy}
+   exit:   0
+
+The first example shows what to read: frame 0 prints the ``[init]`` that the
+start constructed, and frame 1 shows that ``Prep`` initialized to ``Wait``.  It
+does not show that ``Work`` never ran: ``Busy`` is a start, so its ``during``
+runs in step 0 like any other.
+
+.. list-table:: Invalid start positions (code ``invalid_start_position`` unless stated; exit status 1, nothing on stdout)
+   :header-rows: 1
+   :widths: 38 62
+
+   * - ``init state("...")``
+     - Reported message
+   * - ``Job.Run{Prep: [done], Work: [done]}``
+     - ``all regions are done at 'Job.Run'; a finished owner cannot be hot-started.``
+   * - ``Job.Run{Nope: Wait}``
+     - ``Unknown region in configuration for 'Job.Run'.``
+   * - ``Job.Run{Prep: Busy}``
+     - ``Unknown configuration path: 'Job.Run.Prep.Busy'.`` (``Busy`` belongs to
+       the other region)
+   * - ``Job.Run{Prep: Wait, Prep: Ready}``
+     - ``Duplicate region in configuration for 'Job.Run'.``
+   * - ``Job.Run.Prep.Busy``
+     - Code ``unknown_state``: ``Unknown state path: 'Job.Run.Prep.Busy'.`` A
+       plain path is bound as a state before it is read as a position.
+
+Every message is prefixed ``Failed to compile BMC query: <code> at initial.state_path: ``.
+The all-finished rule applies at every nesting level: it is the same rule that
+makes ``[done]`` for every region an illegal hot-start position in the
+simulator.
+
+``active(...)``: matching a configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In a property, assumption, ``where`` or call filter, ``active("text")`` is a
+*pattern*.  It holds on a frame when
+
+* the state named by the text is active, and
+* every region the text writes is at the written place (a state, ``[done]`` or
+  ``[init]``), recursively for nested owners, and
+* every region the text leaves out is free: it may be anywhere.
+
+A pattern with no region block is the state-path test of the first part of this
+page.  The difference from ``init state(...)`` is deliberate and is the point
+most often misread:
+
+.. list-table:: The same text as a start and as a pattern
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - Text ``Job.Run{Work: Busy}``
+     - As ``init state(...)`` (constructs)
+     - As ``active(...)`` (matches)
+   * - Region ``Work``
+     - Placed at ``Busy``.
+     - Must be at ``Busy``.
+   * - Region ``Prep`` (left out)
+     - Waits for initialization: ``[init]``.
+     - Free: ``Wait``, ``Ready``, ``[done]`` all match.
+   * - Relation
+     - The position built always satisfies the pattern written with the same
+       text.
+     - A pattern does not say which position the machine can reach.
+
+.. list-table:: Legal patterns and what they check (``region_nested.fcstm`` unless stated)
+   :header-rows: 1
+   :widths: 46 54
+
+   * - ``active("...")``
+     - Verdict and reading (all queries ``check reach <= 2``)
+   * - ``Root.Run{Work: Inner{X: x2}}``
+     - holds: ``Y`` and ``Aux`` are free.
+   * - ``Root.Run{Work: Inner{X: x2, Y: y1}}``
+     - holds: both inner regions written.
+   * - ``Root.Run{Aux: a1}``
+     - holds: ``Work`` is free.
+   * - ``Root.Run.Work.Inner.X.x2``
+     - holds: a plain path through regions; the same set of frames as
+       ``Root.Run{Work: Inner{X: x2}}``.
+   * - ``Root.Run{Work: [done]}``
+     - does not hold within the bound: ``Inner`` is an owner whose regions
+       never finish, so ``Work`` is never done.
+   * - ``Root.Run{Work: Inner{X: x2}, Aux: [init]}``
+     - does not hold: a settled frame has no region waiting for
+       initialization (see ``[init]`` below).
+   * - ``Job.Run{Prep: [done], Work: Busy}`` (``region_job.fcstm``, bound 6)
+     - holds: ``Prep`` has finished while ``Work`` still runs.
+   * - ``Job.Run{Work: [done]}`` (``region_job.fcstm``, bound 6)
+     - holds: ``Work`` finishes (``n >= 3``) before ``Prep``.
+
+Excerpt:
+
+.. code-block:: text
+
+   query:  check reach <= 2: active("Root.Run{Work: [done]}");
+   result: BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   exit:   1
+
+Read this as "no execution of at most two macro-steps puts ``Work`` in Done",
+nothing more: it is the bounded answer for a reach goal.
+
+``[init]`` is true only while a region has not started: on frame 0 of a start
+that left the region out, and inside the ``where`` of a call made while the
+owner is being entered (next part).  On any frame a cold start or a settled
+macro-step produced it is false, because a macro-step ends only on configurations
+where every region has a position:
+
+.. code-block:: text
+
+   query:  init state("Job.Run"); check reach <= 1: active("Job.Run{Prep: [init]}");
+   result: BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   exit:   0
+
+   query:  check reach <= 3: active("Controller.Running{Motion: [init]}");
+   result: BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   exit:   1
+
+.. list-table:: Invalid patterns
+   :header-rows: 1
+   :widths: 36 18 46
+
+   * - ``active("...")``
+     - Code
+     - Message after ``Failed to compile BMC query: <code> at property.predicate: ``
+   * - ``Root.Run{Work: Nope}``
+     - ``invalid_active_pattern``
+     - ``Unknown state path: 'Root.Run.Work.Nope'.``
+   * - ``Root.Run{Zed: a1}``
+     - ``invalid_active_pattern``
+     - ``state 'Root.Run' has no region 'Zed'.``
+   * - ``Root.Run{Aux: a1, Aux: a1}``
+     - ``invalid_active_pattern``
+     - ``region 'Aux' of 'Root.Run' is written twice.``
+   * - ``Root.Run{Work: Inner{X: x2}``
+     - ``invalid_active_pattern``
+     - ``Expected '}' at line 1, column 28, got end of input.``
+   * - ``Root.Run{Work: x1}``
+     - ``invalid_active_pattern``
+     - ``Unknown state path: 'Root.Run.Work.x1'.`` (``x1`` is not a direct child
+       of ``Work``)
+   * - ``Root.Idle{A: x}`` on ``region_plain.fcstm``
+     - ``invalid_active_pattern``
+     - ``the model declares no regions, so a configuration pattern with region blocks matches nothing.``
+   * - ``Root.Nope``
+     - ``unknown_state``
+     - ``Unknown state path: 'Root.Nope'.`` (a plain path with no braces is
+       bound as a state)
+
+Each invalid query exits with status 1 and prints the message on stderr.
+
+Call filters in a model with regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``where active(...)`` inside ``called(...)`` and ``call_count(...)`` describes
+the *whole machine at the moment of the call*, the position that a handler
+receives as ``ctx.configuration``.  The rules, each checked on
+``region_calls.fcstm`` with ``check reach <= 3``:
+
+.. list-table:: What ``where active(...)`` sees
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - Call
+     - Configuration at the call
+     - Pattern that holds / pattern that never holds
+   * - ``enter`` of the owner ``Run`` (``step=0``)
+     - Both regions still waiting
+     - holds: ``Root.Run{A: [init], B: [init]}``
+   * - ``enter`` of ``A1`` (``step=0``)
+     - ``A`` placed, ``B`` not started
+     - holds: ``Root.Run{A: A1, B: [init]}``; never: ``Root.Run{B: B1}``
+   * - ``enter`` of ``B1`` (``step=0``)
+     - Both placed: ``B1`` is in the configuration before its ``enter`` runs
+     - holds: ``Root.Run{A: A1, B: B1}``; never: ``Root.Run{B: [init]}``
+   * - ``enter`` of ``Run`` when the owner is re-entered in the same cycle
+       (``step=1``)
+     - The regions are reset before the re-entry: both ``[init]``
+     - holds: ``Root.Run{A: [init], B: [init]}``; never: ``Root.Run{A: [done]}``
+   * - ``exit`` of ``Run`` on the way out (``step=1``)
+     - The position before leaving, here both regions finished
+     - holds: ``Root.Run{A: [done], B: [done]}``; never: ``Root.Run{A: [init]}``
+
+.. code-block:: text
+
+   query:  check reach <= 3: called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [init], B: [init]}"));
+   result: BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   exit:   0
+
+   query:  check reach <= 3: called("Root.Run.RunExit", step=1, where active("Root.Run{A: [done], B: [done]}"));
+   result: BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   exit:   0
+
+   query:  check reach <= 3: called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{B: [init]}"));
+   result: BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   exit:   1
+
+A region that moved earlier in the same cycle shows its new place to a call made
+later in that cycle; a region that comes later shows ``[init]`` until it
+starts.  A re-entered owner shows ``[init]`` to its own ``enter`` while the
+``exit`` that preceded it, and any aspect, still see the old position.  A
+pattern that never holds is a bounded answer like any other ``reach`` that
+cannot be met.
+
+``state=`` and ``active_leaf=`` on a call count the state the simulator hands
+to the handler (``ctx.state_path``, ``ctx.active_leaf``): the deepest state
+common to everything the action wraps.  A ``>> during after`` of the owner wraps
+the whole group, so for it both are the owner:
+
+.. list-table:: ``GroupTail`` (``>> during after`` of ``Root.Run``) under filters
+   :header-rows: 1
+   :widths: 64 36
+
+   * - Query (``check reach <= 3``)
+     - Verdict
+   * - ``called("Root.Run.GroupTail", state="Root.Run", active_leaf="Root.Run")``
+     - holds
+   * - ``called("Root.Run.GroupTail", state="Root.Run.A.A1")``
+     - does not hold
+   * - ``called("Root.Run.GroupTail", active_leaf="Root.Run.B.B1")``
+     - does not hold
+   * - ``call_count("Root.Run.GroupTail", step=*) == 2``
+     - holds: one call in each of the two cycles that run the group
+   * - ``call_count("Root.Run.GroupTail", step=*) == 3``
+     - does not hold
+   * - ``call_count(step=*, active_leaf="Root.Run") == 6``
+     - holds: ``RunEnter`` and ``GroupTail`` (cycle 0), ``RunExit``,
+       ``RunEnter`` and ``GroupTail`` (cycle 1), ``RunExit`` (cycle 2)
+   * - ``call_count(step=*, state="Root.Run") == 6``
+     - holds: the same six calls
+   * - ``call_count("Root.Run.A.A1.AWork", step=*, active_leaf="Root.Run.A.A1") >= 1``
+     - holds: a leaf's ``during`` reports the leaf
+
+The count is per call, not per active leaf: the group's ``>> during after``
+is one call per cycle however many regions it wraps (compare an aspect of a
+state without regions, which runs once per active leaf cycle).
+
+``case(...)`` and local cases
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In a model with regions a macro-step consists of an ordered list of *local cases*:
+the initial transition of each owner entered, one branch (transition or
+fallback) for every region that worked, and the branch of an owner that
+continues after all its regions finished.  ``case("label")`` and the
+``cover`` property name one of these local cases; the label has the same
+four-part schema ``source::kind::target::ordinal`` as before, with state paths
+that pass through regions.  ``kind`` must be ``transition`` or ``fallback`` for a
+``cover`` target; ``initial`` labels are known but not coverable.
+
+.. code-block:: text
+
+   query:  check cover <= 6: case("Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0");
+   result: BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   exit:   0
+
+   query:  check cover <= 6: case("Job.Run::initial::Job.Run.Prep.Wait::0");
+   result: Failed to compile BMC query: cover case label is not coverable: 'Job.Run::initial::Job.Run.Prep.Wait::0' has kind initial.
+   exit:   1
+
+   query:  check cover <= 6: case("Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0");
+   result: Failed to compile BMC query: cover case label is unknown: 'Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0'.
+   exit:   1
+
+The same three coverable forms are legal for a transition inside a region
+(first query), for a fallback inside a region
+(``Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0``) and for the owner's own
+continuation (``Job.Run::transition::Job.Next::0``).  The trace of the last one
+is the order of local cases in a step (excerpt, ``Prep`` and ``Work`` are
+region names; the scope in front of each case is written relative to the
+outermost owner, see :doc:`../bmc_results/index`):
+
+.. code-block:: text
+
+   5: Job.Run{Prep: Ready, Work: [done]}
+        -> Job.Next [transition]
+        Prep: Ready -> [done] [transition]
+        Run: [start] -> Job.Next [transition]
+
+``Prep: Ready -> [done]`` ran first because ``Prep`` is written before ``Work``;
+``Run: [start] -> Job.Next`` is the continuation of the owner and runs after
+the last region finished.  ``case("...")`` as an atom outside ``cover`` follows
+the same rules as in a model without regions (``case_not_allowed``); the
+``case_label`` field of a witness step names only the branch that ran outside
+every region, see :doc:`../bmc_results/index`.
+
+.. _bmc-query-region-evidence:
+
+Full recorded output
+~~~~~~~~~~~~~~~~~~~~
+
+The file below is the unabridged output of ``region_bmc_query.demo.py`` run
+from this directory (the ``Solver:`` timing line of the human report is not
+printed because it is not deterministic).
+
+.. literalinclude:: region_bmc_query.demo.py.txt
+   :language: text
+   :caption: region_bmc_query.demo.py.txt
 
 Properties
 ----------

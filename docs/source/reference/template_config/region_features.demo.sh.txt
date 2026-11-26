@@ -1,0 +1,33 @@
+== region model, template declares [region]
+exit=0
+files written: names.txt 
+== region model, template without features
+exit=1
+generate with template directory '<work>/undeclared' does not support region models yet. (line 12)
+The model declares 2 regions, the first is 'Controller.Running.Safety'.
+If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+  pyfcstm generate -i region_controller.fcstm --template c -o out
+Or take the regions out of the model.
+files written: 
+== region model, features: []
+exit=1
+generate with template directory '<work>/empty_list' does not support region models yet. (line 12)
+The model declares 2 regions, the first is 'Controller.Running.Safety'.
+If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+  pyfcstm generate -i region_controller.fcstm --template c -o out
+Or take the regions out of the model.
+files written: 
+== region model, features: null
+exit=1
+generate with template directory '<work>/null_value' does not support region models yet. (line 12)
+The model declares 2 regions, the first is 'Controller.Running.Safety'.
+If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+  pyfcstm generate -i region_controller.fcstm --template c -o out
+Or take the regions out of the model.
+files written: 
+== model without regions, template without features
+exit=0
+files written: names.txt 

@@ -1,0 +1,68 @@
+=== E_REGION_STRUCTURE ===
+$ pyfcstm inspect -i region_diag_empty_region.fcstm --format json
+Invalid state machine model in region_diag_empty_region.fcstm: Invalid region structure at Root.Empty (empty_region). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_empty_region_fixed.fcstm --format json
+accepted: 2 states, 1 regions
+exit status: 0
+
+$ pyfcstm inspect -i region_diag_history_boundary.fcstm --format json
+Invalid state machine model in region_diag_history_boundary.fcstm: Invalid region structure at Root.P (history_boundary). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_history_outside.fcstm --format json
+accepted: 7 states, 2 regions
+exit status: 0
+
+=== mixed_children and owner_statements: syntax errors in text ===
+$ pyfcstm inspect -i region_diag_mixed_children.fcstm --format json
+Failed to parse input DSL file region_diag_mixed_children.fcstm: Found 3 errors during parsing:
+Error 1: Syntax error at line 3, column 4, near 'region': Unexpected token 'region'
+Error 2: Syntax error at line 3, column 13, near '{': Invalid syntax - check for missing semicolons, braces, or operators
+Error 3: Syntax error at line 4, column 4, near '[*]': Unexpected token '[*]'
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_owner_transition.fcstm --format json
+Failed to parse input DSL file region_diag_owner_transition.fcstm: Found 1 errors during parsing:
+Error 1: Syntax error at line 3, column 4, near '[*]': Unexpected token '[*]'
+exit status: 1
+
+=== E_DUPLICATE_REGION ===
+$ pyfcstm inspect -i region_diag_duplicate.fcstm --format json
+Invalid state machine model in region_diag_duplicate.fcstm: Duplicate region 'A' in Root. (line 3)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_same_name_two_owners.fcstm --format json
+accepted: 6 states, 3 regions
+exit status: 0
+
+=== E_ACTIVE_QUERY_TARGET ===
+$ pyfcstm inspect -i region_diag_active_not_found.fcstm --format json
+Invalid state machine model in region_diag_active_not_found.fcstm: Invalid active query 'Root.Unknown' (not_found). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_active_invalid_path.fcstm --format json
+Invalid state machine model in region_diag_active_invalid_path.fcstm: Invalid active query 'Other.A' (invalid_path). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_active_region.fcstm --format json
+Invalid state machine model in region_diag_active_region.fcstm: Invalid active query 'Root.P.R' (region). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_active_pseudo.fcstm --format json
+Invalid state machine model in region_diag_active_pseudo.fcstm: Invalid active query 'Root.G' (pseudo). (line 2)
+exit status: 1
+
+$ pyfcstm inspect -i region_diag_active_ok.fcstm --format json
+accepted: 3 states, 0 regions
+exit status: 0
+
+=== active() in a persistent initializer is a syntax error ===
+$ pyfcstm inspect -i region_diag_active_initializer.fcstm --format json
+Failed to parse input DSL file region_diag_active_initializer.fcstm: Found 3 errors during parsing:
+Error 1: Syntax error at line 1, column 16, near 'active': Unexpected token 'active'
+Error 2: Syntax error at line 1, column 23, near '"Root.A"': Unexpected token '"Root.A"'
+Error 3: Syntax error at line 1, column 34, near '?': Missing semicolon on previous line
+exit status: 1
+

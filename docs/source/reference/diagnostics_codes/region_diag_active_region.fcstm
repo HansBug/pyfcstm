@@ -1,0 +1,7 @@
+state Root {
+    state A { during { if [active("Root.P.R")] { } } }
+    state P {
+        region R { state X; [*] -> X; }
+    }
+    [*] -> A;
+}

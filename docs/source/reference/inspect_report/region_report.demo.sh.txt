@@ -1,0 +1,87 @@
+=== human report (first 13 lines) ===
+[WARN] FCSTM Inspect Report: region_overwrite_basic.fcstm
+
+Summary
+  status: warning
+  root: Root
+  states: 3 total / 2 leaf
+  transitions: 2
+  regions: 2
+    Root.First: order 0 in Root; 1 states
+    Root.Second: order 1 in Root; 1 states
+  variables: 2
+    out: control; external supply: none
+    y: control; external supply: none
+
+=== regions array of the JSON report ===
+[
+  {
+    "aspect_after": [],
+    "aspect_before": [],
+    "index": 0,
+    "initial_targets": [
+      {
+        "event": null,
+        "guard": null,
+        "is_unconditional": true,
+        "target": "Root.First.A"
+      }
+    ],
+    "name": "First",
+    "owner_path": "Root",
+    "path": "Root.First",
+    "substates": [
+      "Root.First.A"
+    ]
+  },
+  {
+    "aspect_after": [],
+    "aspect_before": [],
+    "index": 1,
+    "initial_targets": [
+      {
+        "event": null,
+        "guard": null,
+        "is_unconditional": true,
+        "target": "Root.Second.B"
+      }
+    ],
+    "name": "Second",
+    "owner_path": "Root",
+    "path": "Root.Second",
+    "substates": [
+      "Root.Second.B"
+    ]
+  }
+]
+state Root.First.A parent_path: Root.First
+Root is_composite: True
+Root substates: []
+
+=== model without regions has no regions key ===
+False
+
+=== diagnostic JSON of the blind overwrite ===
+{
+  "code": "W_REGION_BLIND_OVERWRITE",
+  "message": "Region 'Root.Second' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.First'; that earlier write is lost whenever it runs.",
+  "refs": {
+    "owner_path": "Root",
+    "previous_region": "Root.First",
+    "previous_write_span": {
+      "column": 28,
+      "end_column": 36,
+      "end_line": 5,
+      "line": 5
+    },
+    "region": "Root.Second",
+    "variable": "out"
+  },
+  "severity": "warning",
+  "span": {
+    "column": 28,
+    "end_column": 40,
+    "end_line": 9,
+    "line": 9
+  }
+}

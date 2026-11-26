@@ -1,0 +1,4 @@
+state Root {
+    state A { during { if [active("Other.A")] { } } }
+    [*] -> A;
+}

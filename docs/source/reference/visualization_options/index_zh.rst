@@ -993,6 +993,138 @@ scale、边长与像素三条限额，不衡量自身输出。
      - Windows 缓存输出
      - Windows 上省略 ``visualize -o`` 时的基础缓存目录。
 
+有序区域的画法
+--------------
+
+含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm``\ （反例）。
+
+PlantUML 导出
+~~~~~~~~~~~~~
+
+.. list-table:: 区域怎样导出
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 模型事实
+     - PlantUML 文本
+   * - 拥有者的一个区域
+     - 拥有者 ``state ... {`` 块内的一个并发分区。第一行是 ``note as <别名>`` 块，首行为 ``**region N: 名字**``。``N`` 是区域的书写位置，也是区域的执行顺序。
+   * - 两个区域之间的分隔
+     - 仅含 ``--`` 的一行。单个区域（``region_single.fcstm``）不产生 ``--``，但仍写出 ``region 1:`` 注释。
+   * - 写在区域内的 ``>> during before`` / ``>> during after``
+     - 只在切面可见时作为该区域注释里的额外行：``-l full``，或 ``-c show_lifecycle_actions=True``\ （切面跟随它）；``-c show_lifecycle_actions=True -c show_aspect_actions=False`` 再次隐藏它们；生命周期动作被隐藏时，单独写 ``-c show_aspect_actions=True`` 没有效果。``normal`` 预设下注释只有标题行。
+   * - 写在拥有者或祖先上的 ``>> during before`` / ``>> during after``
+     - 拥有者状态的一行描述（``line__work : >> during before {...}``），与任何复合状态相同，不会复制到各区域里。
+   * - 区域内的状态与转换
+     - 画在该区域注释之后、下一个 ``--`` 之前；区域的 ``[*] -->`` 初始箭头属于它自己的分区。
+   * - 写在区域内的事件
+     - 归该区域所有：图例路径是从根出发（不含根名）经过区域的路径，例如 ``/Work.Intake.Fill``。两个区域里的同名事件是两个事件。
+   * - 条件里的 ``active("拥有者.区域.状态")``
+     - 按书写原样输出，带经过区域的完整路径。模型转换加入的隐藏标志变量不画。
+   * - 拥有者上的强制转换（``!Running -> Idle : /Stop``）
+     - 从拥有者画一次，按书写形式。展开出的转换与隐藏的 ``__forced_*`` 变量都不画，变量图例也不列出它。
+   * - ``max_depth``
+     - 区域算一层。区域里被折叠的内容是该区域分区内的一个 ``state "..."``；区域注释与 ``--`` 分隔线保留。
+
+下面是真实输出。节选从第一行 ``state`` 开始，因此不再重复 skinparam 块与变量图例；以 ``$`` 开头的行是实际运行的命令。
+
+.. literalinclude:: region_export.demo.sh.txt
+   :language: text
+
+读输出时注意：两条 ``**region N: ...**`` 注释带有书写顺序；``--`` 是唯一的分隔符；``active(...)`` 条件保留路径 ``Line.Work.Intake.Full``；拥有者的 ``>> during before`` 是 ``line__work`` 的一行描述（字面的 ``\n`` 是所有动作描述共用的 PlantUML 换行写法）；区域自己的切面只有在 ``-l full`` 下才出现在它的注释里。从图上不能推出区域怎样相互作用：分区之间的箭头是条件，不是通信。
+
+``max_depth`` 把区域算作一层：``1`` 折叠 ``Work``，``2`` 显示两个区域注释但折叠它们的内容，``3`` 全部显示。
+
+.. literalinclude:: region_depth.demo.sh.txt
+   :language: text
+
+写在区域内的事件归该区域所有（下面第一条命令没有在拥有者上声明任何事件；``Merge`` 写在 ``Left`` 里）。图例显示经过区域的路径：
+
+.. literalinclude:: region_events.demo.sh.txt
+   :language: text
+
+单个区域与嵌套区域（内层拥有者 ``Pair`` 本身是 ``Left`` 的一个分区，并有自己的 ``--``）：
+
+.. literalinclude:: region_shapes.demo.sh.txt
+   :language: text
+
+拥有者上的强制转换只画一次，隐藏变量不出现（对照变量图例与模型：模型声明四个变量，没有 ``__forced_0``）：
+
+.. literalinclude:: region_controller.demo.sh.txt
+   :language: text
+
+.. list-table:: 区域在 PlantUML 里的反例与限制
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 情形
+     - 结果
+   * - 两个区域或状态的名字只差字母大小写（``Alpha`` 与 ``alpha``）
+     - 模型被接受，但 PlantUML 别名由转成小写的路径生成，两者得到相同别名（见下面的 ``p__alpha``、``p__alpha__x``）。文本照常写出，退出状态为 ``0``，重复别名留给 PlantUML 处理。不要依赖这类模型的图；请改掉其中一个名字。这是当前行为，导出器并不拒绝。
+   * - 强制使用 PlantUML 内置的 Smetana 布局
+     - Smetana 不支持并发分区，只会画第一个区域。``pyfcstm`` 从不输出布局指令，所以只有用户自己强制（例如手工加一行 ``!pragma layout``）才会遇到。请使用默认的 Graphviz 布局。这是 PlantUML 的限制，此处据其行为记录，pyfcstm 没有对它做测试。
+
+.. literalinclude:: region_alias.demox.sh.txt
+   :language: text
+
+上面命令的退出状态是 ``0``\ （``region_alias.demox.sh.exitcode``）。不要照抄这个模型。
+
+图形快照、JSON 与查看器
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``StateMachine.diagram()`` 与 ``pyfcstm diagram -i X.fcstm``\ （不带 ``-o`` 时在标准输出写 JSON）把区域放进拥有者的 ``children`` 列表，排在拥有者的普通状态之后。区域节点具有状态节点的全部键，另加 ``"region": true`` 与 ``"ordinal"``\ （从 1 开始，即书写与执行顺序）。这两个键在不含区域的模型的任何节点上都不存在，所以这类模型的 JSON 不变。区域里的状态是它的 ``children``，转换是它的 ``transitions``，``>> during`` 切面是它的 ``actions``；它的 ``id`` 是经过区域的点路径（``Line.Work.Intake``）。条件标签保持 ``active("...")`` 的书写形式；隐藏标志的写入不出现在 ``actions`` 里。
+
+.. literalinclude:: region_snapshot.demo.py
+   :language: python
+
+.. literalinclude:: region_snapshot.demo.py.txt
+   :language: text
+
+读输出时注意：树中 ``Intake`` 与 ``Pack`` 与 ``Work`` 的状态同级，序号为 ``1`` 和 ``2``；``Work`` 的切面与 ``Intake`` 的切面分别记在各自节点的 ``actions`` 里；区域 id 是 ``collapsed_state_ids`` 的合法成员（``with_view_state`` 接受并原样返回）。只有区域节点带 ``region`` 与 ``ordinal``。
+
+.. list-table:: 查看器怎样绘制区域（jsfcstm 的 ``layoutFcstmGraph`` 与 SVG 渲染器）
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 方面
+     - 行为
+   * - 外框
+     - 区域没有自己的边框。同一拥有者的各区域平铺在拥有者外框内部、拥有者标题栏之下。
+   * - 分隔线
+     - 区域与前一个区域共享的边上画一条虚线分割线；第一个区域没有。自上而下的图里是竖线（区域并排），自左向右的图里是横线（区域上下叠放）。
+   * - 尺寸
+     - 同一拥有者的区域在自上而下的图里等高，在自左向右的图里等宽。
+   * - 标题
+     - 区域左上角的粗体 ``region N: 名字``；``N`` 是书写顺序。标题区域的宽度保证放得下折叠按钮。
+   * - 顺序
+     - 沿图的方向：自上而下的图里从左到右，自左向右的图里从上到下。顺序在布局之后恢复，因此不依赖布局引擎的默认排序；若引擎没有把某个拥有者的区域排在一行或一列上，就改用隐藏的顺序边重新布局，隐藏边不画出来。
+   * - 折叠、详情、导出、来源跳转
+     - 区域有自己的折叠箭头（``data-fcstm-kind="chevron"``，带区域 id）、覆盖整块区域的可点击范围和指向 ``region`` 块的源码范围属性；SVG、PNG、PDF 导出与查看器画法相同。
+   * - 不画的内容
+     - 当前配置高亮（哪个区域在哪里）；隐藏的标志变量；``active(...)`` 的标志写入。
+
+四处入口的关系：
+
+.. list-table:: 同一个模型，四个入口
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - 入口
+     - 区域的画法
+     - 限制
+   * - ``pyfcstm plantuml`` / ``visualize``
+     - ``--`` 分区与 ``region N: 名字`` 注释；选项同上面各表（``detail_level``、``max_depth``、``event_visualization_mode``）。
+     - 布局由 PlantUML 决定：Graphviz 可用，Smetana 不可用。只差大小写的名字会得到相同别名。
+   * - ``StateMachine.diagram()`` / ``to_dict()`` / ``to_json()``
+     - 区域节点上的 ``region`` 与 ``ordinal`` 键。
+     - 只有数据，绘制由使用方负责；不需要可选运行时。
+   * - ``pyfcstm diagram -o X.html``、``Diagram.to_html()``、``.svg`` / ``.png`` / ``.pdf``
+     - 带虚线分割线的平铺区域。
+     - 图片导出需要 ``pyfcstm[viz]`` 运行时与打包的资源；缺少资源的开发检出会抛出 ``DiagramAssetError``\ （运行 ``make build_assets``）。
+   * - VS Code 预览
+     - 同一个 jsfcstm 图构建器与 ``layoutFcstmGraph``，所以画法相同。
+     - 预览已知的差距是历史的画法（\ `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_\ ），与区域无关。本页没有实际运行预览；这一行依据源码（``editors/vscode/src/preview-webview/components/Stage.vue`` 引入 ``layoutFcstmGraph``）。
+
 行为边界
 --------
 

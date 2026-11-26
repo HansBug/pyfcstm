@@ -1,0 +1,8 @@
+def int counter = 0;
+state Plain {
+    state Idle;
+    state Busy;
+    [*] -> Idle;
+    Idle -> Busy : /Go;
+    Busy -> Idle : /Stop;
+}

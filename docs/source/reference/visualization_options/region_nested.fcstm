@@ -1,0 +1,24 @@
+state Plant {
+    [*] -> Cell;
+    state Cell {
+        region Left {
+            [*] -> Idle;
+            state Idle;
+            state Pair {
+                region Inner {
+                    [*] -> A;
+                    state A;
+                }
+                region Outer {
+                    [*] -> B;
+                    state B;
+                }
+            }
+            Idle -> Pair : Merge;
+        }
+        region Right {
+            [*] -> Idle;
+            state Idle;
+        }
+    }
+}

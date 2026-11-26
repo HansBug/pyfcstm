@@ -1,0 +1,16 @@
+def int out = 0;
+def int copy = 0;
+state Root {
+    region First {
+        state A { during { out = 1; } }
+        [*] -> A;
+    }
+    region Middle {
+        state M { during { copy = out; } }
+        [*] -> M;
+    }
+    region Last {
+        state B { during { out = 2; } }
+        [*] -> B;
+    }
+}

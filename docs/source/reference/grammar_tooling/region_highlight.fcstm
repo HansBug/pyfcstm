@@ -1,0 +1,12 @@
+def int active_count = 0;
+state Root {
+    region Motor {
+        state Idle;
+        [*] -> Idle;
+    }
+    region Sensor {
+        state Ready;
+        [*] -> Ready;
+        Ready -> [*] : if [active("/Root.Motor.Idle")];
+    }
+}

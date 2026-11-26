@@ -1,0 +1,17 @@
+def int out = 0;
+def int y = 0;
+def int z = 0;
+state Root {
+    region First {
+        state A { during { out = 1; } }
+        [*] -> A;
+    }
+    region Middle {
+        state M { during { z = z + 1; } }
+        [*] -> M;
+    }
+    region Last {
+        state B { during { out = 2; } }
+        [*] -> B;
+    }
+}

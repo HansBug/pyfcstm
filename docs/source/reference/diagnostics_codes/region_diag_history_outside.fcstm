@@ -1,0 +1,13 @@
+state Root {
+    state P {
+        [*] -> A;
+        [H] -> A;
+        state A;
+        state B;
+    }
+    state Q {
+        region R1 { state X; [*] -> X; }
+        region R2 { state Y; [*] -> Y; }
+    }
+    [*] -> P;
+}

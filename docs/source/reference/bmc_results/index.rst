@@ -539,35 +539,50 @@ Explanation block
 ``--explain-infeasibility formal`` or ``proof`` appends an explanation block to
 the human report.  ``BmcSolveResult.__str__()`` and ``to_text()`` render the same
 block from the same helper, so a reader sees identical text whichever surface
-they read.  A real invocation against an infeasible scenario produces:
+they read.  A real invocation against an infeasible scenario produces the block below.  The two commands that write the model and its query keep ``effect.fcstm`` and ``needs_effect.fbmcq`` in the working directory for the later examples of this page:
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
+   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
+       --explain-infeasibility formal --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
 
+   Why no execution exists:
+     1. The listed source groups are jointly unsatisfiable in assumptions_prefix. A more specific value/state derivation is not available for this expression shape.
+   Derivation: STRUCTURAL ONLY
+
    Conflict constraints:
-     1. r22.fbmcq:2:1-2:28
-        assume at 1: var("x") == 0;
-     2. r22.fbmcq:1:1-1:35
-        init state("Root.A") where x == 0;
-     3. r22.fcstm:1:1-1:15
-        def int x = 0;
+     1. needs_effect.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 5;
+     2. needs_effect.fbmcq:1:1-1:50
+        init state("Controller.Idle") where retries == 0;
+     3. effect.fcstm:1:1-1:21
+        def int retries = 0;
      4. generated transition constraint at step 0
 
-   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
    Core scope: assumptions_prefix
-   Reduction: raw
-   Reason: sound source core published without a minimality proof
+   Reduction: subset_minimal
+   Reason: subset-minimal source core published with a structural_only derivation
 
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
 
 ``Explanation`` names the depth that was achieved and how complete it is.
 ``Classification`` is the reader-facing sentence for the machine
-``classification`` field.  Each conflict-constraint entry gives an authored
-member's location and its own source text on two lines, or a generated support
-group naming the leading segment of its category -- ``domain``, ``transition``,
-``initial``, ``assumption`` or ``definedness`` -- and the frame or step it
-constrains.  A generated group takes one line, plus a second indented line
+``classification`` field.  ``Why no execution exists`` is the narrative; here it
+is a single structural sentence, and ``Derivation: STRUCTURAL ONLY`` says that no
+more specific value or state derivation was built.  Each conflict-constraint entry
+gives an authored member's location and its own source text on two lines, or a
+generated support group naming the leading segment of its category -- ``domain``,
+``transition``, ``initial``, ``assumption`` or ``definedness`` -- and the frame or
+step it constrains.  A generated group takes one line, plus a second indented line
 listing any builder metadata that is not already in the position, which the
 tracked case groups do carry.
 
@@ -579,7 +594,9 @@ group's aggregate is ``environment``, a word that appears nowhere else in the
 report, and a definedness group's aggregate is ``initial`` or ``environment``
 depending on which stage emitted it, naming neither the group nor anything stable
 across the two.  ``Core scope`` and ``Reduction`` describe what was proven and how
-far minimization got, and ``Reason`` states why it stopped there.
+far minimization got, and ``Reason`` states how the core was published.  The same
+run asked for ``proof`` ends on a ``Reason`` that says why no proof was reached;
+that run is shown below.
 
 An additional line appears when a deeper depth was requested than was achieved,
 so a caller who asked for ``proof`` and received ``formal`` is told both:
@@ -589,10 +606,10 @@ so a caller who asked for ``proof`` and received ``formal`` is told both:
    Explanation depth: requested proof, achieved formal
 
 Every core reports its scope and its reduction, whether or not minimality was
-proven; the sentence above the scope is what distinguishes the two.  Granularity,
-member count, a labelled minimality line and the elapsed explanation time belong
-to the fuller published block, which also carries a narrative and a causal chain
-this depth does not build, so they do not appear here.
+proven; the sentence above the scope is what distinguishes the two.  The block
+above carries no granularity, member count, labelled minimality line or elapsed
+explanation time: those belong to the proof block shown below, which also carries
+the reasoning in numbered steps.
 
 
 Classification and core reduction
@@ -671,7 +688,7 @@ EXPLANATION`` or ``VERIFIED DOMAIN PROOF``.
 achieved depth to name, so the headline names the depth that was *requested*,
 followed by ``NOT ACHIEVED``.
 
-The runs below cover both halves of the rule. The first commands write two small models and their queries; the files stay in the working directory for the later examples of this page:
+The runs below cover both halves of the rule.  The first commands write a second small model and its query (``effect.fcstm`` and ``needs_effect.fbmcq`` come from the example above); the files stay in the working directory for the later examples of this page:
 
 .. code-block:: console
 
@@ -691,8 +708,6 @@ The runs below cover both halves of the rule. The first commands write two small
    ...
    $ echo $?
    3
-   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
-   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
    $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
        --explain-infeasibility proof --color never
    ...
@@ -765,17 +780,18 @@ was checked.  The block opens on ``COMPLETE VERIFIED DOMAIN PROOF`` rather than
 summarized.  Against ``latch.fcstm`` and a query that pins one variable to two
 values at the same frame:
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   ...
    Explanation: COMPLETE VERIFIED DOMAIN PROOF
    Classification: the assumptions are internally inconsistent
 
    Why no execution exists:
      1. At frame 1, retries must equal 1.
      2. At frame 1, retries must equal 2.
-     3. Therefore one value cannot be two things at once. No execution satisfies
-        these initialization and query requirements, and the property was not
-        evaluated.
+     3. Therefore one value cannot be two things at once. No execution satisfies these query requirements, and the property was not evaluated.
 
    Conflict constraints:
      1. two_values.fbmcq:1:1-1:34
@@ -790,12 +806,34 @@ values at the same frame:
    Reduction: subset_minimal
    Subset minimality: proven
 
+   Proof strength:
+     Input constraints: subset-minimal
+     Reasoning graph: dependency-pruned
+     Every reasoning step: checked against the encoded model semantics
+
+   Review surfaces:
+     assumption  two_values.fbmcq:1:1-1:34
+     assumption  two_values.fbmcq:2:1-2:34
+     No automatic repair has been selected.
+
+   Explanation time: ... ms
+
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
+
 Three differences from the formal block are contractual rather than cosmetic.
 The heading names a *verified* proof, so every step behind those sentences was
 checked by one of the methods below.  ``Why no execution exists`` is the proof
-read in dependency order, one sentence per step, ending on the contradiction.
-And the ``Reason:`` line is absent: a complete proof has nothing to explain about
-why it stopped early, whereas the formal block always says what it could not do.
+read in dependency order, one specific sentence per step, ending on the
+contradiction, where the formal block above has one structural sentence and a
+``Derivation: STRUCTURAL ONLY`` line.  And the ``Reason:`` line is absent: no line
+between ``Subset minimality`` and ``Proof strength`` is one, because a complete
+proof has nothing to explain about why it stopped early, whereas the formal block
+always says what it could not do.  The proof block also adds ``Core granularity``,
+``Core size``, ``Subset minimality``, the ``Proof strength`` and ``Review surfaces``
+sections, and ``Explanation time``, which varies from run to run.
 
 The closing sentence reports that no execution exists and that the property was
 therefore *not evaluated*.  An empty scenario and a violated property are
@@ -1098,21 +1136,32 @@ same canonical ``Property verdict`` line without parsing ``str(result)``.  It
 is derived from ``result.outcome`` and preserves the evidence distinction in
 parentheses; it is presentation text, not an additional JSON payload field.
 
-.. code-block:: text
+The script below prints the result for ``effect.fcstm`` from the example above:
+
+.. testcode::
+
+   from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("effect.fcstm").read())
+   query = 'check reach <= 2: active("Controller.Purging");'
+   print(solve_bmc_property(compile_bmc_query(model, query)))
+
+.. testoutput::
 
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
    Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
    Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.
    Primary search: WITNESS = SAT
-   Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
+   Conclusion: At least one admissible execution satisfies the reach objective within 2 macro-steps.
    Evidence:
      Model role: PRIMARY WITNESS
      Model evidence: SAT model available.
 
    Details:
    BmcSolveResult
-   field    value
+   field... value
    ...
 
 The same mapping is used for ``NO WITNESS``, ``COUNTEREXAMPLE FOUND``,
@@ -1358,9 +1407,14 @@ error of the same kind at the same step, from the same kind of operation
 With ``check reach <= 2: active("Root.B");`` the second guard divides by
 ``d`` whenever the first one fails, so ``d == 0`` is an error:
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'input int d; state Root { [*] -> A; state A; state B; state C; A -> B : if [d == 1]; A -> C : if [10 / d > 1]; }' > division.fcstm
+   $ echo 'check reach <= 2: active("Root.B");' > division.fbmcq
+   $ pyfcstm bmc -i division.fcstm -q division.fbmcq --color never
    BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   Scenario: NOT CHECKED
+   Property verdict: NOT EVALUATED (RUNTIME ERROR REACHABLE)
    ...
    Evidence:
      Runtime error: division_by_zero at step 1
@@ -1369,8 +1423,13 @@ With ``check reach <= 2: active("Root.B");`` the second guard divides by
      Model evidence: SAT error-prefix model available.
      Replay: runtime error reproduced: transition guard evaluation failed: division by zero
 
-   Runtime safety check: VIOLATED in <elapsed> ms over 1 operation(s)
+   Runtime safety check: VIOLATED in ... ms over 1 operation(s)
    Solver: NOT RUN
+   Solver reason: property not evaluated: runtime safety violated
+   Feasibility: kernel=not_checked, initialization=not_checked, assumptions=not_checked
+   ...
+   $ echo $?
+   5
 
 The process exits ``5``.  In JSON the same error appears three times, each
 with its own role (abridged to the fields that carry it):
@@ -1945,13 +2004,18 @@ traceback between them contains local paths, which ``...`` stands for):
    $ echo $?
    1
 
+.. literalinclude:: region_reentry.fcstm
+   :language: fcstm
+   :emphasize-lines: 7
+
 The model is ``region_reentry.fcstm``: the group of ``Owner`` finishes in the
 cycle it starts and ``Owner -> Owner`` re-enters it while ``n`` grows, up to 20
-times.  The limit is exact: a loop that returns to the same values is rejected
+times (the emphasized guard ``n < 20``).  The limit is exact: a loop that returns to the same values is rejected
 as a loop instead of being counted, and a loop on changing values is unrolled
 and never approximated.  Through the Python API
 :class:`pyfcstm.bmc.BmcOptions` takes ``max_group_reentries`` (a positive
-``int``; ``bool``, ``0``, negative numbers and strings are refused):
+``int``; ``bool``, ``0``, negative numbers and strings are refused).  The script
+replaces the guard ``n < 20`` with ``n < 3`` so that the group passes 3 times:
 
 .. testcode::
 
@@ -1960,6 +2024,7 @@ and never approximated.  Through the Python API
    from pyfcstm.bmc import BmcBuildError, BmcEngine, BmcOptions, build_bmc_core_formula
    from pyfcstm.model import load_state_machine_from_text
 
+   # The same model with the guard n < 3: the group passes 3 times.
    text = Path("region_reentry.fcstm").read_text().replace("n < 20", "n < 3")
    model = load_state_machine_from_text(text)
    for limit in (3, 4):

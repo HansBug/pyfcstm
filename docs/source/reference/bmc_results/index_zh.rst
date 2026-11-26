@@ -460,30 +460,45 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
 
 ``--explain-infeasibility formal`` 或 ``proof`` 会在人类报告后追加一个解释区块。
 ``BmcSolveResult.__str__()`` 与 ``to_text()`` 使用同一个辅助函数渲染同一区块，
-因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下：
+因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下。写出模型及其查询的两条命令会把 ``effect.fcstm`` 与 ``needs_effect.fbmcq`` 留在工作目录里，供本页后面的例子使用：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
+   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
+       --explain-infeasibility formal --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
 
+   Why no execution exists:
+     1. The listed source groups are jointly unsatisfiable in assumptions_prefix. A more specific value/state derivation is not available for this expression shape.
+   Derivation: STRUCTURAL ONLY
+
    Conflict constraints:
-     1. r22.fbmcq:2:1-2:28
-        assume at 1: var("x") == 0;
-     2. r22.fbmcq:1:1-1:35
-        init state("Root.A") where x == 0;
-     3. r22.fcstm:1:1-1:15
-        def int x = 0;
+     1. needs_effect.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 5;
+     2. needs_effect.fbmcq:1:1-1:50
+        init state("Controller.Idle") where retries == 0;
+     3. effect.fcstm:1:1-1:21
+        def int retries = 0;
      4. generated transition constraint at step 0
 
-   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
    Core scope: assumptions_prefix
-   Reduction: raw
-   Reason: sound source core published without a minimality proof
+   Reduction: subset_minimal
+   Reason: subset-minimal source core published with a structural_only derivation
 
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
 
 ``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
-``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
+``classification`` 对应的读者可读句子。``Why no execution exists`` 是叙述；这里它只有
+一句结构性的话，``Derivation: STRUCTURAL ONLY`` 表示没有构造更具体的取值或状态推导。
+冲突约束的每一项要么用两行给出作者约束的
 位置与其源码文本，要么给出生成的支撑组，说明它的类别首段——``domain``、
 ``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
 frame 或 step。生成组占一行，若它还带有位置之外的构造元数据（被跟踪的 case 组确实带），
@@ -494,7 +509,8 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
 其中两个根本不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何
 地方都不出现；definedness 组的聚合名则视发布它的阶段而定，来自 initialization 时是
 ``initial``\ 、来自 assumption 时是 ``environment``\ ，既没命名该组、在两处之间也不稳定。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
-``Reason`` 说明为什么停在那里。
+``Reason`` 说明这个核是怎样发布的。同一个查询请求 ``proof`` 时，``Reason`` 会说明为什么没有得到证明，
+那次运行在下文展示。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``
 的调用者能同时看到两者：
@@ -504,8 +520,8 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
    Explanation depth: requested proof, achieved formal
 
 每个 core 都会报告自己的 scope 与 reduction，无论最小性是否已证明；区分两者的是
-scope 上面那句话。粒度、成员数、带标签的最小性行以及解释耗时属于更完整的发布区块，
-而那个区块还带有本深度不构造的叙述与因果链，所以这里不出现它们。
+scope 上面那句话。上面的区块不带粒度、成员数、带标签的最小性行和解释耗时，
+这些属于下文的证明区块，那个区块还带有编号的推理步骤。
 
 
 分类与冲突核归约
@@ -575,7 +591,7 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 **什么都没产出时**\ ——``achieved_mode`` 为 ``none``——没有已达成的深度可命名，于是
 标题命名\ *被请求*\ 的深度，后接 ``NOT ACHIEVED``。
 
-下面的运行覆盖规则的两半。最前面的命令写出两个小模型和它们的查询，这些文件留在工作目录里，供本页后面的例子使用：
+下面的运行覆盖规则的两半。最前面的命令写出第二个小模型和它的查询（``effect.fcstm`` 与 ``needs_effect.fbmcq`` 来自上面的例子），这些文件留在工作目录里，供本页后面的例子使用：
 
 .. code-block:: console
 
@@ -595,8 +611,6 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    ...
    $ echo $?
    3
-   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
-   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
    $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
        --explain-infeasibility proof --color never
    ...
@@ -656,17 +670,18 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 ``PARTIAL FORMAL DOMAIN EXPLANATION``，推理是编号的而非概括的。针对
 ``latch.fcstm`` 和一个把同一变量在同一帧钉成两个值的查询：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   ...
    Explanation: COMPLETE VERIFIED DOMAIN PROOF
    Classification: the assumptions are internally inconsistent
 
    Why no execution exists:
      1. At frame 1, retries must equal 1.
      2. At frame 1, retries must equal 2.
-     3. Therefore one value cannot be two things at once. No execution satisfies
-        these initialization and query requirements, and the property was not
-        evaluated.
+     3. Therefore one value cannot be two things at once. No execution satisfies these query requirements, and the property was not evaluated.
 
    Conflict constraints:
      1. two_values.fbmcq:1:1-1:34
@@ -681,10 +696,31 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    Reduction: subset_minimal
    Subset minimality: proven
 
+   Proof strength:
+     Input constraints: subset-minimal
+     Reasoning graph: dependency-pruned
+     Every reasoning step: checked against the encoded model semantics
+
+   Review surfaces:
+     assumption  two_values.fbmcq:1:1-1:34
+     assumption  two_values.fbmcq:2:1-2:34
+     No automatic repair has been selected.
+
+   Explanation time: ... ms
+
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
+
 与 ``formal`` 区块的三处差异属于契约而非外观。标题写的是\ **已核验**\ 的证明，
 所以那些句子背后的每一步都经过下文某种方法的检查。``Why no execution exists``
-是按依赖顺序读出的证明，一步一句，以矛盾收尾。而 ``Reason:`` 行不存在：完整证明
-没有"为何提前停止"可解释，而 ``formal`` 区块总要说明它做不到什么。
+是按依赖顺序读出的证明，一步一条具体的句子，以矛盾收尾，而上面的 ``formal`` 区块只有一句
+结构性的话和一行 ``Derivation: STRUCTURAL ONLY``。而 ``Reason:`` 行不存在：
+``Subset minimality`` 与 ``Proof strength`` 之间没有这样一行，因为完整证明
+没有“为何提前停止”可解释，而 ``formal`` 区块总要说明它做不到什么。证明区块还多出
+``Core granularity``、``Core size``、``Subset minimality``，``Proof strength`` 与
+``Review surfaces`` 两节，以及每次运行都不同的 ``Explanation time``。
 
 收尾那句话报告的是"不存在任何执行，因此属性未被求值"。空场景与属性被违反是两个
 不同的结论；读者不能把这个区块当作反例。
@@ -943,21 +979,32 @@ Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去�
 ``Property verdict`` 行完全相同的规范文本。该属性由 ``result.outcome`` 推导，并在括号中保留证据类型区别；
 它是展示文本，不是新增的 JSON 业务字段。
 
-.. code-block:: text
+下面的脚本打印上面例子里 ``effect.fcstm`` 的结果：
+
+.. testcode::
+
+   from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("effect.fcstm").read())
+   query = 'check reach <= 2: active("Controller.Purging");'
+   print(solve_bmc_property(compile_bmc_query(model, query)))
+
+.. testoutput::
 
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
    Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
    Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.
    Primary search: WITNESS = SAT
-   Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
+   Conclusion: At least one admissible execution satisfies the reach objective within 2 macro-steps.
    Evidence:
      Model role: PRIMARY WITNESS
      Model evidence: SAT model available.
 
    Details:
    BmcSolveResult
-   field    value
+   field... value
    ...
 
 同一映射也覆盖 ``NO WITNESS``、``COUNTEREXAMPLE FOUND``、``PROPERTY GUARANTEED``、
@@ -1175,9 +1222,14 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 对 ``check reach <= 2: active("Root.B");``\ ，第一个守卫不成立时第二个守卫会除以
 ``d``\ ，所以 ``d == 0`` 就是一个错误：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'input int d; state Root { [*] -> A; state A; state B; state C; A -> B : if [d == 1]; A -> C : if [10 / d > 1]; }' > division.fcstm
+   $ echo 'check reach <= 2: active("Root.B");' > division.fbmcq
+   $ pyfcstm bmc -i division.fcstm -q division.fbmcq --color never
    BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   Scenario: NOT CHECKED
+   Property verdict: NOT EVALUATED (RUNTIME ERROR REACHABLE)
    ...
    Evidence:
      Runtime error: division_by_zero at step 1
@@ -1186,8 +1238,13 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      Model evidence: SAT error-prefix model available.
      Replay: runtime error reproduced: transition guard evaluation failed: division by zero
 
-   Runtime safety check: VIOLATED in <elapsed> ms over 1 operation(s)
+   Runtime safety check: VIOLATED in ... ms over 1 operation(s)
    Solver: NOT RUN
+   Solver reason: property not evaluated: runtime safety violated
+   Feasibility: kernel=not_checked, initialization=not_checked, assumptions=not_checked
+   ...
+   $ echo $?
+   5
 
 进程退出状态为 ``5``。在 JSON 中，同一个错误以三种角色出现（只保留承载它的字段）：
 
@@ -1681,7 +1738,11 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
    $ echo $?
    1
 
-模型是 ``region_reentry.fcstm``：``Owner`` 的组在启动的那个周期就结束，``Owner -> Owner`` 在 ``n`` 增长的同时重新进入它，最多 20 次。这个上限是精确的：回到相同取值的循环被当作循环拒绝，而不是计数；取值在变的循环被逐次展开，从不近似。通过 Python 接口，:class:`pyfcstm.bmc.BmcOptions` 接受 ``max_group_reentries``\ （正整数；``bool``、``0``、负数和字符串都被拒绝）：
+.. literalinclude:: region_reentry.fcstm
+   :language: fcstm
+   :emphasize-lines: 7
+
+模型是 ``region_reentry.fcstm``：``Owner`` 的组在启动的那个周期就结束，``Owner -> Owner`` 在 ``n`` 增长的同时重新进入它，最多 20 次（高亮的守卫 ``n < 20``）。这个上限是精确的：回到相同取值的循环被当作循环拒绝，而不是计数；取值在变的循环被逐次展开，从不近似。通过 Python 接口，:class:`pyfcstm.bmc.BmcOptions` 接受 ``max_group_reentries``\ （正整数；``bool``、``0``、负数和字符串都被拒绝）。脚本把守卫 ``n < 20`` 换成 ``n < 3``，让组恰好经过 3 次：
 
 .. testcode::
 
@@ -1690,6 +1751,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
    from pyfcstm.bmc import BmcBuildError, BmcEngine, BmcOptions, build_bmc_core_formula
    from pyfcstm.model import load_state_machine_from_text
 
+   # The same model with the guard n < 3: the group passes 3 times.
    text = Path("region_reentry.fcstm").read_text().replace("n < 20", "n < 3")
    model = load_state_machine_from_text(text)
    for limit in (3, 4):

@@ -759,6 +759,12 @@ JSON 中重点看：
    root: Factory
    diagnostics: 0 errors / 3 warnings / 0 infos
 
+用区域建模并行工作
+------------------
+
+一个状态要在同一周期里按顺序运行若干部分时，用 ``region`` 块代替普通子状态。相关任务（拆分状态、嵌套、共用事件、安排书写顺序、联合完成、整组打断、读取其他区域、切面与常见错误）见
+:doc:`/how_to/regions/index_zh`；语法见 :doc:`/reference/dsl/index_zh`。
+
 .. _dsl-diagnostics-task-zh:
 
 诊断并修复 DSL 错误

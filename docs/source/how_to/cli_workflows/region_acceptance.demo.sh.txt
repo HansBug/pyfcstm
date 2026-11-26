@@ -1,0 +1,40 @@
+== 1. simulate
+Cycle: 1
+Current State: Controller.Idle
+Cycle: 2
+Current State: Controller.Running{Safety: Watching, Motion: Off}
+Cycle: 3
+Current State: Controller.Running{Safety: Watching, Motion: On}
+Cycle: 4
+Current State: Controller.Running{Safety: Watching, Motion: Off}
+== 2. inspect
+Summary
+  status: warning
+  root: Controller
+  states: 6 total / 4 leaf
+  transitions: 7
+  regions: 2
+    Controller.Running.Safety: order 0 in Controller.Running; 1 states
+    Controller.Running.Motion: order 1 in Controller.Running; 2 states
+  variables: 4
+    fault: input; external supply: cycle
+    requested: input; external supply: cycle
+    permit: control; external supply: none
+    motor: output; external supply: none
+== 3. bmc
+exit 0
+sat witness_found replay ok: True
+frame 0: Controller.Idle
+frame 1: Controller.Running{Safety: Watching, Motion: Off}
+frame 2: Controller.Running{Safety: Watching, Motion: On}
+== 4. generate
+README.md
+README_zh.md
+machine.py
+== 5. plantuml
+            **region 1: Safety**
+        --
+            **region 2: Motion**
+== 6. diagram
+.region_accept/machine.json
+{'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}

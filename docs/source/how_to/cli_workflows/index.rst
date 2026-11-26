@@ -505,6 +505,57 @@ and a first repair path.
      - The SVG exists and a visual inspection confirms labels are readable.
      - If rendering fails, run ``visualize --check`` before changing diagram options.
 
+Accept a model with regions end to end
+--------------------------------------
+
+**Input.** ``region_controller.fcstm`` (a copy of the interlock controller
+from :doc:`/tutorials/regions/index`) and ``region_motion.fbmcq``.  The task is
+to take one model with regions through every command of the package and to
+know what each step must show before you accept the model.
+
+.. literalinclude:: region_motion.fbmcq
+   :language: text
+   :caption: region_motion.fbmcq
+
+**Command or code.** One script runs the six steps in order; each step prints
+only the lines that carry the acceptance signal:
+
+.. literalinclude:: region_acceptance.demo.sh
+   :language: bash
+
+.. literalinclude:: region_acceptance.demo.sh.txt
+   :language: text
+
+**Expected signal.** Accept the model when each step shows what follows.
+
+1. *simulate.* The position is printed as configuration text.  Cycle 1 is
+   ``Controller.Idle``; the ``/Start`` event enters ``Running`` with both
+   regions initialized in writing order (``Motion: Off``); the next cycle turns
+   ``Motion`` on; ``fault=1`` turns it off in the same cycle.
+2. *inspect.* The summary lists ``regions: 2`` with their order (``order 0`` is
+   ``Safety``) and the variables.  ``status: warning`` comes from ordinary
+   warnings of this small model, not from the regions.
+3. *bmc.* ``sat witness_found``, ``replay ok: True``, and frames whose
+   configurations are the positions the simulation visited.  Every satisfying
+   witness is replayed on the simulator before the verdict is reported.
+4. *generate.* ``machine.py`` and the two README files exist.
+5. *plantuml.* One ``--`` and two ``region N:`` notes, in writing order.
+6. *diagram.* The JSON summary counts the same states and transitions as
+   ``inspect`` (6 states, 7 transitions).
+
+**File side effect.** The script writes everything into a scratch directory
+and removes it.  In a project, ``generate`` writes the runtime into the output
+directory, and the ``-o`` options write the named files.
+
+**First failure check.** Run the steps one at a time and stop at the first one
+that disagrees.  If steps 1 and 3 disagree on a position, the model changed
+between runs or the query starts from a different position; if step 2 fails,
+read its first error before anything else, because the other commands read the
+same model.
+
+**Reference link.** :doc:`/reference/cli/index`; the modeling tasks are on
+:doc:`/how_to/regions/index`.
+
 Next steps
 ----------
 

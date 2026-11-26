@@ -11,18 +11,23 @@ Concrete input and visual evidence
 ----------------------------------
 
 The concrete examples below use
-``docs/source/tutorials/visualization/example.fcstm``. The visualization
-tutorial already generates ``output_minimal.puml.svg``, ``output_normal.puml.svg``,
-and ``output_full.puml.svg`` from that source, so this how-to can point to real
-rendered artifacts instead of asking readers to trust option names.
+``docs/source/tutorials/visualization/example.fcstm``, so run them from the
+repository root. The visualization tutorial shows the drawings of that source at
+three detail levels (``output_minimal.puml.svg``, ``output_normal.puml.svg`` and
+``output_full.puml.svg``, drawn from the ``.puml`` files committed next to it),
+so this how-to can point to real rendered artifacts instead of asking readers to
+trust option names.
 
 Before comparing rendered images, export PlantUML source:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml
+   $ pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml
+   $ head -n 2 example.puml
+   @startuml
+   hide empty description
 
-Success means ``/tmp/example.puml`` exists, starts with ``@startuml``, and
+Success means ``example.puml`` exists, starts with ``@startuml``, and
 contains the expected state names. If source export fails, fix DSL/model errors
 before changing renderer settings. Rendering options cannot repair invalid
 PlantUML source.
@@ -64,12 +69,12 @@ review note, or CI job.
      - Side effect
      - First troubleshooting step
    * - Review diagram source.
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml``
-     - ``/tmp/example.puml`` starts with ``@startuml`` and is diffable text.
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml``
+     - ``example.puml`` starts with ``@startuml`` and is diffable text.
      - Writes only the requested source file.
      - Run ``inspect`` on the same input if PlantUML export fails.
    * - Compare detail presets.
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o /tmp/example.full.puml``
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o example.full.puml``
      - The full source includes lifecycle/action details that the minimal preset hides.
      - Writes a second source file for review.
      - Check :doc:`/reference/visualization_options/index` before mixing preset and ``-c`` overrides.
@@ -79,8 +84,8 @@ review note, or CI job.
      - No diagram file is written.
      - Decide whether privacy requires ``--renderer local`` before accepting remote fallback.
    * - Render without GUI dependence.
-     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
-     - ``/tmp/example.svg`` exists and is visually readable in the docs/review context.
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o example.svg --no-open``
+     - ``example.svg`` exists and is visually readable in the docs/review context.
      - Writes the rendered file and may populate renderer cache.
      - If the file is missing but the backend reported success, treat that as a renderer failure, not a DSL failure.
    * - Verify a documented figure.
@@ -508,14 +513,6 @@ and the rest is left out as ``...``:
    ...
                **region 2: Motion**
    ...
-   $ pyfcstm plantuml -i controller.fcstm -c max_depth=3
-   ...
-               **region 1: Safety**
-   ...
-           --
-   ...
-               **region 2: Motion**
-   ...
    $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
    ...
                **region 1: Safety**
@@ -544,8 +541,7 @@ and the rest is left out as ``...``:
    ...
 
 **Expected signal.** The default export has one ``--`` and two
-``region N:`` notes, in writing order.  With ``max_depth=3`` the output is the
-same; ``max_depth=2`` keeps the two partitions but collapses their states into
+``region N:`` notes, in writing order.  ``max_depth=2`` keeps the two partitions but collapses their states into
 ``...``; ``max_depth=1`` collapses the whole owner.  The legend shows the two
 ``Ping`` events as different events with their own root-based paths.  Render the
 source with any PlantUML setup; the default Graphviz layout is the one this
@@ -604,9 +600,9 @@ configuration.
    Controller.Running.Motion True 2
    {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
 
-The viewer and the editor preview are not run in this guide's build: they need
-the packaged viewer assets (a development checkout builds them with ``make
-build_assets``) or a desktop editor.
+The viewer needs the packaged viewer assets (a development checkout builds them
+with ``make build_assets``) and the editor preview needs a desktop editor, so
+these commands are shown without being run in the documentation checks.
 
 .. code-block:: bash
 
@@ -620,8 +616,7 @@ the same conventions as the viewer.
 **Expected signal.** The JSON shows ``Running`` with two children marked
 ``region``, ordinals 1 and 2, in writing order.  ``viewer.html`` is a
 self-contained file that opens offline and shows the two partitions side by
-side; ``--open`` opens it in a Chromium-family app window (the command and
-this description are the documented behavior; they were not run here).
+side; ``--open`` opens it in a Chromium-family app window.
 
 **File side effect.** ``-o`` writes the named file.  ``--open`` also writes
 the HTML first and then opens a window.
@@ -639,8 +634,7 @@ Avoid the Smetana layout for models with regions
 support concurrent partitions and drops every region after the first.
 ``pyfcstm`` never writes a layout directive, so you meet this only if you or
 your tooling force it (for example with ``!pragma layout smetana``).  This
-limit comes from PlantUML itself; it was not reproduced here because no
-PlantUML renderer is available in this build.
+limit comes from PlantUML itself.
 
 **Command or code.** Check that the exported source carries no layout
 directive (the first line prints whether the text ``pragma layout`` occurs, the

@@ -6,15 +6,31 @@
 采集后继拒绝证据
 ----------------
 
-将 :download:`candidate_failure.fcstm` 下载到一个空目录，并在其中运行示例。本页的 ``bash`` 块展示的命令不在文档检查里运行，``console`` 块和 Python 块则对照真实输出核对。模型先尝试 ``A -> Blocked``，再尝试 ``A -> B``。进入 ``Blocked`` 会设置 ``x=100``，但其初始迁移要求 ``x < 0``。
+将 :download:`candidate_failure.fcstm` 下载到一个空目录，并在其中运行示例。模型先尝试 ``A -> Blocked``，再尝试 ``A -> B``。进入 ``Blocked`` 会设置 ``x=100``，但其初始迁移要求 ``x < 0``。
 
 .. literalinclude:: candidate_failure.fcstm
    :language: fcstm
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i candidate_failure.fcstm \
+   $ pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --no-color -e 'cycle; cycle Root.A.Go; why Root.A::0::A->Blocked --verbose'
+   ...
+   >>> cycle Root.A.Go
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     x = 1
+   ...
+   >>> why Root.A::0::A->Blocked --verbose
+   ────────────────────────────────────────────────────────────
+   Cycle 2: cycle; Root.A -> Root.B
+   ...
+   #1 Root.A::0::A->Blocked [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+   ...
+       Guard x < 0: failed; values={'x': 100}
+   ...
 
 第二次调用停在 ``Root.B``，最终 ``x=1``。报告中第一个候选为 ``successor_rejected``，其后继守卫检查记录 ``x=100``。``why`` 只展示证据，不执行新周期，不写文件。若显示 ``No diagnostic report``，应先开启采集再重现调用；事后打开开关无法恢复过去的证据。
 
@@ -256,10 +272,13 @@
 提供输入和参数
 --------------
 
-将以下独立模型保存为 ``controller.fcstm``：
+将下面这个独立模型写入 ``sensor_gain.fcstm``\ （它不是其他页面下载的 ``controller.fcstm``\ ），再带着输入向量和参数运行它：
 
-.. code-block:: fcstm
+.. testcode::
 
+   from pathlib import Path
+
+   Path("sensor_gain.fcstm").write_text("""\
    input int sensor;
    param int gain = 2;
    output int reading = 0;
@@ -269,11 +288,35 @@
        [*] -> Running;
        Running -> High : if [sensor > 10];
    }
+   """)
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i controller.fcstm --param gain=3 --diagnostics --no-color \
+   $ pyfcstm simulate -i sensor_gain.fcstm --param gain=3 --diagnostics --no-color \
      -e 'cycle --input sensor=4; cycle --input sensor=12; decisions'
+   ...
+   >>> cycle --input sensor=4
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Controller.Running
+   Variables:
+     reading = 12
+   ...
+   >>> cycle --input sensor=12
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Controller.High
+   Variables:
+     reading = 12
+   ...
+   >>> decisions
+   ────────────────────────────────────────────────────────────
+   ...
+   Inputs: {'sensor': 12}
+   Parameters: {'gain': 3}
+   ...
+     Guard sensor > 10: passed; values={'sensor': 12}
+   ...
 
 第一拍设置 ``reading=12``。下一次调用选择 ``Running -> High``，检查快照包含 ``sensor=12`` 和 ``gain=3``；锁存输出仍为 12。没有文件副作用。每个实际周期都要提供输入；不带 ``--input sensor=...`` 的 ``cycle`` 会以 ``E_INPUT_SOURCE_CONTRACT`` 失败，应补齐向量，不应期待沿用前值。``cycle 5 --input sensor=4`` 明确表示五拍重复该向量。参数只能在构造时设置，不能通过 ``init`` 或 ``cycle`` 改变。
 
@@ -284,14 +327,26 @@
 
 此处区分标准输出（stdout）、标准错误（stderr）和退出状态（exit status）。
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i candidate_failure.fcstm \
+   $ pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --diagnostics-format jsonl --no-color \
      -e 'cycle; cycle Root.A.Go' > decisions.jsonl
-   python -c 'import json; rows=[json.loads(s) for s in open("decisions.jsonl")]; assert len(rows)==2; assert rows[1]["state_after"]==["Root","B"]; print("2 valid reports")'
+   ...
 
-第二条命令应输出 ``2 valid reports``。shell 创建或覆盖 ``decisions.jsonl``，内容不含命令标题或 ANSI 转义；人类转录和日志写入标准错误。每条报告与 Python 的 ``to_dict()`` 使用同一份数据。拒绝候选仍属于正常成功运行；后续非法命令使批次非零退出，已经输出的完整记录仍保留。
+.. testcode::
+
+   import json
+
+   with open("decisions.jsonl") as stream:
+       rows = [json.loads(line) for line in stream]
+   print(len(rows), rows[1]["state_after"])
+
+.. testoutput::
+
+   2 ['Root', 'B']
+
+脚本读到两条报告，第二条停在 ``Root.B``。shell 创建或覆盖 ``decisions.jsonl``，内容不含命令标题或 ANSI 转义；人类转录和日志写入标准错误。每条报告与 Python 的 ``to_dict()`` 使用同一份数据。拒绝候选仍属于正常成功运行；后续非法命令使批次非零退出，已经输出的完整记录仍保留。
 
 若 JSON 解析失败，先检查是否同时传入 ``--diagnostics`` 与 ``--diagnostics-format jsonl``，并避免把标准错误并入文件。JSONL 只用于批处理；交互查询输出人类文本。这里不新增自动场景加载、持久化或重放体系；跨运行比较时，由实验脚本保存模型及运行条件。
 

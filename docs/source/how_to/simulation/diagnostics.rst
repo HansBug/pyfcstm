@@ -6,15 +6,31 @@ Use candidate diagnostics when a committed trace shows the path taken but omits 
 Capture the rejected successor
 ------------------------------
 
-Download :download:`candidate_failure.fcstm` into an empty directory and run the examples there. The ``bash`` blocks on this page show commands that the documentation checks do not run; the ``console`` and Python blocks are run against the real output. This model offers ``A -> Blocked`` before ``A -> B``. Entering ``Blocked`` assigns ``x=100`` but its initial guard requires ``x < 0``.
+Download :download:`candidate_failure.fcstm` into an empty directory and run the examples there. This model offers ``A -> Blocked`` before ``A -> B``. Entering ``Blocked`` assigns ``x=100`` but its initial guard requires ``x < 0``.
 
 .. literalinclude:: candidate_failure.fcstm
    :language: fcstm
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i candidate_failure.fcstm \
+   $ pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --no-color -e 'cycle; cycle Root.A.Go; why Root.A::0::A->Blocked --verbose'
+   ...
+   >>> cycle Root.A.Go
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     x = 1
+   ...
+   >>> why Root.A::0::A->Blocked --verbose
+   ────────────────────────────────────────────────────────────
+   Cycle 2: cycle; Root.A -> Root.B
+   ...
+   #1 Root.A::0::A->Blocked [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+   ...
+       Guard x < 0: failed; values={'x': 100}
+   ...
 
 The second call ends in ``Root.B`` with ``x=1``. Its report contains ``successor_rejected`` for the first candidate and a guard check with ``x=100``. ``why`` prints that captured evidence without executing another cycle. No file is written. If it says ``No diagnostic report``, enable collection before reproducing the call; turning it on afterwards cannot recover past evidence.
 
@@ -256,10 +272,13 @@ When the same pseudo edge executes repeatedly within one macro step, each commit
 Provide inputs and parameters
 -----------------------------
 
-Save this separate model as ``controller.fcstm``:
+Write this separate model to ``sensor_gain.fcstm`` (it is not the ``controller.fcstm`` downloaded on other pages) and run it with an input vector and a parameter:
 
-.. code-block:: fcstm
+.. testcode::
 
+   from pathlib import Path
+
+   Path("sensor_gain.fcstm").write_text("""\
    input int sensor;
    param int gain = 2;
    output int reading = 0;
@@ -269,11 +288,35 @@ Save this separate model as ``controller.fcstm``:
        [*] -> Running;
        Running -> High : if [sensor > 10];
    }
+   """)
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i controller.fcstm --param gain=3 --diagnostics --no-color \
+   $ pyfcstm simulate -i sensor_gain.fcstm --param gain=3 --diagnostics --no-color \
      -e 'cycle --input sensor=4; cycle --input sensor=12; decisions'
+   ...
+   >>> cycle --input sensor=4
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Controller.Running
+   Variables:
+     reading = 12
+   ...
+   >>> cycle --input sensor=12
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Controller.High
+   Variables:
+     reading = 12
+   ...
+   >>> decisions
+   ────────────────────────────────────────────────────────────
+   ...
+   Inputs: {'sensor': 12}
+   Parameters: {'gain': 3}
+   ...
+     Guard sensor > 10: passed; values={'sensor': 12}
+   ...
 
 The first cycle sets ``reading=12``. The next call selects ``Running -> High`` with captured ``sensor=12`` and ``gain=3``; the latched output remains 12. There are no file side effects. A real input must be supplied on every actual cycle; ``cycle`` without ``--input sensor=...`` fails with ``E_INPUT_SOURCE_CONTRACT``. Repair the vector rather than expecting the previous value to persist. ``cycle 5 --input sensor=4`` explicitly repeats the vector five times. Parameters are construction-time values and cannot be changed by ``init`` or ``cycle``.
 
@@ -282,14 +325,26 @@ For custom generators or sensor callbacks, use the existing Python :doc:`input s
 Collect machine-readable reports
 --------------------------------
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i candidate_failure.fcstm \
+   $ pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --diagnostics-format jsonl --no-color \
      -e 'cycle; cycle Root.A.Go' > decisions.jsonl
-   python -c 'import json; rows=[json.loads(s) for s in open("decisions.jsonl")]; assert len(rows)==2; assert rows[1]["state_after"]==["Root","B"]; print("2 valid reports")'
+   ...
 
-Expected output from the second command is ``2 valid reports``. The shell creates or overwrites ``decisions.jsonl``; it contains no command headers or ANSI escapes. Human transcripts and logs appear on stderr. Each report is produced by the same ``to_dict()`` used in Python. A rejected candidate is a normal successful run; a later invalid command stops the batch with a nonzero status, preserving earlier complete records.
+.. testcode::
+
+   import json
+
+   with open("decisions.jsonl") as stream:
+       rows = [json.loads(line) for line in stream]
+   print(len(rows), rows[1]["state_after"])
+
+.. testoutput::
+
+   2 ['Root', 'B']
+
+The script reads two reports, the second ending in ``Root.B``. The shell creates or overwrites ``decisions.jsonl``; it contains no command headers or ANSI escapes. Human transcripts and logs appear on stderr. Each report is produced by the same ``to_dict()`` used in Python. A rejected candidate is a normal successful run; a later invalid command stops the batch with a nonzero status, preserving earlier complete records.
 
 If JSON parsing fails, first check that both ``--diagnostics`` and ``--diagnostics-format jsonl`` were supplied, and avoid combining stderr into the file. JSONL requires batch mode; REPL queries are human-readable. There is no automatic scenario loading, persistence or replay added here. Keep the model and experimental conditions in your own script when comparing separate runs.
 

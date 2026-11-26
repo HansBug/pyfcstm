@@ -41,17 +41,50 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 生成每个内置模板
 ----------------
 
-每个目标使用一条短命令：
+请把 :download:`simple_machine.fcstm </_models/simple_machine.fcstm>` 下载到一个空目录。每个目标使用一条短命令；列表显示各模板写出的文件：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
-   pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
-   pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ LC_ALL=C ls generated/*
+   generated/c:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
 
-``--clear`` 会在渲染前删除输出目录旧内容。它适合可重复示例和持续集成临时目录；不要对包含需保留文件的目录使用它。
+   generated/c_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   generated/cpp:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/cpp_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/python:
+   README.md
+   README_zh.md
+   machine.py
+
+The ``--clear`` 会在渲染前删除输出目录旧内容。它适合可重复示例和持续集成临时目录；不要对包含需保留文件的目录使用它。
 
 先读生成 README
 ---------------
@@ -102,7 +135,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 冒烟检查 C 和 C++ 输出
 ----------------------
 
-本机检查需要 C 编译器，C++ 模板还需要 C++ 编译器和 ``cmake``，所以文档检查不运行它。任务卡 `设定 C 运行时的容量宏`_ 用一个小驱动构建生成的 ``c`` 运行时，给出命令和一次真实构建记录下的输出。
+本机检查需要 C 编译器，C++ 模板还需要 C++ 编译器和 ``cmake``，所以文档检查不运行它。任务卡 `设定 C 运行时的容量宏`_ 用一个小驱动构建生成的 ``c`` 运行时，给出命令和一次构建的输出。
 
 那张任务卡是本地冒烟检查。它证明生成文件在构建它的工具链上完成编译并运行；它不是对所有嵌入式编译器、工业配置、清理器配置或认证环境的声明。
 
@@ -187,7 +220,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 任务验收卡
 ----------
 
-评审生成配方是否完整时，按下面的卡片检查。每张卡都写明起始输入、命令、成功信号、文件副作用和第一排查步骤。
+评审生成配方是否完整时，按下面的卡片检查。每张卡都写明起始输入、命令、成功信号、文件副作用和第一排查步骤。前五行使用 ``simple_machine.fcstm``，命令与 `生成每个内置模板`_ 里的控制台块相同，文档检查会运行那个块。
 
 .. list-table:: 内置生成任务卡
    :header-rows: 1
@@ -197,23 +230,23 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
      - 成功信号
      - 副作用和第一排查
    * - 生成 Python 运行时。
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear``
      - 出现 ``machine.py`` 和生成 README；README 写出具体类名。
      - ``--clear`` 会替换临时输出目录。若失败，先确认输入模型能解析，再看模板。
    * - 生成显式事件 C 输出。
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear``
      - 出现 ``machine.h`` 和 ``machine.c``，README 写出事件编号。
      - 后续编译冒烟检查必须使用生成头文件。事件名不清楚时，读生成 README，不要猜编号。
    * - 生成轮询 C 输出。
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear``
      - ``machine.h`` 记录事件检查表形状。
      - 轮询需要事件真值回调。若事件一直不触发，先检查 ``EventChecks``，再改状态机逻辑。
    * - 生成 C++ 包装层。
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear``
      - 除 C 核心外，还出现 ``machine.hpp`` 和 ``machine.cpp``。
      - 用户代码应包含 ``machine.hpp``。如果构建绕过包装层，冒烟检查就不能证明文档里的 C++ 集成面。
    * - 生成 C++ 轮询包装层。
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear``
      - 生成包装层文件和轮询 README 指引。
      - 安装包装层事件检查。若转换不激活，检查该周期的回调返回值。
    * - 重新渲染到干净临时目录。
@@ -339,8 +372,13 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 生成五套运行时并运行 Python 的那一套
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**起点。** ``controller.fcstm`` 和 Python 3.7 及以上的解释器。生成的 ``machine.py`` 不依赖 ``pyfcstm``。请把 :download:`region_app.py` 下载到旁边。程序 ``region_app.py``
-继承生成的类，实现两个输入读取方法，通过 ``configuration``、``leaves``、``is_active`` 与 ``region_status`` 读取位置；它还恢复一个热启动并发送事件。
+**起点。** ``controller.fcstm`` 和 Python 3.7 及以上的解释器。生成的 ``machine.py`` 不依赖 ``pyfcstm``。
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+请把 :download:`region_app.py` 下载到旁边。生成的类 ``ControllerMachine`` 为每个 ``input`` 变量提供一个可覆盖的读取方法，名为 ``read_<变量名>``：程序继承该类，实现 ``read_fault`` 与 ``read_requested``\ （模型声明了 ``input int fault`` 和 ``input int requested``）。随后它通过 ``configuration``、``leaves``、``is_active`` 与 ``region_status`` 读取位置，恢复一个热启动并发送事件。
 
 .. literalinclude:: region_app.py
    :language: python
@@ -406,6 +444,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
    after /Stop: Controller.Idle
      leaves ['Controller.Idle']
      motor=0 permit=0
+
 **预期信号。** 列表给出各个模板生成的文件。程序把位置打印成文本（``Controller.Running{Safety: Watching, Motion: On}``）、活动叶子和变量。
 ``fault`` 升高后，电机在同一个周期关断。热启动不执行任何 ``enter`` 动作就把两个区域就位，``initial_vars`` 像其他变量一样携带隐藏变量 ``__forced_0``。
 ``/Stop`` 事件在一个周期里离开 ``Running``。
@@ -428,13 +467,25 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
    :language: c
    :caption: region_capacity_app.c
 
-**命令或代码。** 这些命令把程序构建三次：用默认值、用太小的值（演示失败）、用更大的值。它们需要 C 编译器，所以文档检查不运行；下面的输出来自对这些命令的一次真实运行：
+**命令或代码。** 第一个控制台块生成运行时，把驱动程序复制到旁边，并显示头文件里的两个宏；文档检查会运行它：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o c_out --clear
+   $ cp region_capacity_app.c c_out/app.c
+   $ cat c_out/machine.h
+   ...
+   #ifndef CONTROLLER_MACHINE_ARENA_CAPACITY
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   #endif
+   #ifndef CONTROLLER_MACHINE_TRAIL_CAPACITY
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
+
+第二个块把程序构建三次：用默认值、用太小的值（演示失败）、用更大的值。它需要 C 编译器（``cc``），所以文档检查不运行；没有编译器的机器上请跳过。下面的输出来自一次 64 位构建：
 
 .. code-block:: bash
 
-   pyfcstm generate -i controller.fcstm --template c -o c_out --clear
-   cp region_capacity_app.c c_out/app.c
-   grep -E '^#define CONTROLLER_MACHINE_(ARENA|TRAIL)_CAPACITY' c_out/machine.h
    cd c_out
    cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app && ./app
    cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=4 machine.c app.c -lm -o app && ./app
@@ -442,8 +493,6 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 .. code-block:: text
 
-   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
-   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
    storage bytes: 14272
    cycle 1: Controller.Idle motor=0
    cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0

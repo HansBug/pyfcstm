@@ -19,31 +19,41 @@
    ├── machine_summary.txt.j2
    └── static_note.txt
 
-空配置是合法的：
+空配置是合法的。第一个渲染文件可以先检查模型对象和状态路径。下面的脚本把上面布局里的三个文件写进当前目录（``{}`` 就是空配置）：
 
-.. code-block:: yaml
+.. testcode::
 
-   {}
+   from pathlib import Path
 
-第一个渲染文件可以先检查模型对象和状态路径：
-
-.. code-block:: jinja
-
+   template = Path("my_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("{}\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
    {%- endfor %}
+   """)
 
-用教程模型渲染：
+请把教程模型 :download:`simple_machine.fcstm </_models/simple_machine.fcstm>` 下载到同一目录，再渲染：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate \
-       -i docs/source/_models/simple_machine.fcstm \
-       -t my_template \
-       -o /tmp/pyfcstm-template-check \
-       --clear
+   $ pyfcstm generate -i simple_machine.fcstm -t my_template -o out --clear
+   $ LC_ALL=C ls out
+   machine_summary.txt
+   static_note.txt
+   $ cat out/machine_summary.txt
+   Machine: SimpleMachine
+   States:
+   - SimpleMachine
+   - SimpleMachine.Idle
+   - SimpleMachine.Running
+   - SimpleMachine.Stopped
+   $ cat out/static_note.txt
+   Copied as is.
 
 成功信号是生成 ``machine_summary.txt``，并复制 ``static_note.txt``。这只证明渲染器可以消费该模板；不证明目标语言运行时语义。
 
@@ -278,25 +288,27 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 可运行微型模板形状
 ------------------
 
-短作者示例应能放在一个屏幕内。把项目特定逻辑留在正文外，并明确写出成功信号：
+短作者示例应能放在一个屏幕内。把项目特定逻辑留在正文外，并明确写出成功信号。这个例子加载一个命名表达式样式并统计状态数；它在第一节模板的旁边运行：
 
-.. code-block:: text
+.. testcode::
 
-   my_template/
-     config.yaml
-     machine_summary.txt.j2
-     static_note.txt
+   from pathlib import Path
 
-.. code-block:: yaml
-
-   expr_styles:
-     py_expr:
-       base_lang: python
-
-.. code-block:: jinja
-
+   template = Path("micro_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("expr_styles:\n  py_expr:\n    base_lang: python\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
+   """)
+
+.. code-block:: console
+
+   $ pyfcstm generate -i simple_machine.fcstm -t micro_template -o micro_out --clear
+   $ cat micro_out/machine_summary.txt
+   model=SimpleMachine
+   states=4
 
 成功信号是渲染出的 ``machine_summary.txt`` 和复制出的 ``static_note.txt``。这个例子证明文件映射和命名表达式样式可以加载；它不证明生成运行时正确。
 
@@ -358,7 +370,16 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
    owner Controller.Running
      region 1: Safety (1 states)
      region 2: Motion (2 states)
-   $ python -c 'from pyfcstm.render import StateMachineCodeRenderer; print(sorted(StateMachineCodeRenderer("region_listing_template").features))'
+
+.. testcode::
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   renderer = StateMachineCodeRenderer("region_listing_template")
+   print(sorted(renderer.features))
+
+.. testoutput::
+
    ['region']
 
 没有这个声明时，同一个模板会被拒绝。这是负例：

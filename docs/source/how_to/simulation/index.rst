@@ -117,11 +117,17 @@ Use the interactive REPL
 ------------------------
 
 Omit ``-e`` to start the REPL. An interactive session cannot be replayed by the
-documentation checks, so this command is shown without being run:
+documentation checks, so this command is shown without being run. Download
+:download:`simple_machine.fcstm </_models/simple_machine.fcstm>`, the model of
+the next few sections:
+
+.. literalinclude:: /_models/simple_machine.fcstm
+   :language: fcstm
+   :caption: simple_machine.fcstm
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/_models/simple_machine.fcstm --no-color
+   pyfcstm simulate -i simple_machine.fcstm --no-color
 
 Then type commands one at a time:
 
@@ -180,24 +186,62 @@ fields in ``CycleResult``, use :doc:`../../reference/simulation/index`.
 Hot start at a state
 --------------------
 
-Use the REPL ``init`` command when you need to inspect a later state without
-replaying all earlier cycles:
+Use the ``init`` command when you need to inspect a later state without
+replaying all earlier cycles. On ``simple_machine.fcstm``, start in
+``Running`` with ``counter=10`` and send ``Stop``:
 
-.. code-block:: text
+.. code-block:: console
 
-   init System.Active counter=10 flag=1
-   cycle
-   current
+   $ pyfcstm simulate -i simple_machine.fcstm --no-color -e "\
+   init SimpleMachine.Running counter=10; \
+   cycle Stop; \
+   current"
+   ────────────────────────────────────────────────────────────
+   >>> init SimpleMachine.Running counter=10
+   ────────────────────────────────────────────────────────────
+   Initialized from state: SimpleMachine.Running
+   Cycle: 0
+   Current State: SimpleMachine.Running
+   Variables:
+     counter = 10
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Stop
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Stopped
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Stopped
+   Variables:
+     counter = 11
 
 Use the Python API when embedding the same idea in tests:
 
-.. code-block:: python
+.. testcode::
 
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("simple_machine.fcstm")
    runtime = SimulationRuntime(
-       sm,
-       initial_state="System.Active",
-       initial_vars={"counter": 10, "flag": 1},
+       model,
+       initial_state="SimpleMachine.Running",
+       initial_vars={"counter": 10},
    )
+   print(runtime.configuration, dict(runtime.vars))
+   runtime.cycle(["Stop"])
+   print(runtime.configuration, dict(runtime.vars))
+
+.. testoutput::
+
+   SimpleMachine.Running {'counter': 10}
+   SimpleMachine.Stopped {'counter': 11}
 
 Hot start has deliberate boundaries:
 
@@ -308,13 +352,39 @@ Debug a failing model
 A compact debugging loop is:
 
 1. Run ``pyfcstm inspect`` first if parsing or diagnostics are suspicious.
-2. Use ``pyfcstm simulate -i docs/source/_models/simple_machine.fcstm -e "cycle; events; current" --no-color``
-   to get a stable transcript.
+2. Use a short batch (shown below) to get a stable transcript.
 3. Add only one event at a time.
 4. Use ``history`` or ``export`` after the failure.
 5. If hot start fails, first check that every variable is provided and the
    structural depth is valid. A first-cycle Delta means the target is a stable
    no-progress boundary; provide the required event to make progress.
+
+For step 2, on ``simple_machine.fcstm`` of the REPL section:
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i simple_machine.fcstm -e "cycle; events; current" --no-color
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Idle
+   Variables:
+     counter = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Start (SimpleMachine.Idle.Start)
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: SimpleMachine.Idle
+   Variables:
+     counter = 0
 
 Do not use simulation output as a substitute for target-runtime tests.  It is a
 fast model-level check that should be paired with generated-runtime tests when
@@ -370,48 +440,48 @@ the script also shows an owner written alone:
 
    model = load_state_machine_from_file("controller.fcstm")
    variables = {"permit": 1, "motor": 1, "__forced_0": 0}
+   # one source is shared by all runtimes below, so it holds its last value
+   inputs = {
+       "fault": SequenceInput([0], end="hold"),
+       "requested": SequenceInput([1], end="hold"),
+   }
+   text = "Controller.Running{Safety: Watching, Motion: On}"
    motion_on = model.root_state.substates["Running"].regions["Motion"].substates["On"]
    forms = {
-       "configuration text": "Controller.Running{Safety: Watching, Motion: On}",
-       "Configuration object": Configuration.parse(
-           model, "Controller.Running{Safety: Watching, Motion: On}"
-       ),
+       "configuration text": text,
+       "Configuration object": Configuration.parse(model, text),
        "dotted path": "Controller.Running.Motion.On",
        "tuple path": ("Controller", "Running", "Motion", "On"),
        "State object": motion_on,
        "owner only": "Controller.Running",
    }
-   for label, initial_state in forms.items():
+   for label, form in forms.items():
        runtime = SimulationRuntime(
-           model,
-           initial_state=initial_state,
-           initial_vars=variables,
-           input_source={"fault": SequenceInput([0]), "requested": SequenceInput([1])},
+           model, initial_state=form, initial_vars=variables, input_source=inputs
        )
-       before = runtime.configuration
+       print(label)
+       print("  at start    ", runtime.configuration)
        runtime.cycle()
-       print(f"{label}:")
-       print(f"  at start     {before}")
-       print(f"  after cycle  {runtime.configuration}")
+       print("  after cycle ", runtime.configuration)
 
 .. testoutput::
 
-   configuration text:
+   configuration text
      at start     Controller.Running{Safety: Watching, Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   Configuration object:
+   Configuration object
      at start     Controller.Running{Safety: Watching, Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   dotted path:
+   dotted path
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   tuple path:
+   tuple path
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   State object:
+   State object
      at start     Controller.Running{Safety: [init], Motion: On}
      after cycle  Controller.Running{Safety: Watching, Motion: On}
-   owner only:
+   owner only
      at start     Controller.Running{Safety: [init], Motion: [init]}
      after cycle  Controller.Running{Safety: Watching, Motion: Off}
 
@@ -472,11 +542,38 @@ derives nor checks them against the position.  ``hot_watch.fcstm`` uses
    after one cycle: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
    runtime.vars: {'__active_Plant_Trigger_Fired': 1}
 
+The same position with the hidden variable set to ``1`` and to ``0``.  ``Earlier``
+moves to ``Saw`` only when the query is true:
+
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("hot_watch.fcstm")
+   config = Configuration.parse(
+       model, "Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}"
+   )
+   for value in (1, 0):
+       runtime = SimulationRuntime(
+           model,
+           initial_state=config,
+           initial_vars={"__active_Plant_Trigger_Fired": value},
+           input_source={"go": SequenceInput([1])},
+       )
+       runtime.cycle()
+       print(value, runtime.configuration)
+
+.. testoutput::
+
+   1 Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+   0 Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}
+
 **Expected signal.** ``model.active_queries`` lists the queries and their
 variable names; ``model.active_variables(config)`` computes the values that
 match a position.  The runtime accepts them as ``initial_vars`` and shows them
 in ``runtime.vars``.  If you pass a value that disagrees with the position,
-the runtime runs with the value you passed.
+the runtime runs with the value you passed, as the second script shows.
 
 **File side effect.** None.
 
@@ -631,33 +728,32 @@ reach a resting position.
            initial_state="Root.Pair{Left: Busy}",
            initial_vars={"flag": flag, "work": 0},
        )
-       print(f"flag={flag} at start: {runtime.configuration}")
        result = runtime.cycle(diagnostics=True)
-       print(f"  delta={result.delta} outcome={result.diagnostics.outcome}")
-       print(f"  after cycle: {runtime.configuration} vars={dict(runtime.vars)}")
+       print(f"flag={flag}: delta={result.delta} outcome={result.diagnostics.outcome}")
+       print(f"  {runtime.configuration} {dict(runtime.vars)}")
        for item in result.diagnostics.decisions:
-           print(
-               f"  check #{item.id} {item.transition_label.split('::')[0]} -> "
-               f"{item.outcome}; guard={item.guard} result={item.guard_result}"
-           )
+           print(f"  #{item.id} {item.transition_label}")
+           print(f"     {item.outcome}: {item.guard} is {item.guard_result}")
 
 .. testoutput::
 
    Cycle 1 completed as Delta - State: Root.Pair{Left: Busy, Right: [init]}; no stoppable successor was committed
-   flag=0 at start: Root.Pair{Left: Busy, Right: [init]}
-     delta=True outcome=delta
-     after cycle: Root.Pair{Left: Busy, Right: [init]} vars={'flag': 0, 'work': 0}
-     check #1 Root.Pair.Right -> guard_false; guard=flag > 0 result=False
-   flag=1 at start: Root.Pair{Left: Busy, Right: [init]}
-     delta=False outcome=cycle
-     after cycle: Root.Pair{Left: Busy, Right: Ready} vars={'flag': 1, 'work': 1}
-     check #1 Root.Pair.Right -> selected; guard=flag > 0 result=True
-     check #2 Root.Pair.Right -> selected; guard=flag > 0 result=True
+   flag=0: delta=True outcome=delta
+     Root.Pair{Left: Busy, Right: [init]} {'flag': 0, 'work': 0}
+     #1 Root.Pair.Right::0::INIT_STATE->Ready
+        guard_false: flag > 0 is False
+   flag=1: delta=False outcome=cycle
+     Root.Pair{Left: Busy, Right: Ready} {'flag': 1, 'work': 1}
+     #1 Root.Pair.Right::0::INIT_STATE->Ready
+        selected: flag > 0 is True
+     #2 Root.Pair.Right::0::INIT_STATE->Ready
+        selected: flag > 0 is True
 
 **Expected signal.** With ``flag=0`` the cycle is a Delta: ``delta=True``,
 the configuration and the variables are unchanged, even ``Left``'s ``during``
 (which would have raised ``work``) is rolled back.  The first check names the
-transition that failed (``guard_false``, ``flag > 0``).  With ``flag=1`` the
+transition that failed: ``Root.Pair.Right::0::INIT_STATE->Ready`` is the
+initial transition of ``Right``, and it ends ``guard_false`` on ``flag > 0``.  With ``flag=1`` the
 same call places ``Right`` and runs ``Left``'s ``during``.  A Delta is a whole
 cycle that did not commit; a cycle in which every region simply stays put is
 not a Delta.  The CLI shows the same evidence with

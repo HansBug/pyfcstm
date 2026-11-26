@@ -50,15 +50,50 @@ The examples use the same small model as the first tutorial:
 Generate each built-in template
 -------------------------------
 
-Use one short command per target:
+Download :download:`simple_machine.fcstm </_models/simple_machine.fcstm>` into
+an empty directory. Use one short command per target; the listing shows the
+files each template writes:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
-   pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
-   pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ LC_ALL=C ls generated/*
+   generated/c:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   generated/c_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   generated/cpp:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/cpp_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/python:
+   README.md
+   README_zh.md
+   machine.py
 
 The ``--clear`` option deletes the previous contents of the output directory
 before rendering. Use it for repeatable examples and CI scratch directories.
@@ -127,7 +162,7 @@ Smoke-check C and C++ outputs
 The native check needs a C compiler, and the C++ templates also need a C++
 compiler and ``cmake``, so the documentation checks do not run it. The card
 `Set the capacity macros of the C runtime`_ builds the generated ``c`` runtime
-with a small driver; it shows the commands and the output recorded from one
+with a small driver; it shows the commands and the output of one
 build.
 
 That card is a local smoke check. It proves that the generated files compiled and
@@ -231,7 +266,9 @@ Task acceptance cards
 
 Use these cards when reviewing whether a generation recipe is complete. Each
 card names the starting input, the command, the success signal, the side effect,
-and the first repair step.
+and the first repair step. The first five rows use ``simple_machine.fcstm`` and
+the commands of the console block in `Generate each built-in template`_, which
+the documentation checks run.
 
 .. list-table:: Built-in generation task cards
    :header-rows: 1
@@ -241,23 +278,23 @@ and the first repair step.
      - Success signal
      - Side effect and first repair
    * - Generate the Python runtime.
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear``
      - ``machine.py`` and generated README files exist; the README names the concrete class.
      - ``--clear`` replaces the scratch output. If it fails, confirm the input parses before inspecting the template.
    * - Generate explicit-event C output.
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear``
      - ``machine.h`` and ``machine.c`` exist, and the README shows event ids.
      - A later compiler smoke must use the generated header. If event names are unclear, read the generated README rather than guessing ids.
    * - Generate polling C output.
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear``
      - ``machine.h`` documents the event-check table shape.
      - Polling requires callbacks for event truth. If events never fire, inspect ``EventChecks`` before editing state-machine logic.
    * - Generate the C++ wrapper.
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear``
      - ``machine.hpp`` and ``machine.cpp`` appear in addition to the C core.
      - User code should include ``machine.hpp``. If a build bypasses the wrapper, the smoke no longer proves the documented C++ surface.
    * - Generate the C++ polling wrapper.
-     - ``pyfcstm generate -i docs/source/_models/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear``
      - Wrapper files plus polling README guidance are emitted.
      - Install wrapper-facing event checks. If a transition stays inactive, verify the callback return values for that cycle.
    * - Re-render into a clean scratch directory.
@@ -399,11 +436,18 @@ Generate the five runtimes and run the Python one
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Input.** ``controller.fcstm`` and a Python 3.7+ interpreter.  The
-generated ``machine.py`` has no dependency on ``pyfcstm``.  Download
-:download:`region_app.py` next to it.  The program
-``region_app.py`` subclasses the generated class, implements the two input
-readers, and reads the position through ``configuration``, ``leaves``,
-``is_active`` and ``region_status``; it also restores a hot start and sends
+generated ``machine.py`` has no dependency on ``pyfcstm``.
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+Download :download:`region_app.py` next to it.  The generated class
+``ControllerMachine`` has one overridable reader per ``input`` variable, named
+``read_<variable>``: the program subclasses it and implements ``read_fault``
+and ``read_requested`` (the model declares ``input int fault`` and
+``input int requested``).  It then reads the position through ``configuration``,
+``leaves``, ``is_active`` and ``region_status``, restores a hot start and sends
 events.
 
 .. literalinclude:: region_app.py
@@ -470,6 +514,7 @@ events.
    after /Stop: Controller.Idle
      leaves ['Controller.Idle']
      motor=0 permit=0
+
 **Expected signal.** The listing shows the generated files of each
 template.  The program prints the position as text
 (``Controller.Running{Safety: Watching, Motion: On}``), the active leaves, and
@@ -506,16 +551,30 @@ fails with the capacity message.  Define an overridden value identically for
    :language: c
    :caption: region_capacity_app.c
 
-**Command or code.** The commands build the program three times: with the
-defaults, with a value that is too small (to show the failure), and with larger
-values.  They need a C compiler, so the documentation checks do not run them;
-the output below was recorded from a real run of exactly these commands:
+**Command or code.** The first console block generates the runtime, copies the
+driver next to it and shows the two macros of the header; the documentation
+checks run it:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o c_out --clear
+   $ cp region_capacity_app.c c_out/app.c
+   $ cat c_out/machine.h
+   ...
+   #ifndef CONTROLLER_MACHINE_ARENA_CAPACITY
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   #endif
+   #ifndef CONTROLLER_MACHINE_TRAIL_CAPACITY
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
+
+The second block builds the program three times: with the defaults, with a value
+that is too small (to show the failure), and with larger values.  It needs a C
+compiler (``cc``), so the documentation checks do not run it; skip it on a
+machine without one.  The output shown is what one 64-bit build printed:
 
 .. code-block:: bash
 
-   pyfcstm generate -i controller.fcstm --template c -o c_out --clear
-   cp region_capacity_app.c c_out/app.c
-   grep -E '^#define CONTROLLER_MACHINE_(ARENA|TRAIL)_CAPACITY' c_out/machine.h
    cd c_out
    cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app && ./app
    cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=4 machine.c app.c -lm -o app && ./app
@@ -523,8 +582,6 @@ the output below was recorded from a real run of exactly these commands:
 
 .. code-block:: text
 
-   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
-   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
    storage bytes: 14272
    cycle 1: Controller.Idle motor=0
    cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0

@@ -3,8 +3,8 @@ flat nodes, out of sample: 60 points up to N=6400, k=128, 0 differ
 flat nodes with written variables, grid: 24 points, all equal
 z3 boolean variables, grid: 48 points (T in 1,2,4), all equal
 power-law fit of the 60 out-of-sample flat points: nodes = 14.6 * N^0.98 * k^1.14
-region nodes, grid: 48 points, max |residual| = 11.2 nodes
-region nodes, out of sample: 95 points up to R=768, S=1024, k=48; median error 0.12%, max 0.92%
+region nodes, grid: 48 points, max |residual| = 11.5 nodes
+region nodes, out of sample: 95 points up to R=768, S=1024, k=48; median error 0.12%, max 0.94%
 contexts 2*W*V*(k-1), W=N-1: 34 points, all equal
 flat z3 calls, grid: 16 points, max relative error 0.24%
 region z3 calls, grid: 48 points, max relative error 0.28%
@@ -17,9 +17,17 @@ pigeonhole conflict ratio from 7 regions on: geometric mean x6.0
 context cost N=100 V=4 k=5: 3168 contexts, build 4.9 s (0.5 s without variables), 1.37 ms per context
 context cost N=100 V=16 k=5: 12672 contexts, build 16.7 s (0.5 s without variables), 1.27 ms per context
 context cost N=100 V=64 k=5: 50688 contexts, build 65.6 s (0.5 s without variables), 1.28 ms per context
+nodes against T, flat {'N': 100} k=5: T=1: 5263, T=2: 8871 (x1.69), T=4: 16503 (x1.86), T=8: 33999 (x2.06), T=16: 78835 (x2.32), T=32: 205167 (x2.60), T=64: 608655 (x2.97), T=128: 2030730 (x3.34)
+nodes against T, regions {'R': 4, 'S': 8} k=3: T=1: 1523, T=2: 2069 (x1.36), T=4: 3275 (x1.58), T=8: 5907 (x1.80), T=16: 13079 (x2.21), T=32: 32277 (x2.47), T=64: 85157 (x2.64), T=128: 310939 (x3.65), T=256: 1152649 (x3.71)
 build seconds per z3 call {'R': 96, 'S': 4} k=3: 2.72 s for 5212124 calls, 0.52 microseconds per call
 build seconds per z3 call {'R': 256, 'S': 4} k=3: 14.84 s for 29080930 calls, 0.51 microseconds per call
 build seconds per z3 call {'N': 1600, 'T': 2} k=5: 17.88 s for 10933762 calls, 1.63 microseconds per call
 share of build time, original points above 1 s, flat: 134 points, median 96%, range 32% to 100%
 share of build time, original points above 1 s, regions: 113 points, median 49%, range 17% to 95%
+context cost, original campaign, N=100 V=4 k=5: build 19.3 s, 3168 contexts, 6.09 ms per context
+context cost, original campaign, N=100 V=4 k=5: build 19.6 s, 3168 contexts, 6.19 ms per context
+context cost, original campaign, N=100 V=16 k=5: build 76.4 s, 12672 contexts, 6.03 ms per context
+context cost, original campaign, N=100 V=16 k=5: build 78.1 s, 12672 contexts, 6.16 ms per context
+context cost, original campaign, N=100 V=64 k=5: build 87.9 s, 50688 contexts, 1.73 ms per context
+context cost, original campaign, N=100 V=64 k=5: build 88.8 s, 50688 contexts, 1.75 ms per context
 closed forms agree with the data in data

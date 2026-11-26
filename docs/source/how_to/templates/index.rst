@@ -317,8 +317,8 @@ Runnable micro-template shape
 -----------------------------
 
 A short authoring example should fit on one screen. Keep the project-specific
-logic out of the prose and name the success signal explicitly. This one loads a
-named expression style and counts the states; it runs next to the template of
+logic out of the prose and name the success signal explicitly. This one declares a
+named expression style, writes the model name and counts the states; it runs next to the template of
 the first section:
 
 .. testcode::
@@ -342,8 +342,9 @@ the first section:
    states=4
 
 The success signal is a rendered ``machine_summary.txt`` and a copied
-``static_note.txt``. This example proves file mapping and a named expression
-style can be loaded; it does not prove a generated runtime is correct.
+``static_note.txt``. This example proves file mapping and that the config file is read. It declares
+a style but renders no expression, and it does not prove a generated runtime is
+correct.
 
 Helper design checklist
 -----------------------

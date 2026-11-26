@@ -356,15 +356,17 @@ def test_grammar_guide_invalid_examples_are_rejected():
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
-    "marker",
+    "marker, error_type, keyword",
     [
-        "BadMixedChildren",
-        "BadCrossRegionTransition",
-        "BadRegionAction",
-        "BadActivePath",
+        ("BadMixedChildren", GrammarParseError, "near 'region'"),
+        ("BadCrossRegionTransition", SyntaxError, "Unknown to state 'Y'"),
+        ("BadRegionAction", GrammarParseError, "near 'enter'"),
+        ("BadActivePath", SyntaxError, "Invalid active query 'P.A.X' (invalid_path)"),
     ],
 )
-def test_grammar_guide_region_invalid_examples_are_present_and_rejected(marker):
+def test_grammar_guide_region_invalid_examples_fail_for_their_stated_reason(
+    marker, error_type, keyword
+):
     guide = llm.get_grammar_guide_prompt_for_llm()
     examples = [
         example
@@ -373,5 +375,6 @@ def test_grammar_guide_region_invalid_examples_are_present_and_rejected(marker):
     ]
 
     assert len(examples) == 1
-    with pytest.raises((GrammarParseError, SyntaxError, ValueError)):
+    with pytest.raises(error_type) as err_info:
         load_state_machine_from_text(examples[0], path=os.getcwd())
+    assert keyword in str(err_info.value)

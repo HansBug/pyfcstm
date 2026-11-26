@@ -33,7 +33,8 @@ oracle and any discriminator model.
 ## Core Matrix
 
 The acceptance matrix has seven property kinds, two task forms, and three
-providers: 42 single-generation cases.
+providers: 42 single-generation cases. The two region tasks below extend
+the full matrix to 54.
 
 | Property | Nominal intent | Mutation check |
 |---|---|---|
@@ -79,7 +80,7 @@ must pass the same raw-artifact and semantic gates as the matching core task.
 Audit and explanation replies use an explicit three-line prose contract that
 checks their verdict, causal reasoning, repair or bound limitation, and absence
 of extra response panels. These 12 calls (four tasks across three providers)
-do not dilute or replace the core 42-case acceptance threshold.
+do not dilute or replace the core 42-case acceptance threshold (54 with the region tasks).
 
 ## Commands
 
@@ -97,7 +98,7 @@ provider:
 python tools/evaluate_llm_fbmcq_guide.py --check
 ```
 
-Create a new run for all three providers across all 14 tasks:
+Create a new run for all three providers across all 18 tasks:
 
 ```bash
 python tools/evaluate_llm_fbmcq_guide.py --mode live --run-id 20260712-final-v15-core
@@ -130,7 +131,7 @@ than retained as duplicate evidence. The aggregate summary is in
 - After changing FBMCQ grammar, binding, visible atom rules, property behavior,
   polarity, or response-incomplete behavior, update the Guide as needed, run
   `make sha256`, run deterministic Guide tests, and refresh affected evidence.
-- Do not claim readiness from fixture-oracle checks alone. All 42 single-run
+- Do not claim readiness from fixture-oracle checks alone. All 54 single-run
   core provider cases and all 12 generality smoke cases must pass and replay
   before the Guide is ready.
 - A raw LLM artifact must not contain FBMCQ comments. Comments remain legal in

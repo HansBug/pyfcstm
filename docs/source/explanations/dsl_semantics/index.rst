@@ -21,7 +21,7 @@ starting path. Complete simulator internals live in
 Why variables come before one root state
 ----------------------------------------
 
-A FCSTM model is one controller with one active-state stack. Persistent
+A FCSTM model is one controller with one active position: an active-state stack, or a tree of stacks when a state owns regions. Persistent
 variables come before the root so every guard, effect, lifecycle action, import
 mapping, and diagnostic pass can use the same data surface.
 
@@ -609,8 +609,11 @@ clearing afterwards would erase it. The shared fixture
 Boundaries and counterexamples
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* **Not concurrency.** FCSTM has one active path; there are no orthogonal
-  regions whose histories would interact.
+* **Not concurrency.** Regions run one after another inside one cycle, in
+  writing order, not in parallel. A history owner whose subtree contains regions
+  is rejected, because one saved leaf cannot describe a position with several
+  active branches; a history inside one region keeps the position of that
+  region only.
 * **Not persistence.** Records live in the machine's variables, like any other
   state; saving them across processes is the host's job (a hot start restores
   them through :meth:`pyfcstm.model.model.StateMachine.history_variables`).

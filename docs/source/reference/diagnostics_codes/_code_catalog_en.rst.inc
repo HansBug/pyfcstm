@@ -483,7 +483,7 @@ E_UNSUPPORTED_FEATURE
 
 .. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
 
-The chosen consumer cannot preserve a region model. Python model construction, cold-start simulation with ``SimulationRuntime``, diagrams and the JavaScript frontend (model, semantic analysis, diagram preview) support regions; hot start and the ``pyfcstm simulate`` command support them too. Code generation accepts them only with a template that lists ``region`` under ``features`` in its ``config.yaml`` and names the template in the message; BMC and inspect/verify analysis consumers reject them until supported. Activity queries are never refused: they are lowered into ordinary variables.
+The chosen consumer cannot preserve a region model. Every consumer in the Python package takes one: model construction, ``SimulationRuntime`` (cold and hot start), ``pyfcstm simulate``, ``pyfcstm inspect`` and the ``pyfcstm.verify`` analyses, bounded model checking and ``pyfcstm bmc``, PlantUML, diagrams, and code generation with a template that lists ``region`` under ``features`` in its ``config.yaml``. The JavaScript frontend (model, semantic analysis, diagram preview) supports regions too. The remaining refusal is code generation with a template that does not list ``region``: ``pyfcstm generate`` stops before it writes a file and names the built-in templates that do. Activity queries are never refused: they are lowered into ordinary variables.
 
 .. list-table:: Refs schema
    :header-rows: 1

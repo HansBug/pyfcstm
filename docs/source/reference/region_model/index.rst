@@ -1,16 +1,20 @@
 Region models and configurations
 ================================
 
-This page describes Python model construction and position values. Code
-generation, bounded model checking and inspect/verify analysis currently reject
-models containing regions with ``E_UNSUPPORTED_FEATURE``. Parsing and
-constructing a model does not imply that those consumers can run it. Activity
-queries are not a boundary: the model lowers ``active()`` into ordinary hidden
-variables, so every consumer takes a model that uses them.
-Diagrams (``StateMachine.diagram()`` and ``pyfcstm diagram``) and the
-JavaScript frontend (model, semantic analysis and diagram preview) support
-regions and activity queries; the JavaScript structural inspector, like
-``pyfcstm inspect``, does not judge regions.
+This page describes Python model construction and position values. Every
+consumer in the Python package takes a model with regions: the simulator
+(cold and hot start) and ``pyfcstm simulate``, ``pyfcstm inspect`` and the
+structural analyses of ``pyfcstm.verify``, bounded model checking and
+``pyfcstm bmc``, PlantUML export, ``StateMachine.diagram()`` and
+``pyfcstm diagram``, and code generation with the built-in ``python``, ``c``,
+``c_poll``, ``cpp`` and ``cpp_poll`` templates. The one refusal that remains is
+a template that does not list ``region`` under ``features`` in its
+``config.yaml``: ``pyfcstm generate`` stops with ``E_UNSUPPORTED_FEATURE``
+before it writes a file (see :doc:`../template_config/index`). Activity queries
+are never refused: the model lowers ``active()`` into ordinary hidden
+variables. The JavaScript frontend (model, semantic analysis and diagram
+preview) supports regions and activity queries; its ``inspectModel`` function
+builds no report for a model with regions.
 
 Namespaces and structure
 ------------------------
@@ -68,8 +72,11 @@ State objects returned by ``leaves`` belong to the model used for construction.
        are rejected. This is not a partially specified stable configuration.
    * - ``transient``
      - Structurally valid intermediate positions, including pseudo states,
-       partial region initialization and all-Done snapshots. This does not make
-       them valid runtime parking positions or hot-start inputs.
+       partial region initialization and all-Done snapshots. A machine never
+       rests in such a position, so ``runtime.configuration`` does not return
+       one at rest. A hot start reads configuration text in this mode: a region
+       that is left out waits for its initialization, and a position in which
+       every region of an owner is Done is rejected at any depth.
 
 In text, the outer state path is root-qualified. A region entry names its child
 relative to that region; ``[done]`` means that region is Done and ``[init]``

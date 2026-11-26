@@ -1,13 +1,16 @@
 Region 模型与配置
 =================
 
-本页介绍 Python 模型构建和位置值。目前代码生成、有界模型检查以及 inspect/verify
-分析遇到含区域的模型，会以 ``E_UNSUPPORTED_FEATURE`` 拒绝操作。
-能够解析和构建模型，不代表这些消费者已经可以运行它。
-活动查询不属于这道边界：模型把 ``active()`` 降级成普通的隐藏变量，所以各消费者都能处理用到它的模型。
-图形（``StateMachine.diagram()`` 与 ``pyfcstm diagram``）以及 JavaScript 前端
-（模型、语义分析和图形预览）已经支持区域与活动查询；JavaScript 的结构检查器与
-``pyfcstm inspect`` 一样，不对区域作出判断。
+本页介绍 Python 模型构建和位置值。Python 包里的每个消费者都接受含区域的模型：
+仿真器（冷启动与热启动）和 ``pyfcstm simulate``，``pyfcstm inspect`` 与
+``pyfcstm.verify`` 的结构分析，有界模型检查与 ``pyfcstm bmc``，PlantUML 导出，
+``StateMachine.diagram()`` 与 ``pyfcstm diagram``，以及用内置的 ``python``、
+``c``、``c_poll``、``cpp``、``cpp_poll`` 模板生成代码。仅剩的一处拒绝是：
+模板的 ``config.yaml`` 没有在 ``features`` 里列出 ``region`` 时，
+``pyfcstm generate`` 会在写出任何文件之前以 ``E_UNSUPPORTED_FEATURE`` 停止
+（见 :doc:`../template_config/index_zh`）。活动查询从不被拒绝：模型把 ``active()``
+降级成普通的隐藏变量。JavaScript 前端（模型、语义分析和图形预览）支持区域与
+活动查询；它的 ``inspectModel`` 函数对含区域的模型不生成报告。
 
 命名空间与结构
 --------------
@@ -57,7 +60,9 @@ Region 模型与配置
        ``[init]``，不接受活动子状态或已完成项。这不是部分指定的稳定配置。
    * - ``transient``
      - 结构合法的中间位置，包括伪状态、部分区域初始化和全体已完成快照。
-       接受快照不代表它是合法的运行时驻停位置或热启动输入。
+       状态机不会停在这样的位置上，所以 ``runtime.configuration`` 在静止时不会
+       返回它。热启动按这个模式读取配置文本：省略的区域等待初始化，任一层
+       拥有者的区域全体已完成则被拒绝。
 
 文本最外层使用包含根名称的完整状态路径；区域项内的子状态相对于该区域
 书写，``[done]`` 表示该区域已完成，``[init]`` 表示尚未初始化。

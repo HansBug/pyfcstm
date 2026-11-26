@@ -231,22 +231,85 @@ The tutorial controller declares ``Safety`` before ``Motion``. ``Safety`` writes
 gives ``controller_swapped.fcstm``, where ``Motion`` comes first. The same
 command reports nothing for the first order and one information for the second:
 
-.. literalinclude:: region_backward_read.demo.sh
-   :language: bash
-   :caption: region_backward_read.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_backward_read.demo.sh.txt
-   :language: text
-   :caption: region_backward_read.demo.sh.txt
+   $ pyfcstm inspect -i controller.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm
+   ...
+     diagnostics: 0 errors / 4 warnings / 1 infos
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+     --> controller_swapped.fcstm:16:13
+       |
+    15 |             state On { during { motor = 1; } }
+    16 |             Off -> On : if [permit != 0 && requested != 0];
+       |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    17 |             On -> Off : if [permit == 0 || requested == 0];
+       |
+      = source: inspect-static
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --format json
+   ...
+         "code": "I_REGION_BACKWARD_READ",
+   ...
+         "refs": {
+           "owner_path": "Controller.Running",
+           "reader_region": "Controller.Running.Motion",
+           "target": "permit",
+           "target_kind": "variable",
+           "writer_regions": [
+             "Controller.Running.Safety"
+           ]
+         },
+   ...
+   $ pyfcstm simulate -i controller.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
+   ...
+   $ pyfcstm simulate -i controller_swapped.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Motion: On, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 0
+   ...
+   Cycle: 5
+   Current State: Controller.Running{Motion: Off, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
 
 Read the output in four steps:
 
-1. The ``False`` line is ``controller.fcstm``: the producer runs first, so no
-   region reads a value that is one cycle old.
+1. The first command is ``controller.fcstm``: its summary counts ``0 infos``,
+   because the producer runs first and no region reads a value that is one cycle
+   old.
 2. In ``controller_swapped.fcstm`` the guard on line 16 reads ``permit`` while
    ``Safety``, which writes it, comes later. The span points at the reading
    transition, not at the write.
-3. ``refs`` carries the machine-readable form: ``reader_region``, the
+3. The ``--format json`` command shows the machine-readable form. ``refs`` carries ``reader_region``, the
    ``writer_regions`` that sit later in the order, and ``target_kind``, which is
    ``variable`` here and ``active`` when the earlier region asks about a state
    with ``active("...")`` instead.
@@ -275,13 +338,42 @@ Trace 5: a later region overwrites the value without looking
    :language: fcstm
    :caption: region_blind_overwrite.fcstm
 
-.. literalinclude:: region_blind_overwrite.demo.sh
-   :language: bash
-   :caption: region_blind_overwrite.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_blind_overwrite.demo.sh.txt
-   :language: text
-   :caption: region_blind_overwrite.demo.sh.txt
+   $ pyfcstm inspect -i region_blind_overwrite.fcstm
+   ...
+   [WARN] W_REGION_BLIND_OVERWRITE
+     Region 'Drive.Limiter' overwrites variable 'speed' in every cycle without using the value written by the earlier region 'Drive.Planner'; that earlier write is lost whenever it runs.
+     --> region_blind_overwrite.fcstm:14:22
+   ...
+   $ pyfcstm inspect -i region_blind_overwrite.fcstm --format json
+   ...
+         "code": "W_REGION_BLIND_OVERWRITE",
+   ...
+         "refs": {
+           "owner_path": "Drive",
+           "previous_region": "Drive.Planner",
+           "previous_write_span": {
+             "column": 22,
+             "end_column": 32,
+             "end_line": 8,
+             "line": 8
+           },
+           "region": "Drive.Limiter",
+           "variable": "speed"
+         },
+   ...
+   $ pyfcstm simulate -i region_blind_overwrite.fcstm -e "cycle --input fault=0; cycle --input fault=0"
+   ...
+   Cycle: 1
+   Current State: Drive{Planner: Plan, Limiter: Clamp}
+   Variables:
+     speed = 0
+   ...
+   Cycle: 2
+   Current State: Drive{Planner: Plan, Limiter: Clamp}
+   Variables:
+     speed = 0
 
 ``Planner`` writes ``speed = 5`` and ``Limiter``, which runs after it, writes
 ``speed = 0`` without reading ``speed``. The two simulated cycles show the
@@ -322,15 +414,39 @@ Aspects declared on the owner or further out run once around the whole group of
 regions, so they neither use the earlier value nor shield it, and the rule
 ignores them.
 
-The contrast run feeds four versions of ``Limiter`` to the same command:
+The contrast script feeds four versions of ``Limiter`` to the same inspection
+through :func:`pyfcstm.diagnostics.inspect_model`, the function behind
+``pyfcstm inspect``:
 
-.. literalinclude:: region_blind_overwrite_contrast.demo.sh
-   :language: bash
-   :caption: region_blind_overwrite_contrast.demo.sh
+.. testcode::
 
-.. literalinclude:: region_blind_overwrite_contrast.demo.sh.txt
-   :language: text
-   :caption: region_blind_overwrite_contrast.demo.sh.txt
+   from pyfcstm.diagnostics import inspect_model
+   from pyfcstm.model import load_state_machine_from_text
+
+   template = """
+   input int fault;
+   output int speed = 0;
+   state Drive {
+       region Planner { [*] -> Plan; state Plan { during { speed = 5; } } }
+       region Limiter { [*] -> Clamp; state Clamp { during { %s } } }
+   }
+   """
+   for body in [
+       "speed = 0;",
+       "speed = speed - 1;",
+       "if [fault != 0] { speed = 0; }",
+       "if [speed > 3] { speed = 0; } else { speed = 1; }",
+   ]:
+       report = inspect_model(load_state_machine_from_text(template % body))
+       codes = sorted({item.code for item in report.diagnostics if item.code.startswith("W_REGION")})
+       print("%-50s %s" % (body, codes))
+
+.. testoutput::
+
+   speed = 0;                                         ['W_REGION_BLIND_OVERWRITE']
+   speed = speed - 1;                                 []
+   if [fault != 0] { speed = 0; }                     []
+   if [speed > 3] { speed = 0; } else { speed = 1; }  []
 
 Only the first version is reported. ``speed = speed - 1`` uses the old value,
 the conditional write does not overwrite in every cycle, and the last version
@@ -375,9 +491,30 @@ is about.
    :language: fcstm
    :caption: region_written_vs_running.fcstm
 
-.. literalinclude:: region_written_vs_running.demo.sh.txt
-   :language: text
-   :caption: region_written_vs_running.demo.sh.txt (output of region_written_vs_running.demo.sh)
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_written_vs_running.fcstm
+   ...
+     diagnostics: 0 errors / 3 warnings / 1 infos
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Panel.Lamp' reads state activity 'Panel.Switch.Pressed', which is produced by the later region 'Panel.Switch'; it sees the value from the previous cycle.
+     --> region_written_vs_running.fcstm:13:9
+   ...
+   $ pyfcstm inspect -i region_written_vs_running.fcstm --enable-verify --max-complexity-tier smt_linear
+   ...
+     diagnostics: 0 errors / 6 warnings / 3 infos
+   ...
+   [WARN] W_DEAD_GUARD
+     A transition guard is unsatisfiable under model variable type and runtime-definedness constraints.
+     --> region_written_vs_running.fcstm:14:9
+   ...
+   $ pyfcstm inspect -i region_written_vs_running.fcstm --enable-verify --max-complexity-tier smt_linear --format json
+   ...
+         "code": "W_DEAD_GUARD",
+   ...
+             "guard": "__active_Panel_Switch_Pressed != 0 && !(__active_Panel_Switch_Pressed != 0)",
+   ...
 
 The model asks about ``Panel.Switch.Pressed`` from the earlier region
 ``Lamp``. Line 14 asks for ``active(...) && !active(...)`` of the same state.
@@ -418,23 +555,101 @@ state it leads to with ``W_UNREACHABLE_STATE``:
    :language: fcstm
    :caption: region_never_completes.fcstm
 
-.. literalinclude:: region_never_completes.demo.sh
-   :language: bash
-   :caption: region_never_completes.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_never_completes.demo.sh.txt
-   :language: text
-   :caption: region_never_completes.demo.sh.txt
+   $ pyfcstm inspect -i region_never_completes.fcstm
+   ...
+   [WARN] W_UNREACHABLE_STATE
+     State 'Line.Stopped' is unreachable from the root entry path.
+     --> region_never_completes.fcstm:19:5
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'Line.Work' -> 'Line.Stopped' is unreachable for reasons: owner_never_completes.
+     --> region_never_completes.fcstm:20:5
+   ...
+   $ pyfcstm simulate -i region_never_completes.fcstm -e "\
+   cycle --input fault=0; \
+   cycle --input fault=1; \
+   cycle --input fault=1; \
+   cycle --input fault=1"
+   ...
+   Cycle: 1
+   Current State: Line.Work{Safety: Watch, Motion: Spin}
+   ...
+   Cycle: 2
+   Current State: Line.Work{Safety: [done], Motion: Spin}
+   ...
+   Cycle: 4
+   Current State: Line.Work{Safety: [done], Motion: Spin}
+   ...
 
 ``Safety`` can finish when ``fault`` is non-zero, but ``Motion`` has no ``[*]``
 exit. The run confirms the static answer: ``Safety`` becomes ``[done]`` in
-cycle 2 and the owner stays in ``Work`` forever. Adding ``Spin -> [*]`` to
-``Motion`` makes both regions able to finish, and the same input then moves the
-machine to ``Stopped``. The last part of the output is the one change this rule
-makes for models **without** regions: a composite state none of whose children
-can leave never takes its ordinary outgoing transitions. The simulator already
-behaved this way; earlier reports treated such a state as something the machine
-could simply leave.
+cycle 2 and the owner stays in ``Work`` forever. Adding ``Spin -> [*]`` to ``Motion`` lets both regions finish, and the same input then moves the machine to ``Stopped``:
+
+.. testcode::
+
+   from pyfcstm.diagnostics import inspect_model
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   machine = load_state_machine_from_text("""
+   input int fault;
+   output int motor = 0;
+   state Line {
+       [*] -> Work;
+       state Work {
+           region Safety { [*] -> Watch; state Watch; Watch -> [*] : if [fault != 0]; }
+           region Motion {
+               [*] -> Spin;
+               Spin -> [*] : if [fault != 0];
+               state Spin { during { motor = 1; } }
+           }
+       }
+       state Stopped;
+       Work -> Stopped : if [fault != 0];
+   }
+   """)
+   print([item.code for item in inspect_model(machine).diagnostics if item.code.startswith("W_UNREACHABLE")])
+   runtime = SimulationRuntime(machine, input_source={"fault": 0})
+   for fault in (0, 1, 1):
+       runtime.cycle(inputs={"fault": fault})
+       print(runtime.configuration)
+
+.. testoutput::
+
+   []
+   Line.Work{Safety: Watch, Motion: Spin}
+   Line.Stopped
+   Line.Stopped
+
+The last script is the one change this rule makes for models **without** regions: a composite state none of whose children can leave never takes its ordinary outgoing transitions.
+
+.. testcode::
+
+   from pyfcstm.diagnostics import inspect_model
+   from pyfcstm.model import load_state_machine_from_text
+
+   machine = load_state_machine_from_text("""
+   input int fault;
+   state Line {
+       [*] -> Work;
+       state Work { [*] -> Spin; state Spin; }
+       state Stopped;
+       Work -> Stopped : if [fault != 0];
+   }
+   """)
+   for item in inspect_model(machine).diagnostics:
+       if item.code.startswith("W_UNREACHABLE"):
+           print(item.code, item.message)
+
+.. testoutput::
+
+   W_UNREACHABLE_STATE State 'Line.Stopped' is unreachable from the root entry path.
+   W_UNREACHABLE_TRANSITION Authored transition 'Line.Work' -> 'Line.Stopped' is unreachable for reasons: owner_never_completes.
+
+The simulator already behaved this way; earlier reports treated such a state
+as something the machine could simply leave.
 
 Known over-approximations
 -------------------------
@@ -468,13 +683,65 @@ proof.
        dead.
      - Not shown: no run in this page produces it.
 
-.. literalinclude:: region_inspect_overapprox.demo.sh
-   :language: bash
-   :caption: region_inspect_overapprox.demo.sh
+Case 1, a state that only history skips:
 
-.. literalinclude:: region_inspect_overapprox.demo.sh.txt
-   :language: text
-   :caption: region_inspect_overapprox.demo.sh.txt
+.. testcode::
+
+   from pyfcstm.diagnostics import inspect_model
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   machine = load_state_machine_from_text("""
+   input int go;
+   state Plant {
+       [*] -> Idle;
+       state Idle;
+       state Mode {
+           [*] -> Cold;
+           [H] -> Warm;
+           state Cold;
+           state Warm;
+       }
+       Idle -> Mode.[H] : if [go != 0];
+   }
+   """)
+   print([item.code for item in inspect_model(machine).diagnostics if item.code.startswith("W_UNREACHABLE")])
+   runtime = SimulationRuntime(machine, input_source={"go": 0})
+   for go in (0, 1):
+       runtime.cycle(inputs={"go": go})
+       print(runtime.configuration)
+
+.. testoutput::
+
+   []
+   Plant.Idle
+   Plant.Mode.Warm
+
+Case 2, a forced declaration whose guard can never hold:
+
+.. testcode::
+
+   from pyfcstm.diagnostics import inspect_model
+   from pyfcstm.model import load_state_machine_from_text
+
+   machine = load_state_machine_from_text("""
+   input int fault;
+   state Line {
+       [*] -> Work;
+       state Work { [*] -> Spin; state Spin; }
+       state Stopped;
+       !Work -> Stopped : if [fault != 0 && fault == 0];
+   }
+   """)
+   for verify in (False, True):
+       report = inspect_model(machine, enable_verify=verify, max_complexity_tier="smt_linear")
+       codes = {item.code for item in report.diagnostics if item.code.startswith(("W_UNREACHABLE", "W_DEAD_GUARD"))}
+       print(verify, sorted(codes))
+
+.. testoutput::
+
+   False []
+   True ['W_DEAD_GUARD', 'W_UNREACHABLE_TRANSITION']
 
 In case 1 the first entry into ``Mode`` goes through ``[H] -> Warm``, so
 ``Cold`` is never entered, and the simulation ends in ``Warm``. Inspect

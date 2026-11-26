@@ -222,9 +222,9 @@
 .. testoutput::
 
    Trip -> Controller.Running.Safety.Watching.Trip
-   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: ...
-   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf ...
-   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf ...
+   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
    ..Stop -> Controller.Running.Stop
    /Running.Stop -> Controller.Running.Stop
 
@@ -257,7 +257,7 @@
    Reset !! Cannot resolve event path 'Reset': failed with both ...
        Controller.Idle
 
-第一个脚本展示依赖位置的名字的结果：``Trip`` 只有一个叶子找到；``Ping`` 有歧义，因为两个叶子各有一个 ``Ping``；
+第一个脚本展示依赖位置的名字的结果：``Trip`` 只有一个叶子找到；``Ping`` 有歧义，因为两个叶子各有一个 ``Ping``\ （报错信息列出每个候选及其来源叶子）；
 ``Nope`` 与 ``Reset`` 没有叶子找到，尽管 ``Reset`` 存在于根上，因为裸名字从不向上查找。``..Stop`` 和 ``/Running.Stop`` 都能到达拥有者的事件。
 第二个脚本对每一行都用全新的运行时执行 ``cycle``：被拒绝的调用不改变位置，已完成的区域让 ``Ping`` 不再有歧义，只有一个活动叶子时被拒绝的报错以 ``Cannot resolve event path`` 开头。这些输出确定了解析规则，不能说明解析一个名字要花多久。
 
@@ -315,8 +315,10 @@
    * - ``Root.Idle``
      - 普通叶子；与不含区域的模型相同。
 
-第一个脚本用上表中的每种写法，再用三个有所省略的位置，启动教程里的控制器
-（:download:`controller.fcstm </_models/controller.fcstm>`），并打印得到的配置。第二个脚本显示第一个周期会初始化被省略的区域。
+第一个脚本用上表中的每种写法，再用另外三个位置（只写成路径的拥有者、带有已完成区域的拥有者、没写子状态的复合状态），启动教程里的控制器
+（:download:`controller.fcstm </_models/controller.fcstm>`），并打印得到的配置。
+控制器有一个隐藏变量 ``__forced_0``，由模型转换为强制转换加入；热启动要像对待其他变量一样给它赋值（见下面的规则）。
+第二个脚本显示第一个周期会初始化被省略的区域。
 
 .. testcode::
 
@@ -325,13 +327,13 @@
 
    with open('controller.fcstm') as stream:
        model = load_state_machine_from_text(stream.read())
-   motion_on = next(s for s in model.walk_states() if s.path == ('Controller', 'Running', 'Motion', 'On'))
+   states = {state.path: state for state in model.walk_states()}
    positions = [
        'Controller.Running{Safety: Watching, Motion: On}',
        Configuration.parse(model, 'Controller.Running{Safety: Watching, Motion: On}'),
        'Controller.Running.Motion.On',
        ('Controller', 'Running', 'Motion', 'On'),
-       motion_on,
+       states[('Controller', 'Running', 'Motion', 'On')],
        'Controller.Running',
        'Controller.Running{Safety: [done], Motion: On}',
        'Controller',
@@ -384,35 +386,58 @@
 
 .. testcode::
 
-   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.model import Configuration, load_state_machine_from_text
    from pyfcstm.simulate import SimulationRuntime
 
    with open('controller.fcstm') as stream:
-       model = load_state_machine_from_text(stream.read())
+       text = stream.read()
+   model = load_state_machine_from_text(text)
+   other = load_state_machine_from_text(text)
+   other_states = {state.path: state for state in other.walk_states()}
    variables = {'permit': 1, 'motor': 1, '__forced_0': 0}
-   cases = [
-       ('Controller.Running{Safety: [done], Motion: [done]}', variables),
-       ('Controller.Running{Safety: Nowhere, Motion: On}', variables),
-       ('Controller.Running.Motion', variables),
-       ('Controller.Running{Safety: [*], Motion: On}', variables),
-       (5, variables),
-       ('Controller.Running.Motion.On', {'permit': 1, 'motor': 1}),
-   ]
-   for position, given in cases:
+   cases = {
+       'every region done': 'Controller.Running{Safety: [done], Motion: [done]}',
+       'region written twice': 'Controller.Running{Safety: Watching, Safety: Watching}',
+       'unknown state': 'Controller.Running{Safety: Nowhere, Motion: On}',
+       'a region as the position': 'Controller.Running.Motion',
+       'empty text': '',
+       'brace not closed': 'Controller.Running{Safety: Watching',
+       'marker [*]': 'Controller.Running{Safety: [*], Motion: On}',
+       'marker [Done]': 'Controller.Running{Safety: [Done], Motion: On}',
+       'Configuration of another model': Configuration.parse(
+           other, 'Controller.Running{Safety: Watching, Motion: On}'),
+       'State of another model': other_states[('Controller', 'Running', 'Motion', 'On')],
+       'a list': ['Controller', 'Running'],
+       'a number': 5,
+   }
+   for name, position in cases.items():
        try:
-           SimulationRuntime(model, initial_state=position, initial_vars=given,
+           SimulationRuntime(model, initial_state=position, initial_vars=variables,
                              input_source={'fault': 0, 'requested': 1})
        except (ValueError, TypeError) as error:
-           print(type(error).__name__ + ':', error)
+           print(name + ':', type(error).__name__ + ':', error)
+   try:
+       SimulationRuntime(model, initial_state='Controller.Running.Motion.On',
+                         initial_vars={'permit': 1, 'motor': 1},
+                         input_source={'fault': 0, 'requested': 1})
+   except ValueError as error:
+       print('hidden variable missing:', type(error).__name__ + ':', error)
 
 .. testoutput::
 
-   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
-   ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
-   ValueError: 'Controller.Running.Motion' names a region, not a state
-   ValueError: Expected a configuration identifier at line 1, column 28, got '['.
-   TypeError: initial_state must be str, tuple, State or Configuration, got int
-   ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
+   every region done: ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   region written twice: ValueError: Duplicate region in configuration for 'Controller.Running'.
+   unknown state: ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+   a region as the position: ValueError: 'Controller.Running.Motion' names a region, not a state
+   empty text: ValueError: State path cannot be empty
+   brace not closed: ValueError: Expected '}' at line 1, column 36, got end of input.
+   marker [*]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   marker [Done]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   Configuration of another model: ValueError: Provided Configuration does not belong to this state machine
+   State of another model: ValueError: Provided State object does not belong to this state machine
+   a list: TypeError: initial_state must be str, tuple, State or Configuration, got list
+   a number: TypeError: initial_state must be str, tuple, State or Configuration, got int
+   hidden variable missing: ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
 
 .. literalinclude:: pending_delta.fcstm
    :language: fcstm
@@ -608,11 +633,11 @@
    * - ``init <position> var=value ...``
      - 位置可以是配置文本、经过区域的点路径或状态路径。花括号里的空格不会切开参数，所以 ``init Controller.Running{Safety: Watching, Motion: On} permit=1`` 是一个位置。
        括号不平衡时报 ``Error: the braces of the configuration text '...' are not balanced.`` 并给出示例。同一个变量写两次时报 ``Error: variable 'permit' is assigned more than once.``
-       缺少变量时报 ``Error: All variables must be provided. Missing: [...]`` 并列出可用变量名。被拒绝的位置报 ``Initialization failed: <message>``，消息见上文的表。
+       缺少变量时报 ``Error: All variables must be provided. Missing: [...]`` 并列出可用变量名。被拒绝的位置报 ``Initialization failed: <message>``，消息就是 :ref:`sim-region-hot-start-zh` 一节里每个被拒绝的输入所打印的那些，下面的记录展示其中几条。
    * - ``events``
      - 列出对各活动叶子来说照原样输入就有效的事件。两个叶子用于不同事件的短名不会列出；祖先、拥有者或区域上的事件以完整路径列出。
    * - ``cycle [count] [events...] [--input name=value ...]``
-     - 每个周期都要给完整的输入向量：每个输入变量一个 ``--input``。事件名被拒绝时报 ``Cycle execution failed: ...``，文本见上文的表。
+     - 每个周期都要给完整的输入向量：每个输入变量一个 ``--input``。事件名被拒绝时报 ``Cycle execution failed: ...``，文本见 :ref:`sim-region-event-names-zh` 一节的表，最后一条记录展示其中一条。
    * - ``history``、``export``
      - ``state`` 列与字段是配置文本。
    * - 补全

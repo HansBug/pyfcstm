@@ -1,8 +1,0 @@
--- region_start.fbmcq (exit 0)
-reach status=sat outcome=witness_found exit=0
-  frame 0: Controller.Running{Safety: Watching, Motion: On}
-  frame 1: Controller.Idle
-  step 0: case_label=None
-    local Controller.Running.Safety [transition] Controller.Running.Safety.Watching::transition::__region_done__::1
-    local Controller.Running.Motion [transition] Controller.Running.Motion.On::transition::__region_done__::0
-    local Controller.Running [transition] Controller.Running::transition::Controller.Idle::0

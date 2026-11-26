@@ -10,8 +10,11 @@
 :doc:`/reference/region_model/index_zh`。
 
 每张任务卡都给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、\ **预期信号**\ 、\ **文件副作用**\ 、\ **失败时先查什么**\ 、\ **参考链接**\ 。
-所有示例模型都在本页同一目录里，请在存放 ``index_zh.rst`` 的目录运行命令。下面的输出来自该目录里的
-``*.demo.py`` 与 ``*.demox.sh``，重新构建文档会重新生成它们。
+请把任务卡提到的模型下载到一个空目录，在那里运行命令；涉及顺序的任务用到的
+:download:`controller.fcstm </_models/controller.fcstm>` 与
+:download:`controller_swapped.fcstm </_models/controller_swapped.fcstm>`
+就是第一个教程里的那两个模型。输出里单独一行 ``...`` 表示任务卡不讨论的内容。文档检查会用真实的 ``pyfcstm`` 运行本页的每条命令和脚本，
+所以输出就是你会得到的结果。
 
 1. 把一个状态拆成两个区域
 -------------------------
@@ -24,20 +27,35 @@
    :language: fcstm
    :caption: panel_regions.fcstm
 
-**命令或代码。** 用同一组输入运行两个模型，每个周期后打印配置（configuration）：
+**命令或代码。** 运行两个模型，并在第二个周期让两个输入同时变化。第一个周期（输出中省略）进入初始状态，
+每个周期后 ``Current State`` 一行打印配置（configuration）：
 
-.. literalinclude:: split_state.demo.py
-   :language: python
-   :caption: split_state.demo.py
+.. code-block:: console
 
-.. literalinclude:: split_state.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i panel_flat.fcstm -e "\
+   cycle --input hot=0 --input open=0; \
+   cycle --input hot=1 --input open=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input hot=1 --input open=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Panel.HotClosed
+   $ pyfcstm simulate -i panel_regions.fcstm -e "\
+   cycle --input hot=0 --input open=0; \
+   cycle --input hot=1 --input open=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input hot=1 --input open=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Panel{Temperature: Hot, Door: Open}
 
-**预期信号。** 只有一个输入变化的周期里，两个模型一致。第二个周期两个输入同时变化：平铺的机器只能走一条转换
+**预期信号。** 第二个周期里，平铺的机器只能走一条转换
 （``HotClosed``），漏掉了门；区域版两条都走（``Panel{Temperature: Hot, Door: Open}``）。每个区域每个周期推进一次，
 所以两个关注点在同一周期里变化时，拆分会改变行为。要拆分一台依赖单步行为的机器时，先检查这个差别。
 
-**文件副作用。** 无。脚本读取两个 ``.fcstm`` 文件并输出到标准输出。
+**文件副作用。** 无。命令读取两个 ``.fcstm`` 文件并输出到标准输出。
 
 **失败时先查什么。** 加载失败时运行 ``pyfcstm inspect -i panel_regions.fcstm`` 读第一条错误；常见原因是有状态留在区域之外
 （拥有者（owner）要么含区域，要么含子状态，不能混排，见任务 9）。
@@ -56,16 +74,25 @@
 
 **命令或代码。**
 
-.. literalinclude:: nest_regions.demo.py
-   :language: python
-   :caption: nest_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: nest_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i nested_cell.fcstm -e "\
+   cycle --input go=0; \
+   cycle --input go=1"
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Plant{Line: Cell{Feed: Waiting, Cut: Ready}, Monitor: Watching}
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant{Line: Cell{Feed: Pushing, Cut: Cutting}, Monitor: Watching}
 
 **预期信号。** 配置文本每个拥有者嵌套一层花括号：``Plant{Line: Cell{Feed: Waiting, Cut: Ready}, Monitor: Watching}``。
-内层拥有者是一个状态，所以每条路径都经过区域名（``Plant.Line.Cell.Feed.Waiting``）。``leaves`` 列出三个活动叶子，
-内层区域的 ``region_status`` 是 ``live``。
+内层拥有者是一个状态，所以每条路径都经过区域名（``Plant.Line.Cell.Feed.Waiting``），``go`` 变为 ``1`` 的那个周期里内层两个区域都会推进。
 
 **文件副作用。** 无。
 
@@ -85,15 +112,63 @@
 
 **命令或代码。**
 
-.. literalinclude:: shared_events.demo.py
-   :language: python
-   :caption: shared_events.demo.py
+先看共用事件，以及被拒绝的裸名字：
 
-.. literalinclude:: shared_events.demo.py.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i shared_event.fcstm -e "\
+   cycle; \
+   cycle /Start"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Start
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Rig{Left: Busy, Right: Busy}
+   $ pyfcstm simulate -i shared_event.fcstm -e "\
+   cycle; \
+   cycle Start"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Start
+   ────────────────────────────────────────────────────────────
+   Cycle execution failed: Position-dependent event name 'Start' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+   $ echo $?
+   1
+
+再看反例，每个区域各自拥有一个 ``Ping``：
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i scoped_event.fcstm -e "\
+   cycle; \
+   cycle Rig.Left.Ping; \
+   cycle Rig.Right.Ping"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Rig.Left.Ping
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Rig{Left: Busy, Right: Idle}
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Rig.Right.Ping
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Rig{Left: Busy, Right: Busy}
+   $ pyfcstm simulate -i scoped_event.fcstm -e "\
+   cycle; \
+   cycle Ping"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle Ping
+   ────────────────────────────────────────────────────────────
+   Cycle execution failed: Position-dependent event name 'Ping' matches no event from any active leaf (Rig.Left.Idle, Rig.Right.Idle); use the full event path or a root-based "/path".
+   $ echo $?
+   1
 
 **预期信号。** ``/Start`` 在一个周期里让两个区域都动。反例中 ``Rig.Left.Ping`` 与 ``Rig.Right.Ping`` 是两个不同的事件：
-只写一个只让一个区域动，两个都写才让两个都动。裸名字（``Start``、``Ping``）被拒绝，因为它要对每个活动叶子各解析一次，
+只写一个只让一个区域动，另一个区域要用它自己的事件。裸名字（``Start``、``Ping``）被拒绝并以退出码 1 结束，因为它要对每个活动叶子各解析一次，
 结果什么也没找到。区域里的 ``: 名字`` 归该区域，不会到拥有者里去找。
 
 **文件副作用。** 无。
@@ -109,26 +184,72 @@
 执行顺序。经验法则：读取另一个区域所写内容的区域放在它后面（前向依赖）；读取靠后区域的值，看到的是上一个周期的值
 （反向依赖）。
 
-**命令或代码。** ``order_regions.demo.py`` 在第二个周期发送 ``/Start``，并在第 4、5 个周期把 ``fault`` 置为 1：
+**命令或代码。** 在第二个周期发送 ``/Start``，并在第 4 个周期把 ``fault`` 置为 1（对调后的文件再在第 5 个周期置 1）。
+前三个周期在输出中省略：
 
-.. literalinclude:: order_regions.demo.py
-   :language: python
-   :caption: order_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: order_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i controller.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=0; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
+   $ pyfcstm simulate -i controller_swapped.fcstm -e "\
+   cycle --input fault=0 --input requested=0; \
+   cycle /Start --input fault=0 --input requested=0; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Controller.Running{Motion: On, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 1
+     permit = 0
 
-然后用 ``inspect`` 看哪种顺序可疑：
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input fault=1 --input requested=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 5
+   Current State: Controller.Running{Motion: Off, Safety: Watching}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
 
-.. literalinclude:: order_check.demo.sh
-   :language: bash
+然后用 ``inspect`` 看哪种顺序可疑。``diagnostics:`` 开头的一行统计诊断数量，对调后的文件多一条：
 
-.. literalinclude:: order_check.demo.sh.txt
-   :language: text
+.. code-block:: console
 
-**预期信号。** ``controller.fcstm`` 在故障周期（第 4 周期）就已经是 ``permit=0 motor=0``。对调后的文件里第 4 周期电机仍是
-``1``，晚一个周期才变 ``0``，故障解除后也晚一个周期恢复。``inspect`` 对 ``controller.fcstm`` 什么也不输出（过滤只保留区域顺序
-诊断），对调换后的文件报告 ``I_REGION_BACKWARD_READ``；它是提示，不是缺陷。
+   $ pyfcstm inspect -i controller.fcstm --color never
+   ...
+     diagnostics: 0 errors / 4 warnings / 0 infos
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --color never
+   ...
+     diagnostics: 0 errors / 4 warnings / 1 infos
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+   ...
+
+**预期信号。** ``controller.fcstm`` 在故障周期（第 4 周期）就已经是 ``permit = 0``、``motor = 0``。对调后的文件里第 4 周期电机仍是
+``1``，晚一个周期才变 ``0``。``inspect`` 对 ``controller.fcstm`` 统计到 0 条提示，对调换后的文件报告 ``I_REGION_BACKWARD_READ``；
+它是提示，不是缺陷。
 
 **文件副作用。** 无。
 
@@ -144,14 +265,66 @@
 
 **命令或代码。**
 
-.. literalinclude:: join_regions.demo.py
-   :language: python
-   :caption: join_regions.demo.py
+先让 ``A`` 完成，``B`` 晚一个周期完成：
 
-.. literalinclude:: join_regions.demo.py.txt
-   :language: text
+.. code-block:: console
 
-**预期信号。** 完成的区域显示 ``[done]`` 并一直保持。最后一个区域完成时，拥有者在同一周期里续接（``Job.Next``）。
+   $ pyfcstm simulate -i join_done.fcstm -e "\
+   cycle --input a_ready=0 --input b_ready=0; \
+   cycle --input a_ready=1 --input b_ready=0; \
+   cycle --input a_ready=1 --input b_ready=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     stage = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Job.Next
+   Variables:
+     stage = 1
+
+再看带条件的版本，``B`` 本该完成的周期里 ``gate`` 一直是 ``0``：
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i join_gate.fcstm -e "\
+   cycle --input a_ready=1 --input b_ready=0 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=0; \
+   cycle --input a_ready=1 --input b_ready=1 --input gate=1"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     ticks = 2
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Job.Work{A: [done], B: Run}
+   Variables:
+     ticks = 3
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input a_ready=1 --input b_ready=1 --input gate=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Job.Next
+   Variables:
+     ticks = 3
+
+**预期信号。** 完成的区域显示 ``[done]`` 并一直保持。最后一个区域完成时，拥有者在同一周期里续接（``Job.Next``，``stage = 1``）。
 ``join_gate.fcstm`` 里，``B`` 本该完成的周期中条件为假，于是最后一次完成被拒绝：``B`` 留在 ``Run``，它的 ``during`` 照常执行
 （``ticks`` 增长），``A`` 保持 ``[done]``，机器不会停在全体已完成的位置。触发 ``B`` 完成的事件或条件不会保留到下一个周期；
 ``gate=1`` 的那个周期机器就离开了。
@@ -169,28 +342,76 @@
 **起点。** ``preempt_group.fcstm``：拥有者上的强制转换（forced transition） ``!Job -> Idle : /Cancel``，以及把一位数字追加到 ``order`` 的 ``exit`` 动作。
 ``preempt_blocked.fcstm`` 把强制转换指向一个进不去的状态。
 
-**命令或代码。** ``preempt_owner.demo.py`` 运行这两个模型，发送 ``/Cancel``\ （第二次运行还发送 ``/ADone``）：
+**命令或代码。** 先用 ``/ADone`` 让 ``A`` 完成，再发送 ``/Cancel``：
 
-.. literalinclude:: preempt_owner.demo.py
-   :language: python
-   :caption: preempt_owner.demo.py
+.. code-block:: console
 
-.. literalinclude:: preempt_owner.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i preempt_group.fcstm -e "\
+   cycle; \
+   cycle /ADone; \
+   cycle /Cancel"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /ADone
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Workflow.Job{A: [done], B: Working}
+   Variables:
+     __forced_0 = 0
+     order = 1
 
-强制转换是简写。``preempt_expansion.demo.py`` 用 ``to_ast_node()`` 打印展开后的模型，可以看到每个区域里实际有什么：
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Cancel
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Workflow.Idle
+   Variables:
+     __forced_0 = 0
+     order = 123
 
-.. literalinclude:: preempt_expansion.demo.py
-   :language: python
-   :caption: preempt_expansion.demo.py
+再看强制转换指向进不去的状态的模型：
 
-.. literalinclude:: preempt_expansion.demo.py.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i preempt_blocked.fcstm -e "\
+   cycle; \
+   cycle /Cancel"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle /Cancel
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Workflow.Job{A: [done], B: Working}
+   Variables:
+     __forced_0 = 1
+     order = 1
+
+强制转换是简写。加载模型并用 ``to_ast_node()`` 打印，可以看到每个区域里实际有什么（输出只保留本任务卡讨论的部分）：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   model = load_state_machine_from_file("preempt_group.fcstm")
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   ...
+   def int __forced_0 = 0;
+   ...
+           region A {
+   ...
+               Working -> [*] : if [__forced_0 == 1];
+               Working -> [*] : /Cancel effect {
+                   __forced_0 = 1;
+               }
+   ...
 
 **预期信号。** ``/Cancel`` 在一个周期里离开 ``Job``，退出按书写顺序执行：``1``\ （``A``）、``2``\ （``B``）、再是拥有者（``3``），
-所以 ``order=123``。已经 ``[done]`` 的区域不会再次退出（第二次运行在 ``/ADone`` 时是 ``1``，最后仍是 ``123``）。目标进不去时，
+所以 ``order = 123``。已经 ``[done]`` 的区域不会再次退出（``/ADone`` 之后 ``order = 1``，最后仍是 ``123``）。目标进不去时，
 区域依次结束直到最后一个：``A`` 变成 ``[done]``，``B`` 继续工作，机器不会停在退了一半的拥有者上。展开结果里有一个隐藏变量
-``__forced_0`` 和每个区域里普通的 ``-> [*]``；这个变量和其他变量一样出现在 ``runtime.vars`` 里。
+``__forced_0`` 和每个区域里普通的 ``-> [*]``；这个变量和其他变量一样出现在每个周期打印的变量列表里。
 
 **文件副作用。** 无。
 
@@ -206,12 +427,35 @@
 
 **命令或代码。**
 
-.. literalinclude:: watch_regions.demo.py
-   :language: python
-   :caption: watch_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: watch_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i watch_regions.fcstm -e "\
+   cycle --input go=0; \
+   cycle --input go=1; \
+   cycle --input go=1"
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=0
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Plant{Earlier: Waiting, Trigger: Quiet, Later: Waiting}
+   Variables:
+     __active_Plant_Trigger_Fired = 0
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant{Earlier: Waiting, Trigger: Fired, Later: Saw}
+   Variables:
+     __active_Plant_Trigger_Fired = 1
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle --input go=1
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Plant{Earlier: Saw, Trigger: Fired, Later: Saw}
+   Variables:
+     __active_Plant_Trigger_Fired = 1
 
 **预期信号。** ``Trigger`` 到达 ``Fired`` 的那个周期，``Later`` 已经显示 ``Saw``；``Earlier`` 晚一个周期才显示 ``Saw``。
 ``active()`` 接受状态路径（不接受区域路径），从状态的 ``enter`` 开始到 ``exit`` 执行完毕为止都能看到该状态。
@@ -229,14 +473,48 @@
 **起点。** ``aspect_regions.fcstm``：``Plant`` 有祖先切面 ``>> during before``；``Left`` 与 ``Right`` 各有自己的区域切面。
 ``Left`` 可以用 ``/End`` 结束；``Right`` 的叶子没有 ``during`` 动作。
 
-**命令或代码。** 脚本每个周期后打印计数器，``/End`` 在第三个周期发送：
+**命令或代码。** 每个周期后打印计数器，``/End`` 在第三个周期发送，第一个周期在输出中省略：
 
-.. literalinclude:: aspect_regions.demo.py
-   :language: python
-   :caption: aspect_regions.demo.py
+.. code-block:: console
 
-.. literalinclude:: aspect_regions.demo.py.txt
-   :language: text
+   $ pyfcstm simulate -i aspect_regions.fcstm -e "\
+   cycle; \
+   cycle; \
+   cycle /End; \
+   cycle"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Plant.Run{Left: A, Right: B, Third: C}
+   Variables:
+     ancestor = 2
+     left = 2
+     right = 2
+     work = 22
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle /End
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Plant.Run{Left: [done], Right: B, Third: C}
+   Variables:
+     ancestor = 3
+     left = 2
+     right = 3
+     work = 32
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 4
+   Current State: Plant.Run{Left: [done], Right: B, Third: C}
+   Variables:
+     ancestor = 4
+     left = 2
+     right = 4
+     work = 42
 
 **预期信号。** 三个叶子都在工作，祖先切面每个周期仍只执行一次（``ancestor`` 每次加一）。区域切面对每个有叶子在做
 ``during`` 步骤的区域每周期执行一次，即使该叶子没有声明 ``during`` 动作（``right`` 每个周期都增长）。``left`` 在 ``Left`` 结束的
@@ -262,7 +540,46 @@
    :language: fcstm
    :caption: err_active_region.fcstm.txt
 
-**命令或代码。** 每个 ``err_*.demox.sh`` 运行 ``pyfcstm inspect -i err_<名字>.fcstm.txt --color never``。这些都是负例，不要复制这些模型。
+**命令或代码。** 对每个模型运行 ``pyfcstm inspect -i err_<名字>.fcstm.txt --color never``。这些都是负例，不要复制这些模型。每条命令都以退出码 1 结束：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i err_cross_region.fcstm.txt --color never
+   Invalid state machine model in err_cross_region.fcstm.txt: Unknown to state 'Y' of transition:
+   X -> Y; (line 5)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_mixed_children.fcstm.txt --color never
+   Failed to parse input DSL file err_mixed_children.fcstm.txt: Found 2 errors during parsing:
+   Error 1: Syntax error at line 4, column 4, near 'region': Unexpected token 'region'
+   Error 2: Syntax error at line 8, column 0, near '}': Extra closing brace - check for mismatched braces
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_empty_region.fcstm.txt --color never
+   Invalid state machine model in err_empty_region.fcstm.txt: Invalid region structure at Root.R (empty_region). (line 2)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_duplicate_region.fcstm.txt --color never
+   Invalid state machine model in err_duplicate_region.fcstm.txt: Duplicate region 'R' in Root. (line 6)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_active_region.fcstm.txt --color never
+   Invalid state machine model in err_active_region.fcstm.txt: Invalid active query 'Root.S' (region). (line 6)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_history_owner.fcstm.txt --color never
+   Invalid state machine model in err_history_owner.fcstm.txt: Invalid region structure at Root.Owner (history_boundary). (line 3)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i err_region_in_region.fcstm.txt --color never
+   Failed to parse input DSL file err_region_in_region.fcstm.txt: Found 3 errors during parsing:
+   Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
+   Error 2: Syntax error at line 3, column 21, near '{': Invalid syntax - check for missing semicolons, braces, or operators
+   Error 3: Syntax error at line 7, column 8, near '[*]': Unexpected token '[*]'
+   $ echo $?
+   1
+
+下表列出每份报告背后的错误和修法。
 
 .. list-table::
    :header-rows: 1
@@ -293,21 +610,9 @@
      - ``Failed to parse input DSL file ...: Found 3 errors during parsing:``
      - 在两个区域之间放一个状态
 
-每份报告的全文和退出码都在生成的文件里。以 ``err_cross_region.demox.sh`` 为例：
-
-.. literalinclude:: err_cross_region.demox.sh.err
-   :language: text
-
-退出码：
-
-.. literalinclude:: err_cross_region.demox.sh.exitcode
-   :language: text
-
-其余六个脚本的报告在 ``err_mixed_children.demox.sh.err``、``err_empty_region.demox.sh.err``、``err_duplicate_region.demox.sh.err``、
-``err_active_region.demox.sh.err``、``err_history_owner.demox.sh.err`` 与 ``err_region_in_region.demox.sh.err`` 里；
 ``pyfcstm inspect`` 把这些失败写到标准错误，标准输出为空。
 
-**预期信号。** 每条命令都以退出码 1 结束，并输出上表中的某份报告。
+**预期信号。** 每条命令都以退出码 1 结束，并输出上表中的某份报告，如上面的块所示。
 
 **文件副作用。** 无。
 

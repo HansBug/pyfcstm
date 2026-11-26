@@ -1,8 +1,0 @@
-go=0
-  configuration: Plant{Line: Cell{Feed: Waiting, Cut: Ready}, Monitor: Watching}
-  leaves: ['Plant.Line.Cell.Feed.Waiting', 'Plant.Line.Cell.Cut.Ready', 'Plant.Monitor.Watching']
-go=1
-  configuration: Plant{Line: Cell{Feed: Pushing, Cut: Cutting}, Monitor: Watching}
-  leaves: ['Plant.Line.Cell.Feed.Pushing', 'Plant.Line.Cell.Cut.Cutting', 'Plant.Monitor.Watching']
-live
-True

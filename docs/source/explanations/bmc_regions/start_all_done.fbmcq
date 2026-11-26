@@ -1,0 +1,2 @@
+init state("Root.Job{A: [done], B: [done]}");
+check reach <= 1: true;

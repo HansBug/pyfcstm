@@ -1,0 +1,22 @@
+--- joint_a_done.fbmcq
+check reach <= 3: active("Root.Job{A: [done]}");
+$ pyfcstm bmc -i joint.fcstm -q joint_a_done.fbmcq --color never | head -n 1
+BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+--- joint_all_done.fbmcq
+check reach <= 3: active("Root.Job{A: [done], B: [done]}");
+$ pyfcstm bmc -i joint.fcstm -q joint_all_done.fbmcq --color never | head -n 1
+BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+--- joint_next.fbmcq
+check reach <= 3: active("Root.Next");
+$ pyfcstm bmc -i joint.fcstm -q joint_next.fbmcq --color never | head -n 1
+BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+--- joint_blocked_b_done.fbmcq
+assume always: ok == 0;
+check reach <= 3: active("Root.Job{B: [done]}");
+$ pyfcstm bmc -i joint.fcstm -q joint_blocked_b_done.fbmcq --color never | head -n 1
+BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+--- joint_blocked_next.fbmcq
+assume always: ok == 0;
+check reach <= 3: active("Root.Next");
+$ pyfcstm bmc -i joint.fcstm -q joint_blocked_next.fbmcq --color never | head -n 1
+BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS

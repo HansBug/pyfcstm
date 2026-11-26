@@ -1,0 +1,14 @@
+check reach <= 2: called("Root.O.B.Q.OnQ", step=0, where active("Root.O{A: P}"));
+BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+check reach <= 2: called("Root.O.B.Q.OnQ", step=0, where active("Root.O{A: [init]}"));
+BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+check reach <= 2: called("Root.O.A.P.OnEnter", step=0, where active("Root.O{B: [init]}"));
+BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+check reach <= 2: called("Root.O.A.P.OnEnter", step=1, where active("Root.O{B: [init]}"));
+BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+check reach <= 2: called("Root.O.A.P.OnEnter", step=1, where active("Root.O{B: Q}"));
+BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+check reach <= 2: called("Root.O.A.P.OnExit", step=1, where active("Root.O{B: Q}"));
+BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+check reach <= 2: called("Root.O.A.P.OnExit", step=1, where active("Root.O{B: [init]}"));
+BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS

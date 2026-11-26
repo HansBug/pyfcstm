@@ -1,0 +1,2 @@
+assume always: ok == 0;
+check reach <= 3: active("Root.Next");

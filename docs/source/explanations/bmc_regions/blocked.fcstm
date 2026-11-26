@@ -1,0 +1,8 @@
+input int g;
+state Root {
+    [*] -> Run;
+    state Run {
+        region A { [*] -> X; state X; }
+        region B { [*] -> Y : if [g > 0]; state Y; }
+    }
+}

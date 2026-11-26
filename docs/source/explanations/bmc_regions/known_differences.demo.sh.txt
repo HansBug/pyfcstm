@@ -1,0 +1,18 @@
+$ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never
+BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+  Runtime error: modulo_by_zero at step 1
+  Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
+  Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+exit=5
+
+$ pyfcstm bmc -i outranked.fcstm -q outranked.fbmcq --color never
+BMC reach <= 3: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+  Runtime error: modulo_by_zero at step 1
+  Runtime error location: guard g1 in transition Root.Q::1::Q->T2
+  Replay: runtime error reproduced: transition guard evaluation failed: integer division or modulo by zero
+exit=5
+
+$ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never --no-runtime-safety
+Unexpected error found when running pyfcstm!
+SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+exit=1

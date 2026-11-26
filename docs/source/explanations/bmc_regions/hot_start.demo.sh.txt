@@ -1,0 +1,10 @@
+--- start_motion_on.fbmcq
+init state("Controller.Running{Motion: On}");
+check reach <= 1: active("Controller.Running{Safety: Watching, Motion: On}");
+$ pyfcstm bmc -i ../../tutorials/regions/controller.fcstm -q start_motion_on.fbmcq --color never | sed -n '/^Trace/,/^$/p'
+Trace
+  0: Controller.Running{Safety: [init], Motion: On}
+       -> Controller.Running{Safety: Watching, Motion: On} [initial]
+       Running: [start] -> Safety.Watching [initial]
+       Motion: On -> On [fallback]
+

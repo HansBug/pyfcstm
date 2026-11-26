@@ -1,1 +1,0 @@
-pyfcstm -v

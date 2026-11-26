@@ -1,0 +1,2 @@
+init state("Controller.Running{Safety: Watching, Motion: On}") where permit == 1 && motor == 1;
+check reach <= 1: active("Controller.Idle");

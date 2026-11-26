@@ -1036,6 +1036,442 @@ Environment variables
      - Windows cache output
      - Base directory for omitted ``visualize -o`` outputs on Windows.
 
+Ordered regions in drawings
+---------------------------
+
+A state that owns ``region`` blocks is drawn as a concurrent state, not as a
+group of ordinary child states: a region is never a node with its own border,
+and it is never the source or target of an arrow. The same models are drawn in
+four places with one convention: ``pyfcstm plantuml`` / ``pyfcstm visualize``
+(PlantUML text), ``StateMachine.diagram()`` (portable snapshot), ``pyfcstm
+diagram`` (JSON, HTML viewer or SVG/PNG/PDF export) and the VS Code preview.
+The example models live next to this page: :download:`region_pipeline.fcstm <region_pipeline.fcstm>` (two
+regions, an aspect on the owner and on a region, a guard that calls
+``active(...)``), :download:`region_nested.fcstm <region_nested.fcstm>` (nested owners, an event declared by
+use inside a region), :download:`region_single.fcstm <region_single.fcstm>` (one region),
+:download:`controller.fcstm </_models/controller.fcstm>` (the tutorial controller, a forced
+transition on the owner) and :download:`region_case_alias.fcstm.txt <region_case_alias.fcstm.txt>`
+(a counterexample). Download them into an empty directory to run the commands.
+
+.. literalinclude:: region_pipeline.fcstm
+   :language: fcstm
+   :caption: region_pipeline.fcstm
+
+.. literalinclude:: region_nested.fcstm
+   :language: fcstm
+   :caption: region_nested.fcstm
+
+.. literalinclude:: region_single.fcstm
+   :language: fcstm
+   :caption: region_single.fcstm
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: region_case_alias.fcstm.txt
+   :language: fcstm
+   :caption: region_case_alias.fcstm.txt
+
+PlantUML export
+~~~~~~~~~~~~~~~
+
+.. list-table:: How a region is exported
+   :header-rows: 1
+   :widths: 24 76
+
+   * - Model fact
+     - PlantUML text
+   * - A region of an owner
+     - A concurrent section inside the owner's ``state ... {`` block. The first line is a ``note as <alias>`` block whose first row is ``**region N: Name**``. ``N`` is the position in which the region is written, which is also the order in which regions run.
+   * - Separation of two regions
+     - A line containing only ``--`` between the two sections. One region (``region_single.fcstm``) produces no ``--``; the ``region 1:`` note is still written.
+   * - ``>> during before`` / ``>> during after`` written inside a region
+     - Extra rows inside that region's note, only when aspect actions are visible: ``-l full``, or ``-c show_lifecycle_actions=True`` (aspects follow it); ``-c show_lifecycle_actions=True -c show_aspect_actions=False`` hides them again, and ``-c show_aspect_actions=True`` alone changes nothing while lifecycle actions are hidden. With ``normal`` the note has the title row only.
+   * - ``>> during before`` / ``>> during after`` written on the owner or an ancestor
+     - A description line of the owner state (``line__work : >> during before {...}``), as for any composite state, only when aspect actions are visible (``-l full``, or ``-c show_lifecycle_actions=True`` without ``-c show_aspect_actions=False``). It is not copied into the regions.
+   * - Transitions and states written inside a region
+     - Drawn between the region's note and the next ``--``; the region's ``[*] -->`` initial arrow is part of its section.
+   * - Event written inside a region
+     - Belongs to the region: the legend path is the path from the root (without the root name) through the region, for example ``/Work.Intake.Fill``. The same event name in two regions is two events.
+   * - ``active("Owner.Region.State")`` in a guard
+     - Printed as written, with the full path through the region. The hidden flag variables that model construction adds are not drawn.
+   * - Forced transition on the owner (``!Running -> Idle : /Stop``)
+     - Drawn once, from the owner, in the authored form. The expanded transitions and the hidden ``__forced_*`` variable are not drawn, and the variable legend does not list them.
+   * - ``max_depth``
+     - A region counts as one layer. Collapsed content of a region is a single ``state "..."`` inside the region's section; the region notes and the ``--`` separators stay.
+
+Real output follows. ``...`` stands for the text that is left out: the
+skinparam block, the variable legend and the lines that the paragraph below does
+not discuss.
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_pipeline.fcstm
+   ...
+   state "Line" as line <<composite>> {
+       state "Idle" as line__idle
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "Wait" as line__work__intake__wait
+           state "Full" as line__work__intake__full
+           [*] --> line__work__intake__wait
+           line__work__intake__wait --> line__work__intake__full : Fill
+           line__work__intake__full --> [*]
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "Hold" as line__work__pack__hold
+           state "Boxed" as line__work__pack__boxed
+           [*] --> line__work__pack__hold
+           line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+       }
+       [*] --> line__idle
+       line__idle --> line__work : Go
+   }
+   [*] --> line
+   line --> [*]
+   @enduml
+   $ pyfcstm plantuml -i region_pipeline.fcstm -l full
+   ...
+               **region 1: Intake**
+               >> during after {
+                   ready = 1;
+               }
+           end note
+   ...
+       line__work : >> during before {\n    stage = stage + 1;\n}
+   ...
+
+Reading the output: the two ``**region N: ...**`` notes carry the writing
+order; ``--`` is the only separator; the ``active(...)`` guard keeps the path
+``Line.Work.Intake.Full``; the owner's ``>> during before`` is a description
+line of ``line__work`` (the literal ``\n`` is the PlantUML line break that
+every action description uses); the region's own aspect appears in its note
+only with ``-l full``. You cannot conclude from the picture how the regions
+interact: the arrows between the sections are guards, not communication.
+
+``max_depth`` counts the region as a layer: ``1`` collapses ``Work``, ``2``
+shows both region notes but collapses what they hold, ``3`` shows everything.
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=1
+   ...
+       state "Work" as line__work <<composite>> {
+           state "..." as line__work___collapsed_
+       }
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=2
+   ...
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "..." as line__work__intake___collapsed_
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "..." as line__work__pack___collapsed_
+       }
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c max_depth=3
+   ...
+       state "Work" as line__work <<composite>> {
+           note as line__work__intake
+               **region 1: Intake**
+           end note
+           state "Wait" as line__work__intake__wait
+           state "Full" as line__work__intake__full
+           [*] --> line__work__intake__wait
+           line__work__intake__wait --> line__work__intake__full : Fill
+           line__work__intake__full --> [*]
+           --
+           note as line__work__pack
+               **region 2: Pack**
+           end note
+           state "Hold" as line__work__pack__hold
+           state "Boxed" as line__work__pack__boxed
+           [*] --> line__work__pack__hold
+           line__work__pack__hold --> line__work__pack__boxed : active("Line.Work.Intake.Full") && ready == 1
+       }
+   ...
+
+Events written in a region belong to that region (the first command below
+declares nothing on the owner; ``Merge`` is written inside ``Left``). The
+legend shows the path through the region:
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_nested.fcstm -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Merge** (1 transitions)
+     <size:10><color:gray>/Cell.Left.Merge</color></size>
+   endlegend
+   ...
+   $ pyfcstm plantuml -i region_pipeline.fcstm -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Go** (1 transitions)
+     <size:10><color:gray>/Go</color></size>
+   <color:#000000>■</color> **Fill** (1 transitions)
+     <size:10><color:gray>/Work.Intake.Fill</color></size>
+   endlegend
+   ...
+
+One region, and nested regions (the inner owner ``Pair`` is itself a section of
+``Left``, and it has its own ``--``):
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_single.fcstm
+   ...
+   state "Solo" as solo <<composite>> {
+       state "Only" as solo__only <<composite>> {
+           note as solo__only__lane
+               **region 1: Lane**
+           end note
+           state "Run" as solo__only__lane__run
+           [*] --> solo__only__lane__run
+       }
+       [*] --> solo__only
+   }
+   [*] --> solo
+   solo --> [*]
+   @enduml
+   $ pyfcstm plantuml -i region_nested.fcstm
+   ...
+   state "Plant" as plant <<composite>> {
+       state "Cell" as plant__cell <<composite>> {
+           note as plant__cell__left
+               **region 1: Left**
+           end note
+           state "Idle" as plant__cell__left__idle
+           state "Pair" as plant__cell__left__pair <<composite>> {
+               note as plant__cell__left__pair__inner
+                   **region 1: Inner**
+               end note
+               state "A" as plant__cell__left__pair__inner__a
+               [*] --> plant__cell__left__pair__inner__a
+               --
+               note as plant__cell__left__pair__outer
+                   **region 2: Outer**
+               end note
+               state "B" as plant__cell__left__pair__outer__b
+               [*] --> plant__cell__left__pair__outer__b
+           }
+           [*] --> plant__cell__left__idle
+           plant__cell__left__idle --> plant__cell__left__pair : Merge
+           --
+           note as plant__cell__right
+               **region 2: Right**
+           end note
+           state "Idle" as plant__cell__right__idle
+           [*] --> plant__cell__right__idle
+       }
+       [*] --> plant__cell
+   }
+   [*] --> plant
+   plant --> [*]
+   @enduml
+
+A forced transition on the owner is drawn once and the hidden variable does
+not appear (compare the variable legend with the model, which declares four
+variables and no ``__forced_0``; the model is ``controller.fcstm``):
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm -l full
+   ...
+   legend top left
+   |= Variable |= Type |= Initial Value |= Role |
+   | fault | int | N/A | input |
+   | requested | int | N/A | input |
+   | permit | int | 0 | control |
+   | motor | int | 0 | output |
+   endlegend
+
+   state "Controller" as controller <<composite>> {
+       state "Idle" as controller__idle
+       controller__idle : during {\n    motor = 0;\n}
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           controller__running__safety__watching : during {\n    if [fault != 0] {\n        permit = 0;\n    } else {\n        permit = 1;\n    }\n}
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "Off" as controller__running__motion__off
+           controller__running__motion__off : during {\n    motor = 0;\n}
+           state "On" as controller__running__motion__on
+           controller__running__motion__on : during {\n    motor = 1;\n}
+           [*] --> controller__running__motion__off
+           controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+           controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+       }
+       controller__running --> controller__idle : Stop
+       [*] --> controller__idle
+       controller__idle --> controller__running : Start
+   }
+   [*] --> controller
+   controller --> [*]
+   @enduml
+
+.. list-table:: PlantUML counterexamples and limits for regions
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Case
+     - What happens
+   * - Two regions or states whose names differ only in letter case (``Alpha`` and ``alpha``)
+     - The model is accepted, but the PlantUML alias is built from the lower-cased path, so both get the same alias (``p__alpha``, ``p__alpha__x`` below). The text is written with exit status ``0`` and the duplicate aliases are for PlantUML to resolve. Do not rely on a picture of such a model; rename one of them. This is the current behavior; it is not rejected by the exporter.
+   * - Forcing PlantUML's built-in Smetana layout
+     - Smetana does not support concurrent sections and draws only the first region. ``pyfcstm`` never emits a layout directive, so only a user who forces it (for example with a ``!pragma layout`` line added by hand) meets this. Use the default Graphviz layout. This is a limitation of PlantUML, recorded here from its behavior; pyfcstm does not test it.
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i region_case_alias.fcstm.txt
+   ...
+   state "P" as p <<composite>> {
+       note as p__alpha
+           **region 1: Alpha**
+       end note
+       state "X" as p__alpha__x
+       [*] --> p__alpha__x
+       --
+       note as p__alpha
+           **region 2: alpha**
+       end note
+       state "X" as p__alpha__x
+       [*] --> p__alpha__x
+   }
+   [*] --> p
+   p --> [*]
+   @enduml
+
+The command above exits with status ``0``. Do not copy this model.
+
+Diagram snapshot, JSON and viewer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``StateMachine.diagram()`` and ``pyfcstm diagram -i X.fcstm`` (JSON on stdout
+without ``-o``) put a region into the owner's ``children`` list, after the
+owner's ordinary states. A region node has the keys of a state node, plus
+``"region": true`` and ``"ordinal"`` (one-based, the writing and execution
+order). The two keys are absent from every node of a model without regions, so
+the JSON of such a model is unchanged. A region's states are its ``children``,
+its transitions are its ``transitions`` and its ``>> during`` aspects are its
+``actions``; its ``id`` is the dotted path through the region (``Line.Work.Intake``).
+The guard label keeps ``active("...")`` as written; hidden flag writes are left
+out of ``actions``.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_pipeline.fcstm', encoding='utf-8') as stream:
+       model = load_state_machine_from_text(stream.read())
+   data = model.diagram().to_dict()
+
+
+   nodes = {}
+
+
+   def walk(node, depth=0):
+       nodes[node['id']] = node
+       kind = 'region' if node.get('region') else 'state'
+       ordinal = ' ordinal=%d' % node['ordinal'] if node.get('region') else ''
+       print('%s%s %s id=%s%s' % ('  ' * depth, kind, node['name'], node['id'], ordinal))
+       for child in node['children']:
+           walk(child, depth + 1)
+
+
+   walk(data['rootState'])
+   print('work actions:', [a['label'] for a in nodes['Line.Work']['actions']])
+   print('intake actions:', [a['label'] for a in nodes['Line.Work.Intake']['actions']])
+   pack = nodes['Line.Work.Pack']
+   print('pack guards:', [t['guardLabel'] for t in pack['transitions'] if t['guardLabel']])
+   print(model.diagram().with_view_state(collapsed_state_ids=('Line.Work.Intake',)).view_state)
+
+.. testoutput::
+
+   state Line id=Line
+     state Idle id=Line.Idle
+     state Work id=Line.Work
+       region Intake id=Line.Work.Intake ordinal=1
+         state Wait id=Line.Work.Intake.Wait
+         state Full id=Line.Work.Intake.Full
+       region Pack id=Line.Work.Pack ordinal=2
+         state Hold id=Line.Work.Pack.Hold
+         state Boxed id=Line.Work.Pack.Boxed
+   work actions: ['>> during before {1 op}']
+   intake actions: ['>> during after {1 op}']
+   pack guards: ['active("Line.Work.Intake.Full") && ready == 1']
+   DiagramViewState(mode='compare', collapsed_state_ids=('Line.Work.Intake',), zoom=None, pan_x=None, pan_y=None)
+
+Reading the output: ``Intake`` and ``Pack`` are siblings of the states of
+``Work`` in the tree, ordinals ``1`` and ``2``; the aspect of ``Work`` and the
+aspect of ``Intake`` are kept apart (``actions`` of each node); a region id is
+a valid entry of ``collapsed_state_ids`` (``with_view_state`` accepts it and
+reports it back unchanged). Only the node of the region carries ``region`` and
+``ordinal``.
+
+.. list-table:: How the viewer draws a region (``layoutFcstmGraph`` and the SVG renderer in jsfcstm)
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Aspect
+     - Behavior
+   * - Frame
+     - No border of its own. The regions of one owner tile the inside of the owner's frame, below the owner's title bar.
+   * - Separator
+     - A dashed divider on the edge a region shares with the previous region; the first region has none. The divider is vertical in a top-to-bottom diagram (regions side by side) and horizontal in a left-to-right diagram (regions stacked).
+   * - Sizes
+     - Regions of one owner have the same height in a top-to-bottom diagram and the same width in a left-to-right diagram.
+   * - Title
+     - ``region N: Name`` in bold at the region's top-left; ``N`` is the writing order. The title is kept wide enough for the collapse button.
+   * - Order
+     - Along the direction of the diagram: left to right in a top-to-bottom diagram, top to bottom in a left-to-right one. The order is restored after layout, so it does not depend on the layout engine's default ordering. If the engine does not place an owner's regions on one row or column, the layout is repeated with hidden order edges; the hidden edges are not drawn.
+   * - Collapse, details, export, source jump
+     - The region has its own collapse chevron (``data-fcstm-kind="chevron"`` with the region id), a clickable area over its whole slice, and source-range attributes for jumping to the ``region`` block; SVG, PNG and PDF export draw it as the viewer does.
+   * - Not drawn
+     - Live configuration highlighting (which region is where); hidden flag variables; ``active(...)`` flag writes.
+
+Where the four places meet:
+
+.. list-table:: Same model, four entry points
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - Entry point
+     - Region drawing
+     - Limits
+   * - ``pyfcstm plantuml`` / ``visualize``
+     - ``--`` sections, ``region N: Name`` notes; options as in the tables above (``detail_level``, ``max_depth``, ``event_visualization_mode``).
+     - Layout belongs to PlantUML: Graphviz yes, Smetana no. Alias collision for names that differ only in case.
+   * - ``StateMachine.diagram()`` / ``to_dict()`` / ``to_json()``
+     - ``region`` and ``ordinal`` keys on region nodes.
+     - Data only; drawing is left to the consumer. Needs no optional runtime.
+   * - ``pyfcstm diagram -o X.html``, ``Diagram.to_html()``, ``.svg`` / ``.png`` / ``.pdf``
+     - Tiled regions with dashed dividers.
+     - Image export needs the ``pyfcstm[viz]`` runtime and the packaged assets; a development checkout without them raises ``DiagramAssetError`` (run ``make build_assets``).
+   * - VS Code preview
+     - The same jsfcstm graph builder and ``layoutFcstmGraph``, so the same tiled drawing.
+     - The preview's known gap is the drawing of history (`issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_), which is not specific to regions. The preview was not run for this page; the row follows the source (``editors/vscode/src/preview-webview/components/Stage.vue`` imports ``layoutFcstmGraph``).
+
 Behavior boundaries
 -------------------
 

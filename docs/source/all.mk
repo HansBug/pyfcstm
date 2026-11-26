@@ -12,8 +12,8 @@ FCSTMS_MK   := ${SOURCEDIR}/fcstms.mk
 FCSTMS      := $(MAKE) -f "${FCSTMS_MK}" SOURCE=${SOURCEDIR}
 GRAPHVIZ_MK := ${SOURCEDIR}/graphviz.mk
 GRAPHVIZ    := $(MAKE) -f "${GRAPHVIZ_MK}" SOURCE=${SOURCEDIR}
-DEMOS_MK    := ${SOURCEDIR}/demos.mk
-DEMOS       := $(MAKE) -f "${DEMOS_MK}" SOURCE=${SOURCEDIR}
+PLOTS_MK    := ${SOURCEDIR}/plots.mk
+PLOTS       := $(MAKE) -f "${PLOTS_MK}" SOURCE=${SOURCEDIR}
 NOTEBOOK_MK := ${SOURCEDIR}/notebook.mk
 NOTEBOOK    := $(MAKE) -f "${NOTEBOOK_MK}" SOURCE=${SOURCEDIR}
 LOGOS_MK    := ${SOURCEDIR}/logos.mk
@@ -40,7 +40,7 @@ build:
 	@$(DIAGRAMS) build
 	@$(FCSTMS) build
 	@$(GRAPHVIZ) build
-	@$(DEMOS) build
+	@$(PLOTS) build
 	@$(NOTEBOOK) build
 
 all: build
@@ -50,8 +50,8 @@ clean:
 	@$(DIAGRAMS) clean
 	@$(FCSTMS) clean
 	@$(GRAPHVIZ) clean
-	@$(DEMOS) clean
+	@$(PLOTS) clean
 	@$(NOTEBOOK) clean
 
 cleanplt:
-	@$(DEMOS) cleanplt
+	@$(PLOTS) clean

@@ -1,0 +1,15 @@
+input int limit;
+def int n = 0;
+state Root {
+    [*] -> Spin;
+    state Spin {
+        region A {
+            [*] -> p : if [n < limit];
+            pseudo state p;
+            p -> [*];
+        }
+    }
+    state Done;
+    Spin -> Spin effect { n = n + 1; };
+    Spin -> Done;
+}

@@ -1,0 +1,6 @@
+state Root {
+    region Empty {
+        state Idle;
+        [*] -> Idle;
+    }
+}

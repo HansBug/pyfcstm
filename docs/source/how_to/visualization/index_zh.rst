@@ -13,16 +13,18 @@
 具体输入和视觉证据
 ------------------
 
-下面的具体示例使用 ``docs/source/tutorials/visualization/example.fcstm``。可视化教程已经从该源码生成
-``output_minimal.puml.svg``、``output_normal.puml.svg`` 和 ``output_full.puml.svg``，所以本任务指南可以引用真实渲染产物，而不是只让读者相信选项名。
+下面的具体示例使用 ``docs/source/tutorials/visualization/example.fcstm``，请在仓库根目录运行。可视化教程展示了该源码在三个详细级别下的图（``output_minimal.puml.svg``、``output_normal.puml.svg`` 和 ``output_full.puml.svg``，由教程旁边已提交的 ``.puml`` 文件绘出），所以本任务指南可以引用真实渲染产物，而不是只让读者相信选项名。
 
 比较渲染图片前，先导出 PlantUML 源码：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml
+   $ pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml
+   $ head -n 2 example.puml
+   @startuml
+   hide empty description
 
-成功信号是 ``/tmp/example.puml`` 存在、以 ``@startuml`` 开头，并包含预期状态名。若源码导出失败，先修复 DSL/模型错误，再改渲染器设置。渲染选项无法修复无效的 PlantUML 源码。
+成功信号是 ``example.puml`` 存在、以 ``@startuml`` 开头，并包含预期状态名。若源码导出失败，先修复 DSL/模型错误，再改渲染器设置。渲染选项无法修复无效的 PlantUML 源码。
 
 先选择源码还是渲染产物
 ----------------------
@@ -60,12 +62,12 @@
      - 副作用
      - 第一排查步骤
    * - 审阅图表源码。
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml``
-     - ``/tmp/example.puml`` 以 ``@startuml`` 开头，且是可比较差异的文本。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml``
+     - ``example.puml`` 以 ``@startuml`` 开头，且是可比较差异的文本。
      - 只写指定源码文件。
      - PlantUML 导出失败时，先对同一输入运行 ``inspect``。
    * - 比较细节预设。
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o /tmp/example.full.puml``
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o example.full.puml``
      - full 源码包含 minimal 预设隐藏的生命周期/动作细节。
      - 写出第二个源码文件供审阅。
      - 混用预设和 ``-c`` 覆盖前，先查 :doc:`/reference/visualization_options/index_zh`。
@@ -75,8 +77,8 @@
      - 不写图表文件。
      - 接受远程回退前，先判断隐私要求是否必须使用 ``--renderer local``。
    * - 无图形界面依赖地渲染。
-     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
-     - ``/tmp/example.svg`` 存在，并且在文档/审查上下文中可读。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o example.svg --no-open``
+     - ``example.svg`` 存在，并且在文档/审查上下文中可读。
      - 写出渲染文件，并可能填充渲染器缓存。
      - 若后端报告成功但文件缺失，把它当作渲染器失败，而不是 DSL 失败。
    * - 验证文档图。
@@ -120,19 +122,19 @@ PlantUML 源码是最安全的第一产物，因为它是文本、确定性强�
    * - 预设
      - 目标读者
      - 优先隐藏内容
-     - 现有源码
+     - 命令
    * - ``minimal``
      - 架构讨论和非实现读者。
      - 生命周期动作和伪状态样式。
-     - :download:`output_minimal.puml <../../tutorials/visualization/output_minimal.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml``
    * - ``normal``
      - 通用文档和代码审查。
      - 生命周期动作体。
-     - :download:`output_normal.puml <../../tutorials/visualization/output_normal.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml``
    * - ``full``
      - 调试、语义审查和实现讨论。
      - 预设级开关不隐藏内容。
-     - :download:`output_full.puml <../../tutorials/visualization/output_full.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l full -o output_full.puml``
 
 .. figure:: ../../tutorials/visualization/output_minimal.puml.svg
    :alt: minimal 细节预设输出
@@ -248,9 +250,22 @@ CI 图表任务不应依赖桌面查看器：
    )
    plantuml_text = model.to_plantuml(options)
 
-完整可运行示例可下载
-:download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>` 和
-:download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`。
+同样的调用也适用于从文件加载的模型。下面的程序使用联锁控制器（:download:`controller.fcstm </_models/controller.fcstm>`），并打印导出源码的第一行和最后一行：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.model.plantuml import PlantUMLOptions
+
+   model = load_state_machine_from_file("controller.fcstm")
+   text = model.to_plantuml(PlantUMLOptions(detail_level="minimal"))
+   print(text.splitlines()[0])
+   print(text.splitlines()[-1])
+
+.. testoutput::
+
+   @startuml
+   @enduml
 
 具体可视化配方
 ----------------
@@ -429,3 +444,149 @@ CI 图表任务不应依赖桌面查看器：
 :doc:`/explanations/visualization/index_zh` 讲的是上面这些任务背后的道理：快照与什么脱钩、
 为什么一个文档把一切都带在身上、``--open`` 为什么阻塞到窗口关闭、隐私边界为什么是目录而不是
 文件、以及临时目录何时被回收。
+
+含区域模型的任务
+----------------
+
+区域（region）画成并发分区，而不是状态。下面的任务卡使用 :download:`controller.fcstm </_models/controller.fcstm>`\ （:doc:`/tutorials/regions/index_zh` 里的联锁控制器），并给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、\ **预期信号**\ 、\ **文件副作用**\ 、
+\ **失败时先查什么**\ 、\ **参考链接**\ 。画出区域的四个地方（PlantUML 导出、``pyfcstm diagram``、HTML 查看器与 VS Code 预览）遵循同一套约定，各自的入口与限制见下。
+建模任务见 :doc:`/how_to/regions/index_zh`。
+
+导出含区域模型的 PlantUML 并渲染
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``controller.fcstm``，图例用 :download:`region_events.fcstm`。请把它们下载到一个空目录并在其中运行命令。导出时用 ``--`` 分隔同一个拥有者（owner）的各个区域，每个分区以注释 ``region N: Name`` 开头，``N`` 是书写顺序，也就是执行顺序。
+``max_depth`` 把区域算作一层。事件路径要经过区域（``/Left.Ping``）。``region_events.fcstm`` 在两个区域里各声明了一个 ``Ping`` 事件。
+
+**命令或代码。**
+
+输出是整份导出的源码，所以只保留关键的行，其余用 ``...`` 省略：
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+               **region 1: Safety**
+   ...
+           --
+   ...
+               **region 2: Motion**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
+   ...
+               **region 1: Safety**
+   ...
+           state "..." as controller__running__safety___collapsed_
+           --
+   ...
+               **region 2: Motion**
+   ...
+           state "..." as controller__running__motion___collapsed_
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=1
+   ...
+           state "..." as controller__running___collapsed_
+   ...
+   $ pyfcstm plantuml -i region_events.fcstm -c show_events=true -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Ping** (1 transitions)
+     <size:10><color:gray>/Left.Ping</color></size>
+   <color:#000000>■</color> **Ping** (1 transitions)
+     <size:10><color:gray>/Right.Ping</color></size>
+   endlegend
+   ...
+
+**预期信号。** 默认导出有一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。``max_depth=2`` 保留两个分区，但把其中的状态折叠成 ``...``；
+``max_depth=1`` 把整个拥有者折叠起来。图例把两个 ``Ping`` 显示为不同的事件，各有自己从根开始的路径。可以用任何 PlantUML 环境渲染这份源码；本页假定使用默认的 Graphviz 布局：
+
+.. figure:: /_models/controller.fcstm.puml.svg
+   :alt: 联锁控制器的 PlantUML 图，Running 里有两个并发分区
+   :width: 80%
+
+   ``Running`` 被画成两个分区，``region 1: Safety`` 与 ``region 2: Motion``，之间用虚线分隔。
+
+**文件副作用。** ``pyfcstm plantuml -o`` 只写指定的文件；上面的命令输出到标准输出，不写文件。
+
+**失败时先查什么。** 图里缺少某个分区时，打开 ``.puml`` 文件数 ``--`` 的行数（比拥有者的区域数少一个）；下一张卡讲已知的那个渲染器限制。
+
+**参考链接。** :doc:`/reference/visualization_options/index_zh`。
+
+在 HTML 查看器与 VS Code 预览里看区域
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``controller.fcstm``。``pyfcstm diagram`` 输出可移植的 JSON 或自包含的 HTML 查看器。查看器里，同一个拥有者的区域并排放在拥有者外框内：
+自上而下的图里等高，自左向右的图里等宽，之间用虚线分割线分隔，没有各自的边框，标题是 ``region N: Name``。顺序沿图的方向排开：自上而下的图里从左到右，自左向右的图里从上到下。
+折叠、详情和导出对区域与对状态一样可用。查看器不会按当前配置高亮。
+
+**命令或代码。** 可移植 JSON 把每个区域写成带 ``region: true`` 的节点，书写顺序在 ``ordinal`` 里：
+
+.. code-block:: console
+
+   $ pyfcstm diagram -i controller.fcstm -o machine.json
+   machine.json
+
+.. testcode::
+
+   import json
+
+   data = json.load(open("machine.json", encoding="utf-8"))
+   running = [c for c in data["rootState"]["children"] if c["name"] == "Running"][0]
+   for region in running["children"]:
+       print(region["qualifiedName"], region["region"], region["ordinal"])
+   print(data["summary"])
+
+.. testoutput::
+
+   Controller.Running.Safety True 1
+   Controller.Running.Motion True 2
+   {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
+
+查看器需要打包的查看器资源（开发检出里用 ``make build_assets`` 构建），编辑器预览需要桌面编辑器，所以这些命令只展示，不在文档检查里运行。
+
+.. code-block:: bash
+
+   pyfcstm diagram -i controller.fcstm -o viewer.html
+   pyfcstm diagram -i controller.fcstm --open
+
+在 VS Code 里打开 ``.fcstm`` 文件，从命令面板运行 ``Open Preview to the Side``\ （命令 ``fcstm.preview.open``）。预览遵循与查看器相同的约定。
+
+**预期信号。** JSON 显示 ``Running`` 有两个标为 ``region`` 的子节点，序号为 1 和 2，按书写顺序排列。``viewer.html`` 是可离线打开的自包含文件，显示并排的两个分区；
+``--open`` 在 Chromium 系浏览器的应用窗口里打开它。
+
+**文件副作用。** ``-o`` 写入指定文件。``--open`` 同样先写 HTML，再打开窗口。
+
+**失败时先查什么。** ``pyfcstm diagram`` 报缺少打包资源时，说明在开发检出里：运行 ``make build_assets``。没有浏览器打开时，使用文件并去掉 ``--open``。
+
+**参考链接。** :doc:`/reference/visualization_options/index_zh`。
+
+含区域的模型避开 Smetana 布局
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** 一条 PlantUML 流水线。PlantUML 内置的 Smetana 布局不支持并发分区，会丢掉第一个之后的所有区域。``pyfcstm`` 从不写布局指令，所以只有你或你的工具强制指定时才会遇到
+（例如 ``!pragma layout smetana``）。这个限制来自 PlantUML 本身。
+
+**命令或代码。** 检查导出的源码里没有布局指令（第一行打印 ``pragma layout`` 是否出现，第二行统计 ``--`` 分隔线的个数），并用默认的 Graphviz 布局渲染：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   text = load_state_machine_from_file("controller.fcstm").to_plantuml()
+   print("pragma layout" in text)
+   print(sum(line.strip() == "--" for line in text.splitlines()))
+
+.. testoutput::
+
+   False
+   1
+
+**预期信号。** 布局指令一项为 ``False``，分隔线一项为 ``1``，即两个分区之间有一个 ``--``。若你的流水线注入了指令，把它去掉后重新渲染，所有分区就回来了。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 只画出第一个分区时，在实际渲染的源码（不是导出的那份）里搜索 ``pragma layout``，并确认使用的是 Graphviz 布局。
+
+**参考链接。** :doc:`/reference/visualization_options/index_zh`。

@@ -4,6 +4,174 @@ Release Notes
 Unreleased
 ----------
 
+Regions
+~~~~~~~
+
+This release adds **ordered parallel regions** to FCSTM. A state can hold
+several ``region`` blocks instead of ordinary child states. All of them are
+active at once, and in every cycle they run one after another in the order they
+are written. To see it work, follow :doc:`/tutorials/regions/index`.
+
+**Language.**
+
+- ``region Name { ... }`` is written inside a state. A state holds either
+  ordinary child states or regions, never both, and may hold a single region.
+  Regions can be nested: a state inside a region can own regions again.
+- A region holds an initial transition, child states, ordinary and forced
+  transitions, ``event`` declarations and ``>> during before/after`` aspects.
+  It cannot hold ``enter``, ``during``, ``exit`` or variable declarations, and
+  it is not the source or target of a transition. Two regions of one state
+  cannot share a name; ``Duplicate region 'A' in R.`` is the model error.
+- ``region`` and ``active`` are reserved words. A model that uses either as a
+  state, event or variable name has to rename it.
+- The writing order is the execution order, and it is part of the meaning of
+  the model. A later region sees the values and states that an earlier region
+  produced in the same cycle; an earlier region does not run again because of
+  what a later one writes. When several regions write one variable, the last
+  write wins.
+- A transition cannot lead from one region into another, and a transition
+  outside the owner cannot lead into a region. Enter the owner and let each
+  region start from its initial transition.
+- ``X -> [*]`` written inside a region finishes that region. When the last
+  region of an owner finishes, the owner continues through its own transitions
+  in the same cycle; the machine never rests with every region finished.
+- A forced transition on the owner, such as ``!Running -> Idle : /Stop;``,
+  takes the whole group away. It is expanded into ordinary ``-> [*]``
+  transitions as described under *Forced Transitions* below.
+- An event declared in a region belongs to that region, so two regions can use
+  the same event name for different events. Use a path that starts at the root
+  (``/Owner.Region.Event``) when several regions must share one event.
+- ``active("State.Path")`` is a read-only query that can stand wherever a
+  condition can.
+
+**What supports regions.**
+
+- Simulation: cold start, hot start, short event names that depend on the
+  position, and ``pyfcstm simulate``; see *Simulating models with regions*
+  below. The position is a tree, shown as a configuration text such as
+  ``Controller.Running{Safety: Watching, Motion: On}``.
+- ``pyfcstm inspect`` reports regions in its summary and adds two diagnostics
+  about order. ``I_REGION_BACKWARD_READ`` is an information-level diagnostic: an
+  earlier region reads a variable that a later region writes, or asks about the
+  state of a later region, so it sees the previous cycle. It describes defined
+  behavior, not a defect. ``W_REGION_BLIND_OVERWRITE`` is a warning: a later
+  region unconditionally overwrites, in every cycle and without using the old
+  value, a variable that an earlier region wrote, so the earlier write is always
+  lost. Neither is reported when the later region might read the old value, when
+  its write is conditional, when it can finish or contains an abstract action,
+  or when a region in between reads the variable.
+- ``pyfcstm.verify`` and the reachability analysis of inspect judge a state
+  that owns regions by its branches (see *Inspect and verify* below).
+- ``pyfcstm bmc`` and ``pyfcstm.bmc`` accept models with regions, including
+  witnesses, replay and runtime safety checks (see *Bounded Model Checking of
+  Regions* below).
+- The built-in templates ``python``, ``c``, ``c_poll``, ``cpp`` and
+  ``cpp_poll`` generate runtimes that run models with regions the way the
+  simulator does; see *Templates and capability declarations* below.
+- PlantUML and the diagram viewer draw regions as concurrent areas (see
+  *Drawing regions* below).
+- The VS Code extension previews models with regions, folds ``region`` blocks
+  and reports ``E_REGION_STRUCTURE``, ``E_DUPLICATE_REGION`` and
+  ``E_ACTIVE_QUERY_TARGET`` while you edit.
+- The two packaged LLM guides, the FCSTM grammar guide and the FBMCQ language
+  guide, describe regions.
+
+**Getting started.** :doc:`/tutorials/regions/index` runs one controller
+through simulation, region order, inspect, bounded model checking, generation
+and drawing. Task recipes are in :doc:`/how_to/regions/index`, the reasons in
+:doc:`/explanations/region_semantics/index` and
+:doc:`/explanations/region_design/index`, and the exact rules in
+:doc:`/reference/region_model/index`.
+
+**Known limitations.**
+
+- When two forced declarations in regions compete, the first one holds the
+  whole group, and a leaf inside a region does not give way. This differs from a
+  model without regions; see `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_.
+- The behavior diagnostics of ``pyfcstm inspect`` should not depend on whether
+  syntactic sugar is expanded; see `issue #588 <https://github.com/HansBug/pyfcstm/issues/588>`_.
+- The editor preview draws history differently from the Python diagram
+  snapshot; see `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_.
+  ``I_REGION_BACKWARD_READ`` and ``W_REGION_BLIND_OVERWRITE`` are reported by
+  ``pyfcstm inspect`` only, not by the editor.
+- The generated runtimes can still become smaller and faster. The Python
+  template is tracked in `issue #596 <https://github.com/HansBug/pyfcstm/issues/596>`_
+  and the C-family templates in `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_.
+- Bounded model checking cost grows with the number of regions and the bound;
+  `issue #600 <https://github.com/HansBug/pyfcstm/issues/600>`_ records the
+  directions explored for the formula and the solver.
+
+Templates and capability declarations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A template declares what it can render in the ``features`` list of its
+``config.yaml``; ``region`` is the only feature so far, and
+``StateMachineCodeRenderer.features`` returns the list. The five built-in
+templates declare it. A model with regions given to a template that does not,
+including a custom template directory, is refused with ``E_UNSUPPORTED_FEATURE``
+before any file is written. The message of ``pyfcstm generate`` says how many
+regions the model declares, which template authors should declare the feature,
+and which built-in templates the model can use instead.
+
+The generated Python runtime changes in these ways, for every model:
+
+- The text of the generated file changes for models without regions; their
+  behavior does not.
+- ``vars`` is a read-only view. Write persistent values only through the model,
+  or through the hot-start arguments.
+- The ``variables`` alias is removed; use ``vars``.
+- ``ABSTRACT_HOOKS`` is a read-only mapping.
+- ``configuration`` gives the whole position as text, byte for byte the text the
+  simulator prints; ``leaves``, ``is_active(path)`` and, for a model with
+  regions, ``region_status(path)`` (``live``, ``done``, ``pending`` or
+  ``inactive``) query it. ``initial_state`` accepts a configuration text, a dotted
+  path or a tuple.
+- A model with regions has no ``current_state_path`` or ``current_state_name``;
+  reading them is an ``AttributeError``. The context of an abstract action also
+  carries ``configuration``.
+
+The C-family runtimes (``c``, ``c_poll``, ``cpp``, ``cpp_poll``) now run on a
+static-memory kernel generated for each model. It uses no heap and no
+third-party dependency, for models with and without regions alike. For every
+model:
+
+- The machine type is opaque. ``MAX_STACK_DEPTH`` and ``MAX_DFS_STEPS`` are
+  removed; the public macros ``..._ARENA_CAPACITY``, ``..._TRAIL_CAPACITY`` and
+  ``..._STORAGE_BYTES`` replace them, and a run that exceeds a capacity fails
+  with a safety-limit error that names the macro.
+- ``hot_start_at``, ``hot_start_at_with_parameters`` and ``get_configuration``
+  are new, with a configuration value that can be queried, validated and
+  formatted as the same text as the simulator; parsing it can be switched off
+  with ``PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT``. The C++ wrappers add the
+  matching members and ``operator==`` / ``operator!=``.
+- A model with regions has no ``current_state_id``, ``current_state_path`` or
+  ``current_state_name``; using one is a compile error.
+- The generated text changes for models without regions; the behavior does not.
+- Code size, RAM and the time per cycle of a generated machine change for
+  models without regions as well, because they now run on the same kernel. The
+  measured size and speed ratios against the previous template, with their
+  method, are in the section *Generated C runtime* of
+  :doc:`/explanations/region_performance/index`; the remaining cost is tracked in
+  `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_.
+
+Drawing regions
+~~~~~~~~~~~~~~~
+
+``pyfcstm plantuml`` draws the regions of a state as concurrent areas separated
+by ``--``. Each area starts with a note ``region N: Name``, where ``N`` counts
+from 1 in writing order, because a PlantUML area has no name of its own.
+``active("Path")`` is shown as written; the hidden flags and automatic writes
+are not drawn.
+
+``StateMachine.diagram()``, ``pyfcstm diagram`` and the HTML viewer place the
+regions of one owner side by side inside its frame, separated by dashed lines,
+without a frame of their own and with the same ``region N: Name`` title. The
+order follows the direction of the layout: left to right in a top-down graph,
+top to bottom in a left-to-right one. Folding, details and export work for
+regions as they do for states. A region counts as one level for ``max_depth``.
+The viewer does not highlight the current configuration. The JSON of the diagram
+marks each region node with ``"region": true``.
+
 Forced Transitions
 ~~~~~~~~~~~~~~~~~~
 
@@ -69,8 +237,10 @@ Three things become visible:
   it appears in ``StateMachine.defines``, ``runtime.vars``, the variable
   snapshots of abstract handlers and the variable tables of generated code, and
   it is an ordinary variable everywhere: a hot start supplies it like every
-  other variable, and BMC treats it like every other variable. The machine only
-  raises it inside a cycle, so it is 0 at every point where a run rests.
+  other variable, and BMC treats it like every other variable. The machine
+  raises it inside a cycle and a finished declaration leaves it at 0, so it is 0
+  wherever a run rests, except while a group is left half-way because the target
+  cannot be entered: it stays 1 until the group leaves.
   :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names.
 - A transition with an event that leaves a state on the way of a forced exit is
   split through a generated pseudo state ``__forced_gate_<n>``. The pseudo

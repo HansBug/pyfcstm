@@ -1,0 +1,17 @@
+state Root {
+    state Job {
+        region Work {
+            state Run;
+            [*] -> Run;
+            Run -> [*] :: Go;
+        }
+        region Monitor {
+            state Watch;
+            [*] -> Watch;
+            Watch -> [*] :: Go;
+        }
+    }
+    state Next;
+    [*] -> Job;
+    Job -> Next;
+}

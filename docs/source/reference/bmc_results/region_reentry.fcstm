@@ -1,0 +1,15 @@
+def int n = 0;
+
+state Root {
+    [*] -> Owner;
+    state Owner {
+        region A {
+            [*] -> Pass : if [n < 20];
+            pseudo state Pass;
+            Pass -> [*];
+        }
+    }
+    state Done;
+    Owner -> Owner effect { n = n + 1; }
+    Owner -> Done;
+}

@@ -1,0 +1,21 @@
+input int a_ready;
+input int b_ready;
+output int stage = 0;
+
+state Job {
+    [*] -> Work;
+    state Work {
+        region A {
+            [*] -> Run;
+            state Run;
+            Run -> [*] : if [a_ready != 0];
+        }
+        region B {
+            [*] -> Run;
+            state Run;
+            Run -> [*] : if [b_ready != 0];
+        }
+    }
+    state Next { enter { stage = 1; } }
+    Work -> Next;
+}

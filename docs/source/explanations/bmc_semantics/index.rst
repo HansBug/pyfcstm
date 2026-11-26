@@ -12,6 +12,12 @@ compile a property objective, interpret SAT as a property verdict, or claim an
 unbounded proof.  The relation builder deliberately stops at :math:`Core_N`;
 property compilation and witness/replay are later layers.
 
+The derivation below is for the relation of a model without regions.  A state
+that owns regions adds one position symbol per region and chains the regions
+inside one step; :doc:`/explanations/bmc_regions/index` derives that extension
+from the relation defined here, and a model without regions keeps the formulas
+derived on this page.
+
 Start with a small door-latch trace.  Suppose a door controller starts with
 ``Door.Locked`` active and ``latch_engaged=1``.  A maintenance event opens the
 door without clearing the latch.  At bound 2, the encoded horizon has frames

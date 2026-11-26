@@ -10,7 +10,7 @@
 
 输入模型有三个叶状态和三条事件触发转换：
 
-.. literalinclude:: simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 生成 Python 代码
@@ -18,9 +18,9 @@
 
 把打包的 Python 模板渲染到一个新的输出目录：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
 
 这个命令里最重要的是：
 
@@ -30,8 +30,9 @@
 
 成功后会写出针对这个模型的文件。对本模型来说，顶层输出是：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ LC_ALL=C ls generated/python
    README.md
    README_zh.md
    machine.py
@@ -43,14 +44,33 @@
 
 最小消费者导入生成类、构造实例、执行初始周期，然后提交事件路径：
 
-.. literalinclude:: python_runtime.demo.py
-   :language: python
-   :lines: 47-60
+.. testcode::
 
-已纳入文档构建的演示会先打印生成文件，再展示每个事件后的状态和 ``counter`` 值：
+   import sys
 
-.. literalinclude:: python_runtime.demo.py.txt
-   :language: text
+   sys.path.insert(0, "generated/python")
+   from machine import SimpleMachineMachine
+
+   machine = SimpleMachineMachine()
+   machine.cycle()
+   print(".".join(machine.current_state_path), machine.vars["counter"])
+
+   for event in [
+       "SimpleMachine.Idle.Start",
+       "SimpleMachine.Running.Stop",
+       "SimpleMachine.Stopped.Reset",
+   ]:
+       machine.cycle(event)
+       print(".".join(machine.current_state_path), machine.vars["counter"])
+
+上面的脚本每个周期后打印状态和 ``counter`` 值，输出是：
+
+.. testoutput::
+
+   SimpleMachine.Idle 0
+   SimpleMachine.Running 0
+   SimpleMachine.Stopped 1
+   SimpleMachine.Idle 1
 
 这只证明第一次成功路径：生成成功、生成的 Python 文件可导入、一个小事件序列可运行。它不是所有 FCSTM 构造的完整语义对齐（semantic alignment）证明。
 
@@ -61,3 +81,4 @@
 * 用 :doc:`/how_to/templates/index_zh` 编写自定义模板（custom template）目录。
 * 用 :doc:`/explanations/template_rendering/index_zh` 理解渲染器（renderer）流程。
 * 用 :doc:`/reference/builtin_templates/index_zh` 查内置模板契约。
+* 为含区域的模型生成运行时，并用 ``configuration`` 读取位置，见 :doc:`/tutorials/regions/index_zh`。

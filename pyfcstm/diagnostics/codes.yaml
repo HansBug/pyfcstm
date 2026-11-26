@@ -41,15 +41,15 @@ E_UNSUPPORTED_FEATURE:
   span_object: syntax_construct
   description: >-
     The selected consumer cannot preserve this language feature and refuses
-    the operation rather than producing partial results. Python model building,
-    simulation with SimulationRuntime (cold start and hot start), the
-    pyfcstm simulate command, the diagram snapshot and exports, and the
-    JavaScript frontend's model, semantic analysis and diagram preview support
-    regions; code generation accepts them only with a template that lists
-    region under features in its config.yaml, and names that template in the
-    message; BMC and inspect/verify analysis consumers still reject a model
-    that has them. Activity queries are never refused: they are lowered into
-    ordinary variables.
+    the operation rather than producing partial results. Every consumer in the
+    Python package takes a model with regions (the simulator and pyfcstm
+    simulate, inspect and the verify analyses, BMC, PlantUML, the diagram
+    snapshot and exports, and code generation with a template that lists
+    region under features in its config.yaml); code generation refuses a
+    template that does not list it, before any file is written, and names the
+    built-in templates that do. The JavaScript frontend's model, semantic
+    analysis and diagram preview support regions. Activity queries are never
+    refused: they are lowered into ordinary variables.
   refs:
     feature:
       type: str

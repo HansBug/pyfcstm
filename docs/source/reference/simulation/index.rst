@@ -65,7 +65,7 @@ Batch mode and the interactive REPL use the same command processor.
      - Prints retained history.  Empty history reports ``No execution history
        available.``.
    * - ``init <position> [var=value...]``
-     - Target state, or for a model with regions a configuration text such as ``Root.Run{A: X, B: [done]}``, plus numeric variable assignments.
+     - Target state, or for a model with regions a configuration text such as ``Root.Run{A: X, B: [done]}``, plus numeric variable assignments.  See :ref:`sim-region-cli`.
      - Rebuilds the runtime as a hot start.  Every persistent control/output variable must be provided, hidden ones included; inputs belong to each cycle and parameters remain fixed.  A configuration text keeps its spaces inside the braces; what it leaves out waits for initialization in the first cycle.  Values accept decimal, hexadecimal, binary, float, and
        scientific notation.
    * - ``setting [key] [value]``
@@ -186,6 +186,662 @@ a command-layer feature and is not a :class:`pyfcstm.simulate.SimulationRuntime`
      - One JSON history entry object per line.
      - Suitable for append-like or streaming post-processing.
 
+.. _sim-region-event-names:
+
+Event names with several active leaves
+--------------------------------------
+
+A model with regions has several active leaves. A full model path, such as
+``Controller.Running.Stop``, and a path that starts at the root, such as
+``/Running.Stop``, mean the same event wherever the machine rests. A name that
+depends on the position (a short name such as ``Go`` or a name that counts levels
+up with leading dots such as ``..Stop``) is resolved once for every active leaf
+and the results are combined.
+
+.. list-table:: Outcomes of a position-dependent name
+   :header-rows: 1
+   :widths: 24 30 46
+
+   * - Leaves that find an event
+     - Result
+     - Error when refused
+   * - None
+     - Refused; nothing runs.
+     - ``Position-dependent event name 'Nope' matches no event from any active
+       leaf (<leaves>); use the full event path or a root-based "/path".``
+       (``ModelLookupError`` from ``Configuration.resolve_event``,
+       ``SimulationRuntimeEventError`` from ``cycle``).
+   * - One or more, all the same event
+     - The event is used. Several regions that find it all react to it in the
+       same cycle.
+     - none
+   * - Different events
+     - Refused as ambiguous; nothing runs.
+     - ``Position-dependent event name 'Ping' is ambiguous: <event> (from
+       <leaf>); <event> (from <leaf>); use the full event path or a root-based
+       "/path".`` The error lists every candidate with the leaves that led to it.
+
+Further rules:
+
+* A bare name looks only in the namespace of each active leaf and never searches
+  upward. An event of a composite owner, a region or an ancestor is reached with
+  its full path, with ``/name`` from the root, or with leading dots that count the
+  levels up (``..Stop`` reaches ``Controller.Running.Stop`` from the leaves of the
+  regions of ``Running``).
+* A region that is done and a region that still waits for initialization have no
+  active leaf and do not take part in the resolution.
+* ``runtime.cycle`` first tries the name as a full model path, then falls back to
+  the position-dependent resolution. With a single active leaf the refusal reads
+  ``Cannot resolve event path 'Reset': failed with both
+  StateMachine.resolve_event and State.resolve_event. ...`` instead.
+* Every name of one cycle is resolved on its own.
+* ``consumed_events`` lists an event once for every transition that used it; an
+  event shared by two regions appears twice.
+
+.. literalinclude:: /_models/event_names.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('event_names.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+
+   position = 'Controller.Running{Safety: Watching, Motion: Off}'
+   config = SimulationRuntime(model, initial_state=position, initial_vars={'trail': 0}).configuration
+   for name in ['Trip', 'Ping', 'Nope', 'Reset', '..Stop', '/Running.Stop']:
+       try:
+           print(name, '->', config.resolve_event(name).path_name)
+       except (ValueError, LookupError) as error:
+           print(name, '!!', type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   Trip -> Controller.Running.Safety.Watching.Trip
+   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+   ..Stop -> Controller.Running.Stop
+   /Running.Stop -> Controller.Running.Stop
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeEventError
+
+   with open('event_names.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+
+   for position, name in [('Controller.Running{Safety: Watching, Motion: Off}', 'Trip'),
+                          ('Controller.Running{Safety: Watching, Motion: Off}', 'Ping'),
+                          ('Controller.Running{Safety: [done], Motion: Off}', 'Ping'),
+                          ('Controller.Idle', 'Reset')]:
+       runtime = SimulationRuntime(model, initial_state=position, initial_vars={'trail': 0})
+       try:
+           result = runtime.cycle([name])
+           print(name, 'ok', runtime.configuration, list(result.consumed_events))
+       except SimulationRuntimeEventError as error:
+           print(name, '!!', error)
+           print('   ', runtime.configuration)
+
+.. testoutput::
+
+   Trip ok Controller.Running{Safety: Tripped, Motion: Off} ['Controller.Running.Safety.Watching.Trip']
+   Ping !! Position-dependent event name 'Ping' is ambiguous: ...
+       Controller.Running{Safety: Watching, Motion: Off}
+   Ping ok Controller.Running{Safety: [done], Motion: Off} ['Controller.Running.Motion.Off.Ping']
+   Reset !! Cannot resolve event path 'Reset': failed with both ...
+       Controller.Idle
+
+The first script shows the outcomes for names that depend on the position:
+``Trip`` is found by one leaf, ``Ping`` is ambiguous because both leaves own a
+``Ping`` (the message lists each candidate with the leaf that led to it), and
+``Nope`` and ``Reset`` are found by none, even though ``Reset`` exists on the root, because a bare name never looks upward. ``..Stop`` and
+``/Running.Stop`` reach the owner's event. The second script runs ``cycle`` on a
+fresh runtime for each line: the refusals leave the position unchanged, a done
+region leaves ``Ping`` unambiguous, and with a single active leaf the refusal
+reads ``Cannot resolve event path``. This establishes the resolution rules; it
+does not show how long a name takes to resolve.
+
+.. _sim-region-hot-start:
+
+Hot start of a model with regions
+---------------------------------
+
+``SimulationRuntime(model, initial_state=position, initial_vars=variables,
+parameters=..., input_source=...)`` starts from a position without running any
+``enter`` action. A cold start (``initial_state=None``) runs the initial entry in
+the first cycle.
+
+.. list-table:: Spellings of ``initial_state``
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - Spelling
+     - Example
+     - Position that results
+   * - Configuration text
+     - ``'Controller.Running{Safety: Watching, Motion: On}'``
+     - Exactly what is written.
+   * - ``Configuration``
+     - ``Configuration.parse(model, text)``
+     - Exactly that value; it must come from the same model object.
+   * - Dotted path
+     - ``'Controller.Running.Motion.On'``
+     - The branch the path passes through; the other regions of every owner on
+       the path wait for initialization.
+   * - Tuple
+     - ``('Controller', 'Running', 'Motion', 'On')``
+     - Same as the dotted path.
+   * - ``State``
+     - the ``State`` object of ``On``
+     - Same as the dotted path; it must belong to the same model object.
+
+A position is a tree. What is written is put in place and no ``enter`` runs for
+it; what is not written waits for initialization and runs its initial
+transitions in the first cycle, in written order, while the rest works as usual.
+Three things wait: a region that is left out (and every other region of the
+owners on a dotted path), an owner written as a bare path (the whole group), and
+a plain composite state written without a child.
+
+.. list-table:: Position text for a hot start
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Text
+     - Meaning
+   * - ``Root.Job{A: X, B: Y}``
+     - Owner ``Root.Job`` rests with region ``A`` in state ``X`` and ``B`` in
+       ``Y``. A region entry names the child relative to the region; a deeper
+       leaf is written ``Comp.In1``; a nested owner is written with another block,
+       ``Q{A1: W1, A2: W2}``.
+   * - ``Root.Job{A: X}``
+     - ``B`` is left out and waits for initialization (shown as ``B: [init]``).
+   * - ``Root.Job{A: [done], B: Y}``
+     - ``A`` is Done: it stays done and does no work.
+   * - ``Root.Job{A: X, B: [init]}``
+     - ``B`` waits explicitly; same as leaving it out.
+   * - ``Root.Job``
+     - The whole group waits for initialization.
+   * - ``Root.Idle``
+     - An ordinary leaf; same as a model without regions.
+
+The first script starts the controller of the tutorial
+(:download:`controller.fcstm </_models/controller.fcstm>`) in each spelling of
+the table above, then in three more positions: an owner written as a bare path,
+an owner with a finished region, and a composite state written without a child.
+It prints the resulting configuration. The controller has a hidden variable
+``__forced_0`` that the model conversion adds for a forced transition; a hot
+start must give it a value like any other variable (see the rules below). The
+second script shows that the first cycle initializes the region that was left
+out.
+
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   states = {state.path: state for state in model.walk_states()}
+   positions = [
+       'Controller.Running{Safety: Watching, Motion: On}',
+       Configuration.parse(model, 'Controller.Running{Safety: Watching, Motion: On}'),
+       'Controller.Running.Motion.On',
+       ('Controller', 'Running', 'Motion', 'On'),
+       states[('Controller', 'Running', 'Motion', 'On')],
+       'Controller.Running',
+       'Controller.Running{Safety: [done], Motion: On}',
+       'Controller',
+   ]
+   for position in positions:
+       runtime = SimulationRuntime(
+           model, initial_state=position,
+           initial_vars={'permit': 1, 'motor': 1, '__forced_0': 0},
+           input_source={'fault': 0, 'requested': 1})
+       print(runtime.configuration)
+
+.. testoutput::
+
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: [init]}
+   Controller.Running{Safety: [done], Motion: On}
+   Controller
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(
+       model, initial_state='Controller.Running.Motion.On',
+       initial_vars={'permit': 1, 'motor': 1, '__forced_0': 0},
+       input_source={'fault': 0, 'requested': 1})
+   print(runtime.configuration)
+   result = runtime.cycle()
+   print(runtime.configuration, result.delta)
+
+.. testoutput::
+
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: Watching, Motion: On} False
+
+Rules and refusals:
+
+* ``initial_vars`` must give every persistent variable, hidden ones
+  (``__forced_*``, ``__hist_*``, ``__active_*``) included. They are ordinary
+  variables: the runtime neither derives them from the position nor checks that
+  they agree with it. ``StateMachine.active_variables(config)`` and
+  ``history_variables(...)`` compute values that agree with a position.
+  Inputs and parameters are not part of ``initial_vars``; a hot start still needs
+  complete ``parameters`` and a complete ``input_source`` (see :doc:`inputs`).
+* Every region of an owner Done is refused, at any depth.
+* An owner that waits for initialization and cannot reach a resting place in the
+  first cycle makes that whole cycle a Delta: the position and the variables stay
+  as written and ``cycle_count`` still advances.
+
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       text = stream.read()
+   model = load_state_machine_from_text(text)
+   other = load_state_machine_from_text(text)
+   other_states = {state.path: state for state in other.walk_states()}
+   variables = {'permit': 1, 'motor': 1, '__forced_0': 0}
+   cases = {
+       'every region done': 'Controller.Running{Safety: [done], Motion: [done]}',
+       'region written twice': 'Controller.Running{Safety: Watching, Safety: Watching}',
+       'unknown state': 'Controller.Running{Safety: Nowhere, Motion: On}',
+       'a region as the position': 'Controller.Running.Motion',
+       'empty text': '',
+       'brace not closed': 'Controller.Running{Safety: Watching',
+       'marker [*]': 'Controller.Running{Safety: [*], Motion: On}',
+       'marker [Done]': 'Controller.Running{Safety: [Done], Motion: On}',
+       'Configuration of another model': Configuration.parse(
+           other, 'Controller.Running{Safety: Watching, Motion: On}'),
+       'State of another model': other_states[('Controller', 'Running', 'Motion', 'On')],
+       'a list': ['Controller', 'Running'],
+       'a number': 5,
+   }
+   for name, position in cases.items():
+       try:
+           SimulationRuntime(model, initial_state=position, initial_vars=variables,
+                             input_source={'fault': 0, 'requested': 1})
+       except (ValueError, TypeError) as error:
+           print(name + ':', type(error).__name__ + ':', error)
+   try:
+       SimulationRuntime(model, initial_state='Controller.Running.Motion.On',
+                         initial_vars={'permit': 1, 'motor': 1},
+                         input_source={'fault': 0, 'requested': 1})
+   except ValueError as error:
+       print('hidden variable missing:', type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   every region done: ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   region written twice: ValueError: Duplicate region in configuration for 'Controller.Running'.
+   unknown state: ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+   a region as the position: ValueError: 'Controller.Running.Motion' names a region, not a state
+   empty text: ValueError: State path cannot be empty
+   brace not closed: ValueError: Expected '}' at line 1, column 36, got end of input.
+   marker [*]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   marker [Done]: ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   Configuration of another model: ValueError: Provided Configuration does not belong to this state machine
+   State of another model: ValueError: Provided State object does not belong to this state machine
+   a list: TypeError: initial_state must be str, tuple, State or Configuration, got list
+   a number: TypeError: initial_state must be str, tuple, State or Configuration, got int
+   hidden variable missing: ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
+
+.. literalinclude:: pending_delta.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   import logging
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   logging.disable(logging.CRITICAL)  # keep the Delta warning off the output
+   with open('pending_delta.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   for ready in (0, 1):
+       runtime = SimulationRuntime(model, initial_state='Plant.Job{Count: Counting}',
+                                   initial_vars={'ready': ready, 'ticks': 0})
+       result = runtime.cycle()
+       print('ready=%d' % ready, result.delta, runtime.configuration, runtime.vars['ticks'])
+
+.. testoutput::
+
+   ready=0 True Plant.Job{Count: Counting, Gate: [init]} 0
+   ready=1 False Plant.Job{Count: Counting, Gate: Open} 1
+
+The script runs the same position twice. With ``ready=0`` the cycle is a Delta:
+``Count`` does no ``during`` work (the last value printed, ``ticks``, stays ``0``)
+while ``Gate`` cannot start, the cycle rolled back, ``delta`` is ``True``, and the
+position is the one written. With ``ready=1`` both regions work in that cycle.
+Delta lines are also logged at ``warning`` level on stderr; the script turns the
+logging off.
+
+.. literalinclude:: active_flags.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('active_flags.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   position = 'Root.Job{Feed: Busy, Check: Watch}'
+   flags = model.active_variables(Configuration.parse(model, position))
+   print(flags)
+   for given in (flags, {name: 0 for name in flags}):
+       runtime = SimulationRuntime(model, initial_state=position,
+                                   initial_vars=dict(given, alarm=0, ticks=0))
+       runtime.cycle()
+       print(runtime.configuration, runtime.vars['alarm'])
+
+.. testoutput::
+
+   {'__active_Root_Job_Feed_Busy': 1}
+   Root.Job{Feed: Busy, Check: Watch} 1
+   Root.Job{Feed: Busy, Check: Watch} 0
+
+The script prints the flag that matches the position, then runs one cycle with
+it and one with the flag given as ``0``; the last value printed is ``alarm``. The
+hidden flag must be given with the other variables; given as ``0`` it is what
+runs, even when the position says the state is active. The check that the flag
+agrees with the position is the caller's.
+
+.. _sim-region-position-api:
+
+Positions, results and handler context
+--------------------------------------
+
+.. list-table:: Position surface of a runtime
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Member
+     - Behavior for a model with regions
+   * - ``runtime.configuration``
+     - The immutable :class:`pyfcstm.model.Configuration` of the resting
+       position, for every model, with or without regions. ``str()`` gives the
+       position text, ``repr()`` also shows the validation mode. After the
+       runtime has ended (``is_ended``) it raises
+       ``SimulationRuntimeTerminalStateError``.
+   * - ``runtime.current_state``
+     - For a model **with** regions it returns the same ``Configuration``; for a
+       model without regions it still returns a ``State``. Check ``is_ended``
+       first: after termination it raises
+       ``SimulationRuntimeTerminalStateError``.
+   * - ``runtime.brief_stack``
+     - Raises ``SimulationRuntimeRegionQueryError`` for a model with regions:
+       ``brief_stack describes a single active path, but this model has regions;
+       use configuration, which shows every branch.``
+   * - ``Configuration.leaves``
+     - The active resting leaves, one per live region branch; Done and waiting
+       branches have none.
+   * - ``CycleResult``
+     - Same fields as without regions. ``input_events`` are canonical paths in
+       input order; ``consumed_events`` lists an event once per transition that
+       used it; ``delta`` is ``True`` when the whole cycle rolled back.
+   * - Delta
+     - One cycle-wide concept: no region keeps a write of the cycle, the position
+       and variables stay as before, and ``cycle_count`` advances.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeRegionQueryError
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(model, input_source={'fault': 0, 'requested': 1})
+   runtime.cycle()
+   runtime.cycle('/Start')
+   print(repr(runtime.configuration))
+   print(type(runtime.current_state).__name__, runtime.current_state)
+   print([state.path for state in runtime.configuration.leaves])
+   try:
+       runtime.brief_stack
+   except SimulationRuntimeRegionQueryError as error:
+       print(type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   Configuration(mode='stable', position='Controller.Running{Safety: Watching, Motion: Off}')
+   Configuration Controller.Running{Safety: Watching, Motion: Off}
+   [('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'Off')]
+   SimulationRuntimeRegionQueryError: brief_stack describes a single active path, but this model has regions; use configuration, which shows every branch.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   plain = load_state_machine_from_text('state Root { [*] -> A; state A; state B; A -> B :: Go; }')
+   runtime = SimulationRuntime(plain)
+   runtime.cycle()
+   print(repr(runtime.configuration))
+   print(type(runtime.current_state).__name__, runtime.current_state.path)
+   print(runtime.brief_stack)
+
+.. testoutput::
+
+   Configuration(mode='stable', position='Root.A')
+   State ('Root', 'A')
+   [(('Root',), 'active'), (('Root', 'A'), 'active')]
+
+Abstract handlers receive a ``ReadOnlyExecutionContext``.
+
+.. list-table:: Handler context fields around regions
+   :header-rows: 1
+   :widths: 26 74
+
+   * - Field
+     - Value
+   * - ``state_path``
+     - The deepest state common to the range the action wraps: the leaf when the
+       action wraps one branch, the owner when it wraps the whole group.
+   * - ``active_leaf``
+     - Follows ``state_path`` in the same way (the active leaf when exactly one
+       is wrapped, otherwise the host state path).
+   * - ``configuration``
+     - The complete configuration at the moment of the call, as a
+       ``Configuration``. A region that has not started yet is shown as
+       ``[init]``; a region that already moved in the same cycle shows its new
+       state.
+   * - ``get_var(name)``
+     - The variable snapshot, hidden variables included.
+
+.. literalinclude:: handler_hooks.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('handler_hooks.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(model, input_source={'fault': 0, 'requested': 1})
+
+
+   def reporter(name):
+       def show(ctx):
+           print(name, '|', '.'.join(ctx.state_path), '|', ctx.configuration)
+       return show
+
+
+   for path in ['Controller.Tick', 'Controller.Running.GroupPre',
+                'Controller.Running.Safety.Normal.Watch', 'Controller.Running.Motion.On.Drive']:
+       runtime.register_abstract_handler(path, reporter(path.split('.')[-1]))
+   runtime.cycle()
+   runtime.cycle('/Start')
+   runtime.cycle()
+
+.. testoutput::
+
+   Tick | Controller.Idle | Controller.Idle
+   Tick | Controller.Running | Controller.Running{Safety: Normal, Motion: [init]}
+   GroupPre | Controller.Running | Controller.Running{Safety: Normal, Motion: [init]}
+   Watch | Controller.Running.Safety.Normal | Controller.Running{Safety: Normal, Motion: [init]}
+   Tick | Controller.Running | Controller.Running{Safety: Normal, Motion: Off}
+   GroupPre | Controller.Running | Controller.Running{Safety: Normal, Motion: Off}
+   Watch | Controller.Running.Safety.Normal | Controller.Running{Safety: Normal, Motion: Off}
+   Drive | Controller.Running.Motion.On | Controller.Running{Safety: Normal, Motion: On}
+
+In cycle 2, ``Tick`` (an aspect of the root) and ``GroupPre`` (an aspect of the
+owner) wrap the whole group, so their ``state_path`` is ``Controller.Running``;
+``Watch`` wraps one branch and reports its leaf. ``Motion`` is ``[init]`` in every
+call of that cycle because it has not started yet; in cycle 3 it is ``Off`` and
+then ``On`` in the call of ``Drive``.
+
+.. _sim-region-cli:
+
+Simulate command with regions
+-----------------------------
+
+``pyfcstm simulate`` accepts models with regions in batch and interactive mode.
+The position is shown as configuration text in ``current``, after ``cycle``, in
+the table of several cycles, in ``history`` and in exported files.
+
+.. list-table:: Region facts of the commands
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Command
+     - Behavior
+   * - ``init <position> var=value ...``
+     - The position is a configuration text, a dotted path through regions, or a
+       state path. The spaces inside the braces are kept, so
+       ``init Controller.Running{Safety: Watching, Motion: On} permit=1`` is one
+       position. Unbalanced braces report ``Error: the braces of the configuration
+       text '...' are not balanced.`` with an example. A variable written twice
+       reports ``Error: variable 'permit' is assigned more than once.`` Missing
+       variables report ``Error: All variables must be provided. Missing:
+       [...]`` and list the available names. Refused positions report
+       ``Initialization failed: <message>``; the messages are those printed
+       for each refused input in :ref:`sim-region-hot-start`, and the records
+       below show some of them.
+   * - ``events``
+     - Lists the events that can be typed as shown for the active leaves. A short
+       name that two leaves use for different events is not offered; an event of
+       an ancestor, owner or region is listed by its full path.
+   * - ``cycle [count] [events...] [--input name=value ...]``
+     - Every cycle needs a complete input vector: one ``--input`` per input
+       variable. A refused event name reports ``Cycle execution failed: ...``
+       with the text of the table in :ref:`sim-region-event-names`; the last
+       record below shows one.
+   * - ``history``, ``export``
+     - The ``state`` column and field hold the configuration text.
+   * - Completion
+     - ``init`` completes states inside regions; ``cycle`` completes only names
+       that resolve as typed.
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; \
+   events; \
+   cycle --input fault=1 --input requested=1; \
+   history"
+   ...
+   >>> events
+   ...
+   Available Events:
+     • Controller.Stop
+   ...
+   >>> cycle --input fault=1 --input requested=1
+   ...
+   Cycle: 1
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
+   ...
+   >>> history
+   ...
+      1    Controller.Running{Safety: Watching, Motion: Off}  False      0         0      0
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running.Motion.On permit=1 motor=1 __forced_0=0; \
+   cycle --input fault=0 --input requested=1"
+   ...
+   Initialized from state: Controller.Running.Motion.On
+   Cycle: 0
+   Current State: Controller.Running{Safety: [init], Motion: On}
+   ...
+   Cycle: 1
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   export history.json"
+   ...
+   $ cat history.json
+   ...
+       "state": "Controller.Running{Safety: Watching, Motion: Off}",
+   ...
+
+The first record hot starts the controller
+(:download:`controller.fcstm </_models/controller.fcstm>`), shows that
+``events`` lists only ``Controller.Stop`` for that position, and that a fault
+turns the motor off in the cycle in which it is seen. The second record shows
+the dotted path form: ``Safety`` waits as ``[init]`` and starts in the first
+cycle. The third record shows the position in an exported file. All three
+commands exit with status 0. The refusals follow with their exit statuses:
+every refused command stops batch processing and returns status 1.
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0"
+   ...
+   Error: the braces of the configuration text 'Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0' are not balanced. ...
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running permit=1 permit=0 motor=1 __forced_0=0"
+   ...
+   Error: variable 'permit' is assigned more than once.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=1 __forced_0=0"
+   ...
+   Initialization failed: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running permit=1 motor=1"
+   ...
+   Error: All variables must be provided. Missing: ['__forced_0']
+   Available variables: ['__forced_0', 'motor', 'permit']
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; cycle Stop2 --input fault=0 --input requested=1"
+   ...
+   Cycle execution failed: Position-dependent event name 'Stop2' matches no event ...
+   $ echo $?
+   1
+
 Python runtime API
 ------------------
 
@@ -223,11 +879,17 @@ Python runtime API
        command-layer ``history_size`` setting remaps ``0`` to runtime ``None``;
        direct runtime code should pass ``None`` when it wants unlimited
        history.
+   * - ``configuration``
+     - Immutable :class:`pyfcstm.model.Configuration` of the resting position,
+       available for every model; see :ref:`sim-region-position-api`.
    * - ``current_state``
      - Current active state.  Check ``is_ended`` first; after termination this
        raises :class:`pyfcstm.simulate.SimulationRuntimeTerminalStateError`.
+       For a model with regions it returns the ``Configuration`` instead of a
+       ``State``.
    * - ``brief_stack``
-     - Terminal-safe stack summary as ``(state_path, mode)`` tuples.
+     - Terminal-safe stack summary as ``(state_path, mode)`` tuples.  Raises
+       ``SimulationRuntimeRegionQueryError`` for a model with regions.
    * - ``is_ended``
      - ``True`` after the runtime has terminated.  Later ``cycle()`` calls are
        no-ops.
@@ -246,7 +908,9 @@ Python runtime API
        action metadata, active leaf, abstract target, and named-ref metadata.
        ``active_leaf`` is the runtime state path where the action executes: the
        active leaf state when one is active, otherwise the action's host state
-       path, which is what entering a composite state reports.
+       path, which is what entering a composite state reports.  For actions
+       around regions see :ref:`sim-region-position-api`; the context also
+       carries ``configuration``, the whole position at the moment of the call.
    * - ``abstract_handler(action_path)``
      - Decorator that marks object methods for bulk handler registration.
 
@@ -305,59 +969,86 @@ This complete example separates the transition effect from the target's entry
 action. The transition snapshot sees ``x == 1``; the following action sees
 ``x == 2``:
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> import json
-    >>> from pyfcstm.model import load_state_machine_from_text
-    >>> from pyfcstm.simulate import SimulationRuntime
-    >>> model = load_state_machine_from_text('''
-    ... def int x = 0;
-    ... state Root {
-    ...     state Idle;
-    ...     state Done { enter { x = x + 1; } }
-    ...     [*] -> Idle;
-    ...     Idle -> Done :: Go effect { x = x + 1; };
-    ... }
-    ... ''')
-    >>> runtime = SimulationRuntime(model, history_size=0)
-    >>> _ = runtime.cycle()
-    >>> result = runtime.cycle('Root.Idle.Go', trace=True)
-    >>> [(entry.kind, entry.vars['x']) for entry in result.trace]
-    [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
-    >>> payload = json.dumps([entry.to_dict() for entry in result.trace])
-    >>> json.loads(payload)[1]['transition_label']
-    'Root.Idle::0::Idle->Done'
-    >>> runtime.history
-    []
-    >>> for entry in result.trace:
-    ...     print(entry)
-    State exit Root.Idle | vars={x=0}
-    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
-    State enter Root.Done | vars={x=1}
-    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
+   import json
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_text('''
+   def int x = 0;
+   state Root {
+       state Idle;
+       state Done { enter { x = x + 1; } }
+       [*] -> Idle;
+       Idle -> Done :: Go effect { x = x + 1; };
+   }
+   ''')
+   runtime = SimulationRuntime(model, history_size=0)
+   runtime.cycle()
+   result = runtime.cycle('Root.Idle.Go', trace=True)
+   print([(entry.kind, entry.vars['x']) for entry in result.trace])
+   payload = json.dumps([entry.to_dict() for entry in result.trace])
+   print(json.loads(payload)[1]['transition_label'])
+   print(runtime.history)
+   for entry in result.trace:
+       print(entry)
+
+.. testoutput::
+
+   [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
+   Root.Idle::0::Idle->Done
+   []
+   State exit Root.Idle | vars={x=0}
+   Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+   State enter Root.Done | vars={x=1}
+   Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
 
 An empty trace does not by itself mean Delta or termination. A stable state
 without during actions or enabled transitions performs no observable operations:
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> idle = runtime.cycle(trace=True)
-    >>> (idle.delta, idle.trace, runtime.is_ended)
-    (False, (), False)
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   runtime = SimulationRuntime(load_state_machine_from_text('state Root { [*] -> Idle; state Idle; }'))
+   runtime.cycle()
+   idle = runtime.cycle(trace=True)
+   print(idle.delta, idle.trace, runtime.is_ended)
+
+.. testoutput::
+
+   False () False
 
 Snapshots cannot be edited in place; use ``to_dict()`` for editable data.
 Supply ``trace`` by name rather than as a second positional argument:
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> result.trace[-1].vars['x'] = 9
-    Traceback (most recent call last):
-        ...
-    TypeError: 'mappingproxy' object does not support item assignment
-    >>> runtime.cycle(None, True)
-    Traceback (most recent call last):
-        ...
-    TypeError: ...
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_text(
+       'def int x = 0; state Root { state Idle; state Done; [*] -> Idle; '
+       'Idle -> Done :: Go effect { x = x + 1; }; }')
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   result = runtime.cycle('Root.Idle.Go', trace=True)
+   try:
+       result.trace[-1].vars['x'] = 9
+   except TypeError as error:
+       print(error)
+   try:
+       runtime.cycle(None, True)
+   except TypeError as error:
+       print(error)
+
+.. testoutput::
+
+   'mappingproxy' object does not support item assignment
+   ... takes from 1 to 2 positional arguments but 3 were given
 
 This API serializes entries, not a self-contained replay file. A caller saving
 them must also retain the model, cycle number, input events, and observation
@@ -390,7 +1081,12 @@ Public failures and boundaries
    * - ``ValueError`` from construction or hot start
      - Python API and ``init`` command message
      - Invalid error mode, unknown variables, missing hot-start variables,
-       unresolved state path, or invalid persistent value type.
+       unresolved state path, or invalid persistent value type.  For positions
+       of models with regions: a region as the position, an unknown entry, a
+       duplicate region, bad position text, every region of an owner Done, a
+       ``Configuration`` or ``State`` of another model (all with their texts in
+       :ref:`sim-region-hot-start`); a position of the wrong type raises
+       ``TypeError``.
    * - ``SimulationRuntimeEventError``
      - Python API; command layer reports ``Cycle execution failed: ...``
      - Unsupported, unresolved, or foreign event input.
@@ -400,6 +1096,10 @@ Public failures and boundaries
        execution path in the same cycle, or exceeded DFS/stack-depth limits.
        Loop errors include state paths and repair guidance. A cyclic candidate
        is skipped when a later candidate can reach a stoppable state or termination.
+   * - ``SimulationRuntimeRegionQueryError``
+     - Python API ``brief_stack``
+     - The model has regions and a single stack cannot describe it; use
+       ``configuration``.
    * - ``SimulationRuntimeTerminalStateError``
      - Python API ``current_state`` after termination
      - Runtime has ended and the active stack is empty.
@@ -431,8 +1131,7 @@ This reference is aligned with these implementation and test facts:
   Python API surface.
 * ``test/fixtures/simulate_semantics/cases/`` and
   ``test/testings/simulate_semantics.py`` for execution-order scenarios.
-* ``docs/source/tutorials/simulation/*.demo.*`` for checked documentation
-  transcripts.
+* ``docs/source/tutorials/simulation/``: the examples of the simulation tutorial.
 
 .. toctree::
    :maxdepth: 1

@@ -1,0 +1,45 @@
+input int x0;
+input int x1;
+def int c0 = 0;
+def int u0 = 0;
+def int c1 = 0;
+def int u1 = 0;
+state Root {
+    [*] -> P_0_0;
+    state P_0_0 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_0_1 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_0_2 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_1_0 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_1_1 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_1_2 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_2_0 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_2_1 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    state P_2_2 { during { u0 = u0 + 1; u1 = u1 + 1; } }
+    P_0_0 -> P_0_1 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_0_0 -> P_1_0 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_0_0 -> P_1_1 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_0_1 -> P_0_2 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_0_1 -> P_1_1 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_0_1 -> P_1_2 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_0_2 -> P_0_0 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_0_2 -> P_1_2 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_0_2 -> P_1_0 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_1_0 -> P_1_1 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_1_0 -> P_2_0 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_1_0 -> P_2_1 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_1_1 -> P_1_2 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_1_1 -> P_2_1 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_1_1 -> P_2_2 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_1_2 -> P_1_0 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_1_2 -> P_2_2 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_1_2 -> P_2_0 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_2_0 -> P_2_1 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_2_0 -> P_0_0 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_2_0 -> P_0_1 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_2_1 -> P_2_2 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_2_1 -> P_0_1 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_2_1 -> P_0_2 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+    P_2_2 -> P_2_0 : if [x0 == 0 && x1 == 1] effect { c1 = c1 + 1; };
+    P_2_2 -> P_0_2 : if [x0 == 1 && x1 == 0] effect { c0 = c0 + 1; };
+    P_2_2 -> P_0_0 : if [x0 == 1 && x1 == 1] effect { c0 = c0 + 1; c1 = c1 + 1; };
+}

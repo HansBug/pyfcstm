@@ -1,0 +1,41 @@
+// Nesting goes through a state (Cell), `active()` names a path through the
+// region segments, and a forced transition and a history live inside a region.
+state Plant {
+    event Go;
+    event Trip;
+    event Stop;
+    event Resume;
+    [*] -> Job;
+    state Job {
+        region Line {
+            [*] -> Cell;
+            state Cell {
+                region Feed {
+                    [*] -> Idle;
+                    state Idle;
+                    state Busy;
+                    Idle -> Busy : /Go;
+                }
+                region Check {
+                    [*] -> Watch;
+                    state Watch;
+                    state Alarm;
+                    Watch -> Alarm : if [active("Plant.Job.Line.Cell.Feed.Busy")];
+                }
+            }
+        }
+        region Panel {
+            [*] -> On;
+            state On {
+                [*] -> Quiet;
+                [H] -> Quiet;
+                state Quiet;
+                state Loud;
+                Quiet -> Loud : /Trip;
+            }
+            state Off;
+            !On -> Off : /Stop;
+            Off -> On.[H] : /Resume;
+        }
+    }
+}

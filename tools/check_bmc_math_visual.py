@@ -21,6 +21,8 @@ _PAGE_DIRECTORIES = (
     "explanations/bmc_semantics",
     "explanations/bmc_properties",
     "explanations/bmc_solving",
+    "explanations/bmc_regions",
+    "explanations/bmc_scaling",
 )
 _VIEWPORTS = {
     "desktop": {"width": 1440, "height": 1000},
@@ -76,16 +78,20 @@ def _expected_anchor_count() -> int:
         raise VisualCheckFailure(
             "cannot read the equation label list from %s: %s" % (source.name, err)
         )
+    counts = {}
     for node in module.body:
         if not isinstance(node, ast.Assign):
             continue
-        if not any(
-            isinstance(target, ast.Name) and target.id == "_EQUATION_LABELS"
-            for target in node.targets
-        ):
-            continue
-        if isinstance(node.value, ast.Tuple):
-            return len(node.value.elts)
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Name)
+                and target.id in ("_EQUATION_LABELS", "_SCALING_EQUATION_LABELS")
+                and isinstance(node.value, ast.Tuple)
+            ):
+                counts[target.id] = len(node.value.elts)
+    # The scaling page's labels are a second frozen tuple in the same file.
+    if len(counts) == 2:
+        return sum(counts.values())
     raise VisualCheckFailure(
         "%s no longer defines _EQUATION_LABELS as a tuple literal." % source.name
     )
@@ -129,6 +135,23 @@ def _require_directory(path: Path, label: str) -> Path:
 
 
 def _check_page(page, url: str) -> Dict[str, object]:
+    """Load one rendered page and measure its displayed equations in the browser.
+
+    Waits for MathJax to produce display containers, then reports how many
+    exist, the ids of the equation anchors (``equation-bmc-*`` for the BMC
+    ledger, which includes the scaling page, and ``equation-eq-region-*`` for
+    the region encoding page), the nodes the reST build marked ``problematic``,
+    equations that are blank or leave the viewport, and whether the page as a
+    whole scrolls sideways.
+
+    :param page: The browser page to drive.
+    :type page: playwright.sync_api.Page
+    :param url: ``file://`` URL of the rendered HTML page.
+    :type url: str
+    :return: A mapping with ``equation_count``, ``equation_anchors``,
+        ``problematic``, ``invalid`` and ``document_overflow``.
+    :rtype: Dict[str, object]
+    """
     page.goto(url, wait_until="networkidle")
     page.wait_for_selector("mjx-container[display='true']", state="attached")
     page.wait_for_function(
@@ -153,7 +176,7 @@ def _check_page(page, url: str) -> Dict[str, object]:
             }
           });
           const documentOverflow = document.documentElement.scrollWidth > viewportWidth + 1;
-          const anchors = [...document.querySelectorAll('[id^="equation-bmc-"]')].map(
+          const anchors = [...document.querySelectorAll('[id^="equation-bmc-"], [id^="equation-eq-region-"]')].map(
             (node) => node.id
           );
           return {

@@ -16,6 +16,7 @@ directory or diagnosing a rendering failure. For a task flow, see
 .. template-config-marker: top-level-key filters
 .. template-config-marker: top-level-key tests
 .. template-config-marker: top-level-key ignores
+.. template-config-marker: top-level-key features
 .. template-config-marker: validation yaml-parse-error
 .. template-config-marker: validation empty-file
 .. template-config-marker: validation root-not-mapping
@@ -31,6 +32,10 @@ directory or diagnosing a rendering failure. For a task flow, see
 .. template-config-marker: validation stmt-style-missing-base-lang
 .. template-config-marker: validation ignores-not-list
 .. template-config-marker: validation ignores-item-not-string
+.. template-config-marker: validation features-not-list
+.. template-config-marker: validation features-item-not-string
+.. template-config-marker: validation features-unknown-feature
+.. template-config-marker: validation features-duplicate-feature
 .. template-config-marker: validation object-template-missing-template
 .. template-config-marker: validation object-import-missing-from
 .. template-config-marker: validation object-value-missing-value
@@ -147,6 +152,9 @@ Only these top-level keys are accepted:
    * - ``ignores``
      - list of strings
      - GitWildMatch-style patterns for input template files that should not be rendered or copied.
+   * - ``features``
+     - list of strings
+     - Model features the template can render. The only member is ``region``; see :ref:`sec-reference-template-config-features`.
 
 Validation failures
 -------------------
@@ -205,6 +213,18 @@ configuration file path and the failing key shape where available.
    * - ``ignores-item-not-string``
      - One ignore item is not a string.
      - ``ignores: [123]``
+   * - ``features-not-list``
+     - ``features`` is a string, a mapping or another non-list value (``null`` is not a failure, see below).
+     - ``features: region``
+   * - ``features-item-not-string``
+     - One ``features`` item is not a string.
+     - ``features: [1]``
+   * - ``features-unknown-feature``
+     - One ``features`` item is not a supported feature name; names are case-sensitive.
+     - ``features: [cloud]``
+   * - ``features-duplicate-feature``
+     - The same feature is listed twice.
+     - ``features: [region, region]``
 
 Object-loading failures happen when the selected form is incomplete or cannot
 be imported:
@@ -227,6 +247,185 @@ be imported:
    * - ``object-import-target-failure``
      - ``from`` points to an unavailable object.
      - Import failure from ``quick_import_object``.
+
+.. _sec-reference-template-config-features:
+
+Declaring model features
+------------------------
+
+``features`` is how a template says which model constructs it can render. A
+template that does not declare a feature is refused for any model that needs it,
+before a file is written. Today the closed list has one member.
+
+.. list-table:: ``features`` contract
+   :header-rows: 1
+
+   * - Item
+     - Fact
+   * - Spelling
+     - Top-level key ``features`` in ``config.yaml``.
+   * - Type
+     - List of strings. An absent key, ``features:`` (``null``) and ``features: []`` all mean "nothing declared".
+   * - Allowed members
+     - ``region`` only (``_TEMPLATE_FEATURES`` in ``pyfcstm/render/render.py``). Matching is exact, so ``Region`` is rejected.
+   * - Default
+     - Nothing declared. A template written before regions existed therefore refuses every model that declares a region.
+   * - Meaning of ``region``
+     - The template renders models that declare ``region`` blocks, including nested ones. Declare it only when the template really does; a template written for one active path would generate wrong code for a model with regions.
+   * - Needed by
+     - Only a model that declares at least one region. A model without regions renders with or without the declaration.
+   * - Read back
+     - ``StateMachineCodeRenderer(template_dir).features`` returns a ``frozenset`` of the declared names.
+   * - Checked by
+     - ``StateMachineCodeRenderer.render`` and ``render_one_file``, before the output directory is created or cleared, and by ``pyfcstm generate`` before it calls the renderer.
+   * - Built-in templates
+     - ``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` all declare ``features: [region]`` in their ``config.yaml``.
+
+Legal declarations:
+
+.. list-table:: ``features`` examples
+   :header-rows: 1
+
+   * - Case
+     - YAML
+     - Result
+   * - Renders regions.
+     - ``features: [region]``
+     - Legal. A model with regions is accepted.
+   * - No declaration.
+     - key absent, or ``{}``
+     - Legal. A model with regions is refused; a model without regions renders.
+   * - Explicit empty list.
+     - ``features: []``
+     - Legal and equivalent to leaving the key out.
+   * - Empty value.
+     - ``features:``
+     - Legal. YAML reads it as ``null``, which counts as nothing declared.
+   * - String instead of list.
+     - ``features: region``
+     - Invalid. Write ``features: [region]``.
+   * - Mapping.
+     - ``features: {region: true}``
+     - Invalid. The value must be a list.
+   * - Unknown or differently cased name.
+     - ``features: [cloud]``, ``features: [Region]``
+     - Invalid. Only ``region`` exists.
+   * - Repeated name.
+     - ``features: [region, region]``
+     - Invalid.
+   * - Non-string item.
+     - ``features: [1]``, ``features: [null]``
+     - Invalid.
+
+The validation errors are ``ValueError`` raised when the renderer reads the
+configuration. Each of them names the configuration file; ``...`` below stands
+for the temporary directory of the script. The script builds the renderer once
+for each one-line ``config.yaml``:
+
+.. testcode::
+
+   import tempfile
+   from pathlib import Path
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   configs = ("{}", "features: [region]", "features: []", "features:", "features: region",
+              "features: {region: true}", "features: [cloud]", "features: [Region]",
+              "features: [region, region]", "features: [1]", "features: [null]")
+   for text in configs:
+       with tempfile.TemporaryDirectory() as work:
+           Path(work, "config.yaml").write_text(text + "\n")
+           try:
+               print(text, "->", sorted(StateMachineCodeRenderer(work).features))
+           except ValueError as err:
+               print(text, "-> ValueError:", err)
+
+.. testoutput::
+
+   {} -> []
+   features: [region] -> ['region']
+   features: [] -> []
+   features: -> []
+   features: region -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got str.
+   features: {region: true} -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got dict.
+   features: [cloud] -> ValueError: Renderer config .../config.yaml declares unknown feature 'cloud'. Supported features: region.
+   features: [Region] -> ValueError: Renderer config .../config.yaml declares unknown feature 'Region'. Supported features: region.
+   features: [region, region] -> ValueError: Renderer config .../config.yaml declares duplicate feature 'region'.
+   features: [1] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got int.
+   features: [null] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got NoneType.
+
+The key is also checked by ``pyfcstm generate``. The next commands build four
+template directories and render ``controller.fcstm`` (two regions) or
+``plain_no_region.fcstm`` (none) into each one. A refused run exits with status 1,
+writes nothing, and prints the model's region count, where the first region is,
+what a template author should declare, which built-in templates to use instead,
+and one command that can be copied. The suggested template is the first name of
+the printed list. The ``(line 12)`` is the line of the first region
+in ``controller.fcstm``.
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: /_models/plain_no_region.fcstm
+   :language: fcstm
+   :caption: plain_no_region.fcstm
+
+.. code-block:: console
+
+   $ mkdir declared undeclared empty_list null_value
+   $ echo 'name: {{ model.root_state.name }}' > declared/names.txt.j2
+   $ cp declared/names.txt.j2 undeclared/
+   $ cp declared/names.txt.j2 empty_list/
+   $ cp declared/names.txt.j2 null_value/
+   $ echo 'features: [region]' > declared/config.yaml
+   $ echo '{}' > undeclared/config.yaml
+   $ echo 'features: []' > empty_list/config.yaml
+   $ echo 'features:' > null_value/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t declared -o out_declared
+   $ cat out_declared/names.txt
+   name: Controller
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o out_undeclared
+   generate with template directory '...undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. ...
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o out_undeclared
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out_undeclared || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i controller.fcstm -t empty_list -o out_empty_list
+   generate with template directory '...empty_list' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_empty_list || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i controller.fcstm -t null_value -o out_null_value
+   generate with template directory '...null_value' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_null_value || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i plain_no_region.fcstm -t undeclared -o out_plain
+   $ cat out_plain/names.txt
+   name: Plain
+
+What the records establish:
+
+* a template that lists ``region`` renders the region model (exit status 0 and a file in the output directory);
+* a template without the key, with ``features: []`` or with ``features:`` is refused for the region model: exit status 1, no output directory, and the message names the template directory;
+* the same template without declaration still renders a model without regions;
+* the refusal does not tell you the template is broken, it tells you that the template author has not declared region support. Select a built-in template, or declare ``region`` after the template renders regions.
+
+The records do not show what happens with ``--clear``. The refusal comes before
+the output directory is touched, so an existing directory is not cleared either.
+A built-in template is never refused for regions; the refusal text for a built-in
+name exists in ``pyfcstm/entry/generate.py`` but cannot be reached with the five
+current templates.
 
 Expression styles
 -----------------
@@ -631,5 +830,6 @@ questions:
 * did English and Chinese pages cover the same canonical style names, aliases,
   statement fields, object-loading forms, helpers, and file behaviors;
 * did the prose distinguish runtime statement rendering from DSL echo rendering;
+* did the ``features`` row list its members, default, and validation errors in both languages;
 * did any destructive output behavior mention ``--clear`` and the fact that
   input-side ``.git`` ignores do not protect output directories.

@@ -1,0 +1,18 @@
+def int out = 0;
+def int y = 0;
+state Root {
+    region First {
+        state A { during { out = 1; } }
+        [*] -> A;
+    }
+    region Second {
+        state B {
+            during {
+                if [y > 0] {
+                    out = 2;
+                }
+            }
+        }
+        [*] -> B;
+    }
+}

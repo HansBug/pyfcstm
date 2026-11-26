@@ -314,6 +314,244 @@ C 家族辅助函数由 C 家族模板通过 ``type: import`` 显式注册。它
 
 这就是为什么 ``operation_stmt_render`` 适合 DSL 回显文本，却不是运行时代码捷径。
 
+声明模板能渲染什么
+------------------
+
+模板是为一种执行模型写的。它面向的模型在任一时刻只有一条活动的状态路径。含区域（region）的模型同时有多个活动叶子，位置是一棵树，所以一个只遍历 ``state.transitions`` 并只记录单个当前状态的模板，会生成看起来合理、行为却不对的代码。渲染器不去猜。模板在 ``config.yaml`` 的 ``features`` 列表里声明自己能渲染什么，目前只有 ``region`` 这一项特性。模板没有声明它时，渲染器会在渲染和写出任何文件之前拒绝含区域的模型：
+
+.. literalinclude:: region_plain_template/config.yaml
+   :language: yaml
+   :caption: region_plain_template/config.yaml
+
+.. literalinclude:: region_declared_template/config.yaml
+   :language: yaml
+   :caption: region_declared_template/config.yaml
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t region_plain_template -o out
+   generate with template directory '...region_plain_template' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i ...controller.fcstm --template c -o out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out || echo "output directory not created"
+   output directory not created
+   $ pyfcstm generate -i controller.fcstm -t region_declared_template -o declared_out
+   $ cat declared_out/states.txt
+   Controller
+   Idle
+   Running
+   Watching
+   Off
+   On
+   __forced_gate_0
+
+从上往下读这段输出：
+
+1. 被拒绝的模板与被接受的模板只差一行 ``features: [region]``\ ，模板的其他部分都不影响这个判定。
+2. 命令以 ``1`` 退出，并输出对不支持的 ``region`` 特性的拒绝（对应的诊断码是 ``E_UNSUPPORTED_FEATURE``\ ，打印出来的文字里不含这个码）。第一行写出模板目录，所以模板作者能分清“模板缺少这项特性”和“模型写错了”。这里的目录显示为 ``...``\ ，真实消息带的是你传入的路径。第一行里的 ``(line 12)`` 是模型中声明第一个区域的行号。
+3. 这条消息有两类读者。模板作者被告知该声明什么、什么时候声明：只有模板真的渲染区域时才声明。模型作者得到支持区域的内置模板列表，以及一条可以复制的命令。
+4. ``test -e out`` 那一行打印 ``output directory not created``\ ，这正是提前拒绝的意义。渲染开始之后才拒绝，可能留下一棵看起来像结果的半成品目录树。
+5. 第二次运行声明了 ``region`` 并且成功。模板看到的是运行的机器：状态列表末尾是生成的伪状态 ``__forced_gate_0``\ ，它来自强制声明 ``!Running -> Idle : /Stop`` 的展开。声明了 ``region`` 的模板应当把这台机器当成普通机器处理。
+
+不含区域的模型从不需要任何特性，所以没有声明 ``region`` 的模板渲染这类模型时与以前完全一样。声明特性是一个承诺，不是一个开关：声明 ``region`` 的模板接管目标语言里全部的区域语义，并且应当在每个共享区域用例上与 ``SimulationRuntime`` 对齐。内置的 ``python``\ 、\ ``c``\ 、\ ``c_poll``\ 、\ ``cpp`` 和 ``cpp_poll`` 模板都声明了它。为什么以仿真器为基准，见\ :doc:`含区域的模型怎样执行一个周期 </explanations/region_semantics/index_zh>`\ 。
+
+含区域的模型的生成运行时是什么形态
+----------------------------------
+
+处理区域的运行时不能是一个固定的引擎外加一张模型表，因为一个周期要做的事（按顺序尝试各区域的候选、没有合法位置时把整个周期回滚）取决于模型有多少区域、怎样嵌套。所以内置模板为每个模型生成专用的内核。
+
+**Python。**\ ``machine.py`` 是为该模型生成的：它内嵌运行的机器（包括强制声明的展开）、区域与状态表，以及执行它们的内核。它不需要安装 ``pyfcstm`` 包，大小随模型增长。
+
+**C 系。**\ ``c``\ 、\ ``c_poll``\ 、\ ``cpp`` 和 ``cpp_poll`` 生成一个静态预留内存的内核。内存是机器结构体的一部分（\ ``_private[...STORAGE_BYTES]``\ ），所以周期运行时不分配任何内存。两个容量决定它的大小，而它们由模型推导：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o controller_c
+   $ cat controller_c/machine.h
+   ...
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   ...
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
+
+``ARENA_CAPACITY`` 限制一个周期的一次决策最多考察多少个配置和待办项，\ ``TRAIL_CAPACITY`` 限制最多嵌套多少层检查；\ ``STORAGE_BYTES`` 由两者算出。控制联锁模型需要 108 和 52，上面的头文件里能看到。同一条命令在其他模型上得到不同的数对：没有区域、只有一条转换的 ``region_plain.fcstm`` 得到 8 和 4，两个区域的 ``region_blind_overwrite.fcstm`` 得到 60 和 36，``region_never_completes.fcstm`` 得到 84 和 44，后两个模型见\ :doc:`诊断页 </explanations/diagnostics/index_zh>`\ 。这些数字来自模型，而不是引擎的固定上限。它们是这四个模型在当前版本的模板上得到的值，不是可以跨模板版本依赖的公式。
+
+.. literalinclude:: /_models/region_plain.fcstm
+   :language: fcstm
+   :caption: ``region_plain.fcstm``
+
+.. code-block:: console
+
+   $ pyfcstm generate -i docs/source/_models/region_plain.fcstm --template c -o plain_c
+   $ cat plain_c/machine.h
+   ...
+   #define ROOT_MACHINE_ARENA_CAPACITY 8
+   ...
+   #define ROOT_MACHINE_TRAIL_CAPACITY 4
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_blind_overwrite.fcstm --template c -o blind_c
+   $ cat blind_c/machine.h
+   ...
+   #define DRIVE_MACHINE_ARENA_CAPACITY 60
+   ...
+   #define DRIVE_MACHINE_TRAIL_CAPACITY 36
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_never_completes.fcstm --template c -o never_c
+   $ cat never_c/machine.h
+   ...
+   #define LINE_MACHINE_ARENA_CAPACITY 84
+   ...
+   #define LINE_MACHINE_TRAIL_CAPACITY 44
+   ...
+
+周期需要的容量超过设定时，会失败并给出点明宏名的消息，不会悄悄出错。要提高容量，请为 ``machine.c`` 和每个包含 ``machine.h`` 的文件定义相同的值，因为机器的大小取决于它。两点需要据此规划，生成的 README 里都写了：一个机器的大小随状态与区域数增长，所以大模型的机器应放在静态存储里而不是栈上；同时进入一串嵌套的拥有者（owner）时，第一个进入这串嵌套的周期，耗时每多一层就翻一倍。
+
+“没有堆”需要一个限定。内核本身不需要堆。便利函数 ``create`` 和 ``destroy`` 使用 ``calloc`` 和 ``free``\ ，除非定义 ``PYFCSTM_GENERATED_NO_HEAP`` 把它们去掉；自己持有机器对象的程序，比如下面的运行，从不需要它们。\ ``cpp`` 和 ``cpp_poll`` 模板包装的是 C 内核，本页下面的证据只运行了 ``c``\ 。
+
+仿真器与生成运行时共用一套位置词汇
+----------------------------------
+
+含区域的机器的位置是一棵树，写成一行文本：\ ``Controller.Running{Safety: Watching, Motion: Off}``\ 。生成的运行时与仿真器逐字相同地写出这段文本，并以符合各语言习惯的名字提供同样的查询：
+
+.. list-table:: 三个地方的位置接口
+   :header-rows: 1
+   :widths: 22 26 26 26
+
+   * - 问题
+     - 仿真器
+     - Python 运行时
+     - C 运行时
+   * - 机器在哪里？
+     - ``runtime.configuration``\ （经 ``str`` 得到文本）
+     - ``machine.configuration``
+     - ``ControllerMachine_get_configuration`` 与 ``..._configuration_format``
+   * - 哪些叶子活动？
+     - ``configuration.leaves``
+     - ``machine.leaves``
+     - ``..._configuration_leaves``
+   * - 某个状态在位置里吗？
+     - ``configuration.is_active(path)``
+     - ``machine.is_active(path)``
+     - ``..._configuration_is_active``
+   * - 区域在做什么？
+     - ``configuration.region_status(path)``
+     - ``machine.region_status(path)``
+     - ``..._configuration_region_status``
+   * - 从保存的位置启动
+     - 用配置做热启动
+     - 用文本做 ``initial_state=``
+     - ``..._hot_start_at``
+
+区域的状态在每个地方都是四个词之一：\ ``live``\ （持有一个活动状态）、\ ``done``\ （已完成）、\ ``pending``\ （拥有者活动而它尚未初始化，文本为 ``[init]``\ ）和 ``inactive``\ （拥有者不在位置里）。C 运行时把它们写成 ``CONTROLLER_MACHINE_REGION_STATUS_LIVE`` 这样的常量。
+
+下面的脚本让生成的 Python 运行时和仿真器驱动同样的六个周期（启动、平稳运行、连续两个周期出现故障、停止），打印每个周期之后的文本，以及两者是否一致：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o python_out
+   $ ls python_out/machine.py
+   python_out/machine.py
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "python_out")
+   from machine import ControllerMachine
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   steps = [(None, 0, 0), (["/Start"], 0, 1), (None, 0, 1), (None, 1, 1), (None, 1, 1), (["/Stop"], 0, 0)]
+   model = load_state_machine_from_text(open("controller.fcstm").read())
+   simulator = SimulationRuntime(model, input_source={"fault": 0, "requested": 0})
+   generated = ControllerMachine()
+   for events, fault, requested in steps:
+       inputs = {"fault": fault, "requested": requested}
+       simulator.cycle(events, inputs=inputs)
+       generated.cycle(events, inputs=inputs)
+       print(generated.configuration, generated.configuration == str(simulator.configuration))
+   print("leaves:", generated.leaves)
+   print("is_active Controller.Running:", generated.is_active("Controller.Running"))
+
+.. testoutput::
+
+   Controller.Idle True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: On} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Idle True
+   leaves: (('Controller', 'Idle'),)
+   is_active Controller.Running: False
+
+C 运行时驱动同样的六个周期。这需要 C 编译器，所以与本页其余的命令和输出不同，这段 C 程序和它的命令\ **不**\ 在文档检查里运行。后面的六行是这些命令在有 C 编译器的环境里运行一次的输出，这里没有再次核对；可以和前面经过检查的 Python 输出对照：
+
+.. code-block:: c
+   :caption: app.c
+
+   #include <stdio.h>
+   #include "machine.h"
+
+   static void show(const ControllerMachine *machine)
+   {
+       ControllerMachineConfiguration configuration;
+       char text[128];
+       if (ControllerMachine_get_configuration(machine, &configuration) != CONTROLLER_MACHINE_SUCCESS) {
+           puts("ended");
+           return;
+       }
+       ControllerMachine_configuration_format(&configuration, text, sizeof(text));
+       puts(text);
+   }
+
+   int main(void)
+   {
+       static ControllerMachine machine;
+       ControllerMachineEventId start = CONTROLLER_MACHINE_EVENT_CONTROLLER_START;
+       ControllerMachineEventId stop = CONTROLLER_MACHINE_EVENT_CONTROLLER_STOP;
+       ControllerMachineInputs calm = {0, 1}, fault = {1, 1}, idle = {0, 0};
+
+       ControllerMachine_init(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &idle);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &start, 1, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &stop, 1, &idle);
+       show(&machine);
+       return 0;
+   }
+
+.. code-block:: bash
+
+   pyfcstm generate -i controller.fcstm --template c -o controller_c
+   cc -std=c99 -Wall -Wextra -pedantic -DPYFCSTM_GENERATED_NO_HEAP -Icontroller_c controller_c/machine.c app.c -lm -o app
+   ./app
+
+.. code-block:: text
+
+   Controller.Idle
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Idle
+
+Python 运行时在每个周期都与仿真器一致，记录下来的 C 输出（未再核对）也是同样的六行。这个序列展示了控制联锁模型逐周期的行为：周期 4 的故障让 ``Motion`` 区域在同一周期里回到 ``Off``\ ，因为 ``Safety`` 先运行。\ ``/Stop`` 之后机器是 ``Controller.Idle``\ ，生成的 Python 运行时对 ``Controller.Running`` 的 ``is_active`` 报告 ``False``\ ，叶子是 ``(('Controller', 'Idle'),)``\ 。
+
+这证明了什么，没有证明什么。它证明：对这个模型和这六个周期，生成的 Python 与 C 运行时和仿真器在位置文本上一致，而位置文本正是调用者读取的东西。它不证明对每个模型都一致。那个结论依赖每个支持区域的模板都必须对照 ``SimulationRuntime`` 通过的共享 ``regions`` 用例，以及放在单元测试之外的随机模型差分检验；本页没有重跑它们。
+
 生成 README 作为机器专属证据
 ----------------------------
 
@@ -322,4 +560,4 @@ C 家族辅助函数由 C 家族模板通过 ``type: import`` 显式注册。它
 * 通用参考页列模板家族、配置键、事件模型形状和证据边界；
 * 操作指南页给短命令和代表性输出片段；
 * 生成 README 列该模型的具体机器类、C 前缀、事件编号、状态编号、钩子名、热启动片段和构建命令；
-* 测试和冒烟演示证明选定的生成 README 示例仍可执行。
+* 测试和冒烟检查证明选定的生成 README 示例仍可执行。

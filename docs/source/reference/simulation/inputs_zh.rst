@@ -9,7 +9,7 @@
 构造与逐拍覆盖
 --------------
 
-.. code-block:: python
+.. testcode::
 
     from pyfcstm.dsl import parse_with_grammar_entry
     from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -32,9 +32,13 @@
     first = runtime.cycle()
     second = runtime.cycle(inputs={'pressure': 75.0})
     third = runtime.cycle()
-    assert [first.inputs['pressure'], second.inputs['pressure'],
-            third.inputs['pressure']] == [70.0, 75.0, 90.0]
-    assert runtime.outputs['reading'] == 270.0
+    print([first.inputs['pressure'], second.inputs['pressure'], third.inputs['pressure']])
+    print(runtime.outputs['reading'])
+
+.. testoutput::
+
+    [70.0, 75.0, 90.0]
+    270.0
 
 构造只验证输入源是否完整、名称和接口是否合法，不调用 ``get()`` 或 ``cycle()``。
 冷启动先解析参数覆盖值和默认值，再初始化持久变量。热启动必须提供完整
@@ -56,7 +60,7 @@
 
 新生成器可以继承带缓存的基类：
 
-.. code-block:: python
+.. testcode::
 
     from pyfcstm.simulate import BaseScalarInputPattern
 
@@ -70,9 +74,14 @@
             return self.start + self.increment * step
 
     source = PressureRamp(70.0, 5.0)
-    assert source.get() == source.get() == 70.0
-    source.cycle()  # A bound source is advanced by its runtime instead.
-    assert source.get() == 75.0
+    print(source.get(), source.get())
+    source.cycle()  # Runtime owns this call when the source is bound.
+    print(source.get())
+
+.. testoutput::
+
+    70.0 70.0
+    75.0
 
 ``BaseIntegratedInputPattern(input_names=(...))`` 的 ``_sample(step)`` 返回完整
 映射，基类会复制并冻结结果。两个基类都缓存当前拍成功的采样；采样失败时不推进，

@@ -59,7 +59,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 
 安装后的两种入口行为相同：
 
-.. code-block:: console
+.. code-block:: text
 
    pyfcstm bmc -i machine.fcstm -q property.fbmcq [OPTIONS]
    python -m pyfcstm bmc -i machine.fcstm -q property.fbmcq [OPTIONS]
@@ -460,30 +460,45 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
 
 ``--explain-infeasibility formal`` 或 ``proof`` 会在人类报告后追加一个解释区块。
 ``BmcSolveResult.__str__()`` 与 ``to_text()`` 使用同一个辅助函数渲染同一区块，
-因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下：
+因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下。写出模型及其查询的两条命令会把 ``effect.fcstm`` 与 ``needs_effect.fbmcq`` 留在工作目录里，供本页后面的例子使用：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'def int retries = 0; state Controller { event Purge; state Idle; state Purging; [*] -> Idle; Idle -> Purging :: Purge effect { retries = retries + 1; } }' > effect.fcstm
+   $ printf 'init state("Controller.Idle") where retries == 0;\nassume at 1: var("retries") == 5;\ncheck reach <= 1: active("Controller.Purging");\n' > needs_effect.fbmcq
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
+       --explain-infeasibility formal --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Classification: assumptions conflict with the feasible prefix
 
+   Why no execution exists:
+     1. The listed source groups are jointly unsatisfiable in assumptions_prefix. A more specific value/state derivation is not available for this expression shape.
+   Derivation: STRUCTURAL ONLY
+
    Conflict constraints:
-     1. r22.fbmcq:2:1-2:28
-        assume at 1: var("x") == 0;
-     2. r22.fbmcq:1:1-1:35
-        init state("Root.A") where x == 0;
-     3. r22.fcstm:1:1-1:15
-        def int x = 0;
+     1. needs_effect.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 5;
+     2. needs_effect.fbmcq:1:1-1:50
+        init state("Controller.Idle") where retries == 0;
+     3. effect.fcstm:1:1-1:21
+        def int retries = 0;
      4. generated transition constraint at step 0
 
-   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
    Core scope: assumptions_prefix
-   Reduction: raw
-   Reason: sound source core published without a minimality proof
+   Reduction: subset_minimal
+   Reason: subset-minimal source core published with a structural_only derivation
 
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
 
 ``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
-``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
+``classification`` 对应的读者可读句子。``Why no execution exists`` 是叙述；这里它只有
+一句结构性的话，``Derivation: STRUCTURAL ONLY`` 表示没有构造更具体的取值或状态推导。
+冲突约束的每一项要么用两行给出作者约束的
 位置与其源码文本，要么给出生成的支撑组，说明它的类别首段——``domain``、
 ``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
 frame 或 step。生成组占一行，若它还带有位置之外的构造元数据（被跟踪的 case 组确实带），
@@ -494,7 +509,8 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
 其中两个根本不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何
 地方都不出现；definedness 组的聚合名则视发布它的阶段而定，来自 initialization 时是
 ``initial``\ 、来自 assumption 时是 ``environment``\ ，既没命名该组、在两处之间也不稳定。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
-``Reason`` 说明为什么停在那里。
+``Reason`` 说明这个核是怎样发布的。同一个查询请求 ``proof`` 时，``Reason`` 会说明为什么没有得到证明，
+那次运行在下文展示。
 
 当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``
 的调用者能同时看到两者：
@@ -504,8 +520,8 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
    Explanation depth: requested proof, achieved formal
 
 每个 core 都会报告自己的 scope 与 reduction，无论最小性是否已证明；区分两者的是
-scope 上面那句话。粒度、成员数、带标签的最小性行以及解释耗时属于更完整的发布区块，
-而那个区块还带有本深度不构造的叙述与因果链，所以这里不出现它们。
+scope 上面那句话。上面的区块不带粒度、成员数、带标签的最小性行和解释耗时，
+这些属于下文的证明区块，那个区块还带有编号的推理步骤。
 
 
 分类与冲突核归约
@@ -575,34 +591,54 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 **什么都没产出时**\ ——``achieved_mode`` 为 ``none``——没有已达成的深度可命名，于是
 标题命名\ *被请求*\ 的深度，后接 ``NOT ACHIEVED``。
 
-针对 benchmark 语料的四次真实运行，覆盖规则的两半：
+下面的运行覆盖规则的两半。最前面的命令写出第二个小模型和它的查询（``effect.fcstm`` 与 ``needs_effect.fbmcq`` 来自上面的例子），这些文件留在工作目录里，供本页后面的例子使用：
 
 .. code-block:: console
 
+   $ echo 'def int retries = 0; def int pressure = 0; state Controller { event Purge; state Idle; state Purging; state Vented; [*] -> Idle; Idle -> Purging :: Purge; Purging -> Vented; }' > latch.fcstm
+   $ printf 'assume at 1: var("retries") == 1;\nassume at 1: var("retries") == 2;\ncheck reach <= 2: active("Controller.Vented");\n' > two_values.fbmcq
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never
+   ...
    Explanation: COMPLETE VERIFIED DOMAIN PROOF
-
+   ...
+   $ echo $?
+   3
    $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never
+   ...
    Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
-
-   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+   ...
+   $ echo $?
+   3
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
        --explain-infeasibility proof --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Explanation depth: requested proof, achieved formal
-   Reason: the formal explanation is complete, but no rule in the catalog closes
-   this core.
+   ...
+   Reason: the formal explanation is structural_only, but no rule in the catalog closes this core.
+   ...
+   $ echo $?
+   3
 
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+最后两条命令只给求解器一毫秒的预算。工作能否在这一预算内完成取决于机器的速度和负载，所以文档检查不运行它们。下面是两次记录下来的运行：
+
+.. code-block:: bash
+
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never --timeout-ms 1
-   Explanation: PROOF EXPLANATION NOT ACHIEVED
-
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never --timeout-ms 1
+
+.. code-block:: text
+
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
+   ...
    Explanation: FORMAL EXPLANATION NOT ACHIEVED
-   Reason: component probe did not start: budget exhausted before the probe
-   started; ...
+   Reason: component probe did not start: budget exhausted before the probe started; ...
+   ...
+   (both commands end with exit status 3)
 
 把规则套用到未展示的那个组合上：一个已构造但报告为 ``partial`` 的证明，标题会是
 ``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。
@@ -637,17 +673,18 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 ``PARTIAL FORMAL DOMAIN EXPLANATION``，推理是编号的而非概括的。针对
 ``latch.fcstm`` 和一个把同一变量在同一帧钉成两个值的查询：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   ...
    Explanation: COMPLETE VERIFIED DOMAIN PROOF
    Classification: the assumptions are internally inconsistent
 
    Why no execution exists:
      1. At frame 1, retries must equal 1.
      2. At frame 1, retries must equal 2.
-     3. Therefore one value cannot be two things at once. No execution satisfies
-        these initialization and query requirements, and the property was not
-        evaluated.
+     3. Therefore one value cannot be two things at once. No execution satisfies these query requirements, and the property was not evaluated.
 
    Conflict constraints:
      1. two_values.fbmcq:1:1-1:34
@@ -662,10 +699,31 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    Reduction: subset_minimal
    Subset minimality: proven
 
+   Proof strength:
+     Input constraints: subset-minimal
+     Reasoning graph: dependency-pruned
+     Every reasoning step: checked against the encoded model semantics
+
+   Review surfaces:
+     assumption  two_values.fbmcq:1:1-1:34
+     assumption  two_values.fbmcq:2:1-2:34
+     No automatic repair has been selected.
+
+   Explanation time: ... ms
+
+   Solver: UNSAT in ... ms
+   ...
+   $ echo $?
+   3
+
 与 ``formal`` 区块的三处差异属于契约而非外观。标题写的是\ **已核验**\ 的证明，
 所以那些句子背后的每一步都经过下文某种方法的检查。``Why no execution exists``
-是按依赖顺序读出的证明，一步一句，以矛盾收尾。而 ``Reason:`` 行不存在：完整证明
-没有"为何提前停止"可解释，而 ``formal`` 区块总要说明它做不到什么。
+是按依赖顺序读出的证明，一步一条具体的句子，以矛盾收尾，而上面的 ``formal`` 区块只有一句
+结构性的话和一行 ``Derivation: STRUCTURAL ONLY``。而 ``Reason:`` 行不存在：
+``Subset minimality`` 与 ``Proof strength`` 之间没有这样一行，因为完整证明
+没有“为何提前停止”可解释，而 ``formal`` 区块总要说明它做不到什么。证明区块还多出
+``Core granularity``、``Core size``、``Subset minimality``，``Proof strength`` 与
+``Review surfaces`` 两节，以及每次运行都不同的 ``Explanation time``。
 
 收尾那句话报告的是"不存在任何执行，因此属性未被求值"。空场景与属性被违反是两个
 不同的结论；读者不能把这个区块当作反例。
@@ -714,8 +772,8 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    * - ``case_condition_entailment``
      - 是
      - 同一个转移 case，但条件已被消去。一个 case 的赋值只在该 case 适用时成立，所以
-       必须先从冲突核成员把条件立起来，赋值才能用——这件事由求解器完成，对着成员**自身
-       的约束**做，而不是对着它们已发布的事实。节点会点名蕴含该条件的成员，并记
+       必须先从冲突核成员把条件立起来，赋值才能用——这件事由求解器完成，对着成员\ **自身
+       的约束**\ 做，而不是对着它们已发布的事实。节点会点名蕴含该条件的成员，并记
        ``solver_entailment``；``condition`` 是整个键被移除而非置空，因为求值规则按键判断。
    * - ``transition_assignment``
      - 是
@@ -893,15 +951,20 @@ Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去�
 的消息，所以构造它的消费方立刻就会知道，而只读取结果的消费方根本不需要这张矩阵。
 
 因此，请求 ``proof`` 而发生降级时，``achieved_mode`` 报告为 ``formal``，并由
-``reason`` 指明原因。针对同一模型、但冲突需要转换读法的查询：
+``reason`` 指明原因。针对一个转换效果让 ``retries`` 加一的模型，以及一个假设了另一个取值的查询（上面的 ``effect.fcstm`` 与 ``needs_effect.fbmcq``\ ）：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ pyfcstm bmc -i effect.fcstm -q needs_effect.fbmcq \
+       --explain-infeasibility proof --color never
+   ...
    Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
    Explanation depth: requested proof, achieved formal
    ...
-   Reason: the formal explanation is complete, but no rule in the catalog closes
-   this core.
+   Reason: the formal explanation is structural_only, but no rule in the catalog closes this core.
+   ...
+   $ echo $?
+   3
 
 降级不等于失败：``formal`` 区块仍然给出分类、子集极小的冲突核以及每个源位置。
 对某些冲突，它给出的信息甚至\ **多于**\ 证明——参见
@@ -919,21 +982,32 @@ Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去�
 ``Property verdict`` 行完全相同的规范文本。该属性由 ``result.outcome`` 推导，并在括号中保留证据类型区别；
 它是展示文本，不是新增的 JSON 业务字段。
 
-.. code-block:: text
+下面的脚本打印上面例子里 ``effect.fcstm`` 的结果：
+
+.. testcode::
+
+   from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("effect.fcstm").read())
+   query = 'check reach <= 2: active("Controller.Purging");'
+   print(solve_bmc_property(compile_bmc_query(model, query)))
+
+.. testoutput::
 
    BmcSolveResult: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    Scenario: FEASIBLE
    Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
    Semantic interpretation: A satisfying witness execution exists within the bound; this is existential evidence, not a universal guarantee.
    Primary search: WITNESS = SAT
-   Conclusion: At least one admissible execution satisfies the reach objective within 1 macro-step.
+   Conclusion: At least one admissible execution satisfies the reach objective within 2 macro-steps.
    Evidence:
      Model role: PRIMARY WITNESS
      Model evidence: SAT model available.
 
    Details:
    BmcSolveResult
-   field    value
+   field... value
    ...
 
 同一映射也覆盖 ``NO WITNESS``、``COUNTEREXAMPLE FOUND``、``PROPERTY GUARANTEED``、
@@ -1151,9 +1225,14 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 对 ``check reach <= 2: active("Root.B");``\ ，第一个守卫不成立时第二个守卫会除以
 ``d``\ ，所以 ``d == 0`` 就是一个错误：
 
-.. code-block:: text
+.. code-block:: console
 
+   $ echo 'input int d; state Root { [*] -> A; state A; state B; state C; A -> B : if [d == 1]; A -> C : if [10 / d > 1]; }' > division.fcstm
+   $ echo 'check reach <= 2: active("Root.B");' > division.fbmcq
+   $ pyfcstm bmc -i division.fcstm -q division.fbmcq --color never
    BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   Scenario: NOT CHECKED
+   Property verdict: NOT EVALUATED (RUNTIME ERROR REACHABLE)
    ...
    Evidence:
      Runtime error: division_by_zero at step 1
@@ -1162,8 +1241,13 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      Model evidence: SAT error-prefix model available.
      Replay: runtime error reproduced: transition guard evaluation failed: division by zero
 
-   Runtime safety check: VIOLATED in <elapsed> ms over 1 operation(s)
+   Runtime safety check: VIOLATED in ... ms over 1 operation(s)
    Solver: NOT RUN
+   Solver reason: property not evaluated: runtime safety violated
+   Feasibility: kernel=not_checked, initialization=not_checked, assumptions=not_checked
+   ...
+   $ echo $?
+   5
 
 进程退出状态为 ``5``。在 JSON 中，同一个错误以三种角色出现（只保留承载它的字段）：
 
@@ -1265,6 +1349,8 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - 字符串数组
      - 解码诊断。
 
+含区域（region）的模型里，帧、步、起点与调用记录还带有可选字段，见\ :ref:`含区域的模型一节 <bmc-results-region-fields-zh>`\ ；不含区域的模型里它们从不出现。
+
 每个事件对象有 ``path``\ （全限定事件路径）、``reason``\ （解码来源）和布尔值
 ``model_value``。重放的 ``input_events`` 只包含值为真且原因为
 ``case_positive``、``explicit_true_assumption`` 或 ``property_support`` 的事件。
@@ -1317,6 +1403,438 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 ``abstract_handlers=None``，成功也不验证任意用户抽象处理器实现。只有重放
 返回带不匹配项的 ``BmcReplayResult`` 才产生退出状态 ``4``。若在结果形成前抛异常，则属于
 内部失败：退出状态 ``1``、打印回溯、无半成品 JSON/人类可读报告。
+
+.. _bmc-results-region-fields-zh:
+
+含区域的模型
+------------
+
+含 ``region`` 块的模型没有唯一的当前状态，一个宏步会按书写顺序运行多个分支。结果协议用一小组\ *可选*\ 字段描述这件事。这些字段在不含区域的模型里全部不出现，所以按旧形状写的消费方照常工作；模式文件里没有一个字段被标为必需。示例使用本页旁边的模型（``region_job.fcstm``、``controller.fcstm``、``region_calls.fcstm``、``region_nested.fcstm``、``region_safety.fcstm``、``region_reentry.fcstm`` 与 ``region_plain.fcstm``），每个例子都运行真实的命令或脚本。每个查询先用 ``echo`` 写进 ``.fbmcq`` 文件，JSON 结果保留在工作目录里，供后面的脚本读取。
+
+.. literalinclude:: /_models/region_job.fcstm
+   :language: fcstm
+   :caption: region_job.fcstm，下面见证示例所用的模型
+
+下面脚本读取的五份结果先生成出来。\ ``controller.fcstm`` 是共用的控制器模型：
+
+.. code-block:: console
+
+   $ echo 'check reach <= 6: active("Job.Next");' > job_next.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q job_next.fbmcq --json -o job.json
+   $ echo 'check cover <= 3: case("Controller.Idle::transition::Controller.Running::0");' > ctrl_case.fbmcq
+   $ pyfcstm bmc -i controller.fcstm -q ctrl_case.fbmcq --json -o ctrl.json
+   $ echo 'init state("Job.Run{Work: Busy}"); check reach <= 1: true;' > hot.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q hot.fbmcq --json -o hot.json
+   $ echo 'check reach <= 2: called("Root.Run.B.B1.BEnter");' > calls.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q calls.fbmcq --json -o calls.json
+   $ echo 'check reach <= 2: active("Root.Busy");' > plain.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q plain.fbmcq --json -o plain.json
+
+.. list-table:: 只在含区域的模型里出现的字段
+   :header-rows: 1
+   :widths: 30 17 53
+
+   * - 路径
+     - 类型（模式）
+     - 出现条件与含义
+   * - ``witness.frames[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 该帧整台机器配置的文本，例如 ``Job.Run{Prep: Wait, Work: Busy}``。冷启动的哨兵第 0 帧上没有（那时还没有配置），不含区域的模型里一律没有。
+   * - ``witness.initial.configuration``
+     - 字符串，``minLength`` 为 1
+     - 热启动起步时的配置，等待中的区域写成 ``[init]``。冷启动与终止起点没有。
+   * - ``witness.steps[].local_cases``
+     - ``localCase`` 数组
+     - 该步运行的情形，按执行顺序排列。不含区域的模型里没有。
+   * - ``local_cases[].scope``
+     - 字符串或 ``null``
+     - 该情形所在的拥有者（owner）或区域的路径；在所有区域之外运行的情形为 ``null``。
+   * - ``local_cases[].kind``
+     - ``initial``、``transition`` 或 ``fallback``
+     - 封闭集合。``fallback`` 表示状态留在原地（区域里没有移动、只执行 ``during``）。
+   * - ``local_cases[].label``
+     - 字符串，模式 ``^[^:]+::[^:]+::[^:]+::[0-9]+$``
+     - ``source::kind::target::ordinal``。区域结束时目标是 ``__region_done__``；冷启动的源是 ``__init__``。
+   * - ``witness.steps[].abstract_calls[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 调用那一刻的整台机器（处理器作为 ``ctx.configuration`` 拿到的位置）。
+   * - ``replay.runtime_trace.frames[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 回放该步之后仿真器所在的配置。冷启动的第 0 帧是根状态，例如 ``Job``。
+
+``case_label`` 与 ``witness.property.case_label`` 不是新字段，但含义略有变化：对含区域的模型，``case_label`` 是\ *在所有区域之外*\ 运行的那个情形（``scope`` 为 ``null`` 的情形）的标签，该步没有这样的情形时为 ``null``。下面的脚本读取 ``controller.fcstm`` 在 ``cover`` 目标 ``Controller.Idle::transition::Controller.Running::0`` 下的结果：
+
+.. testcode::
+
+   import json
+
+   witness = json.load(open("ctrl.json"))["witness"]
+   for step in witness["steps"]:
+       print("step %d: case_label=%s" % (step["index"], step["case_label"]))
+       for case in step["local_cases"]:
+           print("    %s %s %s" % (case["scope"], case["kind"], case["label"]))
+
+.. testoutput::
+
+   step 0: case_label=__init__::initial::Controller.Idle::0
+       None initial __init__::initial::Controller.Idle::0
+   step 1: case_label=Controller.Idle::transition::Controller.Running::0
+       None transition Controller.Idle::transition::Controller.Running::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Safety.Watching::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Motion.Off::0
+   step 2: case_label=None
+       Controller.Running.Safety transition Controller.Running.Safety.Watching::transition::__region_done__::1
+       Controller.Running.Motion transition Controller.Running.Motion.Off::transition::__region_done__::0
+       Controller.Running transition Controller.Running::transition::Controller.Idle::0
+
+第 1 步里有离开 ``Idle`` 的情形（作用域为 ``null``），所以 ``case_label`` 指向它，后面按书写顺序跟着拥有者的两个 ``initial`` 情形。第 2 步只在拥有者及其区域内运行，所以 ``case_label`` 为 ``null``。对每一步都按 ``case_label`` 查找的消费方，必须处理这类步骤上的 ``null``。
+
+``region_job.fcstm`` 六步里的 ``local_cases`` 展示书写顺序和三种类别：
+
+.. testcode::
+
+   import json
+
+   witness = json.load(open("job.json"))["witness"]
+   for step in witness["steps"]:
+       print("step %d: case_kind=%s" % (step["index"], step["case_kind"]))
+       for case in step["local_cases"]:
+           print("    %s %s %s" % (case["scope"], case["kind"], case["label"]))
+
+.. testoutput::
+
+   step 0: case_kind=initial
+       None initial __init__::initial::Job.Run::0
+       Job.Run initial Job.Run::initial::Job.Run.Prep.Wait::0
+       Job.Run initial Job.Run::initial::Job.Run.Work.Idle::0
+   step 1: case_kind=transition
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work transition Job.Run.Work.Idle::transition::Job.Run.Work.Busy::0
+   step 2: case_kind=fallback
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work fallback Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0
+   step 3: case_kind=transition
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work transition Job.Run.Work.Busy::transition::__region_done__::0
+   step 4: case_kind=transition
+       Job.Run.Prep transition Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0
+   step 5: case_kind=transition
+       Job.Run.Prep transition Job.Run.Prep.Ready::transition::__region_done__::0
+       Job.Run transition Job.Run::transition::Job.Next::0
+
+第 5 步的读法：``Prep`` 先完成（它写在前面），然后拥有者 ``Job.Run`` 继续前往 ``Job.Next``。``case_kind`` 属于整步：第 1 步（一个区域回退、一个区域移动）是 ``transition``，第 2 步（每个区域都回退）是 ``fallback``。
+
+.. testcode::
+
+   import json
+
+   witness = json.load(open("job.json"))["witness"]
+   for frame in witness["frames"]:
+       print("frame %d: %s" % (frame["index"], frame.get("configuration")))
+
+.. testoutput::
+
+   frame 0: None
+   frame 1: Job.Run{Prep: Wait, Work: Idle}
+   frame 2: Job.Run{Prep: Wait, Work: Busy}
+   frame 3: Job.Run{Prep: Wait, Work: Busy}
+   frame 4: Job.Run{Prep: Wait, Work: [done]}
+   frame 5: Job.Run{Prep: Ready, Work: [done]}
+   frame 6: Job.Next
+
+.. testcode::
+
+   import json
+
+   for name in ("job", "plain"):
+       witness = json.load(open(name + ".json"))["witness"]
+       print(name, "frame keys:", sorted(witness["frames"][1]))
+       print(name, "step keys:", sorted(witness["steps"][0]))
+   print("case_label of step 0:", witness["steps"][0]["case_label"])
+
+.. testoutput::
+
+   job frame keys: ['configuration', 'index', 'sentinel', 'state', 'state_id', 'terminated', 'vars']
+   job step keys: ['abstract_calls', 'case_kind', 'case_label', 'consumed_events', 'delta', 'event_reads', 'gamma', 'index', 'input_events', 'input_reads', 'inputs', 'local_cases', 'progress', 'source_frame', 'source_state', 'target_frame', 'target_state', 'unconsumed_events']
+   plain frame keys: ['index', 'sentinel', 'state', 'state_id', 'terminated', 'vars']
+   plain step keys: ['abstract_calls', 'case_kind', 'case_label', 'consumed_events', 'delta', 'event_reads', 'gamma', 'index', 'input_events', 'input_reads', 'inputs', 'progress', 'source_frame', 'source_state', 'target_frame', 'target_state', 'unconsumed_events']
+   case_label of step 0: __init__::initial::Root.Idle::0
+
+``frame 0: None`` 是没有 ``configuration`` 键的冷启动哨兵（脚本对缺失的键打印 ``None``）。同一个查询在不含区域的模型上，帧的键是 ``index, sentinel, state, state_id, terminated, vars``，步的键里没有 ``local_cases``，``case_label`` 照常存在（第 0 步是 ``__init__::initial::Root.Idle::0``）：没有新增，也没有改名。
+
+热启动会记录构造出的位置：
+
+.. testcode::
+
+   import json
+
+   initial = json.load(open("hot.json"))["witness"]["initial"]
+   print(initial["configuration"])
+   print(initial["state"])
+
+.. testoutput::
+
+   Job.Run{Prep: [init], Work: Busy}
+   Job.Run
+
+``initial.state`` 是拥有者的路径，``initial.configuration`` 带有状态路径给不出的信息：每个区域的位置。
+
+见证里的调用
+~~~~~~~~~~~~
+
+``region_calls.fcstm``\ （``check reach <= 2: called("Root.Run.B.B1.BEnter");``，第 0 步）里的每条调用记录都带有处理器本会看到的配置：
+
+.. testcode::
+
+   import json
+
+   step = json.load(open("calls.json"))["witness"]["steps"][0]
+   print(sorted(step["abstract_calls"][0]))
+   for call in step["abstract_calls"]:
+       print(call["ordinal"], call["action_name"], call["stage"], call["role"], call["state"], call["active_leaf"], call["configuration"])
+
+.. testoutput::
+
+   ['action_name', 'active_leaf', 'configuration', 'named_ref', 'ordinal', 'role', 'snapshot', 'stage', 'state']
+   0 Root.Run.RunEnter enter state_enter Root.Run Root.Run Root.Run{A: [init], B: [init]}
+   1 Root.Run.A.A1.AEnter enter state_enter Root.Run.A.A1 Root.Run.A.A1 Root.Run{A: A1, B: [init]}
+   2 Root.Run.A.A1.AWork during leaf_during Root.Run.A.A1 Root.Run.A.A1 Root.Run{A: A1, B: [init]}
+   3 Root.Run.B.B1.BEnter enter state_enter Root.Run.B.B1 Root.Run.B.B1 Root.Run{A: A1, B: B1}
+   4 Root.Run.B.B1.BWork during leaf_during Root.Run.B.B1 Root.Run.B.B1 Root.Run{A: A1, B: B1}
+   5 Root.Run.GroupTail during aspect_during_after Root.Run Root.Run Root.Run{A: A1, B: B1}
+
+第一次调用看到两个区域都在等待；``AEnter`` 看到 ``A`` 已就位、``B`` 在等待；``BEnter`` 看到 ``B1`` 已经在配置里；整组的 ``>> during after``\ （``aspect_during_after``）把拥有者同时报告为 ``state`` 与 ``active_leaf``，因为它包住两个区域。配置文本背后的规则见 :doc:`../bmc_query/index_zh`\ 。
+
+回放比较什么
+~~~~~~~~~~~~
+
+回放在 ``SimulationRuntime`` 里运行解码出的各步，并按帧、按步比较下列项目；任何差异都是 ``replay.mismatches`` 的一项，进程以 ``4`` 退出：
+
+.. list-table:: 含区域的模型的回放比较
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - 项目
+     - 比较对象
+     - 说明
+   * - 每一帧的配置
+     - ``witness.frames[].configuration`` 与仿真器的配置
+     - 两边都按文本记录，所以差异就是文本差异。
+   * - 变量
+     - 帧的 ``vars`` 与仿真器的变量
+     - ``active()`` 与历史的隐藏变量都是普通变量。
+   * - 事件与输入
+     - 已消费与未消费的事件、完整的数值输入
+     - 与不含区域的模型相同。
+   * - 抽象调用
+     - 动作、状态、``active_leaf``、阶段、角色、调用前的变量与 ``configuration``
+     - 仿真器交给处理器的是同一个状态；整组 ``>> during after`` 的统计规则见 :doc:`../bmc_query/index_zh`\ 。
+   * - 提交的转换
+     - 每一步提交的转换与仿真器提交的转换
+     - ``local_cases`` 里的标签就靠它检查。
+
+不一致是工具自身的缺陷，不是关于模型的结论；通过的运行的结果是 ``replay ok: True, mismatches: []``，两边各帧的配置完全相同：
+
+.. testcode::
+
+   import json
+
+   replay = json.load(open("job.json"))["replay"]
+   print("replay ok: %s, mismatches: %s" % (replay["ok"], replay["mismatches"]))
+   print([frame["configuration"] for frame in replay["runtime_trace"]["frames"]])
+
+.. testoutput::
+
+   replay ok: True, mismatches: []
+   ['Job', 'Job.Run{Prep: Wait, Work: Idle}', 'Job.Run{Prep: Wait, Work: Busy}', 'Job.Run{Prep: Wait, Work: Busy}', 'Job.Run{Prep: Wait, Work: [done]}', 'Job.Run{Prep: Ready, Work: [done]}', 'Job.Next']
+
+
+人读报告
+~~~~~~~~
+
+人读报告在给出该步源配置与目标配置的那一行下面，为区域步的每个局部情形打印一行。局部情形的作用域写成相对于最外层拥有者的路径：拥有者自己写它的最后一个名字（``Run:``），更深的写它之下的路径（``Prep:``、``Work.Inner.X:``）。在所有区域之外运行的情形没有作用域前缀。
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i region_job.fcstm -q job_next.fbmcq
+   ...
+     5: Job.Run{Prep: Ready, Work: [done]}
+          -> Job.Next [transition]
+          Prep: Ready -> [done] [transition]
+          Run: [start] -> Job.Next [transition]
+   ...
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2}}");' > nested.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q nested.fbmcq
+   ...
+     1: Root.Run{Work: Inner{X: x1, Y: y1}, Aux: a1}
+          -> Root.Run{Work: Inner{X: x2, Y: y1}, Aux: a1} [transition]
+          Work.Inner.X: x1 -> x2 [transition]
+          Work.Inner.Y: y1 -> y1 [fallback]
+          Aux: a1 -> a1 [fallback]
+   ...
+
+左侧的 ``[start]`` 是拥有者的初始转换或它继续前行的起点，右侧的 ``[done]`` 是区域结束。报告里的 ``Solver:`` 耗时行不是确定的，所以上面用 ``...`` 表示它。
+
+诊断与构建上限
+~~~~~~~~~~~~~~
+
+.. list-table:: 属于含区域模型的失败
+   :header-rows: 1
+   :widths: 24 28 48
+
+   * - 失败
+     - 触发条件
+     - 观察到的文本（标准错误；退出状态 ``1``；标准输出为空）
+   * - ``invalid_start_position``
+     - ``init state(...)`` 的文本不是模型的一个位置
+     - ``Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.``
+   * - ``invalid_active_pattern``
+     - ``active(...)`` 的文本不是模型的模式
+     - ``Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Job.Run' has no region 'Zed'.``
+   * - ``expression_too_deep``
+     - 一个表达式嵌套超过 100 层；用 ``&&`` 连接 100 项可以接受，101 项被拒绝
+     - ``Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.``
+   * - 组重入上限
+     - 同一个拥有者在一个周期内、在变化的取值上重入自己的组超过 ``max_group_reentries`` 次（默认 16）
+     - ``BmcBuildError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.``
+
+前三种失败来自下面的命令写出并读取的查询文件（100 项和 101 项的查询太长，不便手敲，用一段短脚本生成）：
+
+.. testcode::
+
+   from pathlib import Path
+
+   for terms in (100, 101):
+       query = "check reach <= 1: " + " && ".join(["true"] * terms) + ";\n"
+       Path("deep_%d.fbmcq" % terms).write_text(query)
+
+
+.. code-block:: console
+
+   $ echo 'init state("Job.Run{Prep: [done], Work: [done]}"); check reach <= 1: true;' > bad_start.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q bad_start.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
+   $ echo 'check reach <= 1: active("Job.Run{Zed: Wait}");' > bad_pattern.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q bad_pattern.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Job.Run' has no region 'Zed'.
+   $ echo $?
+   1
+   $ pyfcstm bmc -i region_job.fcstm -q deep_100.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i region_job.fcstm -q deep_101.fbmcq
+   Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+   $ echo $?
+   1
+
+组重入上限没有命令行选项。``pyfcstm bmc`` 使用默认的 16，超过时以意外错误横幅结束，退出状态 ``1``\ （下面的记录给出标准错误的第一行和最后一行；中间的回溯含有本地路径，由 ``...`` 表示）：
+
+.. code-block:: console
+
+   $ echo 'check reach <= 1: terminated();' > term.fbmcq
+   $ pyfcstm bmc -i region_reentry.fcstm -q term.fbmcq
+   Unexpected error found when running pyfcstm!
+   ...
+   _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo $?
+   1
+
+.. literalinclude:: region_reentry.fcstm
+   :language: fcstm
+   :emphasize-lines: 7
+
+模型是 ``region_reentry.fcstm``：``Owner`` 的组在启动的那个周期就结束，``Owner -> Owner`` 在 ``n`` 增长的同时重新进入它，最多 20 次（高亮的守卫 ``n < 20``）。这个上限是精确的：回到相同取值的循环被当作循环拒绝，而不是计数；取值在变的循环被逐次展开，从不近似。通过 Python 接口，:class:`pyfcstm.bmc.BmcOptions` 接受 ``max_group_reentries``\ （正整数；``bool``、``0``、负数和字符串都被拒绝）。脚本把守卫 ``n < 20`` 换成 ``n < 3``，让组恰好经过 3 次：
+
+.. testcode::
+
+   from pathlib import Path
+
+   from pyfcstm.bmc import BmcBuildError, BmcEngine, BmcOptions, build_bmc_core_formula
+   from pyfcstm.model import load_state_machine_from_text
+
+   # The same model with the guard n < 3: the group passes 3 times.
+   text = Path("region_reentry.fcstm").read_text().replace("n < 20", "n < 3")
+   model = load_state_machine_from_text(text)
+   for limit in (3, 4):
+       print("max_group_reentries=%d with a group that passes 3 times:" % limit)
+       engine = BmcEngine(model, BmcOptions(max_group_reentries=limit))
+       try:
+           build_bmc_core_formula(engine.prepare("check reach <= 1: terminated();"))
+       except BmcBuildError as err:
+           print("  BmcBuildError:", err)
+       else:
+           print("  built")
+   for value in (0, -1, True, "16"):
+       try:
+           BmcOptions(max_group_reentries=value)
+       except BmcBuildError as err:
+           print("max_group_reentries=%r: BmcBuildError: %s" % (value, err))
+
+.. testoutput::
+
+   max_group_reentries=3 with a group that passes 3 times:
+     BmcBuildError: state 'Root.Owner' re-enters its own group more than 3 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   max_group_reentries=4 with a group that passes 3 times:
+     built
+   max_group_reentries=0: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries=-1: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries=True: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries='16': BmcBuildError: max_group_reentries must be a positive integer.
+
+经过 ``k`` 次的组需要至少 ``k + 1`` 的上限。默认值不属于规范化后的选项，非默认值属于。调高上限会把组展开得更深、公式更大，所以只调到模型需要的程度。
+
+运行时安全与已知限制
+~~~~~~~~~~~~~~~~~~~~
+
+运行时安全检查覆盖任何区域在一个周期里可能运行的每个运算，包括没有被选中的候选的探测：走到死路的路径上的转换效果、被更高优先级候选挡住的续接的条件，以及续接目标的进入动作。``region_safety.fcstm`` 只在一条会走到死路的候选里除以输入；默认运行会报告它：
+
+.. code-block:: console
+
+   $ echo 'check reach <= 2: active("Root.Run{R: A}");' > safety.fbmcq
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
+     Runtime error: modulo_by_zero at step 1
+     Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
+     Model role: RUNTIME ERROR PREFIX
+     Model evidence: SAT error-prefix model available.
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: ...modulo by zero
+   ...
+   $ echo $?
+   5
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq --json -o safety.json
+   $ echo $?
+   5
+
+.. testcode::
+
+   import json
+
+   result = json.load(open("safety.json"))["result"]["runtime_safety"]
+   print(result["status"])
+   print(result["error"])
+
+.. testoutput::
+
+   violated
+   {'kind': 'modulo_by_zero', 'location': 'action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J', 'step': 1}
+
+已知限制。这类模型的核心关系在仿真器报错的那个周期里是可满足的：走到死路的路径上的求值错误，或者被更高优先级候选挡住的续接候选里的求值错误，不是关系的错误，而仿真器会求值并失败。报告这些情形的是运行时安全检查，所以请保持它开启。使用 ``--no-runtime-safety`` 时，同一个查询会找到见证，回放在仿真器里抛出异常；命令随后以意外错误横幅结束，退出状态 ``1``\ ：
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i region_safety.fcstm -q safety.fbmcq --no-runtime-safety
+   Unexpected error found when running pyfcstm!
+   ...
+   SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: ...modulo by zero
+   $ echo $?
+   1
+
+末尾那条 Python 异常的措辞随解释器版本（含补丁版本）而变：\ ``integer modulo by zero`` 与 ``integer division or modulo by zero`` 都会出现。
+
+不要把那里的退出状态 ``1`` 读成性质结论：没有产生任何结果。不含区域的模型也有同样的两种情形，运行时安全检查同样会报告它们。
 
 双检查与 ``response`` 原因边界
 -----------------------------------
@@ -1434,33 +1952,59 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 可复现示例
 ----------
 
-假设 ``machine.fcstm`` 的内容是 ``state Root;``。每条命令的查询文件只包含所示语句。
+示例使用本页旁边的 ``region_plain.fcstm``\ ，它的根状态是 ``Root``\ 。每个查询都用 ``echo`` 写进一个只包含所示语句的文件。
 
 **例 1：正向见证。** 在 ``reach.fbmcq`` 中写入
 ``check reach <= 1: active("Root");``：
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q reach.fbmcq --json
-   {
-     "exit_code": 0,
-     ...
-     "result": {"outcome": "witness_found", "status": "sat", ...},
-     "replay": {"mismatches": [], "ok": true, ...},
-     "witness": {"model_role": "primary_witness", "verdict": {"outcome": "witness_found", ...}, ...}
-   }
+   $ echo 'check reach <= 1: active("Root");' > reach.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q reach.fbmcq --json -o reach.json
+   $ echo $?
+   0
 
-这是示意摘录，因为美化并排序后的 JSON 在这些行之间还有其他键，
-且实时耗时会变化。完整载荷可通过可下载的参考模式校验。
+.. testcode::
+
+   import json
+
+   payload = json.load(open("reach.json"))
+   print(payload["exit_code"])
+   print(payload["result"]["outcome"], payload["result"]["status"])
+   print(payload["replay"]["ok"], payload["replay"]["mismatches"])
+   print(payload["witness"]["model_role"], payload["witness"]["verdict"]["outcome"])
+
+.. testoutput::
+
+   0
+   witness_found sat
+   True []
+   primary_witness witness_found
+
+脚本只打印要紧的字段；完整载荷可通过可下载的参考模式校验。
 
 **例 2：反例是负结论，不是 CLI 错误。** 在 ``forbid.fbmcq`` 中写入
 ``check forbid <= 1: active("Root");``：
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q forbid.fbmcq --json > result.json
+   $ echo 'check forbid <= 1: active("Root");' > forbid.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q forbid.fbmcq --json > result.json
    $ echo $?
    1
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("result.json"))
+   print(payload["result"]["status"], payload["result"]["outcome"])
+   print(type(payload["witness"]).__name__, type(payload["replay"]).__name__)
+
+.. testoutput::
+
+   sat property_violated
+   dict dict
 
 ``result.json`` 完整存在：``status`` 为 ``sat``，``outcome`` 为
 ``property_violated``，见证/重放都是对象；标准错误为空。
@@ -1470,9 +2014,24 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q response.fbmcq --json -o response.json
+   $ echo 'check response <= 1: trigger true -> within 2 false;' > response.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q response.fbmcq --json -o response.json
    $ echo $?
    3
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("response.json"))
+   result = payload["result"]
+   print(result["status"], result["incomplete_status"], result["outcome"], payload["exit_code"])
+   print(payload["witness"]["model_role"])
+
+.. testoutput::
+
+   unsat sat incomplete 3
+   incomplete_suffix
 
 标准输出和标准错误均为空；``response.json`` 的主 ``status: unsat``、
 ``incomplete_status: sat``、``outcome: incomplete``，且 ``exit_code: 3``。
@@ -1485,9 +2044,15 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 
 .. code-block:: console
 
-   $ pyfcstm bmc -i machine.fcstm -q large.fbmcq --max-bound 1 \
+   $ echo 'check reach <= 2: active("Root");' > large.fbmcq
+   $ cp result.json before.json
+   $ pyfcstm bmc -i region_plain.fcstm -q large.fbmcq --max-bound 1 \
        --json -o result.json
-   Error: Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1. ...
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
+   $ cmp result.json before.json && echo "result.json is unchanged"
+   result.json is unchanged
 
 命令退出 ``1``，不输出 JSON，并保持旧 ``result.json`` 不变。``-o`` 的父目录不存在时
 同样失败，不会自动创建目录。

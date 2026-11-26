@@ -26,34 +26,47 @@ copied as static assets.
    ├── machine_summary.txt.j2
    └── static_note.txt
 
-An empty configuration is legal:
+An empty configuration is legal. A first rendered file can inspect the model
+object and state paths. This script writes the three files of the layout above
+(``{}`` is the empty configuration) into the current directory:
 
-.. code-block:: yaml
+.. testcode::
 
-   {}
+   from pathlib import Path
 
-A first rendered file can inspect the model object and state paths:
-
-.. code-block:: jinja
-
+   template = Path("my_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("{}\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
    {%- endfor %}
+   """)
 
-Render it with the tutorial model:
+Download :download:`simple_machine.fcstm </_models/simple_machine.fcstm>`, the
+tutorial model, into the same directory and render it:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate \
-       -i docs/source/tutorials/generation/simple_machine.fcstm \
-       -t my_template \
-       -o /tmp/pyfcstm-template-check \
-       --clear
+   $ pyfcstm generate -i simple_machine.fcstm -t my_template -o out --clear
+   $ LC_ALL=C ls out
+   machine_summary.txt
+   static_note.txt
+   $ cat out/machine_summary.txt
+   Machine: SimpleMachine
+   States:
+   - SimpleMachine
+   - SimpleMachine.Idle
+   - SimpleMachine.Running
+   - SimpleMachine.Stopped
+   $ cat out/static_note.txt
+   Copied as is.
 
-The expected success signal is a generated ``machine_summary.txt`` plus the
-copied ``static_note.txt``. This proves only that the renderer can consume the
+The success signal is a generated ``machine_summary.txt`` plus the copied
+``static_note.txt``. This proves only that the renderer can consume the
 template; it does not prove target-language runtime semantics.
 
 Understand file mapping
@@ -304,29 +317,34 @@ Runnable micro-template shape
 -----------------------------
 
 A short authoring example should fit on one screen. Keep the project-specific
-logic out of the prose and name the success signal explicitly:
+logic out of the prose and name the success signal explicitly. This one declares a
+named expression style, writes the model name and counts the states; it runs next to the template of
+the first section:
 
-.. code-block:: text
+.. testcode::
 
-   my_template/
-     config.yaml
-     machine_summary.txt.j2
-     static_note.txt
+   from pathlib import Path
 
-.. code-block:: yaml
-
-   expr_styles:
-     py_expr:
-       base_lang: python
-
-.. code-block:: jinja
-
+   template = Path("micro_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("expr_styles:\n  py_expr:\n    base_lang: python\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
+   """)
+
+.. code-block:: console
+
+   $ pyfcstm generate -i simple_machine.fcstm -t micro_template -o micro_out --clear
+   $ cat micro_out/machine_summary.txt
+   model=SimpleMachine
+   states=4
 
 The success signal is a rendered ``machine_summary.txt`` and a copied
-``static_note.txt``. This example proves file mapping and a named expression
-style can be loaded; it does not prove a generated runtime is correct.
+``static_note.txt``. This example proves file mapping and that the config file is read. It declares
+a style but renders no expression, and it does not prove a generated runtime is
+correct.
 
 Helper design checklist
 -----------------------
@@ -362,3 +380,100 @@ A template-authoring change should report these records when they apply:
 * simulator-alignment command when parity is claimed;
 * a short statement that ``operation_stmt_render`` was not used for executable
   runtime bodies.
+
+Declare that a custom template supports regions
+-----------------------------------------------
+
+**Input.** A custom template directory and a model with regions
+(:download:`controller.fcstm </_models/controller.fcstm>`, the interlock controller of
+:doc:`/tutorials/regions/index`).  Download it, and the two files of
+``region_listing_template/``, into an empty directory and run the commands
+there.  A template is written for one execution
+model.  ``features: [region]`` in ``config.yaml`` states that the template
+renders models that declare regions.  Without the declaration, ``pyfcstm
+generate`` refuses such a model before it writes anything; a model without
+regions renders whatever the declaration says, so an existing template keeps
+its output.  ``region_listing_template/`` is a minimal template that
+declares the feature and lists every owner with its regions in writing order:
+
+.. literalinclude:: region_listing_template/config.yaml
+   :language: yaml
+   :caption: region_listing_template/config.yaml
+
+.. literalinclude:: region_listing_template/regions.txt.j2
+   :language: jinja
+   :caption: region_listing_template/regions.txt.j2
+
+**Command or code.**
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t region_listing_template -o out --clear
+   $ cat out/regions.txt
+   owner Controller.Running
+     region 1: Safety (1 states)
+     region 2: Motion (2 states)
+
+.. testcode::
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   renderer = StateMachineCodeRenderer("region_listing_template")
+   print(sorted(renderer.features))
+
+.. testoutput::
+
+   ['region']
+
+Without the declaration the same template is refused.  This is a negative
+example:
+
+.. code-block:: console
+
+   $ mkdir undeclared
+   $ cp region_listing_template/regions.txt.j2 undeclared/
+   $ printf 'expr_styles: {}\n' > undeclared/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o undeclared_out --clear
+   generate with template directory '.../undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o undeclared_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+
+The exit status is 1.  The tool prints the absolute path of the template
+directory; it is left out as ``...`` here.
+
+**Expected signal.** With the declaration, the output lists the owner and its
+two regions in writing order, and ``StateMachineCodeRenderer.features`` is
+``['region']``.  Without it, the message names the number of regions and the
+first one, tells a template author what to declare and when, and lists the
+built-in templates that support regions.
+
+**What the template must satisfy once it declares** ``region``\ **.** The
+declaration is a promise, not a switch.  The template takes over the region
+semantics of its target language: an owner starts every region in writing
+order, regions advance one after another within a cycle and see the writes of
+the earlier ones, a region ends with ``-> [*]`` and then stays done, and the
+last completion continues the owner in the same cycle or is refused.  A
+template that claims this is expected to match
+:class:`pyfcstm.simulate.SimulationRuntime` on every shared region scenario;
+the built-in templates are the reference (see
+:doc:`/reference/builtin_templates/index`).  Render regions through
+``owner.regions`` and ``model.walk_regions()``, which keep writing order, and
+do not declare ``region`` for a template that only walks a single path.
+The listing template above is honest about this only because it does not
+generate behavior.
+
+**File side effect.** ``pyfcstm generate`` writes ``regions.txt`` into the
+output directory; the commands write under ``out/``, ``undeclared/`` and
+``undeclared_out/`` of the directory where you run them.
+
+**First failure check.** If a template you changed is still refused, read
+``StateMachineCodeRenderer(path).features``: an unknown or duplicated member of
+``features`` fails when the renderer is constructed, and a template without the
+key has an empty set.
+
+**Reference link.** :doc:`/reference/template_config/index`.

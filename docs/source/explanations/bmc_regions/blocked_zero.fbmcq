@@ -1,0 +1,2 @@
+assume always: g == 0;
+check reach <= 2: true;

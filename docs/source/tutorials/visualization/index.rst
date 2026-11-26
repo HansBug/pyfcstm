@@ -18,20 +18,22 @@ Generate PlantUML source
 
 Use ``plantuml`` when you want deterministic text output:
 
-.. literalinclude:: cli_basic.demo.sh
-   :language: bash
-   :caption: Basic CLI visualization
+.. code-block:: console
 
-Expected feedback:
+   $ pyfcstm plantuml -i example.fcstm -o output_cli_basic.puml
+   $ cat output_cli_basic.puml
+   @startuml
+   hide empty description
+   ...
+   @enduml
 
-.. literalinclude:: cli_basic.demo.sh.txt
-   :language: text
+The command prints nothing when it writes a file. The file starts with ``@startuml`` and ends with ``@enduml``, so it is PlantUML source.
 
 Rendered example
 ----------------
 
-The documentation resource build renders the generated PlantUML source into an
-SVG artifact:
+The ``output_cli_basic.puml`` shipped with this page is the file the command above
+writes, and the documentation resource build renders it into an SVG artifact:
 
 .. figure:: output_cli_basic.puml.svg
    :alt: CLI basic visualization output
@@ -45,13 +47,31 @@ Try detail presets
 
 Use ``-l`` for the built-in detail presets:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
-   pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
-   pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
+   $ pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
+   $ pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
+   $ pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
+   $ diff output_minimal.puml output_normal.puml
+   $ diff output_normal.puml output_full.puml
+   18a19
+   >     system__idle : enter {\n    counter = 0;\n}
+   20a22
+   >         system__active__processing : during {\n    counter = counter + 10;\n}
+   27a30
+   >     system__active : during before {\n    counter = counter + 1;\n}
+   28a32
+   >     system__error : enter {\n    error_count = error_count + 1;\n}
+   42a47
+   > system : >> during before abstract GlobalMonitor;
+   $ echo $?
+   1
 
-The option reference explains which facts each preset affects.
+The ``diff`` commands compare the three files. For this model ``minimal`` and
+``normal`` write the same text, so the first ``diff`` prints nothing. ``full``
+adds the five lines shown: the ``enter``, ``during`` and aspect action bodies of
+the states. ``diff`` ends with status 1 whenever the files differ. The option
+reference explains which facts each preset affects for other models.
 
 Open the offline Python viewer
 ------------------------------
@@ -60,18 +80,32 @@ The Python ``Diagram`` facade is the browser-based path when you want a
 self-contained HTML file with source/diagram comparison and browser-side SVG,
 PNG, and vector PDF downloads. It does not require PlantUML or Node at runtime.
 
-.. code-block:: python
+.. testcode::
 
    from pyfcstm.model import load_state_machine_from_text
 
    model = load_state_machine_from_text("state Root { state Idle; [*] -> Idle; }")
    diagram = model.diagram(direction="LR", cjk_locale="sc")
    data = diagram.to_dict()
+   print(data["kind"], data["machineName"])
+   print(data["summary"])
+
+.. testoutput::
+
+   diagram Root
+   {'actions': 0, 'events': 0, 'states': 2, 'transitions': 1, 'variables': 0}
+
+``to_dict()`` returns portable data, summarized above. The next two calls give the
+complete HTML text and a generated ``.html`` path:
+
+.. code-block:: python
+
    html = diagram.to_html()
    output = diagram.show(open_window=False)
 
-The first three values are, respectively, portable data, complete HTML text,
-and a generated ``.html`` path. The HTML file contains the viewer, renderer,
+The documentation checks do not run these two calls, because they need the
+packaged viewer assets, which a source checkout builds with ``make build_assets``.
+The HTML file contains the viewer, renderer,
 WASM, and selected fonts, so it remains usable without a network connection.
 Use ``open_window=True`` (the default) only when a Chromium-family browser is
 available. It blocks until you close the window, the way
@@ -97,3 +131,5 @@ Where to go next
   end-to-end path.
 * :doc:`/explanations/visualization/index` explains why the viewer is one
   self-contained document, why ``--open`` blocks, and who removes what.
+* :doc:`/tutorials/regions/index` shows how regions appear in the PlantUML text
+  and in the viewer.

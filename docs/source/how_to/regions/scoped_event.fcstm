@@ -1,0 +1,16 @@
+state Rig {
+    region Left {
+        event Ping;
+        [*] -> Idle;
+        state Idle;
+        state Busy;
+        Idle -> Busy : Ping;
+    }
+    region Right {
+        event Ping;
+        [*] -> Idle;
+        state Idle;
+        state Busy;
+        Idle -> Busy : Ping;
+    }
+}

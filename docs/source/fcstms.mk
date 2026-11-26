@@ -2,7 +2,12 @@ PLANTUMLCLI ?= $(shell which plantumlcli)
 PYFCSTM     ?= $(shell which pyfcstm)
 
 SOURCE ?= .
-FCSTMS := $(shell find ${SOURCE} -name *.fcstm)
+# A model is drawn only when some page names its picture, such as
+# ``controller.fcstm.puml.svg``. A model that is only the input of a command in a
+# page needs no picture, so none is generated or committed for it.
+FCSTMS := $(shell find ${SOURCE} -name '*.fcstm' | while read model; do \
+	grep -rqF "$$(basename "$$model").puml." ${SOURCE} --include='*.rst' --include='*.inc' && echo "$$model"; \
+	done)
 PUMLS  := $(addsuffix .fcstm.puml, $(basename ${FCSTMS}))
 PNGS   := $(addsuffix .puml.png, $(basename ${PUMLS}))
 SVGS   := $(addsuffix .puml.svg, $(basename ${PUMLS}))

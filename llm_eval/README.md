@@ -55,8 +55,10 @@ past discussions:
 - T1/timing-heavy source material that must be approximated as legal FCSTM
   because current FCSTM syntax is not a timed-automata language.
 
-All source references are pinned to the `research_ideas` repository at commit
-`02171240d7690c275232bb0dfabc363aeb691083`. Fixtures summarize only the
+Every fixture except `press_cell_interlock` and `dishwasher_program_completion`
+is pinned to the `research_ideas` repository at commit
+`02171240d7690c275232bb0dfabc363aeb691083`; those two are original scenarios
+written for this evaluation and cite no external source. Fixtures summarize only the
 natural-language modeling task and source traceability; they do not copy source
 papers or long external documents.
 
@@ -108,7 +110,8 @@ see only the prompt packet and fixture source, not the repository tree.
 evaluates raw `.fbmcq` authoring against seven property kinds, full-source and
 known-fact task inputs, nominal outcomes, one-defect mutations, and mandatory
 witness replay. Its private fixture convention is not a public input schema.
-See [fbmcq/README.md](fbmcq/README.md) for the strict 42-case matrix and
+See [fbmcq/README.md](fbmcq/README.md) for the strict 54-case matrix (42 for the seven property kinds plus 12 for
+the region tasks) and
 offline replay contract.
 
 ## Fixture Coverage Matrix
@@ -123,6 +126,8 @@ offline replay contract.
 | `drawbridge_plc_sequence` | drawbridge PLC control | EFSM | T0 | no | Covers ship detection, road barriers, bridge actuator sequence, and traffic signal restoration. |
 | `vtol_mission_supervision` | VTOL UAV mission manager | HSM | T0 | yes | Covers hierarchical `Mission Mode` / `Command Mode`, supervisory commands, and global exits. |
 | `landing_gear_sequence_boundary` | aircraft landing gear | EFSM | T1 boundary | no | Covers interruptible extend/retract sequences, pilot indicators, timing guards, and failure-light thresholds. |
+| `press_cell_interlock` | stamping press cell | EFSM | T0 | no | Covers a supervisor decision that the press logic consumes in the same cycle, a periodic counter duty, and a stop command that interrupts every running duty. |
+| `dishwasher_program_completion` | dishwasher program | EFSM | T0 | no | Covers two sequences that finish independently, completion only after both have finished with an immediate hand-over, and an abort that discards both. |
 
 The fixed minimum live smoke set is:
 

@@ -1,0 +1,38 @@
+input int fault;
+def int m = 0;
+def int exit_self = 0;
+def int exit_other = 0;
+def int effect_source = 0;
+def int effect_target = 0;
+def int enter_self = 0;
+def int enter_other = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region Safety {
+            [*] -> Normal;
+            state Normal {
+                exit {
+                    if [active("Root.P.Safety.Normal")] { exit_self = 1; } else { exit_self = 2; }
+                    if [active("Root.P.Safety.Tripped")] { exit_other = 1; } else { exit_other = 2; }
+                }
+            }
+            state Tripped {
+                enter {
+                    if [active("Root.P.Safety.Tripped")] { enter_self = 1; } else { enter_self = 2; }
+                    if [active("Root.P.Safety.Normal")] { enter_other = 1; } else { enter_other = 2; }
+                }
+            }
+            Normal -> Tripped : if [fault != 0] effect {
+                if [active("Root.P.Safety.Normal")] { effect_source = 1; } else { effect_source = 2; }
+                if [active("Root.P.Safety.Tripped")] { effect_target = 1; } else { effect_target = 2; }
+            }
+        }
+        region Motion {
+            [*] -> Run;
+            state Run { during { m = m + 1; } }
+            state Stop;
+            Run -> Stop : if [active("Root.P.Safety.Tripped")];
+        }
+    }
+}

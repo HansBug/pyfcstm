@@ -1,2 +1,0 @@
-Generated with events visible: output_with_events.puml
-Generated with custom lifecycle actions: output_lifecycle.puml

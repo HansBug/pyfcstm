@@ -14,7 +14,8 @@ Every generated model must have:
 
 - zero or more root-level variable definitions
 - exactly one top-level `state`
-- one initial transition, `[*] -> Child;`, inside each composite state
+- one initial transition, `[*] -> Child;`, inside each composite state and
+  inside each region
 - only declared variables in guards and operation blocks
 
 ## Documentation Blocks
@@ -132,7 +133,8 @@ Validate source input/param writes before binding; mapping cannot legalize them.
 
 ## Top-Level Structure
 
-Variable definitions come before the root state:
+Variable definitions come before the root state. Regions are written inside
+states, never at the top level; the root state itself may own regions.
 
 ```fcstm
 def int car_count = 0;
@@ -165,8 +167,10 @@ state TrafficController {
 
 Use `state Name;` for a leaf state and `state Name { ... }` for a composite
 state. A composite state must choose its first active child with an initial
-transition. Use `pseudo state Name;` only for a leaf state that should skip
-ancestor `>> during before` and `>> during after` aspect actions.
+transition. A state that must run several control parts at once holds
+`region Name { ... }` blocks instead of child states; see Regions. Use
+`pseudo state Name;` only for a leaf state that should skip ancestor
+`>> during before` and `>> during after` aspect actions.
 
 ```fcstm
 def int link_ok = 1;
@@ -378,6 +382,12 @@ Event scopes are part of the model semantics:
 - `Source -> Target : EventName;` creates or uses an event in the containing state scope.
 - `Source -> Target : /EventName;` creates or uses a root-scoped event.
 
+Inside a region, `: Name` declares and uses an event owned by that region, so
+the same name in two regions is two events. Reach a region event from another
+region with a path written from the root that includes the region name, for
+example `/Run.Pump.Trip`, and put an event that several regions share on an
+ancestor and use `/Name`. See Regions.
+
 Combo event terms inherit the same scope rules from their leading prefix. A
 continuation term may be absolute, for example `S -> T : E1 + /Bus.E2;`. For
 readability, prefer the spaced root-event form `: /EventName`; the current parser
@@ -398,6 +408,9 @@ be entered, the forced transition does nothing and does not use the event; the
 transitions of the current state are still tried. Model conversion may add
 variables named `__forced_<n>` and pseudo states named `__forced_gate_<n>`; do
 not write to them.
+
+A forced transition on an owner of regions interrupts the whole group of
+regions; inside a region it moves only that region. See Regions.
 
 ```fcstm
 def int error_count = 0;
@@ -478,6 +491,217 @@ Rules:
 - History restores states, not variables.
 - A history declaration has no trigger and no effect. Do not name variables,
   states or temporaries `__hist_*` or `_hist_*` in a model that uses history.
+
+## Regions
+
+Use regions when one state must run several control parts at the same time,
+for example a safety supervisor next to a motor controller. A state that owns
+regions is the owner. Each region is a named container that runs its own small
+state machine, and all of them advance in the same cycle. Regions are logical
+concurrency, not threads: the cycle samples inputs once, then advances the
+regions one after another.
+
+```fcstm
+input int fault;
+input int requested;
+control int permit = 0;
+output int motor = 0;
+
+state Controller {
+    [*] -> Idle;
+
+    state Idle;
+
+    state Running {
+        region Safety {
+            [*] -> Watching;
+            state Watching {
+                during {
+                    if [fault != 0] { permit = 0; } else { permit = 1; }
+                }
+            }
+        }
+        region Motion {
+            [*] -> Off;
+            state Off { during { motor = 0; } }
+            state On { during { motor = 1; } }
+            Off -> On : if [permit != 0 && requested != 0];
+            On -> Off : if [permit == 0 || requested == 0];
+        }
+    }
+
+    Idle -> Running : /Start;
+    !Running -> Idle : /Stop;
+}
+```
+
+Rules:
+
+- Write `region Name { ... }` directly inside the owner. A state contains
+  either ordinary child states or regions, never both. One region alone is
+  valid. Region names are unique within the owner; states in different regions
+  may share names.
+- A region has its own `[*] -> Child;` and holds child states and ordinary
+  transitions between them. It may also hold forced transitions, `event`
+  declarations and `>> during before` / `>> during after` aspects, and the
+  aspects apply to that region only.
+- A region must not hold `enter`, `during` or `exit` actions, variable
+  declarations, imports, or a transition that has the region itself as source
+  or target. Put variables at the top of the file, put lifecycle behavior in
+  the child states, and nest by putting another owner inside a child state.
+- Written order is execution order. The first region advances first and the
+  next region reads, in the same cycle, the values it has written and the
+  states it has entered. An earlier region never re-runs because a later one
+  wrote something, so it sees that write one cycle later. Put the region that
+  produces a value before the regions that consume it. Reordering regions
+  changes behavior. If two regions write one variable, the last write wins.
+- A transition cannot leave a region for a state in another region, and cannot
+  target a state inside a region from outside the owner. A region is not a
+  transition target. Move to the owner and let each region start through its
+  own initial transition; an owner is entered by all its regions in order.
+- `X -> [*];` written directly in a region finishes that region. The finished
+  region stays done and does no more `during` work while its siblings still
+  work. When the last region finishes, the owner's ordinary outgoing
+  transition (for example `Job -> Packed;`) is taken in that same cycle, so
+  an owner whose regions can finish needs one. An owner cannot rest with every
+  region done. Ordinary outgoing transitions of the owner do not interrupt regions
+  that are still working.
+- To interrupt the whole group, write a forced transition on the owner, such
+  as `!Running -> Idle : /Stop;`. Its event or condition is checked on the
+  states the machine rests in, the regions do no normal work for that cycle
+  once it is chosen, and the owner's `exit` runs once.
+- Event scope follows the container. `: Name` written inside a region declares
+  and uses an event owned by that region, so two regions with the same event
+  name hold two different events. `:: Name` still belongs to the source state.
+  Several regions that react to one input must use one event path written from
+  the root, for example `/Reset` for a root-level event or `/Run.Pump.Trip`
+  for an event owned by region `Pump` of state `Run`. The path contains the
+  region name and does not repeat the root state name. A bare name never looks
+  into outer scopes.
+- `active("Root.Owner.Region.State")` reads whether a state is active now. The
+  path starts at the root state name and includes the region name. The
+  equivalent `active("/Owner.Region.State")` starts below the root. The target
+  must be a non-pseudo state, not a region, and it can appear in any guard or
+  condition. A later region sees an earlier region's new state in the same
+  cycle, an earlier region sees a later one only from the previous cycle.
+- An owner may have its own `enter`, `exit`, plain `during before` /
+  `during after` and `>> during before` / `>> during after`. `enter` and
+  `exit` run once per entry and exit of the owner. Plain `during` without
+  `before` or `after` is invalid on a composite state. Ancestor aspects run
+  once per cycle around the whole group, not once per active leaf.
+- A child state of a region can itself own regions, and the same rules apply at
+  each level. An inner owner whose regions all finish must have an outgoing
+  transition that can fire in that cycle.
+- `region` and `active` are reserved words. Variables, states, events and
+  regions cannot use them as names.
+
+Two regions that finish and hand control back to the owner:
+
+```fcstm
+def int loaded = 0;
+def int checked = 0;
+
+state Line {
+    [*] -> Job;
+
+    state Job {
+        region Loader {
+            [*] -> Loading;
+            state Loading { during { loaded = loaded + 1; } }
+            Loading -> [*] : if [loaded >= 2];
+        }
+        region Checker {
+            [*] -> Waiting;
+            state Waiting;
+            state Measuring { during { checked = checked + 1; } }
+            Waiting -> Measuring : if [loaded >= 1];
+            Measuring -> [*] : if [checked >= 2];
+        }
+    }
+
+    state Packed;
+
+    Job -> Packed;
+}
+```
+
+Events inside regions, `active()` across regions and a forced exit of the
+group:
+
+```fcstm
+def int alarm = 0;
+
+state Plant {
+    event Reset;
+    [*] -> Run;
+
+    state Run {
+        region Pump {
+            event Trip;
+            [*] -> Pumping;
+            state Pumping;
+            state Stopped;
+            Pumping -> Stopped : Trip;
+            Stopped -> Pumping : /Reset;
+        }
+        region Valve {
+            [*] -> Open;
+            state Open;
+            state Closed;
+            Open -> Closed : /Run.Pump.Trip;
+            Closed -> Open : /Reset;
+            Closed -> Closed : if [active("Plant.Run.Pump.Stopped")] effect { alarm = 1; }
+        }
+    }
+
+    state Halted;
+
+    !Run -> Halted : /Emergency;
+}
+```
+
+Nested owners with owner lifecycle actions:
+
+```fcstm
+def int trace = 0;
+def int scans = 0;
+
+state Site {
+    [*] -> Operating;
+
+    state Operating {
+        enter { trace = trace + 1; }
+        exit { trace = trace + 10; }
+        >> during before { scans = scans + 1; }
+
+        region North {
+            [*] -> Scan;
+            state Scan {
+                region Left {
+                    [*] -> L1;
+                    state L1;
+                    L1 -> [*] : if [scans >= 2];
+                }
+                region Right {
+                    [*] -> R1;
+                    state R1;
+                    R1 -> [*] : if [scans >= 3];
+                }
+            }
+            state Hold;
+            Scan -> Hold;
+        }
+        region South {
+            [*] -> Idle;
+            state Idle;
+        }
+    }
+
+    state Closed;
+
+    !Operating -> Closed : /Close;
+}
+```
 
 ## Lifecycle Actions
 
@@ -623,6 +847,11 @@ Execution-order essentials:
   `during after` do not wrap child-to-child transitions.
 - Exiting a composite state runs child `exit`, then plain composite
   `during after`, then composite `exit`.
+- In an owner of regions, one cycle advances the regions in written order; a
+  later region sees the values and states an earlier region produced in the
+  same cycle. A region that reaches `-> [*]` is done, and the last one to
+  finish hands control to the owner's outgoing transition in the same cycle.
+  See Regions.
 - `>> during before` and `>> during after` are aspect actions for descendant
   leaf states; plain `during` is the ordinary active-state action.
 - Combo transition triggers behave like the pseudo-state chains produced during
@@ -638,6 +867,13 @@ Execution-order essentials:
   transition priority follows the written order.
 - Declare every persistent value as `def int` or `def float`.
 - Use integer flags such as `flag > 0` instead of bare boolean variables.
+- Use regions when one state needs several control parts that all advance in
+  every cycle. Use ordinary child states when exactly one part is active at a
+  time. Order the regions so a producer is written before its consumers, and
+  declare every variable at the top of the file, never inside a region.
+- Do not model a region as a state, a transition target, or a place to hold
+  `enter` / `during` / `exit`. Put those on the owner or on the region's
+  child states.
 - Do not invent syntax for timers, arrays, quantifiers, or assumptions unless
   the user explicitly targets a future extension outside current pyfcstm.
 - When a natural-language requirement has a time delay, encode a counter
@@ -726,6 +962,66 @@ state BadShallowDefault {
 ```
 
 ```fcstm-invalid
+state BadMixedChildren {
+    [*] -> A;
+    state A;
+    region R {
+        [*] -> X;
+        state X;
+    }
+}
+```
+
+```fcstm-invalid
+state BadCrossRegionTransition {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> X;
+            state X;
+            X -> Y;
+        }
+        region B {
+            [*] -> Y;
+            state Y;
+        }
+    }
+}
+```
+
+```fcstm-invalid
+def int count = 0;
+state BadRegionAction {
+    [*] -> P;
+    state P {
+        region A {
+            enter { count = 1; }
+            [*] -> X;
+            state X;
+        }
+    }
+}
+```
+
+```fcstm-invalid
+state BadActivePath {
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> X;
+            state X;
+        }
+        region B {
+            [*] -> Y;
+            state Y;
+            state Z;
+            Y -> Z : if [active("P.A.X")];
+        }
+    }
+}
+```
+
+```fcstm-invalid
 def int count = 0;
 state BadForcedEffect {
     [*] -> Running;
@@ -797,6 +1093,14 @@ Before producing final FCSTM source, check:
 - `=>`, `implies`, `xor`, and `iff` are used only in conditions
 - `^` is not used as boolean xor
 - forced transitions have no effect block
+- a state holds either child states or regions, never both
+- every region has its own `[*] -> Child;`, holds no `enter` / `during` /
+  `exit`, variable declaration or import, and no transition crosses from one
+  region into another or targets a state inside a region from outside it
+- regions are written in the order they must run, and an owner whose regions
+  can finish has an ordinary outgoing transition for the last completion
+- events shared by several regions use one root-based path, and
+  `active("Root.Owner.Region.State")` names the root state and the region
 - every `Owner.[H]` / `Owner.[H*]` target has a matching `[H]` / `[H*]`
   declaration inside `Owner`, and a `[H]` default is a direct child
 - final output is raw `.fcstm` source, not Markdown

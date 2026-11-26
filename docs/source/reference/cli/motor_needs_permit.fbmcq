@@ -1,0 +1,2 @@
+check forbid <= 4:
+    active("Controller.Running{Motion: On}") && permit == 0;

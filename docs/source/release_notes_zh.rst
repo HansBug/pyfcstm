@@ -4,6 +4,73 @@
 未发布
 ------
 
+区域
+~~~~
+
+这个版本给 FCSTM 增加了\ **有序并行区域**。一个状态可以包含若干 ``region`` 块，而不是普通子状态。这些区域同时活动，每个周期里按书写顺序依次执行。想看它运行，请跟着 :doc:`/tutorials/regions/index_zh` 操作。
+
+**语言。**
+
+- ``region Name { ... }`` 写在状态内部。一个状态要么包含普通子状态，要么包含区域，不能两者都有，也可以只有一个区域。区域可以嵌套：区域里的状态可以再拥有区域。
+- 区域里可以写初始转换、子状态、普通转换和强制转换、``event`` 声明以及 ``>> during before/after`` 切面。不能写 ``enter``、``during``、``exit`` 和变量声明，区域本身也不是转换的源或目标。同一个状态的两个区域不能重名，模型错误是 ``Duplicate region 'A' in R.``。
+- ``region`` 与 ``active`` 是保留字。把它们用作状态名、事件名或变量名的模型需要改名。
+- 书写顺序就是执行顺序，也是模型含义的一部分。靠后的区域能看到靠前区域在同一周期里产生的值和状态；靠前的区域不会因为靠后区域写了什么而重新执行。多个区域写同一个变量时，最后一次写入生效。
+- 转换不能从一个区域通向另一个区域，拥有者之外的转换也不能直接通向区域内部。进入拥有者，让每个区域从自己的初始转换开始。
+- 写在区域内部的 ``X -> [*]`` 表示该区域已完成。拥有者的最后一个区域完成时，拥有者在同一周期里继续走自己的转换；机器不会停在所有区域都已完成的位置。
+- 写在拥有者上的强制转换，例如 ``!Running -> Idle : /Stop;``，一次带走整组。它按下文\ *强制转换*\ 一节所述展开成普通的 ``-> [*]`` 转换。
+- 区域里声明的事件属于该区域，所以两个区域可以用同一个事件名表示不同的事件。多个区域要共用一个事件时，使用从根开始的路径（``/Owner.Region.Event``）。
+- ``active("State.Path")`` 是只读查询，可以出现在任何能写条件的位置。
+
+**哪些环节支持区域。**
+
+- 模拟：冷启动、热启动、依赖位置的短事件名和 ``pyfcstm simulate``，见下文\ *含并行区域模型的模拟*。位置是一棵树，显示为配置文本，例如 ``Controller.Running{Safety: Watching, Motion: On}``。
+- ``pyfcstm inspect`` 在摘要里报告区域，并新增两条与顺序有关的诊断。``I_REGION_BACKWARD_READ`` 是提示级诊断：靠前的区域读取了靠后区域写入的变量，或查询了靠后区域的状态，因此看到的是上一个周期的值。它描述的是既定行为，不是缺陷。``W_REGION_BLIND_OVERWRITE`` 是警告：靠后的区域每个周期都无条件覆盖靠前区域写的变量，而且没有用到旧值，所以靠前的写入必然丢失。靠后的区域可能读到旧值、写入有条件、能够完成或含抽象动作，或者中间的区域读了该变量时，两条都不报。
+- ``pyfcstm.verify`` 与 inspect 的可达性分析按分支判断拥有区域的状态（见下文\ *检查与验证*）。
+- ``pyfcstm bmc`` 与 ``pyfcstm.bmc`` 接受含区域的模型，包括见证、回放和运行时安全检查（见下文\ *区域的有界模型检查*）。
+- 内置模板 ``python``、``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 生成的运行时按模拟器的方式运行含区域的模型，见下文\ *模板与能力声明*。
+- PlantUML 与图形查看器把区域画成并发区域（PlantUML 里称为分区；见下文\ *区域的画法*）。
+- VS Code 扩展可以预览含区域的模型，折叠 ``region`` 块，并在编辑时报告 ``E_REGION_STRUCTURE``、``E_DUPLICATE_REGION`` 和 ``E_ACTIVE_QUERY_TARGET``。
+- 随包发布的两份大语言模型指南，即 FCSTM 语法指南与 FBMCQ 语言指南，都介绍了区域。
+
+**怎样开始。** :doc:`/tutorials/regions/index_zh` 带你用一个控制器依次走过模拟、区域顺序、检查、有界模型检查、生成和画图。任务做法见 :doc:`/how_to/regions/index_zh`，原因见 :doc:`/explanations/region_semantics/index_zh` 与 :doc:`/explanations/region_design/index_zh`，确切规则见 :doc:`/reference/region_model/index_zh`。
+
+**已知限制。**
+
+- 区域里两条强制声明竞争时，先到的一条占住整组，区域里的叶子也不让位。这与不含区域的模型不同，见 `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_。
+- ``pyfcstm inspect`` 的行为类诊断不应随语法糖是否展开而变化，见 `issue #588 <https://github.com/HansBug/pyfcstm/issues/588>`_。
+- 编辑器预览对历史的画法与 Python 的图形快照不同，见 `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_。``I_REGION_BACKWARD_READ`` 与 ``W_REGION_BLIND_OVERWRITE`` 只由 ``pyfcstm inspect`` 报告，编辑器不报。
+- 生成的运行时还可以更小更快。Python 模板记录在 `issue #596 <https://github.com/HansBug/pyfcstm/issues/596>`_，C 系模板记录在 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
+- 有界模型检查的代价随区域数与上界增长；`issue #600 <https://github.com/HansBug/pyfcstm/issues/600>`_ 记录了在公式构造与求解上探索过的方向。
+
+模板与能力声明
+~~~~~~~~~~~~~~
+
+模板在 ``config.yaml`` 的 ``features`` 列表里声明自己能渲染什么；目前唯一的成员是 ``region``，``StateMachineCodeRenderer.features`` 返回这个列表。五套内置模板都声明了它。把含区域的模型交给没有声明的模板（包括自定义模板目录）时，会在写出任何文件之前以 ``E_UNSUPPORTED_FEATURE`` 拒绝。``pyfcstm generate`` 的报错信息会说明模型声明了几个区域、模板作者应当声明什么，以及模型可以改用哪些内置模板。
+
+生成的 Python 运行时对所有模型有这些变化：
+
+- 不含区域的模型，生成文件的文本会变，行为不变。
+- ``vars`` 是只读视图。持久值只能通过模型或热启动参数写入。
+- ``variables`` 别名已删除，请改用 ``vars``。
+- ``ABSTRACT_HOOKS`` 是只读映射。
+- ``configuration`` 以文本给出完整位置，与模拟器打印的文本逐字节相同；``leaves``、``is_active(path)``，以及含区域的模型上的 ``region_status(path)``\ （``live``、``done``、``pending`` 或 ``inactive``）用来查询位置。``initial_state`` 接受配置文本、点路径或元组。
+- 含区域的模型没有 ``current_state_path`` 与 ``current_state_name``，读取它们会得到 ``AttributeError``。抽象动作的上下文也带有 ``configuration``。
+
+C 系运行时（``c``、``c_poll``、``cpp``、``cpp_poll``）现在运行在为每个模型生成的静态内存内核上，不使用堆，也没有第三方依赖，含区域与不含区域的模型都一样。对所有模型：
+
+- 机器类型是不透明的。``MAX_STACK_DEPTH`` 与 ``MAX_DFS_STEPS`` 已删除，由公开宏 ``..._ARENA_CAPACITY``、``..._TRAIL_CAPACITY`` 和 ``..._STORAGE_BYTES`` 取代；运行超出容量时以安全上限类错误失败，并点出宏名。
+- 新增 ``hot_start_at``、``hot_start_at_with_parameters`` 和 ``get_configuration``，配置值可以查询、校验，并格式化成与模拟器相同的文本；文本解析可以用 ``PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT`` 关掉。C++ 包装增加了对应成员以及 ``operator==`` / ``operator!=``。
+- 含区域的模型没有 ``current_state_id``、``current_state_path`` 和 ``current_state_name``，使用它们是编译错误。
+- 不含区域的模型，生成文本会变，行为不变。
+- 不含区域的模型也运行在同一个内核上，所以生成机器的代码体积、内存与每个周期的耗时同样会变化。相对旧模板的体积与速度比值及其测量方法，见 :doc:`/explanations/region_performance/index_zh` 的“生成的 C 运行时”一节；剩余的代价记录在 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
+
+区域的画法
+~~~~~~~~~~
+
+``pyfcstm plantuml`` 把一个状态的区域画成用 ``--`` 隔开的并发区域。每个区域以一条 ``region N: Name`` 注释开头，\ ``N`` 按书写顺序从 1 数起，因为 PlantUML 的分区本身没有名字（这里的并发区域在 PlantUML 里就是这种分区）。\ ``active("Path")`` 按书写原样显示，隐藏标志与自动写入不画出来。
+
+``StateMachine.diagram()``、``pyfcstm diagram`` 与 HTML 查看器把同一拥有者的区域在它的外框内并排放置，用虚线隔开，区域没有自己的边框，标题同样是 ``region N: Name``。顺序沿布局方向排开：自上而下的图里从左到右，自左向右的图里从上到下。折叠、详情与导出对区域和对状态一样可用，区域对 ``max_depth`` 算一层。查看器不高亮当前配置。图的 JSON 用 ``"region": true`` 标记每个区域节点。
+
 强制转换
 ~~~~~~~~
 
@@ -26,7 +93,7 @@
 
 有三样东西变得可见：
 
-- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里，并且在所有地方都是普通变量：热启动（hot start）像对待其他变量一样要求提供它，BMC 也像对待其他变量一样对待它。状态机只在一个周期内部把它置起，所以每一个停驻点上它都是 0。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。
+- 每条这样的声明用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 来执行；模型已经用掉的名字会被跳过。它和 ``__hist_*`` 一样出现在 ``StateMachine.defines``\ 、\ ``runtime.vars``\ 、抽象处理器的变量快照和生成代码的变量表里，并且在所有地方都是普通变量：热启动（hot start）像对待其他变量一样要求提供它，BMC 也像对待其他变量一样对待它。状态机在一个周期内部把它置起，声明完成后它回到 0，所以每一个停驻点上它都是 0；唯一的例外是目标进不去、整组停在半途时：它保持为 1，直到整组离开。\ :attr:`pyfcstm.model.model.StateMachine.forced_variables`\ 给出这些名字。
 - 处在强制退出途中的状态上，带事件的转换会经由一个生成的伪状态 ``__forced_gate_<n>`` 拆成两步。这个伪状态出现在 ``walk_states()`` 里，在执行轨迹中表现为多经过一个状态。
 - ``to_ast_node()``\ 导出实际运行的状态机，包含上述变量和伪状态，与历史的现有做法一致。从导出文本加载的模型就是同一台状态机：逐周期行为相同，热启动相同，每个可达性和 BMC 问题的答案也相同。强制转换触达区域的模型也是如此。
 

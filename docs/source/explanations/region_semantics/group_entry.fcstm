@@ -1,0 +1,20 @@
+def int k = 0;
+state Root {
+    [*] -> Idle;
+    state Idle;
+    state P {
+        region R1 {
+            [*] -> A : if [k == 0] effect { k = 1; }
+            [*] -> B : if [k == 0] effect { k = 2; }
+            state A;
+            state B;
+        }
+        region R2 {
+            [*] -> C : if [k == 2];
+            state C;
+        }
+    }
+    state Fallback;
+    Idle -> P :: Go;
+    Idle -> Fallback :: Go;
+}

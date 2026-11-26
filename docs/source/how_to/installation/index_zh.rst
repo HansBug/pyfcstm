@@ -95,63 +95,68 @@ Windows ``cmd.exe`` 中通常这样激活：
 验证 Python 包
 --------------
 
-安装教程保留了一个纳入文档构建的检查脚本。它导入包元数据，证明 Python 能加载已安装包：
+下面的脚本导入包元数据，证明 Python 能加载已安装包（版本号随发布变化，用 ``...`` 省略）：
 
-.. literalinclude:: ../../tutorials/installation/install_check.demo.py
-   :language: python
-   :linenos:
+.. testcode::
 
-预期输出形态：
+   from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__, __DESCRIPTION__
 
-.. literalinclude:: ../../tutorials/installation/install_check.demo.py.txt
-   :language: text
-   :linenos:
+   print(__TITLE__, __VERSION__)
+   print("Developed and maintained by", __AUTHOR__)
+   print(__DESCRIPTION__)
+
+.. testoutput::
+
+   pyfcstm ...
+   Developed and maintained by HansBug
+   A Python framework for parsing finite state machine DSL and generating executable code in multiple target languages.
 
 更短的人工检查如下：
 
-.. code-block:: bash
+.. code-block:: console
 
-   python - <<'PY'
-   import pyfcstm
-   print(pyfcstm.__title__)
-   print(pyfcstm.__version__)
-   PY
+   $ python -c "from pyfcstm.config.meta import __TITLE__; print(__TITLE__)"
+   pyfcstm
 
 验证命令行
 ----------
 
-先检查版本和帮助：
+先检查版本和帮助（版本、构建信息和命令列表随发布变化，用 ``...`` 省略）：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm -v
-   pyfcstm --help
-
-文档构建也会执行这个 shell 检查：
-
-.. literalinclude:: ../../tutorials/installation/cli_check.demo.sh
-   :language: shell
-   :linenos:
-
-.. literalinclude:: ../../tutorials/installation/cli_check.demo.sh.txt
-   :language: text
-   :linenos:
+   $ pyfcstm -v
+   Pyfcstm, version ...
+   ...
+   $ pyfcstm --help
+   Usage: pyfcstm [OPTIONS] COMMAND [ARGS]...
+   ...
+   Commands:
+   ...
 
 验证一个最小 DSL 往返
 ---------------------
 
 命令存在后，用一个小文件检查解析器和一个非渲染命令：
 
-.. code-block:: bash
+.. code-block:: console
 
-   cat > smoke.fcstm <<'FCSTM'
-   state Root {
-       state Idle;
-       [*] -> Idle;
-   }
-   FCSTM
-   pyfcstm inspect -i smoke.fcstm
-   pyfcstm plantuml -i smoke.fcstm -o smoke.puml
+   $ echo 'state Root { state Idle; [*] -> Idle; }' > smoke.fcstm
+   $ pyfcstm inspect -i smoke.fcstm
+   [WARN] FCSTM Inspect Report: smoke.fcstm
+
+   Summary
+     status: warning
+     root: Root
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+     Leaf state 'Root.Idle' has no outgoing transition.
+   ...
+   $ pyfcstm plantuml -i smoke.fcstm -o smoke.puml
+   $ head -n 1 smoke.puml
+   @startuml
+
+最小模型里 ``Idle`` 没有出站转换，所以检查命令给出 ``W_LEAF_NO_OUTGOING_TRANSITION`` 警告，这是预期的信号。
 
 这个检查不需要 Java、PlantUML、编译器或图形桌面。
 
@@ -235,7 +240,7 @@ CI 中渲染图表时，不要启动查看器：
      - 预期信号
      - 如果失败
    * - 包导入。
-     - ``python -c "import pyfcstm; print(pyfcstm.__title__)"``
+     - ``python -c "from pyfcstm.config.meta import __TITLE__; print(__TITLE__)"``
      - 打印包标题。
      - 这个解释器里没有安装包。
    * - 控制台脚本。
@@ -248,7 +253,7 @@ CI 中渲染图表时，不要启动查看器：
      - 确认命令属于目标环境。
    * - 纯 Python DSL 冒烟检查。
      - ``pyfcstm inspect -i smoke.fcstm``
-     - 最小模型打印 ``[OK] FCSTM Inspect Report``。
+     - 最小模型打印 ``FCSTM Inspect Report``\ （带一条预期的 ``W_LEAF_NO_OUTGOING_TRANSITION`` 警告）。
      - 先修 DSL 语法或安装，再检查渲染器。
    * - 源码图表冒烟检查。
      - ``pyfcstm plantuml -i smoke.fcstm -o smoke.puml``

@@ -102,48 +102,46 @@ release artifacts only when that packaging model fits the deployment target.
 Verify the Python package
 -------------------------
 
-The installation tutorial keeps a checked-in verification script. It imports the
-package metadata and proves that Python can load the installed package:
+This script imports the package metadata and proves that Python can load the
+installed package. The version changes with every release, so ``...`` stands
+for it:
 
-.. literalinclude:: ../../tutorials/installation/install_check.demo.py
-   :language: python
-   :linenos:
+.. testcode::
 
-Expected output shape:
+   from pyfcstm.config.meta import __TITLE__, __AUTHOR__, __VERSION__, __DESCRIPTION__
 
-.. literalinclude:: ../../tutorials/installation/install_check.demo.py.txt
-   :language: text
-   :linenos:
+   print(__TITLE__, __VERSION__)
+   print("Developed and maintained by", __AUTHOR__)
+   print(__DESCRIPTION__)
+
+.. testoutput::
+
+   pyfcstm ...
+   Developed and maintained by HansBug
+   A Python framework for parsing finite state machine DSL and generating executable code in multiple target languages.
 
 For a shorter manual check, run:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python - <<'PY'
-   import pyfcstm
-   print(pyfcstm.__title__)
-   print(pyfcstm.__version__)
-   PY
+   $ python -c "from pyfcstm.config.meta import __TITLE__; print(__TITLE__)"
+   pyfcstm
 
 Verify the CLI
 --------------
 
-Check version and help first:
+Check version and help first. The version, build information and command list change with releases, so ``...`` stands for them:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm -v
-   pyfcstm --help
-
-The documentation build also exercises this shell check:
-
-.. literalinclude:: ../../tutorials/installation/cli_check.demo.sh
-   :language: shell
-   :linenos:
-
-.. literalinclude:: ../../tutorials/installation/cli_check.demo.sh.txt
-   :language: text
-   :linenos:
+   $ pyfcstm -v
+   Pyfcstm, version ...
+   ...
+   $ pyfcstm --help
+   Usage: pyfcstm [OPTIONS] COMMAND [ARGS]...
+   ...
+   Commands:
+   ...
 
 Verify a tiny DSL round trip
 ----------------------------
@@ -151,16 +149,24 @@ Verify a tiny DSL round trip
 After the command exists, test the parser and one non-rendering command with a
 small file:
 
-.. code-block:: bash
+.. code-block:: console
 
-   cat > smoke.fcstm <<'FCSTM'
-   state Root {
-       state Idle;
-       [*] -> Idle;
-   }
-   FCSTM
-   pyfcstm inspect -i smoke.fcstm
-   pyfcstm plantuml -i smoke.fcstm -o smoke.puml
+   $ echo 'state Root { state Idle; [*] -> Idle; }' > smoke.fcstm
+   $ pyfcstm inspect -i smoke.fcstm
+   [WARN] FCSTM Inspect Report: smoke.fcstm
+
+   Summary
+     status: warning
+     root: Root
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+     Leaf state 'Root.Idle' has no outgoing transition.
+   ...
+   $ pyfcstm plantuml -i smoke.fcstm -o smoke.puml
+   $ head -n 1 smoke.puml
+   @startuml
+
+In the minimal model ``Idle`` has no outgoing transition, so inspect reports a ``W_LEAF_NO_OUTGOING_TRANSITION`` warning. That warning is the expected signal.
 
 This check does not need Java, PlantUML, a compiler, or a graphical desktop.
 
@@ -249,7 +255,7 @@ rendering backends so they work on a fresh Python-only environment.
      - Expected signal
      - If it fails
    * - Package import.
-     - ``python -c "import pyfcstm; print(pyfcstm.__title__)"``
+     - ``python -c "from pyfcstm.config.meta import __TITLE__; print(__TITLE__)"``
      - Prints the package title.
      - The package is not installed in this interpreter.
    * - Console script.
@@ -262,7 +268,7 @@ rendering backends so they work on a fresh Python-only environment.
      - Confirm the command belongs to the intended environment.
    * - Python-only DSL smoke.
      - ``pyfcstm inspect -i smoke.fcstm``
-     - Prints ``[OK] FCSTM Inspect Report`` for the minimal model.
+     - Prints ``FCSTM Inspect Report`` for the minimal model, with one expected ``W_LEAF_NO_OUTGOING_TRANSITION`` warning.
      - Fix DSL syntax or installation before checking renderers.
    * - Source-only diagram smoke.
      - ``pyfcstm plantuml -i smoke.fcstm -o smoke.puml``

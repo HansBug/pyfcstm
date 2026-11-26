@@ -1,0 +1,12 @@
+def int level = 0;
+def int seen = 0;
+state Root {
+    region Writer {
+        state Busy { during { level = level + 1; } }
+        [*] -> Busy;
+    }
+    region Reader {
+        state Idle { during { seen = level; } }
+        [*] -> Idle;
+    }
+}

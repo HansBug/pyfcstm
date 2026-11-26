@@ -1,0 +1,10 @@
+def int x = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during { x = x + 1; } } }
+        region B { [*] -> B1; state B1; }
+    }
+    state Off;
+    !P -> Off : if [x >= 2];
+}

@@ -12,6 +12,7 @@
 .. template-config-marker: top-level-key filters
 .. template-config-marker: top-level-key tests
 .. template-config-marker: top-level-key ignores
+.. template-config-marker: top-level-key features
 .. template-config-marker: validation yaml-parse-error
 .. template-config-marker: validation empty-file
 .. template-config-marker: validation root-not-mapping
@@ -27,6 +28,10 @@
 .. template-config-marker: validation stmt-style-missing-base-lang
 .. template-config-marker: validation ignores-not-list
 .. template-config-marker: validation ignores-item-not-string
+.. template-config-marker: validation features-not-list
+.. template-config-marker: validation features-item-not-string
+.. template-config-marker: validation features-unknown-feature
+.. template-config-marker: validation features-duplicate-feature
 .. template-config-marker: validation object-template-missing-template
 .. template-config-marker: validation object-import-missing-from
 .. template-config-marker: validation object-value-missing-value
@@ -139,6 +144,9 @@
    * - ``ignores``
      - 字符串列表
      - 用 GitWildMatch 风格模式排除输入模板文件。
+   * - ``features``
+     - 字符串列表
+     - 模板能渲染的模型特性。唯一成员是 ``region``；见 :ref:`sec-reference-template-config-features-zh`。
 
 校验失败
 --------
@@ -196,6 +204,18 @@
    * - ``ignores-item-not-string``
      - 某个忽略项不是字符串。
      - ``ignores: [123]``
+   * - ``features-not-list``
+     - ``features`` 是字符串、映射或其他非列表值（``null`` 不算失败，见下文）。
+     - ``features: region``
+   * - ``features-item-not-string``
+     - ``features`` 的某一项不是字符串。
+     - ``features: [1]``
+   * - ``features-unknown-feature``
+     - ``features`` 的某一项不是受支持的特性名；名称区分大小写。
+     - ``features: [cloud]``
+   * - ``features-duplicate-feature``
+     - 同一个特性写了两次。
+     - ``features: [region, region]``
 
 当对象加载形式不完整或无法导入时，也会失败：
 
@@ -217,6 +237,169 @@
    * - ``object-import-target-failure``
      - ``from`` 指向不可用对象。
      - ``quick_import_object`` 抛出导入失败。
+
+.. _sec-reference-template-config-features-zh:
+
+声明模型特性
+------------
+
+``features`` 用来声明模板能渲染哪些模型构造。没有声明某个特性的模板，遇到需要该特性的模型时会在写出任何文件之前被拒绝。封闭列表目前只有一个成员。
+
+.. list-table:: ``features`` 契约
+   :header-rows: 1
+
+   * - 项目
+     - 事实
+   * - 写法
+     - ``config.yaml`` 的顶层键 ``features``。
+   * - 类型
+     - 字符串列表。键不存在、``features:``\ （``null``）和 ``features: []`` 都表示“什么都没有声明”。
+   * - 允许的成员
+     - 只有 ``region``\ （``pyfcstm/render/render.py`` 里的 ``_TEMPLATE_FEATURES``）。匹配是精确的，所以 ``Region`` 会被拒绝。
+   * - 默认值
+     - 什么都没有声明。因此区域出现之前写的模板，会拒绝每一个声明了区域的模型。
+   * - ``region`` 的含义
+     - 模板能渲染声明了 ``region`` 块的模型，包括嵌套的区域。只有模板确实做到时才声明；按单条活动路径写的模板，遇到含区域的模型会生成错误的代码。
+   * - 谁需要它
+     - 只有声明了至少一个区域的模型。不含区域的模型，声明与否都能渲染。
+   * - 读回
+     - ``StateMachineCodeRenderer(template_dir).features`` 返回已声明名称组成的 ``frozenset``。
+   * - 检查位置
+     - ``StateMachineCodeRenderer.render`` 与 ``render_one_file``\ （在创建或清理输出目录之前），以及 ``pyfcstm generate``\ （在调用渲染器之前）。
+   * - 内置模板
+     - ``python``、``c``、``c_poll``、``cpp`` 与 ``cpp_poll`` 的 ``config.yaml`` 都声明了 ``features: [region]``。
+
+合法与非法的声明：
+
+.. list-table:: ``features`` 例子
+   :header-rows: 1
+
+   * - 情形
+     - YAML
+     - 结果
+   * - 能渲染区域。
+     - ``features: [region]``
+     - 合法。含区域的模型被接受。
+   * - 没有声明。
+     - 键不存在，或 ``{}``
+     - 合法。含区域的模型被拒绝；不含区域的模型能渲染。
+   * - 显式的空列表。
+     - ``features: []``
+     - 合法，与不写这个键等价。
+   * - 空值。
+     - ``features:``
+     - 合法。YAML 把它读成 ``null``，算作什么都没有声明。
+   * - 用字符串代替列表。
+     - ``features: region``
+     - 非法。写成 ``features: [region]``。
+   * - 映射。
+     - ``features: {region: true}``
+     - 非法。值必须是列表。
+   * - 未知名称，或大小写不同的名称。
+     - ``features: [cloud]``、``features: [Region]``
+     - 非法。只有 ``region``。
+   * - 重复的名称。
+     - ``features: [region, region]``
+     - 非法。
+   * - 非字符串的项。
+     - ``features: [1]``、``features: [null]``
+     - 非法。
+
+校验错误是渲染器读取配置时抛出的 ``ValueError``，每条都点出配置文件；下面的 ``...`` 代表脚本使用的临时目录。脚本为每个只有一行的 ``config.yaml`` 各建一次渲染器：
+
+.. testcode::
+
+   import tempfile
+   from pathlib import Path
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   configs = ("{}", "features: [region]", "features: []", "features:", "features: region",
+              "features: {region: true}", "features: [cloud]", "features: [Region]",
+              "features: [region, region]", "features: [1]", "features: [null]")
+   for text in configs:
+       with tempfile.TemporaryDirectory() as work:
+           Path(work, "config.yaml").write_text(text + "\n")
+           try:
+               print(text, "->", sorted(StateMachineCodeRenderer(work).features))
+           except ValueError as err:
+               print(text, "-> ValueError:", err)
+
+.. testoutput::
+
+   {} -> []
+   features: [region] -> ['region']
+   features: [] -> []
+   features: -> []
+   features: region -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got str.
+   features: {region: true} -> ValueError: Renderer config .../config.yaml top-level key 'features' must be a list of feature names, got dict.
+   features: [cloud] -> ValueError: Renderer config .../config.yaml declares unknown feature 'cloud'. Supported features: region.
+   features: [Region] -> ValueError: Renderer config .../config.yaml declares unknown feature 'Region'. Supported features: region.
+   features: [region, region] -> ValueError: Renderer config .../config.yaml declares duplicate feature 'region'.
+   features: [1] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got int.
+   features: [null] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got NoneType.
+
+``pyfcstm generate`` 也会检查这个键。下面的命令建立四个模板目录，并把 ``controller.fcstm``\ （两个区域）或 ``plain_no_region.fcstm``\ （没有区域）渲染到每个目录里。被拒绝的运行以状态 1 退出、不写任何文件，并打印模型的区域个数、第一个区域的位置、模板作者应当声明什么、可以改用哪些内置模板，以及一条可以复制的命令。建议的模板是所打印列表里的第一个名字。\ ``(line 12)`` 是 ``controller.fcstm`` 中第一个区域所在的行。
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: /_models/plain_no_region.fcstm
+   :language: fcstm
+   :caption: plain_no_region.fcstm
+
+.. code-block:: console
+
+   $ mkdir declared undeclared empty_list null_value
+   $ echo 'name: {{ model.root_state.name }}' > declared/names.txt.j2
+   $ cp declared/names.txt.j2 undeclared/
+   $ cp declared/names.txt.j2 empty_list/
+   $ cp declared/names.txt.j2 null_value/
+   $ echo 'features: [region]' > declared/config.yaml
+   $ echo '{}' > undeclared/config.yaml
+   $ echo 'features: []' > empty_list/config.yaml
+   $ echo 'features:' > null_value/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t declared -o out_declared
+   $ cat out_declared/names.txt
+   name: Controller
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o out_undeclared
+   generate with template directory '...undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. ...
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o out_undeclared
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out_undeclared || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i controller.fcstm -t empty_list -o out_empty_list
+   generate with template directory '...empty_list' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_empty_list || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i controller.fcstm -t null_value -o out_null_value
+   generate with template directory '...null_value' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_null_value || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i plain_no_region.fcstm -t undeclared -o out_plain
+   $ cat out_plain/names.txt
+   name: Plain
+
+这些记录能得出的结论：
+
+* 列出 ``region`` 的模板渲染了含区域的模型（退出状态为 0，输出目录里有文件）；
+* 没有这个键、写了 ``features: []`` 或 ``features:`` 的模板，对含区域的模型一律被拒绝：退出状态为 1，没有输出目录，消息里点出模板目录；
+* 同一个未声明的模板仍能渲染不含区域的模型；
+* 拒绝并不表示模板坏了，只表示模板作者没有声明对区域的支持。改用内置模板，或在模板确实能渲染区域之后再声明 ``region``。
+
+这些记录没有展示 ``--clear`` 的情形。拒绝发生在碰输出目录之前，所以已有的目录也不会被清理。内置模板不会因为区域被拒绝；针对内置名称的拒绝文字存在于 ``pyfcstm/entry/generate.py``，但目前的五套模板都碰不到它。
 
 表达式样式
 ----------

@@ -1,0 +1,14 @@
+input int y;
+output int seen = 0;
+control int level = 0;
+
+state Root {
+    region Reader {
+        [*] -> Idle;
+        state Idle { during { seen = level; } }
+    }
+    region Writer {
+        [*] -> Busy;
+        state Busy { during { level = y + 1; } }
+    }
+}

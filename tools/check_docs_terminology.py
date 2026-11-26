@@ -93,12 +93,16 @@ REJECTED_TERMS = (
     "semantic fixture corpus",
 )
 
+# ``testcode`` is a script and ``testoutput`` is its output, as shown in the pages
+# and run by ``make docs_doctest``; both are code, not prose.
 CODE_DIRECTIVES = {
     "code-block",
     "code",
     "literalinclude",
     "parsed-literal",
     "raw",
+    "testcode",
+    "testoutput",
 }
 
 PROSE_ARGUMENT_DIRECTIVES = {
@@ -466,6 +470,17 @@ def run_self_check() -> int:
                     ".. csv-table:: t\n\n   普通 runtime, 普通 renderer\n",
                 ),
                 {"runtime", "renderer"},
+            )
+        )
+        cases.append(
+            (
+                "script and output blocks of the page examples are code",
+                _write_self_check_page(
+                    root,
+                    "example_zh.rst",
+                    ".. testcode::\n\n   runtime = renderer\n\n.. testoutput::\n\n   runtime renderer\n",
+                ),
+                set(),
             )
         )
         cases.append(

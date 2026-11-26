@@ -462,3 +462,5 @@ Read the deeper material in concept order:
 5. :doc:`../../reference/bmc_query/index` and
    :doc:`../../reference/bmc_results/index` provide exact syntax and result
    contracts.
+6. :doc:`../../tutorials/regions/index` checks the same property on two models
+   with regions and shows a counterexample that depends only on region order.

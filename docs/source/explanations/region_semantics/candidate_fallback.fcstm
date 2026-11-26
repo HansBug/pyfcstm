@@ -1,0 +1,22 @@
+def int x = 0;
+def int t = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region R1 {
+            [*] -> A;
+            state A { during { x = x + 1; } }
+        }
+        region R2 {
+            [*] -> B;
+            state B;
+            state C {
+                [*] -> In : if [x > 100];
+                state In;
+            }
+            state D;
+            B -> C : if [x >= 2] effect { t = t + 10; }
+            B -> D : if [x >= 2] effect { t = t + 1; }
+        }
+    }
+}

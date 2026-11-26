@@ -20,6 +20,7 @@
 
 * **表达性 DSL 语法**：直观的领域特定语言，用于定义状态、转换、事件和生命周期动作
 * **层次状态机**：完全支持嵌套状态的父子关系和面向切面编程
+* **有序并行区域**：一个状态可以让几个区域在同一个周期里并排运行，按书写顺序依次推进；仿真、检查、有界模型检查、代码生成和图形都支持它们
 * **多语言代码生成**：基于模板的渲染系统，支持 C、C++、Python 和自定义目标语言
 * **PlantUML 可视化**：自动生成状态机图表用于文档
 * **基于 ANTLR4 的解析器**：强大的语法解析，提供详细的错误报告
@@ -98,6 +99,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/generation/index_zh
     tutorials/visualization/index_zh
     tutorials/history/index_zh
+    tutorials/regions/index_zh
     tutorials/bmc/index_zh
 
 * :doc:`教程路线图 <tutorials/index_zh>`
@@ -108,6 +110,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
 * :doc:`tutorials/history/index_zh`
+* :doc:`tutorials/regions/index_zh`
 * :doc:`tutorials/bmc/index_zh`
 
 任务指南
@@ -125,6 +128,7 @@ pyfcstm 遵循三阶段流水线：
     how_to/cli_workflows/index_zh
     how_to/bmc/index_zh
     how_to/dsl/index_zh
+    how_to/regions/index_zh
     how_to/simulation/index_zh
     how_to/simulation/diagnostics_zh
     how_to/inspect/index_zh
@@ -138,6 +142,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`how_to/cli_workflows/index_zh`
 * :doc:`how_to/bmc/index_zh`
 * :doc:`how_to/dsl/index_zh`
+* :doc:`how_to/regions/index_zh`
 * :doc:`how_to/simulation/index_zh`
 * :doc:`how_to/inspect/index_zh`
 * :doc:`how_to/generation/index_zh`
@@ -159,9 +164,14 @@ pyfcstm 遵循三阶段流水线：
     explanations/architecture/index_zh
     explanations/dsl_semantics/index_zh
     explanations/execution_semantics/index_zh
+    explanations/region_semantics/index_zh
+    explanations/region_design/index_zh
+    explanations/region_performance/index_zh
     explanations/bmc_semantics/index_zh
     explanations/bmc_properties/index_zh
     explanations/bmc_solving/index_zh
+    explanations/bmc_regions/index_zh
+    explanations/bmc_scaling/index_zh
     explanations/diagnostics/index_zh
     explanations/visualization/index_zh
     explanations/template_rendering/index_zh
@@ -171,9 +181,14 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`explanations/architecture/index_zh`
 * :doc:`explanations/dsl_semantics/index_zh`
 * :doc:`explanations/execution_semantics/index_zh`
+* :doc:`explanations/region_semantics/index_zh`
+* :doc:`explanations/region_design/index_zh`
+* :doc:`explanations/region_performance/index_zh`
 * :doc:`explanations/bmc_semantics/index_zh`
 * :doc:`explanations/bmc_properties/index_zh`
 * :doc:`explanations/bmc_solving/index_zh`
+* :doc:`explanations/bmc_regions/index_zh`
+* :doc:`explanations/bmc_scaling/index_zh`
 * :doc:`explanations/diagnostics/index_zh`
 * :doc:`explanations/visualization/index_zh`
 * :doc:`explanations/template_rendering/index_zh`

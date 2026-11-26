@@ -213,6 +213,83 @@ VSCode 验证套件
      - ``&`` / ``|``
      - 逻辑操作符不能被切成类似按位操作符的片段。
 
+区域与 ``active()`` 的覆盖范围
+--------------------------------
+
+``region`` 和 ``active`` 是保留字。\ ``region`` 块只能写在状态里面，\ ``active("path")`` 是条件表达式，不是算术表达式。下表列出每个构造在哪里处理，以及各处不做什么。表中的陈述来自表里列出的文件；jsfcstm 各行是读源码得到的，本页没有运行它们。
+
+.. list-table:: ``region`` 与 ``active`` 的处理位置
+   :header-rows: 1
+   :widths: 22 30 48
+
+   * - 位置
+     - 文件
+     - 覆盖范围
+   * - 词法文法
+     - ``pyfcstm/dsl/grammar/GrammarLexer.g4``
+     - 标记 ``REGION: 'region'`` 和 ``ACTIVE: 'active'``\ 。两者都在 ``RESERVED_WORD`` 里，所以导入目标不能写成 ``region`` 或 ``active``\ 。
+   * - 语法文法
+     - ``pyfcstm/dsl/grammar/GrammarParser.g4``
+     - ``region_definition: REGION ID '{' region_inner_statement* '}'``\ 。复合状态要么含子状态，要么含区域，不能两者都有。\ ``region_inner_statement`` 是状态、转换、强制转换、\ ``>> during`` 切面、事件声明或 ``;``\ ；\ ``enter``、\ ``during``、\ ``exit`` 和变量声明在区域里无法解析。拥有区域的状态保留 ``enter``、\ ``during``、\ ``exit``、切面和事件，但不能有转换、强制转换、历史或导入。\ ``active`` 是 ``cond_expression`` 的一个分支 ``ACTIVE '(' STRING ')'``\ 。
+   * - Pygments 词法分析器
+     - ``pyfcstm/highlight/pygments_lexer.py``
+     - ``region`` 与 ``state`` 一样是 ``Keyword.Declaration``\ ；\ ``active`` 与内置函数一样是 ``Name.Builtin``\ 。只是包含这个词的标识符，例如 ``active_count``\ ，仍是普通名字。下面的脚本输出各标记类型。
+   * - TextMate 文法
+     - ``editors/fcstm.tmLanguage.json``
+     - ``meta.definition.region.fcstm`` 规则匹配 ``region Name {``\ ，并把名字标为 ``entity.name.namespace.region.fcstm``\ ；\ ``region`` 也在声明关键字列表里，\ ``active`` 是 ``support.function.builtin.fcstm``\ 。两个词都被排除在标识符的前瞻之外。
+   * - jsfcstm 语法树与模型
+     - ``editors/jsfcstm/src/ast/``\ 、\ ``model/``
+     - ``regionDefinition`` 节点和认识区域的模型对象。折叠把 ``regionDefinition`` 当作状态处理，格式化器在寻找抽象动作的结尾时，把 ``region`` 识别为一条语句的开头。
+   * - jsfcstm 诊断
+     - ``editors/jsfcstm/src/editor/region-diagnostics.ts``
+     - ``E_REGION_STRUCTURE``\ （原因 ``empty_region`` 与 ``history_boundary``\ ）、带 ``previous_span`` 的 ``E_DUPLICATE_REGION``\ ，以及 ``E_ACTIVE_QUERY_TARGET``\ （原因 ``invalid_path``、\ ``not_found``、\ ``region`` 与 ``pseudo``\ ）。同一输入给出的诊断码和原因与 Python 一致。
+   * - VS Code 与编辑器功能
+     - ``editors/vscode/src/``\ 、\ ``editors/jsfcstm/src/editor/``
+     - 补全、悬停和符号模块里没有区域专用的代码。区域诊断、折叠和格式化来自 jsfcstm；图形预览见 :doc:`/reference/visualization_options/index_zh`\ 。
+
+编辑器一侧不存在的东西：
+
+* jsfcstm 从不报告 ``mixed_children``、\ ``owner_statements``\ （\ ``E_REGION_STRUCTURE``\ ）和 ``initializer``\ （\ ``E_ACTIVE_QUERY_TARGET``\ ），因为文法已经把这些输入当作语法错误拒绝。Python 模型只对通过公开节点类构造的语法树才报告它们。
+* 路径进入导入模块的查询，jsfcstm 不做判断，因为导入的状态要到装配之后才存在。
+* 两条顺序诊断 ``I_REGION_BACKWARD_READ`` 和 ``W_REGION_BLIND_OVERWRITE`` 在 jsfcstm 里不存在。对含区域或含 ``active()`` 查询的模型，\ ``inspectModel`` 会抛出错误，见 :ref:`inspect-report-region-order-zh`\ 。
+* ``python editors/validate.py`` 会读取 ``editors/vscode/syntaxes/fcstm.tmLanguage.json``\ ，它是打包产物。在没有生成它的检出里，命令会以 ``FileNotFoundError`` 停止。它内置的测试源码同时包含 ``region`` 和 ``active(...)``\ 。
+
+下面是各构造的 Pygments 标记类型，由直接导入 :class:`pyfcstm.highlight.pygments_lexer.FcstmLexer` 的脚本输出（因此不依赖入口点是否已安装）：
+
+.. literalinclude:: region_highlight.fcstm
+   :language: fcstm
+   :caption: region_highlight.fcstm
+
+.. testcode::
+
+   from pathlib import Path
+
+   from pygments.token import Token
+
+   from pyfcstm.highlight.pygments_lexer import FcstmLexer
+
+   lexer = FcstmLexer()
+   wanted = ("region", "Motor", "Sensor", "active", "active_count", "state", "Root")
+   for line_no, line in enumerate(Path("region_highlight.fcstm").read_text().splitlines(), 1):
+       for token_type, value in lexer.get_tokens(line):
+           if value in wanted and token_type is not Token.Text:
+               print("line %d: %-14r %s" % (line_no, value, token_type))
+
+.. testoutput::
+
+   line 1: 'active_count' Token.Name
+   line 2: 'state'        Token.Keyword.Declaration
+   line 2: 'Root'         Token.Name
+   line 3: 'region'       Token.Keyword.Declaration
+   line 3: 'Motor'        Token.Name
+   line 4: 'state'        Token.Keyword.Declaration
+   line 7: 'region'       Token.Keyword.Declaration
+   line 7: 'Sensor'       Token.Name
+   line 8: 'state'        Token.Keyword.Declaration
+   line 10: 'active'       Token.Name.Builtin
+
+输出这样读：两个 ``region`` 关键字和三个 ``state`` 关键字都是 ``Keyword.Declaration``\ ；区域名是普通的 ``Name``\ ；\ ``active`` 是 ``Name.Builtin``\ ，而 ``active_count`` 仍是 ``Name``\ 。
+
 关键字更新清单
 --------------
 

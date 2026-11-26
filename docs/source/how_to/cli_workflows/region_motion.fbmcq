@@ -1,0 +1,2 @@
+init state("Controller.Idle") havoc { permit, motor };
+check reach <= 2: active("Controller.Running{Motion: On}");

@@ -36,7 +36,12 @@
 .. cli-ref-option: command=inspect option=--enable-verify
 .. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic default=structural
 .. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions default=linear_in_transitions
+.. cli-ref-option: command=inspect option=--collect-errors
 .. cli-ref-option: command=inspect option=--smt-timeout-ms
+.. cli-ref-option: command=inspect option=--structure-max-transitions-per-state
+.. cli-ref-option: command=inspect option=--structure-max-unreachable-leaf-rate
+.. cli-ref-option: command=inspect option=--structure-max-unreachable-transition-rate
+.. cli-ref-option: command=inspect option=--no-structure-thresholds
 .. cli-ref-option: command=inspect option=--help
 .. cli-ref-command: name=plantuml
 .. cli-ref-option: command=plantuml option=-i
@@ -51,9 +56,14 @@
 .. cli-ref-command: name=diagram
 .. cli-ref-option: command=diagram option=-i
 .. cli-ref-option: command=diagram option=-o
-.. cli-ref-option: command=diagram option=--format choices=json,html
+.. cli-ref-option: command=diagram option=--format choices=json,html,svg,png,pdf
+.. cli-ref-option: command=diagram option=--scale
 .. cli-ref-option: command=diagram option=--open
 .. cli-ref-option: command=diagram option=--help
+.. cli-ref-command: name=expand-svg
+.. cli-ref-option: command=expand-svg option=-i
+.. cli-ref-option: command=expand-svg option=-o
+.. cli-ref-option: command=expand-svg option=--help
 .. cli-ref-command: name=simulate
 .. cli-ref-option: command=simulate option=-i
 .. cli-ref-option: command=simulate option=--input-code
@@ -146,8 +156,12 @@
      - 需要稳定、可审阅、可版本管理的图表源码。
    * - ``diagram``
      - FCSTM DSL 文件
-     - 可移植 JSON 或自包含 HTML 查看器
+     - 可移植 JSON、自包含 HTML 查看器，或 SVG、PNG、PDF 导出
      - 不使用 PlantUML 渲染器而使用共享浏览器图形。
+   * - ``expand-svg``
+     - 规范形式的图 SVG
+     - 自包含的 SVG
+     - 手里有一份标签是 ``<text>`` 的 SVG，想得到不依赖已安装字体的版本。
    * - ``visualize``
      - FCSTM DSL 文件或渲染器检查请求
      - ``png``、``svg`` 或 ``pdf`` 图表
@@ -192,9 +206,9 @@
      - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
      - Click 在写报告前拒绝封闭的 ``--format`` 取值。
    * - ``bmc``
-     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
+     - ``pyfcstm bmc -i docs/source/how_to/bmc/bmc_tasks.fcstm -q docs/source/how_to/bmc/reach.fbmcq``
      - 第一行是 ``BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``，且重放通过。
-     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
+     - ``pyfcstm bmc -i docs/source/how_to/bmc/bmc_tasks.fcstm -q /tmp/missing.fbmcq``
      - 查询文件在编译前读取失败，不输出半成品报告。
    * - ``generate``
      - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
@@ -324,10 +338,30 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
      - ``linear_in_transitions``
      - ``none``、``one``、``linear_in_states``、``linear_in_transitions``、``linear_in_vars``、``linear_in_leaves``、``quadratic_in_outgoing_per_state``、``quadratic_in_states``、``vars_times_transitions``
      - inspect 接受的最高模型派生验证调用次数规模。
+   * - ``--collect-errors``
+     - 关闭
+     - 标志
+     - 报告全部模型错误，而不是在第一个处停止。模型无效时命令仍以非零状态退出。
    * - ``--smt-timeout-ms``
      - 未设置
      - ``>= 0`` 的整数
      - 可选 Z3 超时时间，单位毫秒。``0`` 表示不设置有限超时。
+   * - ``--structure-max-transitions-per-state``
+     - ``6.0``
+     - 浮点数
+     - 结构统计里每个非伪状态的书写转换数的建议上限。
+   * - ``--structure-max-unreachable-leaf-rate``
+     - ``0.1``
+     - 浮点数
+     - 不可达叶状态比例的建议上限。
+   * - ``--structure-max-unreachable-transition-rate``
+     - ``0.1``
+     - 浮点数
+     - 不可达书写转换比例的建议上限。
+   * - ``--no-structure-thresholds``
+     - 关闭
+     - 标志
+     - 关闭全部结构统计的建议阈值。
    * - ``-h, --help``
      - 不适用
      - 标志
@@ -463,14 +497,14 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
 
 .. code-block:: text
 
-   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html] [--open]
+   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html|svg|png|pdf] [--scale <factor>] [--open]
 
-``diagram`` 把 FCSTM 文件转换为可移植 JSON 或自包含 HTML 查看器。不带 ``-o`` 时，
-JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略路径时，每次调用写入
+``diagram`` 把 FCSTM 文件转换为可移植 JSON、自包含 HTML 查看器，或 SVG、PNG、PDF 导出。不带 ``-o`` 时，
+JSON 写入标准输出，其余格式都需要 ``-o``；HTML 写到请求路径。使用 ``--open`` 且省略路径时，每次调用写入
 一个全新的临时路径。``--open`` 会阻塞到窗口关闭，随后删除该临时文件，因此不会
 堆积；想保留查看器请用 ``-o`` 指定路径。
 
-命令无法产出的输出后缀属于用法错误：请使用 ``.json`` 或 ``.html``\ ，或用
+命令无法产出的输出后缀属于用法错误：请使用 ``.json``、``.html``、``.htm``、``.svg``、``.png`` 或 ``.pdf``\ ，或用
 ``--format`` 显式指定。``--open`` 找不到浏览器时，用 ``-o`` 指定的路径会在报错前
 被打印出来，文件保留供手动打开；不带 ``-o`` 时没有这样的文件——临时文件因为从未被
 打开而被删除，报错信息会提示改用 ``-o PATH``\ 。
@@ -489,11 +523,15 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
    * - ``-o, --output``
      - JSON 写标准输出
      - 路径
-     - ``.json`` 或 ``.html`` 目标文件。
+     - ``.json``、``.html``、``.svg``、``.png`` 或 ``.pdf`` 目标文件。
    * - ``--format``
      - 按后缀推断
-     - ``json``、``html``
-     - 显式指定输出格式。
+     - ``json``、``html``、``svg``、``png``、``pdf``
+     - 显式指定输出格式。给了 ``--format`` 时任何后缀都被接受。
+   * - ``--scale``
+     - PNG 为 ``1.0``
+     - 正浮点数，至多 ``4``
+     - PNG 输出的缩放。只对 PNG 输出有效，其他格式是用法错误（``--scale is only supported for PNG output``）。
    * - ``--open``
      - 关闭
      - 标志
@@ -517,7 +555,42 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
   输出。在 Windows 上该目录的私密性依赖 ``%TEMP%`` 按账户隔离（默认如此）：多用户共享的
   ``TEMP`` 无法检测，且用 python.org 的安装包时目录权限只从 3.12.4 起才被应用。不希望
   文档落在共享位置时，请用 ``-o`` 指定路径。
+* SVG、PNG 和 PDF 由可选的渲染运行时产出。缺少运行时、缩放超出范围、导出超过大小上限都会作为错误报告并以非零状态退出。这些导出事实来自
+  ``pyfcstm/entry/diagram.py``；本页的例子不运行它们，因为它们需要渲染资源。
 * 无效格式、未知选项、输入不可读、解析/模型错误和打包资源缺失都会以对应错误类别非零退出。
+
+``expand-svg``
+------------------------------
+
+.. code-block:: text
+
+   pyfcstm expand-svg -i <canonical.svg> [-o <output>]
+
+``expand-svg`` 把规范形式的图 SVG（标签是点名字体的 ``<text>`` 元素）转换成自包含的 SVG，字形与标记都变成路径。结果在没有安装字体的环境里渲染效果相同，
+但不能再按文本编辑。``Diagram.to_svg()`` 已经返回展开后的形式；这个命令用于别处产生的 SVG，例如编辑器预览。
+
+.. list-table:: ``expand-svg`` 选项
+   :header-rows: 1
+
+   * - 选项
+     - 默认
+     - 取值
+     - 含义
+   * - ``-i``
+     - 必填
+     - 路径
+     - 要展开的规范形式图 SVG；必须是 UTF-8 且包含 ``<svg``。
+   * - ``-o``
+     - 标准输出
+     - 路径
+     - 目标路径。
+   * - ``-h, --help``
+     - 不适用
+     - 标志
+     - 显示命令帮助。
+
+输出和失败事实：看起来不是 SVG 文档的输入属于用法错误；输入不可读或不是 UTF-8、渲染运行时不可用、结果超过大小上限，都会作为错误报告并以非零状态退出。
+这些事实来自 ``pyfcstm/entry/diagram.py``；本页不运行该命令，因为它需要渲染资源。
 
 ``visualize``
 -------------
@@ -609,6 +682,234 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
    pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
    pyfcstm visualize -i machine.fcstm --renderer local -p ./plantuml.jar --no-open
    pyfcstm visualize -i machine.fcstm --renderer remote -r http://www.plantuml.com/plantuml --no-open
+
+.. _cli-region-models-zh:
+
+含区域的模型
+------------------------------
+
+每个子命令都接受含区域（region）的模型。唯一保留的拒绝是 ``generate`` 遇到没有声明支持区域的模板。下表按子命令列出：命令对这类模型做什么、区域怎样出现在输出里、退出状态。
+所有示例用的模型都是 :doc:`/tutorials/regions/index_zh` 的联锁控制器：根状态是 ``Controller``，拥有者 ``Controller.Running`` 有区域 ``Safety`` 与 ``Motion``。
+
+.. list-table:: 各子命令对区域的行为
+   :header-rows: 1
+   :widths: 14 30 36 20
+
+   * - 命令
+     - 对区域做什么
+     - 区域怎样出现在输出里
+     - 退出状态
+   * - ``simulate``
+     - 运行模型，冷启动或热启动；热启动接受配置文本（见 :ref:`sim-region-hot-start-zh`）。
+     - 位置是配置文本，例如 ``Controller.Running{Safety: Watching, Motion: Off}``，出现在 ``current``、``cycle`` 之后、历史表格和导出文件里。
+     - ``0``；命令失败（``init`` 位置有误、事件名被拒绝、缺少输入）时为 ``1``。
+   * - ``inspect``
+     - 报告区域以及与区域有关的检查；``--enable-verify`` 按分支判断复合状态。
+     - 人类摘要里有 ``regions:`` 块；JSON 报告里有 ``regions`` 列表（``index`` 从 0 数起，``name``、``path``、``owner_path``、``substates``、``initial_targets``、``aspect_before``、``aspect_after``）。
+       顺序诊断是 ``I_REGION_BACKWARD_READ``\ （提示）与 ``W_REGION_BLIND_OVERWRITE``\ （警告）。
+     - ``0``，报告带警告时也是 ``0``；模型无效时为 ``1``。
+   * - ``bmc``
+     - 用感知区域的转移关系检查模型；``active()`` 接受位置模式，例如 ``active("Controller.Running{Motion: On}")``；每个 SAT 见证都会回放。
+     - 人类轨迹每个区域步一行，并打印每一帧的位置；JSON 见证帧带 ``configuration``，步带 ``local_cases``\ （见 :doc:`/reference/bmc_results/index_zh`）。
+     - :doc:`/reference/bmc_results/index_zh` 里的 BMC 状态：性质成立为 ``0``，否定结论为 ``1``。
+   * - ``generate``
+     - 用 ``python``、``c``、``c_poll``、``cpp``、``cpp_poll`` 渲染。模板目录必须在 ``config.yaml`` 的 ``features`` 下列出 ``region``。
+     - 生成文件与其他模型相同。被拒绝的运行不写任何文件：输出目录不会被创建。
+     - ``0``；遇到下面的拒绝为 ``1``。
+   * - ``plantuml``
+     - 输出 PlantUML 源码。
+     - 区域是并发分区：以注释 ``**region N: Name**`` 开头（``N`` 按书写顺序从 1 数起），同一拥有者的分区之间用 ``--`` 隔开。
+     - ``0``。
+   * - ``diagram``
+     - 输出可移植 JSON，或 HTML、SVG、PNG、PDF。
+     - 每个区域是其拥有者的子节点，带 ``region: true`` 和按书写顺序从 1 数起的 ``ordinal``。
+     - ``0``。
+   * - ``visualize``
+     - 构建与 ``plantuml`` 相同的 PlantUML 源码并交给渲染器，所以含区域的模型与其他模型一样被画出来。
+     - ``plantuml`` 输出里的分区和 ``region N: Name`` 注释出现在渲染出的图里。本页不运行它：它需要 Java 与 PlantUML jar，或可访问的服务器。
+     - ``0``；没有可用渲染器时非零。
+
+``expand-svg`` 没有对应的行，因为它读取的是 SVG 文件而不是模型。
+
+``generate`` 的拒绝：
+
+* 自定义模板的 ``config.yaml`` 没有 ``features`` 列表，或列表里没有 ``region``，只要模型声明了区域就会在写任何文件之前被拒绝。错误写到标准错误，退出状态 ``1``，由四部分组成：
+  指出模板目录的句子，区域个数和第一个区域，写给模板作者的一段（只有模板真的会渲染区域时才列出 ``features: [region]``），以及写给模型作者的一段（列出支持区域的内置模板，并给出一条使用其中之一的命令）。
+* 同一个模板渲染不含区域的模型时与以前一样。内置模板从不被拒绝。
+* 列出 ``region`` 是模板作者的承诺；命令行不检查模板是否正确渲染区域。见 :doc:`/reference/template_config/index_zh`。
+
+含区域模型的验收命令序列
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+下面的命令依次在控制器上运行，运行位置是本页目录的一份副本，所以不会留下文件。只有一部分输出重要时，其余部分用 ``...`` 表示；BMC 的求解耗时从不收录。
+
+这些命令读取下面的文件。控制器在 ``Running`` 里有两个区域；``Safety`` 先写，所以每个周期它先运行，``Motion`` 看到的是同一周期的许可：
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+对调后的控制器是同一个模型，两个区域按相反顺序书写；高亮的行是 ``Motion``\ ，它现在排在 ``Safety`` 前面，因此看到的是上一周期的许可：
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: controller_swapped.fcstm
+   :emphasize-lines: 12-18
+
+BMC 步骤用到的两个查询：
+
+.. literalinclude:: motor_reach.fbmcq
+   :language: text
+
+.. literalinclude:: motor_needs_permit.fbmcq
+   :language: text
+
+模板目录 ``listed_template`` 在 ``features`` 下列出 ``region``\ ，并把状态数和区域数写进一个文件；第二段记录里用到的 ``plain_template`` 是同一个目录，只是没有 ``features`` 这一行：
+
+.. literalinclude:: listed_template/config.yaml
+   :language: yaml
+   :caption: listed_template/config.yaml
+
+.. literalinclude:: listed_template/summary.txt.j2
+   :language: text
+   :caption: listed_template/summary.txt.j2
+
+第一段记录运行模拟器。故障周期会在同一周期里把电机关掉：
+
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+
+下一段记录先检查控制器，再检查对调后的控制器：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i controller.fcstm --color never
+   [WARN] FCSTM Inspect Report: controller.fcstm
+   ...
+     regions: 2
+       Controller.Running.Safety: order 0 in Controller.Running; 1 states
+       Controller.Running.Motion: order 1 in Controller.Running; 2 states
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+   ...
+
+下一段记录对控制器提出两个 BMC 问题：
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q motor_reach.fbmcq
+   BMC reach <= 4: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   ...
+
+下一段记录生成代码。``summary.txt`` 说明 ``states: 7`` 与 ``regions: 2`` 从哪里来：模板统计 ``model.walk_states()``\ ，它给出 ``controller.fcstm`` 里写出的六个状态，加上强制转换 ``!Running -> Idle`` 展开出的门状态；以及 ``model.walk_regions()``\ ，它给出 ``Safety`` 和 ``Motion``\ ：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o out
+   $ LC_ALL=C ls out
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm generate -i controller.fcstm -t listed_template -o listed_out
+   $ cat listed_out/summary.txt
+   states: 7
+   regions: 2
+
+序列的最后一段记录输出 PlantUML 文本：
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+   ...
+
+图形数据里的 ``region`` 和 ``ordinal`` 用公开的 Python 接口从同一个模型读出，因为 ``pyfcstm diagram`` 把整份可移植 JSON 打印在一行里：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   diagram = load_state_machine_from_file("controller.fcstm").diagram().to_dict()
+   running = diagram["rootState"]["children"][1]
+   for child in running["children"]:
+       print(child["qualifiedName"], child["region"], child["ordinal"])
+
+.. testoutput::
+
+   Controller.Running.Safety True 1
+   Controller.Running.Motion True 2
+
+每一块说明了什么：
+
+* ``simulate``：``/Start`` 之后位置里有两个区域；故障周期在同一个周期里关断电机（``Motion`` 回到 ``Off``）。
+* ``inspect``：两个区域按书写顺序出现；调换顺序的模型报 ``I_REGION_BACKWARD_READ``\ 。
+* ``bmc``：电机可以运行，并且从不在没有许可时运行；每个 SAT 结果都经过回放。
+* ``generate``：打包的 Python 模板写出 ``machine.py`` 和两个 README 文件；列出 ``region`` 的模板目录渲染出区域个数和状态个数。
+* ``plantuml`` 与 ``diagram``：同样的两个区域按书写顺序出现，两处输出都从 1 数起。
+
+这个序列不运行生成出的 ``machine.py``，也不渲染 PlantUML 文本或 HTML 查看器；这些由模板测试和图形检查负责。
+
+失败或报告否定结论的命令在第二份记录里：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t plain_template -o out_plain
+   generate with template directory '...plain_template' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_plain || echo "out_plain was not created"
+   out_plain was not created
+   $ pyfcstm bmc -i controller_swapped.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ echo $?
+   1
+
+第一条命令是拒绝：退出状态 ``1``，且没有输出目录。第二条命令用同一个性质检查调换了区域顺序的控制器：``Motion`` 先于 ``Safety`` 运行，看到的是上一个周期的许可，
+所以电机可能在 ``permit == 0`` 时运行；否定结论以 ``1`` 退出，见证已被回放。
 
 命令证据卡片
 ----------------------

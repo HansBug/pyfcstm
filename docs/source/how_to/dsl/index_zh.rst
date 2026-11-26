@@ -13,7 +13,7 @@ DSL 任务指南
 
 本页不是语法目录，而是 FCSTM DSL 的任务手册。每个任务配方都说明什么时候使用、推荐写法、如何验证、预期诊断、常见错误和深入阅读位置。
 
-所有引用已检查示例的命令都默认从仓库根目录运行。
+引用示例的命令把示例路径写在 ``docs/source`` 之下，所以应从仓库根目录运行；需要自带模型的命令会先在当前目录创建该文件。
 
 术语约定：本页首次出现必要英文术语时采用“中文（English）”格式，后文只使用中文。诊断（diagnostics）是
 ``pyfcstm inspect`` 给出的检查结果，目标配置（target profile）是生成目标语言或运行时配置，拥有者作用域
@@ -34,17 +34,15 @@ DSL 任务指南
 
 验证命令：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
-
-预期摘要：
-
-.. code-block:: text
-
-   status: ok
-   root: Thermostat
-   diagnostics: 0 errors / 0 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   ...
+     status: ok
+     root: Thermostat
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
 
 常见错误：在端点状态声明之前，或不在同一个拥有者作用域中写转换。除非转换本来就是进入或离开复合状态边界，否则应把端点和转换放在同一个拥有复合状态内。
 
@@ -85,37 +83,50 @@ DSL 任务指南
 
 修复方式是写 ``Outside -> Parent;``，或把指向子状态的转换移入 ``Parent``。精确规则见 :ref:`dsl-state-forms-zh` 和 :ref:`dsl-ownership-name-resolution-zh`。
 
-如果把上面的坏模型保存为 ``/tmp/nested_target_invalid.fcstm``，可用下面命令验证失败：
+要看到这个失败，把上面的模型（去掉注释）写入一个文件再检查。命令会失败，所以后面跟着退出状态：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i /tmp/nested_target_invalid.fcstm --format human --color never
-
-预期会看到：
-
-.. code-block:: text
-
-   Invalid state machine model ... Unknown to state 'ChildB' of transition:
+   $ printf '%s\n' \
+     'state Root {' \
+     '    [*] -> Outside;' \
+     '    state Outside;' \
+     '    state Parent {' \
+     '        [*] -> ChildA;' \
+     '        state ChildA;' \
+     '        state ChildB;' \
+     '    }' \
+     '    Outside -> ChildB;' \
+     '}' > nested_target_invalid.fcstm
+   $ pyfcstm inspect -i nested_target_invalid.fcstm --format human --color never
+   Invalid state machine model in nested_target_invalid.fcstm: Unknown to state 'ChildB' of transition:
    Outside -> ChildB; (line 9)
+   $ echo $?
+   1
 
-验证一个已检查层级示例：
+验证一个层级示例：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+   ...
+     status: warning
+     root: HierarchyDemo
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'execution_log' does not affect any transition guard.
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+     Transition 'HierarchyDemo.Parent' -> '[*]' has no event or guard.
+   ...
 
-预期摘录：
-
-.. code-block:: text
-
-   root: HierarchyDemo
-   diagnostics: 0 errors / 1 warnings / 1 infos
-
-伪状态只负责路由，是叶状态辅助节点，不应承载业务生命周期行为。这个遗留伪状态示例作为已检查资源保留：
+伪状态只负责路由，是叶状态辅助节点，不应承载业务生命周期行为。这个遗留伪状态示例保留如下：
 
 .. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
    :language: fcstm
-   :caption: 伪状态路由示例；预期诊断：一个 ``W_UNREFERENCED_VAR`` 和三个 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
+   :caption: 伪状态路由示例。
 
 .. _dsl-event-scopes-task-zh:
 
@@ -141,11 +152,11 @@ DSL 任务指南
      - ``Worker -> Active : /Start;``
      - 事件路径从根状态下方开始。
 
-已检查示例：
+示例：
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
-   :caption: 完整事件作用域示例；预期诊断：演示用 ``counter`` 触发 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 完整事件作用域示例；预期诊断：11 条警告，主要是 ``W_UNREACHABLE_STATE`` 和 ``W_UNREACHABLE_TRANSITION``\ ，见下方输出。
 
 .. figure:: ../../tutorials/dsl/event_scoping_complete.fcstm.puml.svg
    :alt: 事件作用域状态图
@@ -155,11 +166,39 @@ DSL 任务指南
    ``: Name`` 的边消费包含状态或命名状态拥有的事件；使用 ``: /Name`` 的边消费根事件命名空间下的事件。
    复核时查看 ``events[].qualified_name`` 和 ``events[].scope``\ ，确认检查报告中的拥有者与图中标签一致。
 
-验证命令：
+先验证。这个模型演示三种写法，并不是每个状态都能被进入的机器，所以报告里有很多警告；\ ``unreachable:``\ 一行统计没有任何转换进入的部分：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format human --color never
+   ...
+     unreachable: 3 leaf states / 6 transitions
+   ...
+     diagnostics: 0 errors / 11 warnings / 0 infos
+   ...
+   [WARN] W_UNREACHABLE_STATE
+     State 'System.ModuleB.B1' is unreachable from the root entry path.
+   ...
+
+再查看事件所有权：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
+   ...
+     "events": [
+       {
+         "is_declared": false,
+         "is_used": true,
+         "qualified_name": "System.GlobalEvent",
+         "scope": "absolute",
+   ...
+         "qualified_name": "System.ModuleA.A1.LocalEvent",
+         "scope": "local",
+   ...
+         "qualified_name": "System.ModuleA.ChainEvent",
+         "scope": "chain",
+   ...
 
 在 JSON 中查看 ``events[].qualified_name`` 和 ``events[].scope``。为了可读性，推荐写成 ``: /Start``\ ，因为它把事件作用域
 ``:`` 词法符号和绝对根路径分开。当前解析器也接受紧凑写法 ``:/Start``\ ，并会序列化成同一个绝对事件，
@@ -190,9 +229,15 @@ DSL 任务指南
 
 验证命令：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
+   ...
+     status: ok
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
+   No diagnostics.
 
 常见错误：如果看到 ``E_UNDEFINED_VAR`` 且 ``refs.is_temporary=true``，通常说明临时变量在同一个块内先被读取后被赋值。
 
@@ -220,7 +265,7 @@ DSL 任务指南
      - 比较、``&&`` / ``and``、``||`` / ``or``、``!`` / ``not``、``=>`` / ``implies``、``xor``、``iff``、条件三目表达式
      - 数值赋值语句
 
-已检查示例：
+示例：
 
 .. literalinclude:: ../../tutorials/dsl/expression_condition_ternary.fcstm
    :language: fcstm
@@ -243,18 +288,16 @@ DSL 任务指南
 
 不要用 ``->`` 表示蕴含；它是转换语法。不要把 ``^`` 当布尔异或。完整优先级见 :ref:`dsl-expression-reference-zh` 和 :ref:`dsl-expression-separation-zh`。
 
-验证已检查表达式示例：
+验证表达式示例：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
-
-预期摘录：
-
-.. code-block:: text
-
-   root: ExpressionConditionTernary
-   diagnostics: 0 errors / 0 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
+   ...
+     root: ExpressionConditionTernary
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
 
 .. _dsl-lifecycle-task-zh:
 
@@ -308,18 +351,22 @@ DSL 任务指南
    这张图用来区分动作路径和状态路径。``ref`` 复用命名生命周期动作，不调用状态或事件。
    如果 ``ref`` 路径看起来意外，应同时检查动作列表和引用关系。
 
-验证已检查生命周期示例：
+验证生命周期示例：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
-
-预期摘录：
-
-.. code-block:: text
-
-   root: AbstractReferenceDemo
-   diagnostics: 0 errors / 0 warnings / 3 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
+   ...
+     root: AbstractReferenceDemo
+   ...
+     diagnostics: 0 errors / 0 warnings / 3 infos
+   ...
+   [INFO] I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   ...
+   [INFO] I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+   ...
 
 .. _dsl-aspect-task-zh:
 
@@ -351,18 +398,23 @@ DSL 任务指南
 
 详见 :ref:`dsl-during-aspect-semantics-zh`。
 
-验证已检查切面示例：
+验证切面示例：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
-
-预期摘录：
-
-.. code-block:: text
-
-   root: HierarchyDemo
-   diagnostics: 0 errors / 1 warnings / 1 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+   ...
+     status: warning
+     root: HierarchyDemo
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'execution_log' does not affect any transition guard.
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+     Transition 'HierarchyDemo.Parent' -> '[*]' has no event or guard.
+   ...
 
 .. _dsl-forced-transition-task-zh:
 
@@ -373,7 +425,7 @@ DSL 任务指南
 
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
-   :caption: 强制转换示例；预期诊断：两个演示变量触发 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 强制转换示例；预期诊断：两个演示变量触发 ``W_UNREFERENCED_VAR``\ ，另有一条 ``W_UNREACHABLE_TRANSITION``\ 。
 
 .. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
    :alt: 强制转换展开图
@@ -396,17 +448,25 @@ DSL 任务指南
 
 验证展开规模：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
-
-预期摘录：
-
-.. code-block:: text
-
-   root: System
-   transitions: 17
-   diagnostics: 0 errors / 2 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
+   ...
+     root: System
+     states: 7 total / 5 leaf
+     transitions: 17
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'error_code' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'recovery_attempts' does not affect any transition guard.
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'System.Running' -> '[*]' is unreachable for reasons: owner_never_completes.
+   ...
 
 展开读法：
 
@@ -436,7 +496,7 @@ DSL 任务指南
 
 .. literalinclude:: ../../tutorials/dsl/combo_transitions.fcstm
    :language: fcstm
-   :caption: 普通组合、初始组合、守卫别名、根事件项、效果动作和生成的伪中继状态；预期诊断：无。
+   :caption: 普通组合、初始组合、守卫别名、根事件项、效果动作和生成的伪中继状态；预期诊断：无（见下方的 ``"diagnostics": []``\ ）。
 
 .. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
    :alt: 组合转换展开图
@@ -449,9 +509,22 @@ DSL 任务指南
 
 验证展开：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+   ...
+     "combo_origins": [
+       {
+         "origin_id": "ComboTransitions.Session:Waiting->Accepted::: Request + [ready > 0] + Confirm:effect=[\"accepted = accepted + 1;\"]",
+   ...
+             "term_text": "Request",
+   ...
+             "term_text": "[ready > 0]",
+   ...
+             "term_text": "Confirm",
+   ...
+     "diagnostics": [],
+   ...
 
 JSON 中重点看：
 
@@ -526,54 +599,95 @@ JSON 中重点看：
 
 1. **在复合状态内部声明历史**\ （这个复合状态称为历史的所有者）。\ ``[H] -> Idle;``\ 声明浅历史，\ ``[H*] -> Wash.Fill;``\ 声明深历史。箭头右侧只是所有者还没有记录时的去向：浅历史的默认目标必须是直接子状态，深历史的默认目标可以是相对所有者书写的任意后代路径。
 2. **在所有者的父作用域里通过历史进入。**\ 把所有者写成目标并加上标记：\ ``Paused -> Program.[H] :: Shallow;``\ 。所有普通转换写法都接受历史目标：事件与守卫触发、组合触发、\ ``effect``\ 块、\ ``!State``\ 与 ``!*`` 强制转换、父状态的初始转换 ``[*] -> Program.[H*];``\ ，以及外部自环 ``!Program -> Program.[H*] :: Reenter;``\ 。
-3. **运行模型。**\ 演示脚本在 ``Agitate`` 暂停，然后分别通过两种历史各恢复一次：
+3. **运行模型。**\ 这个模型在 ``Agitate`` 暂停，然后分别通过两种历史各恢复一次；输出每份只保留最后的 ``current`` 报告（深历史在前，浅历史在后）：
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
-      :language: bash
-      :caption: ``history_washer.demo.sh``
+   .. code-block:: console
 
-   由脚本生成的输出：
-
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
-      :language: text
+      $ pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Deep; \
+      current"
+      ...
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Agitate
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 2
+        fill_entries = 1
+        program_entries = 2
+        wash_initials = 1
+      $ pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Shallow; \
+      current"
+      ...
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Fill
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 1
+        fill_entries = 2
+        program_entries = 2
+        wash_initials = 2
 
    深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。\ ``__forced_0``\ 是执行 ``!Program`` 这条强制转换用的隐藏变量，状态机停驻时它总是 0。
 4. **检查模型。**\ 检查按作者书写的模型进行判断，因此历史本身不会产生额外的诊断：
 
-   .. code-block:: bash
+   .. code-block:: console
 
-      pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
-
-   预期输出片段（已截断）：
-
-   .. code-block:: text
-
-      states: 7 total / 4 leaf
-      transitions: 13
-      variables: 4
-        program_entries: control; external supply: none
-        ...
-      diagnostics: 0 errors / 4 warnings / 0 infos
+      $ pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
+      ...
+        states: 7 total / 4 leaf
+        transitions: 13
+        variables: 4
+          program_entries: control; external supply: none
+      ...
+        diagnostics: 0 errors / 4 warnings / 0 infos
+      ...
 
    四条警告是计数变量的 ``W_UNREFERENCED_VAR``\ 。报告描述的是展开前的模型：它列出四个计数变量，但没有任何 ``__hist_*`` 变量；\ ``transitions: 13``\ 只统计文件中书写的转换（强制转换 ``!Program`` 已展开），不包含展开生成的路由。
-5. **带着记录热启动。**\ 历史会展开成仿真器、生成代码与 BMC 都能看到的普通 ``int`` 变量：\ ``__hist_goto``\ （进行中的恢复，在稳定点上总是 ``0``\ ）以及每个所有者一个 ``__hist_<所有者>`` 记录。热启动必须像其他持久变量一样提供它们。请用 :meth:`pyfcstm.model.model.StateMachine.history_variables` 从源码层面的记录换算，而不要手写编号：
+5. **带着记录热启动。**\ 历史会展开成仿真器、生成代码与 BMC 都能看到的普通 ``int`` 变量：\ ``__hist_goto``\ （进行中的恢复，在稳定点上总是 ``0``\ ）以及每个所有者一个 ``__hist_<所有者>`` 记录。热启动必须提供机器的每一个变量，所以这两个变量和其他持久变量一样要写进 ``initial_vars``\ ，本模型强制转换 ``!Program`` 用的隐藏变量 ``__forced_0`` 也一样（稳定点上为 ``0``\ ；示例里手写了它，漏写会抛出 ``ValueError``\ ）。请用 :meth:`pyfcstm.model.model.StateMachine.history_variables` 从源码层面的记录换算，而不要手写编号：
 
-   .. code-block:: python
+   .. testcode::
 
-      from pyfcstm.model import load_state_machine_from_text
+      from pyfcstm.model import load_state_machine_from_file
       from pyfcstm.simulate import SimulationRuntime
 
-      machine = load_state_machine_from_text(open("history_washer.fcstm").read())
-      user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0}
-      runtime = SimulationRuntime(
-          machine,
-          initial_state="Washer.Paused",
-          initial_vars={**user, **machine.history_variables({"Washer.Program": "Wash.Agitate"})},
-      )
+      machine = load_state_machine_from_file("docs/source/tutorials/dsl/history_washer.fcstm")
+      user = {
+          "program_entries": 0,
+          "fill_entries": 0,
+          "agitate_entries": 0,
+          "wash_initials": 0,
+          "__forced_0": 0,  # hidden variable of the forced !Program transition
+      }
+      user.update(machine.history_variables({"Washer.Program": "Wash.Agitate"}))
+      runtime = SimulationRuntime(machine, initial_state="Washer.Paused", initial_vars=user)
       runtime.cycle()
       runtime.cycle(["Washer.Paused.Deep"])
-      print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
-      print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
+      print(".".join(runtime.current_state.path))
+      print(machine.history_record(runtime.vars, "Washer.Program"))
+
+   .. testoutput::
+
+      Washer.Program.Wash.Agitate
+      Wash.Agitate
 
    ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。\ ``__hist_*`` 是模型的普通变量，热启动对它们和其他变量一视同仁：给什么值就按什么值运行，不做额外检查；从运行中的机器保存下来的检查点，其中的值天然合法。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
 
@@ -605,30 +719,25 @@ JSON 中重点看：
      - 恢复路径受阻，例如记录中的子状态的初始转换守卫为假。整条转换会被有意拒绝，绝不会退化为普通进入。
      - 让记录的路径可以进入，或者为这种情况单独写一条普通进入。见 :ref:`dsl-history-semantics-zh`\ 。
 
-复现第一种错误：把下面的模型保存为 ``undeclared.fcstm``\ ，其中 ``O`` 没有声明历史，
+复现第一种错误：用一个 ``O`` 没有声明历史的模型。第一条命令写出 ``undeclared.fcstm``\ ，第二条用 ``--collect-errors`` 检查它：
 
-.. code-block:: fcstm
+.. code-block:: console
 
-   state R {
-       state A;
-       state O { state B; [*] -> B; }
-       [*] -> A;
-       A -> O.[H] :: Resume;
-   }
-
-再用 ``--collect-errors`` 检查：
-
-.. code-block:: bash
-
-   pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
-
-预期输出片段：
-
-.. code-block:: text
-
+   $ printf '%s\n' \
+     'state R {' \
+     '    state A;' \
+     '    state O { state B; [*] -> B; }' \
+     '    [*] -> A;' \
+     '    A -> O.[H] :: Resume;' \
+     '}' > undeclared.fcstm
+   $ pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
+   ...
    [ERROR] E_HISTORY_TARGET_UNDECLARED
      R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
      --> undeclared.fcstm:5:5
+   ...
+   $ echo $?
+   1
 
 全部写法、诊断与展开生成的名字见 :ref:`dsl-history-reference-zh`\ ；执行规则及其成立的原因见 :ref:`dsl-history-semantics-zh`\ 。
 
@@ -643,7 +752,7 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: 基本导入宿主模型；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 基本导入宿主模型。
 
 映射导入：
 
@@ -662,13 +771,13 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: 被导入工作模块；预期诊断：两个 ``W_UNREFERENCED_VAR``\ 。
+   :caption: 被导入工作模块。
 
 目录入口导入：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: 通过显式 ``main.fcstm`` 入口文件执行目录式导入；预期诊断：``W_UNUSED_EVENT``、``W_LEAF_NO_OUTGOING_TRANSITION`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用被导入资源。
+   :caption: 通过显式 ``main.fcstm`` 入口文件执行目录式导入；预期诊断：``W_LEAF_NO_OUTGOING_TRANSITION`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用被导入资源。
 
 映射事实：
 
@@ -686,31 +795,28 @@ JSON 中重点看：
 
 父级必须显式声明跨角色目标。缺失目标按子角色创建；同角色隐式共享必须有一致默认值，``input`` 共享必须显式声明。显式父默认值优先，多个合法写入者不增加限制。源只读变量的非法写入在映射前拒绝。收集诊断模式下，失败的变量绑定不会提交该导入的声明和子状态，诊断保留源文件及导入位置。
 
-以下示例要求已安装 pyfcstm。在同一目录保存 ``child.fcstm``：
+以下示例要求已安装 pyfcstm。在一个工作目录里写出两个文件：\ ``child.fcstm``\ 声明一个输入和一个输出；\ ``host.fcstm``\ 把子输入绑定到父控制变量 ``cached``\ ，并把子输出收进内部变量 ``internal``\ ：
 
-.. code-block:: fcstm
+.. code-block:: console
 
-   input int reading;
-   output int result = 0;
-   state Child { enter { result = reading; } }
-
-保存 ``host.fcstm``，把子输入绑定父控制状态，并把子输出收进父内部状态：
-
-.. code-block:: fcstm
-
-   control int cached = 5;
-   control int internal = 0;
-   state Host {
-       import "./child.fcstm" as Child {
-           var reading -> cached;
-           var result -> internal;
-       }
-       [*] -> Child;
-   }
+   $ printf '%s\n' \
+     'input int reading;' \
+     'output int result = 0;' \
+     'state Child { enter { result = reading; } }' > child.fcstm
+   $ printf '%s\n' \
+     'control int cached = 5;' \
+     'control int internal = 0;' \
+     'state Host {' \
+     '    import "./child.fcstm" as Child {' \
+     '        var reading -> cached;' \
+     '        var result -> internal;' \
+     '    }' \
+     '    [*] -> Child;' \
+     '}' > host.fcstm
 
 在该目录运行以下 Python 代码；操作只在内存中执行，不产生输出文件：
 
-.. code-block:: python
+.. testcode::
 
    from pyfcstm.model import load_state_machine_from_file
    from pyfcstm.simulate import SimulationRuntime
@@ -721,43 +827,52 @@ JSON 中重点看：
    print(runtime.vars["internal"])
    print(list(model.inputs), list(model.output_variables))
 
-预期输出如下，证明结果为 5，且最终模型不需要外部输入，也没有系统输出：
-
-.. code-block:: text
+.. testoutput::
 
    5
    [] []
+
+输出证明结果为 5，且最终模型不需要外部输入，也没有系统输出。
 
 若改成父 ``param int internal = 0``，子 ``output`` 的绑定将以 ``E_IMPORT_DUPLICATE_MAPPING`` 拒绝；应选择可写父目标。若改用不同数值类型，应修正声明类型，不能靠转换绕过校验。子输入绑定父可变值后按执行顺序读取最新值，原先依赖整拍输入稳定的性质应在组装模型上重新验证。
 
 前置片段形式（preamble form）例如 ``name = value;`` 和 ``name := value;``，它是导入组装辅助测试使用的解析辅助入口，不是普通 ``state_machine_dsl`` 文件里的根级 ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
 
-从仓库根目录验证映射导入：
+验证映射导入：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
-
-预期摘录：
-
-.. code-block:: text
-
-   root: System
-   variables: 3
-   diagnostics: 0 errors / 3 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
+   ...
+     root: System
+   ...
+     variables: 3
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 验证目录入口导入：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+   ...
+     root: Factory
+   ...
+     diagnostics: 0 errors / 2 warnings / 0 infos
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+     Leaf state 'Factory.Line.Robot.Moving' has no outgoing transition.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'Line_line_speed' does not affect any transition guard.
+   ...
 
-预期摘录：
+用区域建模并行工作
+------------------
 
-.. code-block:: text
-
-   root: Factory
-   diagnostics: 0 errors / 3 warnings / 0 infos
+一个状态要在同一周期里按顺序运行若干部分时，用 ``region`` 块代替普通子状态。相关任务（拆分状态、嵌套、共用事件、安排书写顺序、联合完成（joint completion）、整组打断、读取其他区域、切面与常见错误）见
+:doc:`/how_to/regions/index_zh`；语法见 :doc:`/reference/dsl/index_zh`。
 
 .. _dsl-diagnostics-task-zh:
 
@@ -766,9 +881,18 @@ JSON 中重点看：
 
 把检查诊断当成修复循环：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
+   ...
+     "diagnostics": [
+       {
+         "code": "W_COMBO_DUPLICATE_EVENT",
+         "message": "Combo trigger repeats event 'ComboDuplicateEvent.A.Go'; this is legal but usually redundant.",
+         "refs": {
+   ...
+         "severity": "warning",
+   ...
 
 诊断包含 ``code``、``severity``、面向人的消息、源码区间和 ``refs`` 载荷。很多诊断也携带建议修复。
 
@@ -792,11 +916,48 @@ JSON 中重点看：
      - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
      - 这是 ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll`` 的 C/C++ 部署配置警告，不代表 Python 生成代码具有同样固定位宽风险。
 
+运行另外三个文件，查看各自的诊断码：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/guard_vars_never_change.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 2 warnings / 1 infos
+   ...
+   [WARN] W_UNWRITTEN_READ_VAR
+   ...
+   [WARN] W_GUARD_VARS_NEVER_CHANGE
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+   ...
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/during_const_assign.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 0 infos
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/numeric_target_range.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 0 infos
+   ...
+   [WARN] W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
+   ...
+
 最小坏语法示例作为文本夹具（text fixture）保存，因为它故意不是可解析的 ``*.fcstm`` 文件：
 
 .. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
    :language: fcstm
    :caption: 故意解析错误；预期摘录：``Unexpected token 'if'``\ 。
+
+检查它会在解析阶段失败：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
+   Failed to parse input DSL file docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt: Found 1 errors during parsing:
+   Error 1: Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ echo $?
+   1
 
 它失败的原因是普通事件语法和普通守卫语法是两种独立转换形式。修复为组合语法：
 
@@ -808,13 +969,12 @@ JSON 中重点看：
 
 验证有意触发警告的文件：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_COMBO_DUPLICATE_EVENT
+   ...
 
-预期摘录：
-
-.. code-block:: text
-
-   W_COMBO_DUPLICATE_EVENT
-   diagnostics: 0 errors / 1 warnings / 1 infos

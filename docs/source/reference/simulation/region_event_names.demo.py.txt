@@ -1,0 +1,24 @@
+position: Controller.Running{Safety: Watching, Motion: Off}
+-- Configuration.resolve_event
+Trip            -> Controller.Running.Safety.Watching.Trip
+Go              -> Controller.Running.Motion.Off.Go
+Ping            !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+Nope            !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+..Stop          -> Controller.Running.Stop
+.Stop           !! ModelLookupError: Position-dependent event name '.Stop' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+/Running.Stop   -> Controller.Running.Stop
+/Reset          -> Controller.Reset
+Reset           !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+-- runtime.cycle(name)
+Controller.Running.Stop              ok  Controller.Running{Safety: Tripped, Motion: On}  consumed=['Controller.Running.Stop', 'Controller.Running.Stop']
+Controller.Running.Motion.Off.Ping   ok  Controller.Running{Safety: Watching, Motion: Off}  consumed=['Controller.Running.Motion.Off.Ping']
+/Running.Stop                        ok  Controller.Running{Safety: Tripped, Motion: On}  consumed=['Controller.Running.Stop', 'Controller.Running.Stop']
+..Stop                               ok  Controller.Running{Safety: Tripped, Motion: On}  consumed=['Controller.Running.Stop', 'Controller.Running.Stop']
+Running.Stop                         !! SimulationRuntimeEventError: Position-dependent event name 'Running.Stop' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+Ping                                 !! SimulationRuntimeEventError: Position-dependent event name 'Ping' is ambiguous: Controller.Running.Safety.Watching.Ping (from Controller.Running.Safety.Watching); Controller.Running.Motion.Off.Ping (from Controller.Running.Motion.Off); use the full event path or a root-based "/path".
+Trip                                 ok  Controller.Running{Safety: Tripped, Motion: Off}  consumed=['Controller.Running.Safety.Watching.Trip']
+-- a finished region does not take part
+Ping from Controller.Running{Safety: [done], Motion: Off} -> consumed ['Controller.Running.Motion.Off.Ping']
+-- one active leaf
+Start  ok  Controller.Running{Safety: Watching, Motion: Off}
+Reset  !! SimulationRuntimeEventError: Cannot resolve event path 'Reset': failed with both StateMachine.resolve_event and State.resolve_event. Last error: Event 'Reset' not found in state 'Controller.Idle' while resolving event reference 'Reset'

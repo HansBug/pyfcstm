@@ -1,0 +1,2 @@
+check reach <= 4:
+    active("Controller.Running{Motion: On}");

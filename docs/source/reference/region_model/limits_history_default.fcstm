@@ -1,0 +1,12 @@
+state Root {
+    event Go;
+    [*] -> Idle;
+    state Idle;
+    state P {
+        [*] -> A;
+        [H] -> B;
+        state A;
+        state B;
+    }
+    Idle -> P.[H] : /Go;
+}

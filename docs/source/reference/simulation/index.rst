@@ -65,7 +65,7 @@ Batch mode and the interactive REPL use the same command processor.
      - Prints retained history.  Empty history reports ``No execution history
        available.``.
    * - ``init <position> [var=value...]``
-     - Target state, or for a model with regions a configuration text such as ``Root.Run{A: X, B: [done]}``, plus numeric variable assignments.
+     - Target state, or for a model with regions a configuration text such as ``Root.Run{A: X, B: [done]}``, plus numeric variable assignments.  See :ref:`sim-region-cli`.
      - Rebuilds the runtime as a hot start.  Every persistent control/output variable must be provided, hidden ones included; inputs belong to each cycle and parameters remain fixed.  A configuration text keeps its spaces inside the braces; what it leaves out waits for initialization in the first cycle.  Values accept decimal, hexadecimal, binary, float, and
        scientific notation.
    * - ``setting [key] [value]``
@@ -186,6 +186,308 @@ a command-layer feature and is not a :class:`pyfcstm.simulate.SimulationRuntime`
      - One JSON history entry object per line.
      - Suitable for append-like or streaming post-processing.
 
+.. _sim-region-event-names:
+
+Event names with several active leaves
+--------------------------------------
+
+A model with regions has several active leaves. A full model path, such as
+``Controller.Running.Stop``, and a path that starts at the root, such as
+``/Running.Stop``, mean the same event wherever the machine rests. A name that
+depends on the position (a short name such as ``Go`` or a name that counts levels
+up with leading dots such as ``..Stop``) is resolved once for every active leaf
+and the results are combined.
+
+.. list-table:: Outcomes of a position-dependent name
+   :header-rows: 1
+   :widths: 24 30 46
+
+   * - Leaves that find an event
+     - Result
+     - Error when refused
+   * - None
+     - Refused; nothing runs.
+     - ``Position-dependent event name 'Nope' matches no event from any active
+       leaf (<leaves>); use the full event path or a root-based "/path".``
+       (``ModelLookupError`` from ``Configuration.resolve_event``,
+       ``SimulationRuntimeEventError`` from ``cycle``).
+   * - One or more, all the same event
+     - The event is used. Several regions that find it all react to it in the
+       same cycle.
+     - none
+   * - Different events
+     - Refused as ambiguous; nothing runs.
+     - ``Position-dependent event name 'Ping' is ambiguous: <event> (from
+       <leaf>); <event> (from <leaf>); use the full event path or a root-based
+       "/path".`` The error lists every candidate with the leaves that led to it.
+
+Further rules:
+
+* A bare name looks only in the namespace of each active leaf and never searches
+  upward. An event of a composite owner, a region or an ancestor is reached with
+  its full path, with ``/name`` from the root, or with leading dots that count the
+  levels up (``..Stop`` reaches ``Controller.Running.Stop`` from the leaves of the
+  regions of ``Running``).
+* A region that is done and a region that still waits for initialization have no
+  active leaf and do not take part in the resolution.
+* ``runtime.cycle`` first tries the name as a full model path, then falls back to
+  the position-dependent resolution. With a single active leaf the refusal reads
+  ``Cannot resolve event path 'Reset': failed with both
+  StateMachine.resolve_event and State.resolve_event. ...`` instead.
+* Every name of one cycle is resolved on its own.
+* ``consumed_events`` lists an event once for every transition that used it; an
+  event shared by two regions appears twice.
+
+.. literalinclude:: event_names.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_event_names.demo.py.txt
+   :language: text
+
+The block ``Configuration.resolve_event`` shows the three outcomes for names that
+depend on the position: ``Trip`` and ``Go`` are found by one leaf, ``Ping`` is
+ambiguous because both leaves own a ``Ping``, and ``Nope`` and ``Reset`` are found
+by none, even though ``Reset`` exists on the root, because a bare name never
+looks upward. ``..Stop``, ``/Running.Stop`` and the full path reach the owner's
+event. The ``cycle`` block shows that the refusals leave the position unchanged
+(each line starts from a fresh runtime) and that a done region leaves ``Ping``
+unambiguous. This establishes the resolution rules; it does not show how long a
+name takes to resolve.
+
+.. _sim-region-hot-start:
+
+Hot start of a model with regions
+---------------------------------
+
+``SimulationRuntime(model, initial_state=position, initial_vars=variables,
+parameters=..., input_source=...)`` starts from a position without running any
+``enter`` action. A cold start (``initial_state=None``) runs the initial entry in
+the first cycle.
+
+.. list-table:: Spellings of ``initial_state``
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - Spelling
+     - Example
+     - Position that results
+   * - Configuration text
+     - ``'Controller.Running{Safety: Watching, Motion: On}'``
+     - Exactly what is written.
+   * - ``Configuration``
+     - ``Configuration.parse(model, text)``
+     - Exactly that value; it must come from the same model object.
+   * - Dotted path
+     - ``'Controller.Running.Motion.On'``
+     - The branch the path passes through; the other regions of every owner on
+       the path wait for initialization.
+   * - Tuple
+     - ``('Controller', 'Running', 'Motion', 'On')``
+     - Same as the dotted path.
+   * - ``State``
+     - the ``State`` object of ``On``
+     - Same as the dotted path; it must belong to the same model object.
+
+A position is a tree. What is written is put in place and no ``enter`` runs for
+it; what is not written waits for initialization and runs its initial
+transitions in the first cycle, in written order, while the rest works as usual.
+Three things wait: a region that is left out (and every other region of the
+owners on a dotted path), an owner written as a bare path (the whole group), and
+a plain composite state written without a child.
+
+.. list-table:: Position text for a hot start
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Text
+     - Meaning
+   * - ``Root.Job{A: X, B: Y}``
+     - Owner ``Root.Job`` rests with region ``A`` in state ``X`` and ``B`` in
+       ``Y``. A region entry names the child relative to the region; a deeper
+       leaf is written ``Comp.In1``; a nested owner is written with another block,
+       ``Q{A1: W1, A2: W2}``.
+   * - ``Root.Job{A: X}``
+     - ``B`` is left out and waits for initialization (shown as ``B: [init]``).
+   * - ``Root.Job{A: [done], B: Y}``
+     - ``A`` is Done: it stays done and does no work.
+   * - ``Root.Job{A: X, B: [init]}``
+     - ``B`` waits explicitly; same as leaving it out.
+   * - ``Root.Job``
+     - The whole group waits for initialization.
+   * - ``Root.Idle``
+     - An ordinary leaf; same as a model without regions.
+
+The shortest list of accepted and refused spellings is the output below. The
+first block starts the controller of the tutorial in each spelling and shows the
+resulting configuration; the last block shows that the first cycle initializes
+the region that was left out.
+
+.. literalinclude:: region_hot_start.demo.py.txt
+   :language: text
+
+Rules and refusals:
+
+* ``initial_vars`` must give every persistent variable, hidden ones
+  (``__forced_*``, ``__hist_*``, ``__active_*``) included. They are ordinary
+  variables: the runtime neither derives them from the position nor checks that
+  they agree with it. ``StateMachine.active_variables(config)`` and
+  ``history_variables(...)`` compute values that agree with a position.
+  Inputs and parameters are not part of ``initial_vars``; a hot start still needs
+  complete ``parameters`` and a complete ``input_source`` (see :doc:`inputs`).
+* Every region of an owner Done is refused, at any depth.
+* An owner that waits for initialization and cannot reach a resting place in the
+  first cycle makes that whole cycle a Delta: the position and the variables stay
+  as written and ``cycle_count`` still advances.
+
+.. literalinclude:: region_hot_start_rejections.demo.py.txt
+   :language: text
+
+.. literalinclude:: pending_delta.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_pending_delta.demo.py.txt
+   :language: text
+
+The first three lines show that ``Count`` does no ``during`` work (``ticks`` stays
+``0``) while ``Gate`` cannot start: the cycle rolled back, ``delta`` is ``True``,
+and the position is the one written. The last line shows the same position with
+``ready=1``: both regions work in that cycle. Delta lines are also logged at
+``warning`` level on stderr; the transcript hides them.
+
+.. literalinclude:: active_flags.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_active_variables.demo.py.txt
+   :language: text
+
+The hidden flag must be given with the other variables; given as ``0`` it is what
+runs, even when the position says the state is active. The check that the flag
+agrees with the position is the caller's.
+
+.. _sim-region-position-api:
+
+Positions, results and handler context
+--------------------------------------
+
+.. list-table:: Position surface of a runtime
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Member
+     - Behavior for a model with regions
+   * - ``runtime.configuration``
+     - The immutable :class:`pyfcstm.model.Configuration` of the resting
+       position, for every model, with or without regions. ``str()`` gives the
+       position text, ``repr()`` also shows the validation mode.
+   * - ``runtime.current_state``
+     - For a model **with** regions it returns the same ``Configuration``; for a
+       model without regions it still returns a ``State``. Check ``is_ended``
+       first: after termination it raises
+       ``SimulationRuntimeTerminalStateError``.
+   * - ``runtime.brief_stack``
+     - Raises ``SimulationRuntimeRegionQueryError`` for a model with regions:
+       ``brief_stack describes a single active path, but this model has regions;
+       use configuration, which shows every branch.``
+   * - ``Configuration.leaves``
+     - The active resting leaves, one per live region branch; Done and waiting
+       branches have none.
+   * - ``CycleResult``
+     - Same fields as without regions. ``input_events`` are canonical paths in
+       input order; ``consumed_events`` lists an event once per transition that
+       used it; ``delta`` is ``True`` when the whole cycle rolled back.
+   * - Delta
+     - One cycle-wide concept: no region keeps a write of the cycle, the position
+       and variables stay as before, and ``cycle_count`` advances.
+
+.. literalinclude:: region_position_api.demo.py.txt
+   :language: text
+
+Abstract handlers receive a ``ReadOnlyExecutionContext``.
+
+.. list-table:: Handler context fields around regions
+   :header-rows: 1
+   :widths: 26 74
+
+   * - Field
+     - Value
+   * - ``state_path``
+     - The deepest state common to the range the action wraps: the leaf when the
+       action wraps one branch, the owner when it wraps the whole group.
+   * - ``active_leaf``
+     - Follows ``state_path`` in the same way (the active leaf when exactly one
+       is wrapped, otherwise the host state path).
+   * - ``configuration``
+     - The complete configuration at the moment of the call, as a
+       ``Configuration``. A region that has not started yet is shown as
+       ``[init]``; a region that already moved in the same cycle shows its new
+       state.
+   * - ``get_var(name)``
+     - The variable snapshot, hidden variables included.
+
+.. literalinclude:: handler_hooks.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_handler_context.demo.py.txt
+   :language: text
+
+In cycle 2, ``Tick`` (an aspect of the root) and ``GroupPre`` (an aspect of the
+owner) wrap the whole group, so their ``state_path`` is ``Controller.Running``;
+``SafetyPre`` and ``Watch`` wrap one branch and report its leaf. ``Motion`` is
+``[init]`` in every call of that cycle because it has not started yet; in cycle 3
+it is ``Off`` and then ``On`` in the call of ``Drive``.
+
+.. _sim-region-cli:
+
+Simulate command with regions
+-----------------------------
+
+``pyfcstm simulate`` accepts models with regions in batch and interactive mode.
+The position is shown as configuration text in ``current``, after ``cycle``, in
+the table of several cycles, in ``history`` and in exported files.
+
+.. list-table:: Region facts of the commands
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Command
+     - Behavior
+   * - ``init <position> var=value ...``
+     - The position is a configuration text, a dotted path through regions, or a
+       state path. The spaces inside the braces are kept, so
+       ``init Controller.Running{Safety: Watching, Motion: On} permit=1`` is one
+       position. Unbalanced braces report ``Error: the braces of the configuration
+       text '...' are not balanced.`` with an example. A variable written twice
+       reports ``Error: variable 'permit' is assigned more than once.`` Missing
+       variables report ``Error: All variables must be provided. Missing:
+       [...]`` and list the available names. Refused positions report
+       ``Initialization failed: <message>`` with the messages of the table above.
+   * - ``events``
+     - Lists the events that can be typed as shown for the active leaves. A short
+       name that two leaves use for different events is not offered; an event of
+       an ancestor, owner or region is listed by its full path.
+   * - ``cycle [count] [events...] [--input name=value ...]``
+     - Every cycle needs a complete input vector: one ``--input`` per input
+       variable. A refused event name reports ``Cycle execution failed: ...``
+       with the text of the table above.
+   * - ``history``, ``export``
+     - The ``state`` column and field hold the configuration text.
+   * - Completion
+     - ``init`` completes states inside regions; ``cycle`` completes only names
+       that resolve as typed.
+
+.. literalinclude:: region_simulate_cli.demo.sh.txt
+   :language: text
+
+The first block hot starts the controller, shows that ``events`` lists only
+``Controller.Stop`` for that position, and that a fault turns the motor off in the cycle in which it is seen. The second block
+shows the dotted path form: ``Safety`` waits as ``[init]`` and starts in the
+first cycle. The third block shows the position in an exported file. All three
+blocks exit with status 0. The refusals follow with their exit statuses: every
+refused command stops batch processing and returns status 1.
+
+.. literalinclude:: region_simulate_cli.demox.sh.txt
+   :language: text
+
 Python runtime API
 ------------------
 
@@ -223,11 +525,17 @@ Python runtime API
        command-layer ``history_size`` setting remaps ``0`` to runtime ``None``;
        direct runtime code should pass ``None`` when it wants unlimited
        history.
+   * - ``configuration``
+     - Immutable :class:`pyfcstm.model.Configuration` of the resting position,
+       available for every model; see :ref:`sim-region-position-api`.
    * - ``current_state``
      - Current active state.  Check ``is_ended`` first; after termination this
        raises :class:`pyfcstm.simulate.SimulationRuntimeTerminalStateError`.
+       For a model with regions it returns the ``Configuration`` instead of a
+       ``State``.
    * - ``brief_stack``
-     - Terminal-safe stack summary as ``(state_path, mode)`` tuples.
+     - Terminal-safe stack summary as ``(state_path, mode)`` tuples.  Raises
+       ``SimulationRuntimeRegionQueryError`` for a model with regions.
    * - ``is_ended``
      - ``True`` after the runtime has terminated.  Later ``cycle()`` calls are
        no-ops.
@@ -246,7 +554,9 @@ Python runtime API
        action metadata, active leaf, abstract target, and named-ref metadata.
        ``active_leaf`` is the runtime state path where the action executes: the
        active leaf state when one is active, otherwise the action's host state
-       path, which is what entering a composite state reports.
+       path, which is what entering a composite state reports.  For actions
+       around regions see :ref:`sim-region-position-api`; the context also
+       carries ``configuration``, the whole position at the moment of the call.
    * - ``abstract_handler(action_path)``
      - Decorator that marks object methods for bulk handler registration.
 
@@ -390,7 +700,12 @@ Public failures and boundaries
    * - ``ValueError`` from construction or hot start
      - Python API and ``init`` command message
      - Invalid error mode, unknown variables, missing hot-start variables,
-       unresolved state path, or invalid persistent value type.
+       unresolved state path, or invalid persistent value type.  For positions
+       of models with regions: a region as the position, an unknown entry, a
+       duplicate region, bad position text, every region of an owner Done, a
+       ``Configuration`` or ``State`` of another model (all with their texts in
+       :ref:`sim-region-hot-start`); a position of the wrong type raises
+       ``TypeError``.
    * - ``SimulationRuntimeEventError``
      - Python API; command layer reports ``Cycle execution failed: ...``
      - Unsupported, unresolved, or foreign event input.
@@ -400,6 +715,10 @@ Public failures and boundaries
        execution path in the same cycle, or exceeded DFS/stack-depth limits.
        Loop errors include state paths and repair guidance. A cyclic candidate
        is skipped when a later candidate can reach a stoppable state or termination.
+   * - ``SimulationRuntimeRegionQueryError``
+     - Python API ``brief_stack``
+     - The model has regions and a single stack cannot describe it; use
+       ``configuration``.
    * - ``SimulationRuntimeTerminalStateError``
      - Python API ``current_state`` after termination
      - Runtime has ended and the active stack is empty.

@@ -41,6 +41,9 @@ example and verification command.
    * - States
      - ``state A;`` / ``state A { ... }`` / ``pseudo state P;``
      - :ref:`dsl-state-forms`
+   * - Regions
+     - ``region Name { ... }`` inside a state; ``active("Path")``
+     - :ref:`dsl-region-forms`, :ref:`dsl-region-active`
    * - Transitions
      - plain, event, guard, guard+effect, combo, forced, entry, exit
      - :ref:`dsl-transition-forms`
@@ -286,6 +289,9 @@ State forms
    * - Pseudo composite syntax
      - ``pseudo state Name { ... }``
      - Parser shape exists, but model validation rejects non-leaf pseudo states with ``E_PSEUDO_NOT_LEAF``.
+   * - Owner of regions
+     - ``state Name { region A { ... } region B { ... } }``
+     - Owns regions instead of child states; see :ref:`dsl-region-forms`.
 
 Some path-bearing forms use dotted identifiers through ``chain_id``, for
 example event scopes, import mappings, or action references. Transition
@@ -297,6 +303,396 @@ The history target ``Owner.[H]`` / ``Owner.[H*]`` is not a dotted path either:
 ``Owner`` is a plain sibling identifier and the marker selects how it is
 entered. Only a history declaration's default (``[H*] -> Wash.Fill;``) is a
 dotted path, resolved relative to the owner.
+
+.. _dsl-region-forms:
+
+Region forms
+------------
+
+A region is a named, ordered container of states inside one owner state. The
+regions of one owner run in the order they are written, in the same cycle. This
+section lists the exact forms; :doc:`../../explanations/region_semantics/index`
+explains how a cycle runs them, and :doc:`../region_model/index` lists the Python
+objects and position values. The grammar rules are:
+
+.. code-block:: text
+
+   composite state   : ... STATE ID (NAMED STRING)? LBRACE
+                         state_owner_statement*
+                         ( state_child_statement state_inner_statement*
+                         | region_definition (state_owner_statement | region_definition)* )?
+                       RBRACE
+   region_definition : MULTILINE_COMMENT? REGION ID LBRACE region_inner_statement* RBRACE
+   region_inner_statement : state_definition | transition_definition
+                          | transition_force_definition | during_aspect_definition
+                          | event_definition | SEMI
+   state_owner_statement  : enter_definition | during_definition | exit_definition
+                          | during_aspect_definition | event_definition | SEMI
+
+.. list-table:: Region syntax forms
+   :header-rows: 1
+   :widths: 24 34 42
+
+   * - Form
+     - Syntax
+     - Boundary
+   * - Owner state
+     - ``state Owner { region A { ... } region B { ... } }``
+     - The first declaration that is not an owner statement decides what the
+       state owns. After a ``region`` only more regions and owner statements may
+       follow; a plain child state, a transition, a forced transition, an import
+       or a history in the same state is a syntax error.
+   * - Region
+     - ``region Name { ... }``
+     - ``Name`` is an identifier; a block comment right before ``region`` is the
+       region's documentation. The body must contain a state and an initial
+       transition ``[*] -> State;``.
+   * - Single region
+     - ``state Owner { region A { ... } }``
+     - Legal, and not a warning. An owner with one region behaves like an
+       ordinary composite state.
+   * - Owner statements
+     - ``enter``, ``exit``, ``during before``, ``during after``,
+       ``>> during before``, ``>> during after``, ``event``, ``;``
+     - Allowed before, between and after the regions. A plain ``during`` on a
+       composite owner is rejected with ``E_DURING_ASPECT_INVALID`` like on every
+       composite state. See :ref:`dsl-region-owner-actions`.
+   * - Nesting
+     - ``state Cell { region X { ... } }`` inside a region
+     - Parallel structure nests through a state. A ``region`` directly inside a
+       ``region`` is a syntax error.
+   * - Order
+     - The written order of the regions
+     - The written order is the execution order and part of the semantics.
+       Reordering regions can change results (see the tutorial model and its
+       swapped variant in :doc:`../../tutorials/regions/index`).
+   * - Reserved words
+     - ``region``, ``active``
+     - Lexer keywords, not usable as variable, state, event, action, region or
+       alias names. ``Active``, ``Region`` and ``region_count`` are ordinary names.
+
+Legal forms
+~~~~~~~~~~~
+
+The smallest model has one region. ``Active`` and ``region_count`` are legal
+names because only the lower-case words are reserved:
+
+.. literalinclude:: region_single.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_single.demo.sh.txt
+   :language: text
+
+A controller with two regions, and an owner whose own scope holds the event and
+the forced transition (the model of the tutorial):
+
+.. literalinclude:: ../../tutorials/regions/controller.fcstm
+   :language: fcstm
+
+A region that contains a state with regions (nesting through ``Cell``), a
+region-local forced transition, a history in an ordinary state inside a region,
+and an activity query that names a path through two region segments:
+
+.. literalinclude:: region_nested_active.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_nested_active.demo.py.txt
+   :language: text
+
+The output shows the configuration text of every cycle: a region block lists
+its regions in written order, and ``Cell{Feed: Busy, Check: Alarm}`` is a
+nested owner. ``Check`` reads ``Feed`` in the same cycle it changes because
+``Feed`` is written first; swap them and ``Check`` sees the change one cycle
+later. The hidden variables at the top of the output are explained in
+:ref:`dsl-region-active`.
+
+Region body
+~~~~~~~~~~~
+
+.. list-table:: What a region may contain
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - Statement in a region body
+     - Allowed
+     - Result when it is not
+   * - ``[*] -> State;``
+     - Required, at least one
+     - A region without it reports ``E_INITIAL_TRANSITION_INVALID`` with
+       ``reason: missing_entry``.
+   * - ``state``, ``pseudo state``
+     - Yes; at least one state
+     - A region without a state reports ``E_REGION_STRUCTURE``
+       (``empty_region``).
+   * - Plain, event, guard and combo transitions, ``State -> [*]``
+     - Yes; endpoints are names in the region
+     - ``State -> [*];`` marks the region Done (see
+       :doc:`../../explanations/region_semantics/index`).
+   * - ``!State -> Target ...;``, ``!* -> Target ...;``
+     - Yes
+     - See :ref:`dsl-region-forced`.
+   * - ``event Name;``
+     - Yes; the event belongs to the region
+     - See :ref:`dsl-region-events`.
+   * - ``>> during before`` / ``>> during after``
+     - Yes; acts on this region only
+     - See :ref:`dsl-region-owner-actions`.
+   * - ``enter``, ``during``, ``exit``
+     - No
+     - Syntax error. Put the action on the owner or on a state of the region.
+   * - ``def`` / ``input`` / ``param`` / ``output`` declarations
+     - No
+     - Syntax error. Declare variables before the root state.
+   * - ``import``
+     - No
+     - Syntax error. Import inside an ordinary state of the region.
+   * - ``[H] -> Child;`` / ``[H*] -> ...;``
+     - No, directly
+     - Syntax error. A state inside the region may own a history.
+   * - A region as transition source or target
+     - No
+     - ``Run.A -> Idle;`` is a syntax error; ``Idle -> A;`` reports
+       ``E_DANGLING_TRANSITION``.
+
+Names, paths and the borders of a region
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A region is a named namespace between its owner and its states. Every state
+path and event path passes through the region name, so
+``Controller.Running.Motion.On`` is the state ``On`` of the region ``Motion`` of
+``Running``. Different regions may contain states with the same name:
+``Root.A.Idle`` and ``Root.B.Idle`` are two states.
+
+Transition endpoints are plain identifiers resolved in the scope that holds the
+transition. Inside a region that scope is the region. The consequences are the
+borders of a region:
+
+* a transition inside a region reaches only states of that region (no jump into
+  another region);
+* a transition of the owner's parent scope reaches the owner, never a state
+  inside one of its regions, and the owner enters all regions in written order;
+* a region cannot be written as an endpoint.
+
+All of these are errors; the report below gives the exact text. The
+cross-region form ``L -> M;`` and the plain-name form from outside
+``Idle -> Leaf;`` both report ``E_DANGLING_TRANSITION`` with ``reason:
+tgt_not_found``, because the name does not exist in the scope that holds the
+transition. The dotted forms ``Idle -> Run.A.Leaf;`` and ``Run.A -> Idle;`` are
+syntax errors: endpoints are never dotted paths.
+
+.. _dsl-region-events:
+
+Event ownership
+~~~~~~~~~~~~~~~
+
+A region owns the events written inside it. The event of a ``: Name`` transition
+belongs to the region that holds the transition; there is no search through the
+owner or the ancestors for an event with the same name.
+
+.. list-table:: Event forms inside a region
+   :header-rows: 1
+   :widths: 24 28 48
+
+   * - Written in a region
+     - Event it uses
+     - Boundary
+   * - ``event Go;``
+     - ``Plant.Job.Left.Go`` (the region's event)
+     - The same name in another region declares another event.
+   * - ``: Go``
+     - ``Plant.Job.Left.Go`` when written in region ``Left``
+     - Created on first use when not declared. It does not find an event
+       ``Go`` declared on the owner.
+   * - ``:: Back``
+     - ``Plant.Job.Left.L2.Back`` when written on a transition leaving ``L2``
+     - The event belongs to the source state.
+   * - ``: /Job.Left.Go``
+     - ``Plant.Job.Left.Go``, from any region
+     - The only way to share one event between regions: every region writes the
+       same path that starts at the root.
+   * - ``: /Job.Abort``
+     - ``Plant.Job.Abort`` (declared on the owner)
+     - The only way a region uses the owner's event.
+   * - ``: Job.Abort``
+     - none
+     - A chain path starts at the region, so ``Job`` is looked up as a state of
+       the region and ``E_MISSING_STATE`` is reported
+       (``reason: event_path_not_found``).
+
+.. literalinclude:: region_events.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_events.demo.py.txt
+   :language: text
+
+Read the output top to bottom. The first block shows the namespace that owns
+each event: ``Left`` and ``Right`` each own a ``Go``. The second block shows
+what each transition refers to: ``R1 -> R2`` in ``Right`` uses ``Left``'s event
+because it is written as a root path. In the cycles, ``/Job.Left.Go`` moves both
+regions and is listed twice in ``consumed_events`` (once per region that used
+it), ``Plant.Job.Right.Go`` moves only ``Right``, and ``/Job.Abort`` consumes
+nothing because ``R2`` has no transition on it. This establishes which events
+exist and who consumes them; it does not show the order in which regions run,
+which :doc:`../../explanations/region_semantics/index` covers.
+
+.. _dsl-region-owner-actions:
+
+Owner actions and aspects
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The owner keeps its own lifecycle actions. A region has no lifecycle actions of
+its own, only aspects.
+
+.. list-table:: Where the actions of an owner and its regions run
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Action
+     - When it runs
+   * - Owner ``enter`` / ``exit``
+     - Once for each actual entry into and exit from the owner, not once per
+       region. Re-entering the owner starts every region again; persistent
+       variables keep their values.
+   * - Owner ``during before``
+     - Once, tied to the initialization of the group of regions: after the owner
+       ``enter`` and before the first non-pseudo state of any region is entered.
+   * - Owner ``during after``
+     - Once, on the committed path on which the group hands control back to the
+       owner (all regions Done and the owner continues).
+   * - ``>> during before`` / ``>> during after`` on the owner or an ancestor
+     - Once per cycle around the whole group, not once per active leaf.
+   * - ``>> during before`` / ``>> during after`` on a region
+     - Only for that region, and only in cycles in which something below the
+       region does ``during`` work.
+   * - Position of an aspect
+     - The ``before`` aspect of a state or region runs just before the first
+       ``during`` work below it in the cycle, after the transition conditions of
+       its branch were evaluated; the ``after`` aspect runs after the last
+       ``during`` work below it. A cycle without ``during`` work below runs
+       neither. ``before`` and ``after`` nest in pairs.
+
+.. literalinclude:: region_owner_actions.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_owner_actions.demo.py.txt
+   :language: text
+
+Cycle 1 enters the owner (``10``), runs its plain ``during before`` (``11``) and
+enters ``A1`` (``32``); then region ``A`` does its work wrapped by the owner's
+aspect (``20``, ``21``) and its own (``30``, ``31``), and region ``B`` follows
+in the same cycle. ``B`` has no aspect, so ``43`` is bare. Cycle 2 shows the
+steady state: the owner's aspect appears once around the whole group, not once
+per leaf. Cycle 3 shows the exit: both regions finish by ``/Fin``, ``A1`` and
+``B1`` exit in written order (``34``, ``44``), the owner's plain ``during
+after`` runs once as the group hands back control (``12``), then the owner exits
+(``13``) and ``Done`` is entered (``90``). No aspect runs in cycle 3 because no
+``during`` work happened below the owner. The trace does not show a transition
+that is rejected during the speculative check; rejected candidates leave no
+trace.
+
+.. _dsl-region-active:
+
+Activity queries
+~~~~~~~~~~~~~~~~
+
+``active("Path")`` is a condition that is true while the named state is in the
+current configuration. It is accepted wherever a condition can be written: guards,
+``if`` conditions in effects, lifecycle actions and aspects. It is not a
+persistent initializer.
+
+.. list-table:: Activity query paths
+   :header-rows: 1
+   :widths: 34 30 36
+
+   * - Written
+     - Meaning
+     - Result
+   * - ``active("Plant.Job.Line.Cell.Feed.Busy")``
+     - Full path: root state name, then every namespace including each region.
+     - Accepted.
+   * - ``active("/Job.Line.Cell.Feed.Busy")``
+     - Root-relative: ``/`` stands for the root state.
+     - Accepted; same state as the full path.
+   * - ``active("Plant.Job")``
+     - Any non-pseudo state, including composite owners.
+     - Accepted; true while the owner is part of the configuration.
+   * - ``active("Root.A")`` where ``A`` is a region
+     - A region is not a state.
+     - ``E_ACTIVE_QUERY_TARGET``, ``reason: region``.
+   * - ``active("Root.Leaf")`` skipping the region segment
+     - Paths must include the region.
+     - ``E_ACTIVE_QUERY_TARGET``, ``reason: not_found``.
+   * - ``active("Root.A.Relay")`` naming a pseudo state
+     - Pseudo states are not resting positions.
+     - ``E_ACTIVE_QUERY_TARGET``, ``reason: pseudo``.
+   * - ``active("A.Leaf")``
+     - A path that neither starts with the root name nor with ``/``.
+     - ``E_ACTIVE_QUERY_TARGET``, ``reason: invalid_path``.
+
+Model construction turns each distinct queried state into a hidden ``int``
+variable ``__active_<path joined with _>``. The flag is set first in the state's
+``enter`` and cleared last in its ``exit``. It is an ordinary variable in the
+simulator, the generated code and BMC, and the model's
+``StateMachine.active_variables(config)`` computes its value for a position
+(see :doc:`../simulation/index`). The queries are listed by
+``StateMachine.active_queries``. A query written in an earlier region about a
+state of a later region reads the value of the previous cycle; the inspect code
+``I_REGION_BACKWARD_READ`` reports that pattern.
+
+.. _dsl-region-diagnostics:
+
+Region diagnostics
+~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Region diagnostics
+   :header-rows: 1
+   :widths: 30 12 58
+
+   * - Code
+     - Severity
+     - When
+   * - ``E_REGION_STRUCTURE``
+     - error
+     - Refs ``namespace_path`` and ``reason``: ``empty_region`` (a region
+       without a state) and ``history_boundary`` (a state that owns a history has
+       regions anywhere in its subtree). ``mixed_children`` (states and regions
+       in one state) and ``owner_statements`` (an owner with its own transitions,
+       imports or histories) are checked on hand-built syntax trees; the grammar
+       already rejects them as syntax errors.
+   * - ``E_DUPLICATE_REGION``
+     - error
+     - Two regions with the same name in one owner. Refs ``region_name``,
+       ``owner_path`` and ``previous_span``.
+   * - ``E_ACTIVE_QUERY_TARGET``
+     - error
+     - Refs ``state_path`` and ``reason``: ``invalid_path``, ``not_found``,
+       ``region``, ``pseudo`` (and ``initializer`` for a query in a persistent
+       initializer, which the grammar cannot express).
+   * - ``E_DANGLING_TRANSITION``
+     - error
+     - A transition endpoint is not a name in the scope that holds it (see the
+       borders of a region).
+   * - ``E_MISSING_STATE``
+     - error
+     - A chain event path starts with a name that is not a state of the scope.
+   * - ``E_INITIAL_TRANSITION_INVALID``
+     - error
+     - A region without an initial transition.
+
+Every case below is loaded with ``load_state_machine_from_text`` and prints what
+it reports. A syntax error is reported alone and hides every model error of the
+same text. Each block starts with the case name and the text that was loaded,
+and ends with the line that begins with ``->``.
+
+.. literalinclude:: region_diagnostics.demo.py.txt
+   :language: text
+
+The command line prints the same message without the code: ``pyfcstm inspect
+-i`` with an invalid model exits with status 1 and one ``Invalid state machine
+model in <file>: <message>`` line; add ``--collect-errors`` to report every model error instead of stopping at
+the first one.
+Use :doc:`../diagnostics_codes/index` for the registry entry of each code.
+
 
 .. _dsl-transition-forms:
 
@@ -361,6 +757,10 @@ edge. Sequential combo terms still expand into separate model edges.
      - ``... -> Owner.[H] ...;`` or ``... -> Owner.[H*] ...;``
      - Yes, except forced forms
      - Accepted on normal, initial and forced (``!State`` / ``!*``) transitions, with every trigger form; enters ``Owner`` through its history.
+
+Inside a region the owner scope of these forms is the region: initial,
+normal, exit and forced transitions of a region name only states of that
+region, and ``State -> [*];`` marks the region Done (:ref:`dsl-region-forms`).
 
 Combo details:
 
@@ -524,6 +924,98 @@ The JSON report should contain a ``forced_transitions`` summary and multiple
 expanded edges with ``forced_origin``. Once expanded, those edges are ordinary
 transitions for lifecycle ordering: source ``exit`` and target ``enter`` still
 run according to runtime semantics.
+
+.. _dsl-region-forced:
+
+Forced transitions that reach regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A forced transition whose source owns regions is expanded with the notation the
+language already has: every region is finished by ordinary ``State -> [*]``
+transitions, and the owner then continues through an ordinary transition. There
+is no whole-group takeover and no owner-level special case. The exported text of
+a model (``StateMachine.to_ast_node()``) shows the machine that runs, so it is
+the written form to expanded form comparison; ``forced_transitions`` keeps one
+record per written declaration.
+
+.. list-table:: Written form and expanded form
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Written
+     - Expanded (from the output below)
+   * - ``!Running -> Idle : /Stop;`` with ``Running`` owning ``Safety`` and
+       ``Motion``
+     - In every state that can be rested in below a region, a follower
+       ``Watching -> [*] : if [__forced_0 == 1];`` and a starter
+       ``Watching -> [*] : /Stop effect { __forced_0 = 1; }``; in the owner's
+       scope ``Running -> Idle : if [__forced_0 == 1] effect { __forced_0 = 0; }``
+       that continues once the last region is done, and
+       ``Running -> __forced_gate_0 : Stop;`` followed by
+       ``__forced_gate_0 -> Idle : if [__forced_0 == 0];``.
+   * - ``!* -> Safe : /Fault;`` in an owner scope with a plain state, an owner
+       of regions and the target itself
+     - One expansion per source: ``Idle -> Safe : Fault;``,
+       ``Safe -> Safe : Fault;`` and the group expansion of ``Run`` as above.
+   * - ``!On -> Off : /Stop;`` written inside a region, ``On`` an ordinary
+       composite state
+     - ``Quiet -> [*] : /Stop effect { __forced_0 = 1; }`` for each leaf of
+       ``On`` and, in the region, ``On -> Off : if [__forced_0 == 1] ...``
+       with a gate state; the other regions are not touched.
+
+The hidden variable ``__forced_<n>`` is an ``int`` that is ``0`` at every point
+where a run rests; a name the model already uses is skipped, and
+``StateMachine.forced_variables`` lists the names. The gate states
+``__forced_gate_<n>`` appear in ``walk_states()``. Like ``__hist_*`` and
+``__active_*`` they are ordinary variables and states in the simulator, the
+generated code and BMC; a hot start has to supply the variable.
+
+What follows from this notation:
+
+* The event and the condition of the declaration are checked in each region at
+  the turn of that region, once, at the state the machine rests in; nothing on
+  the way up asks again.
+* The regions leave in written order; the exit actions of the first region run
+  first, a nested owner leaves after its own regions, and the owner exits last.
+* A condition that becomes true while the regions work finishes the regions that
+  run after the region that made it true in the same cycle, and the regions
+  before it in the next cycle.
+* When the target cannot be entered, the regions that finished stay finished, the
+  last region keeps working with the variable raised, and the group leaves in
+  the first cycle in which the target can be entered.
+* Two declarations of one owner compete for the group: the one that raised its
+  variable first holds the group, and the second is not tried meanwhile. A
+  model without regions tries the next declaration instead (the difference is
+  recorded in `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_).
+  The other transitions of a leaf inside a region keep working while the
+  variable is raised; only the states on the declaration's own level, the
+  composite states between and the owner's outgoing transitions give way.
+* A forced declaration cannot carry ``effect`` and cannot use combo ``+``
+  triggers.
+
+.. literalinclude:: region_forced_wildcard.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_forced_in_region.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_forced_expansion.demo.py.txt
+   :language: text
+
+The first block expands the controller of the tutorial, where the two regions are
+``Safety`` and ``Motion``: both regions get follower and starter transitions, and
+the last cycle of the run shows that ``/Stop`` finishes both regions and leaves
+``Running`` in one cycle with ``__forced_0`` back at ``0``. The second block is
+the ``!*`` model above, in which ``!*`` expands to three transitions
+(``expansion_count`` is 3). The last block expands a declaration written inside a
+region. The output establishes the expansion; it does not show the order in
+which exits run, which the semantic fixtures
+``forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
+and ``group_preemption_skips_exit_of_finished_region`` pin.
+
+PlantUML, the diagram viewer and ``pyfcstm inspect`` keep drawing and reporting
+a forced declaration as one transition per state it applies to, from the model as
+written.
 
 .. _dsl-history-reference:
 
@@ -770,6 +1262,42 @@ In the JSON report, no name starts with ``__hist_``, and the transitions
 entering ``Program.[H]`` and ``Program.[H*]`` carry ``target_history``
 (``shallow`` and ``deep``) with ``to_path`` ``Washer.Program``.
 
+.. _dsl-history-regions:
+
+History and regions
+~~~~~~~~~~~~~~~~~~~
+
+A history remembers one leaf below its owner, so it cannot describe a position
+that spreads over several regions.
+
+.. list-table:: History near regions
+   :header-rows: 1
+   :widths: 40 20 40
+
+   * - Form
+     - Result
+     - Notes
+   * - A state with ``[H]`` / ``[H*]`` whose subtree has no region, inside a
+       region (``On`` in ``region_nested_active.fcstm``)
+     - Legal
+     - Enter it with ``On.[H]`` from a sibling in the same region; the record
+       variable ``__hist_<owner>`` is an ordinary variable.
+   * - A state that owns a history and has an owner of regions anywhere in its
+       subtree
+     - ``E_REGION_STRUCTURE``, ``reason: history_boundary``
+     - Reported on the history owner; see ``history_owner_with_region`` in
+       :ref:`dsl-region-diagnostics`.
+   * - ``[H] -> Child;`` written directly in a region body
+     - Syntax error
+     - A region is not a history owner; wrap the states in an ordinary state.
+
+The history inside a region is lowered like any other history, to plain
+variables, leaf ``exit`` actions and guarded initial transitions of its owner
+(see the lowered names above). The model of ``region_nested_active.fcstm`` and
+the model loaded from its ``to_ast_node()`` text produce the same
+configurations and variables over the events of the run above followed by a
+second trip, stop and resume.
+
 .. _dsl-events-scopes:
 
 Events and scopes
@@ -793,10 +1321,16 @@ Events and scopes
    * - Root event
      - ``: /Name`` or ``: /Path.Event``
      - Absolute event path from root.
+   * - Region event
+     - ``event Name;`` or ``: Name`` inside a ``region``
+     - Belongs to the region; the same name in another region is another event.
+       Share an event between regions with a root path. See :ref:`dsl-region-events`.
 
 ``chain_id`` is ``/`` optional followed by one or more dotted identifiers. Use
 local events for source-private signals, chain paths for containing protocols,
-and root paths for globally owned events.
+and root paths for globally owned events. A bare name never looks
+into the enclosing scopes: inside a region ``: Abort`` creates ``Region.Abort``
+instead of finding an ``Abort`` declared on the owner.
 
 .. _dsl-operation-blocks:
 
@@ -1045,6 +1579,13 @@ families as lifecycle ``during before/after`` forms.
    * - Ref aspect
      - ``>> during after ref Path;``
      - Reuses a named action.
+   * - Aspect on an owner of regions or an ancestor
+     - ``>> during before { ... }`` on the owner
+     - Runs once per cycle around the whole group, not once per active leaf.
+   * - Aspect on a region
+     - ``>> during after { ... }`` inside ``region A``
+     - Runs only for that region and only in cycles in which something below it
+       does ``during`` work. See :ref:`dsl-region-owner-actions`.
    * - Combo pseudo relay
      - N/A
      - Aspect actions do not execute inside combo pseudo relay chains.
@@ -1154,6 +1695,9 @@ scope of each diagnostic.
    * - Pseudo state shape
      - ``E_PSEUDO_NOT_LEAF``
      - Parser shape is not the same as model validity.
+   * - Regions and activity queries
+     - ``E_REGION_STRUCTURE``, ``E_DUPLICATE_REGION``, ``E_ACTIVE_QUERY_TARGET``
+     - Name the rule that failed with its ``reason``; see :ref:`dsl-region-diagnostics`.
    * - Numeric literal / operation risk
      - ``W_NUMERIC_*`` and numeric analyzer
      - Describe as C/C++ deployment-profile risk for ``c``, ``c_poll``, ``cpp``, and ``cpp_poll`` unless another target has its own evidence.
@@ -1425,6 +1969,78 @@ Every row still has a reference or explanation landing point.
      - :ref:`dsl-expression-separation`
      - risk wording line audit
      - synced
+   * - ``dsl-region-forms``
+     - region
+     - ``region_definition`` / ``state_owner_statement``
+     - :doc:`/tutorials/regions/index`
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-forms`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_single.fcstm`` simulate
+     - synced
+   * - ``dsl-region-body-borders``
+     - region
+     - ``region_inner_statement`` / ``validate_region_structure``
+     - :doc:`/tutorials/regions/index`
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-forms`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_bad_*.fcstm.txt`` loader report
+     - synced
+   * - ``dsl-region-events``
+     - region
+     - event resolution in ``pyfcstm/model/model.py``
+     - N/A: tutorial uses one event path
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-events`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_events.fcstm`` event table and cycles
+     - synced
+   * - ``dsl-region-owner-actions``
+     - region
+     - owner lifecycle and aspect execution in ``pyfcstm/simulate/runtime.py``
+     - N/A: tutorial keeps actions minimal
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-owner-actions`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_owner_actions.fcstm`` decoded trace
+     - synced
+   * - ``dsl-region-active``
+     - region
+     - ``activeExprCond`` / ``ActiveStateQuery``
+     - N/A: tutorial skips activity queries
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-active`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_nested_active.fcstm`` hidden variables
+     - synced
+   * - ``dsl-region-forced``
+     - region
+     - forced expansion in ``pyfcstm/model/model.py``
+     - :doc:`/tutorials/regions/index`
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-forced`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_forced_expansion.demo.py`` exported text
+     - synced
+   * - ``dsl-region-history``
+     - region
+     - history lowering and ``history_boundary``
+     - N/A: tutorial skips history
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-history-regions`
+     - :ref:`dsl-history-semantics`
+     - ``region_nested_active.fcstm`` run and ``history_owner_with_region``
+     - synced
+   * - ``dsl-region-diagnostics``
+     - diagnostics
+     - ``pyfcstm/diagnostics/codes.yaml`` entries of region codes
+     - N/A: tutorial shows no error codes
+     - :doc:`/how_to/regions/index`
+     - :ref:`dsl-region-diagnostics`
+     - :doc:`/explanations/region_semantics/index`
+     - ``region_diagnostics.demo.py`` report
+     - synced
 
 .. _dsl-fact-check-notes:
 
@@ -1437,5 +2053,13 @@ Fact-check notes
 * Import assembly facts come from ``pyfcstm/model/imports.py``.
 * Target-risk diagnostics come from ``pyfcstm/diagnostics/codes.yaml`` and
   ``pyfcstm/diagnostics/analyzers/``.
+* Region syntax comes from ``region_definition`` and ``state_owner_statement`` in
+  ``GrammarParser.g4``; region structure checks from
+  ``pyfcstm/model/region.py`` (``validate_region_structure``); the examples under
+  :ref:`dsl-region-forms` are loaded and run by the ``region_*.demo.*`` scripts
+  next to this page, and their outputs are included verbatim.
+* Forced and history expansion text comes from ``StateMachine.to_ast_node()``;
+  the hidden-variable names come from ``forced_variables``, ``active_queries``
+  and ``history_owners``.
 * LLM-facing syntax guidance is in ``pyfcstm/llm/fcstm_grammar_guide.md``. This
   page does not modify that packaged guide.

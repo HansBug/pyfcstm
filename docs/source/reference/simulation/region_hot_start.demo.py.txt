@@ -1,0 +1,15 @@
+-- the five spellings of initial_state
+configuration text                 Controller.Running{Safety: Watching, Motion: On}
+Configuration object               Controller.Running{Safety: Watching, Motion: On}
+dotted path into a region          Controller.Running{Safety: [init], Motion: On}
+tuple                              Controller.Running{Safety: [init], Motion: On}
+State object                       Controller.Running{Safety: [init], Motion: On}
+-- what a position leaves out
+owner path alone                   Controller.Running{Safety: [init], Motion: [init]}
+Safety written as [done]           Controller.Running{Safety: [done], Motion: On}
+Safety written as [init]           Controller.Running{Safety: [init], Motion: On}
+root only                          Controller
+ordinary leaf                      Controller.Idle
+-- the first cycle initializes the regions that were left out
+dotted path into a region          Controller.Running{Safety: [init], Motion: On}
+after cycle 1                      Controller.Running{Safety: Watching, Motion: On}  delta=False

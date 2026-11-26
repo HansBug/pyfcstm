@@ -1,0 +1,44 @@
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0"
+>>> init Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0
+Error: the braces of the configuration text 'Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0' are not balanced. Example: init Controller.Running{Safety: Watching, Motion: On} permit=1
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running permit=1 permit=0 motor=1 __forced_0=0"
+>>> init Controller.Running permit=1 permit=0 motor=1 __forced_0=0
+Error: variable 'permit' is assigned more than once.
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=1 __forced_0=0"
+>>> init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=1 __forced_0=0
+Initialization failed: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running{Safety: Nowhere, Motion: On} permit=1 motor=1 __forced_0=0"
+>>> init Controller.Running{Safety: Nowhere, Motion: On} permit=1 motor=1 __forced_0=0
+Initialization failed: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running.Motion permit=1 motor=1 __forced_0=0"
+>>> init Controller.Running.Motion permit=1 motor=1 __forced_0=0
+Initialization failed: 'Controller.Running.Motion' names a region, not a state
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running permit=1 motor=1"
+>>> init Controller.Running permit=1 motor=1
+Error: All variables must be provided. Missing: ['__forced_0']
+Available variables: ['__forced_0', 'motor', 'permit']
+exit status: 1
+
+$ pyfcstm simulate -i controller.fcstm -e "init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; cycle Stop2 --input fault=0 --input requested=1"
+>>> init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0
+Initialized from state: Controller.Running{Safety: Watching, Motion: On}
+Cycle: 0
+Current State: Controller.Running{Safety: Watching, Motion: On}
+Variables:
+  __forced_0 = 0
+  motor = 1
+  permit = 1
+>>> cycle Stop2 --input fault=0 --input requested=1
+Cycle execution failed: Position-dependent event name 'Stop2' matches no event from any active leaf (Controller.Running.Safety.Watching, Controller.Running.Motion.On); use the full event path or a root-based "/path".
+exit status: 1
+

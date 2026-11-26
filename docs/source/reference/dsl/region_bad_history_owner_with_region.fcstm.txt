@@ -1,0 +1,10 @@
+state Root {
+    [*] -> Panel;
+    state Panel {
+        [*] -> Cell;
+        [H] -> Cell;
+        state Cell {
+            region A { state Leaf; [*] -> Leaf; }
+        }
+    }
+}

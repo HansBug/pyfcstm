@@ -1,0 +1,19 @@
+events owned by each namespace
+  state  Plant                        Plant.Reset
+  state  Plant.Job                    Plant.Job.Abort
+  state  Plant.Job.Left.L2            Plant.Job.Left.L2.Back
+  region Plant.Job.Left               Plant.Job.Left.Go
+  region Plant.Job.Right              Plant.Job.Right.Go
+event of each transition written inside a region
+  Job.Left       L1 -> L2  uses Plant.Job.Left.Go
+  Job.Left       L2 -> L1  uses Plant.Job.Left.L2.Back
+  Job.Left       L2 -> L1  uses Plant.Reset
+  Job.Right      R1 -> R2  uses Plant.Job.Left.Go
+  Job.Right      R2 -> R1  uses Plant.Job.Right.Go
+  Job.Right      R1 -> R2  uses Plant.Job.Abort
+cycles
+  start                        Plant.Job{Left: L1, Right: R1}
+  /Job.Left.Go                 Plant.Job{Left: L2, Right: R2}  consumed=['Plant.Job.Left.Go', 'Plant.Job.Left.Go']
+  Plant.Job.Right.Go           Plant.Job{Left: L2, Right: R1}  consumed=['Plant.Job.Right.Go']
+  Plant.Job.Abort              Plant.Job{Left: L2, Right: R2}  consumed=['Plant.Job.Abort']
+  /Job.Abort                   Plant.Job{Left: L2, Right: R2}  consumed=[]

@@ -228,5 +228,188 @@ constructed against that exact model; it does not execute any actions.
 treated as a lossless source-text roundtrip. Configuration JSON is a separate
 value contract; it does not add fields to public inspect or BMC reports.
 
+.. _region-limits-and-gaps:
+
+Limits and known gaps
+---------------------
+
+The table lists every limit and known gap that touches models with regions. A
+number appears only where a real run produced it: ``region_limits.demo.py`` next
+to this page reproduces the limits and the checked gaps, and its output follows
+the table. A row whose last column says *recorded* describes a gap taken from
+its issue and not re-run for this page.
+
+.. list-table:: Limits and known gaps of models with regions
+   :header-rows: 1
+   :widths: 24 30 26 20
+
+   * - Limit or gap
+     - Value or behavior
+     - Source
+     - Documented in
+   * - Owners entered inside one another within one cycle
+     - At most 64 levels. The 65th raises ``SimulationRuntimeDfsError`` (``Group
+       initialization nested deeper than the structural safety limit (64) within
+       one cycle``); 64 nested owners run. The same limit applies to a loop that
+       re-enters a group more than about 64 times in one cycle. The model itself
+       builds at any depth.
+     - ``_DFS_STRUCTURAL_DEPTH_LIMIT`` in ``pyfcstm/simulate/runtime.py``; the
+       generated Python runtime and the C kernel carry the same constants;
+       fixture ``region_unbounded_group_reentry_is_reported_as_a_safety_limit_error``.
+     - :ref:`region-limits-run`, :doc:`../simulation/index`
+   * - Steps in one cycle
+     - At most 1000 speculative steps. A pseudo state that turns 500 times in one
+       cycle raises ``Speculative DFS exceeded the step safety limit (1000)``.
+       The cost of validating a long chain grows faster than its length
+       (`issue #579 <https://github.com/HansBug/pyfcstm/issues/579>`_, the same
+       for models without regions); the number of turns is not measured here.
+     - ``_DFS_STEP_LIMIT`` in ``pyfcstm/simulate/runtime.py``; fixture
+       ``pseudo_self_loop_step_limit_raises_dfs_error``.
+     - :ref:`region-limits-run`
+   * - BMC: re-entries of one owner inside its own entry
+     - ``BmcOptions.max_group_reentries``, default ``16``. A model that needs more
+       raises ``BmcBuildError`` instead of being approximated. There is no
+       command-line option: ``pyfcstm bmc`` always uses the default.
+     - ``pyfcstm/bmc/engine.py``, ``pyfcstm/bmc/region_relation.py``;
+       ``test/bmc/test_region_relation.py``.
+     - :ref:`region-limits-run`, :doc:`/reference/bmc_query/index`
+   * - BMC: depth of one expression
+     - 100 levels. A query whose expression nests deeper is refused with
+       ``expression_too_deep``; 98 prefix negations in front of one comparison are
+       accepted and 99 are refused.
+     - ``pyfcstm/bmc/binding.py``; ``test/bmc/test_query_binding.py``.
+     - :ref:`region-limits-run`
+   * - A history owner whose subtree contains a region
+     - Rejected with ``E_REGION_STRUCTURE`` (``history_boundary``). A history
+       inside a region, over states without regions, is legal.
+     - ``validate_region_structure`` in ``pyfcstm/model/region.py``;
+       ``test/model/test_region_consumers.py``.
+     - :ref:`dsl-history-regions`
+   * - jsfcstm ``inspectModel``
+     - Builds no report for a model with regions or ``active()`` queries:
+       ``isInspectable(machine)`` is ``false`` and ``inspectModel`` throws
+       ``inspectModel does not support machines with regions or active() queries``.
+       The editor skips the inspect diagnostics for such a model; the model,
+       the semantic diagnostics and the diagram preview support regions.
+     - ``editors/jsfcstm/src/diagnostics/inspect.ts``;
+       ``editors/jsfcstm/test/region-diagnostics.test.ts``.
+     - this table
+   * - jsfcstm order diagnostics
+     - ``I_REGION_BACKWARD_READ`` and ``W_REGION_BLIND_OVERWRITE`` do not exist in
+       jsfcstm; only the Python ``pyfcstm inspect`` reports them.
+     - Absent from ``editors/jsfcstm/src``; defined in
+       ``pyfcstm/diagnostics/codes.yaml``.
+     - :doc:`/reference/diagnostics_codes/index`
+   * - Inspect over-approximation: history defaults
+     - A composite state that is entered only through its history default still
+       has its ordinary initial child counted as reachable, so ``inspect`` does
+       not report that child (the output below: ``unreachable: 0``). The rule
+       errs towards a missed finding, never a false one.
+     - ``pyfcstm/diagnostics/inspect.py``; release notes.
+     - :ref:`region-limits-run`
+   * - Inspect over-approximation: verify on the machine that runs
+     - ``pyfcstm.verify`` judges the machine after lowering. For a forced
+       declaration it stays a guard-agnostic over-approximation, so a state behind
+       a composite that only a forced declaration can leave may still be listed
+       as reachable.
+     - Release notes (Inspect and verify).
+     - recorded
+   * - Inspect over-approximation: one mark per forced declaration
+     - A forced declaration is marked as a whole when one of its expansions starts
+       from an unreachable state.
+     - Release notes (Inspect and verify).
+     - recorded
+   * - Forced declarations over regions
+     - Two declarations of one owner compete for the group: the one raised first
+       holds it and the second is not tried, where a model without regions tries
+       the next declaration. Other transitions of a leaf inside a region keep
+       working while the variable is raised
+       (`issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_).
+     - Fixture
+       ``region_forced_declaration_whose_target_cannot_be_entered_holds_the_group_against_a_later_declaration``.
+     - :ref:`dsl-region-forced`
+   * - Candidate that only loops, in a composite state
+     - In a model without regions, a candidate that leads back to its own start
+       through a pseudo state makes the cycle a Delta instead of letting a later
+       candidate fire (the output below;
+       `issue #578 <https://github.com/HansBug/pyfcstm/issues/578>`_).
+       The same issue records a second defect, handler calls inside a Delta cycle;
+       that one was not re-run.
+     - ``limits_composite_loop.fcstm`` and the demo output.
+     - :ref:`region-limits-run`
+   * - Exported text of a forced declaration over regions
+     - ``to_ast_node()`` text loads to a machine that behaves the same on the
+       reproduction of `issue #580 <https://github.com/HansBug/pyfcstm/issues/580>`_
+       (exit order and result agree, output below); the issue records the earlier
+       behavior.
+     - ``region_limits.demo.py``.
+     - :ref:`region-limits-run`
+   * - Behavioral inspect diagnostics and sugar
+     - Which diagnostic codes belong to the model as written and which to the
+       machine that runs is still being classified; a finding of the machine that
+       runs can name a hidden variable or a generated state
+       (`issue #588 <https://github.com/HansBug/pyfcstm/issues/588>`_).
+     - Issue text and release notes.
+     - recorded
+   * - jsfcstm preview of a history
+     - The editor preview draws a history after lowering; the Python diagram
+       snapshot and PlantUML draw it as written
+       (`issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_).
+     - Issue text.
+     - recorded
+   * - Generated C family: capacities
+     - ``..._ARENA_CAPACITY`` defaults to ``8`` for a model without regions,
+       pseudo states and composite states, otherwise ``max(24, 12 * scopes)``, and
+       ``..._TRAIL_CAPACITY`` to ``4`` or ``16 + 4 * scopes``, where scopes is the
+       number of states plus the number of regions. The values are an empirical
+       formula, not a proven bound; a cycle that needs more fails with
+       ``Speculative search exceeded the capacity safety limit`` naming the macro.
+       Raise the macro for every translation unit
+       (`issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_).
+     - ``_plan_capacity`` in ``pyfcstm/render/c_kernel.py``;
+       ``test/render/test_c_kernel.py``.
+     - :ref:`region-limits-run`, :doc:`/reference/builtin_templates/index`
+   * - Generated Python runtime
+     - Every generated ``machine.py`` carries the general search kernel (position
+       parsing, memoization, group initialization) whether or not the model uses
+       regions, and does the same speculative work as the simulator; further
+       specialization is tracked in
+       `issue #596 <https://github.com/HansBug/pyfcstm/issues/596>`_. The
+       limits 64 and 1000 apply to it.
+     - ``templates/python/machine.py.j2``.
+     - :doc:`/reference/builtin_templates/index`
+   * - Templates without ``region`` in ``features``
+     - ``pyfcstm generate`` refuses a model with regions with ``E_UNSUPPORTED_FEATURE``
+       before writing a file.
+     - ``pyfcstm/entry/generate.py``.
+     - :doc:`/reference/cli/index`
+
+.. _region-limits-run:
+
+Reproducing the limits
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: limits_composite_loop.fcstm
+   :language: fcstm
+
+.. literalinclude:: limits_history_default.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_limits.demo.py.txt
+   :language: text
+
+Read the blocks in order. The depth block shows the boundary between 64 and 65
+nested owners; the step block shows the refusal of a 500-turn chain; the BMC
+blocks show the default bound of 16 re-entries (``n < 3`` builds, ``n < 20``
+does not) and that the option lowers or raises it, and the 98/99 boundary of
+expression depth; the history block shows the rejection. The composite block
+shows the cycle that becomes a Delta (``delta=True`` on both ``Root.Go`` cycles)
+although ``S -> T`` could fire; the export block shows both machines agreeing; the
+inspect block shows ``unreachable: 0`` for a model in which ``Root.P.A`` cannot be
+entered, because ``P`` is entered only through its history default ``B`` and has
+no way out, so nothing ever records ``A``. The capacity block prints the defaults
+the C templates use for the tutorial controller and for a flat machine. None of
+these numbers is a performance figure.
+
 Related references: :doc:`../dsl/index`, :doc:`../diagnostics_codes/index`,
 and :doc:`/api_doc_en`.

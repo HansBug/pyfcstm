@@ -743,6 +743,19 @@ JSON 写入标准输出，其余格式都需要 ``-o``；HTML 写到请求路径
 
 下面的命令依次在控制器上运行，运行位置是本页目录的一份副本，所以不会留下文件。只有一部分输出重要时，其余部分用 ``...`` 表示；BMC 的求解耗时从不收录。
 
+这些命令读取下面的文件。控制器在 ``Running`` 里有两个区域；``Safety`` 先写，所以每个周期它先运行，``Motion`` 看到的是同一周期的许可：
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+对调后的控制器是同一个模型，两个区域按相反顺序书写；高亮的行是 ``Motion``\ ，它现在排在 ``Safety`` 前面，因此看到的是上一周期的许可：
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: controller_swapped.fcstm
+   :emphasize-lines: 12-18
+
 BMC 步骤用到的两个查询：
 
 .. literalinclude:: motor_reach.fbmcq
@@ -750,6 +763,19 @@ BMC 步骤用到的两个查询：
 
 .. literalinclude:: motor_needs_permit.fbmcq
    :language: text
+
+模板目录 ``listed_template`` 在 ``features`` 下列出 ``region``\ ，并把状态数和区域数写进一个文件；第二段记录里用到的 ``plain_template`` 是同一个目录，只是没有 ``features`` 这一行：
+
+.. literalinclude:: listed_template/config.yaml
+   :language: yaml
+   :caption: listed_template/config.yaml
+
+.. literalinclude:: listed_template/summary.txt.j2
+   :language: text
+   :caption: listed_template/summary.txt.j2
+
+第一段记录运行模拟器。故障周期会在同一周期里把电机关掉：
+
 
 .. code-block:: console
 
@@ -768,6 +794,11 @@ BMC 步骤用到的两个查询：
    Cycle: 4
    Current State: Controller.Running{Safety: Watching, Motion: Off}
    ...
+
+下一段记录先检查控制器，再检查对调后的控制器：
+
+.. code-block:: console
+
    $ pyfcstm inspect -i controller.fcstm --color never
    [WARN] FCSTM Inspect Report: controller.fcstm
    ...
@@ -780,6 +811,11 @@ BMC 步骤用到的两个查询：
    [INFO] I_REGION_BACKWARD_READ
      Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
    ...
+
+下一段记录对控制器提出两个 BMC 问题：
+
+.. code-block:: console
+
    $ pyfcstm bmc -i controller.fcstm -q motor_reach.fbmcq
    BMC reach <= 4: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -792,6 +828,11 @@ BMC 步骤用到的两个查询：
    ...
    Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
    ...
+
+下一段记录生成代码。``summary.txt`` 说明 ``states: 7`` 与 ``regions: 2`` 从哪里来：模板统计 ``model.walk_states()``\ ，它给出 ``controller.fcstm`` 里写出的六个状态，加上强制转换 ``!Running -> Idle`` 展开出的门状态；以及 ``model.walk_regions()``\ ，它给出 ``Safety`` 和 ``Motion``\ ：
+
+.. code-block:: console
+
    $ pyfcstm generate -i controller.fcstm --template python -o out
    $ LC_ALL=C ls out
    README.md
@@ -801,6 +842,11 @@ BMC 步骤用到的两个查询：
    $ cat listed_out/summary.txt
    states: 7
    regions: 2
+
+序列的最后一段记录输出 PlantUML 文本：
+
+.. code-block:: console
+
    $ pyfcstm plantuml -i controller.fcstm
    ...
        state "Running" as controller__running <<composite>> {

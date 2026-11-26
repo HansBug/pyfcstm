@@ -850,6 +850,19 @@ Acceptance sequence for a model with regions
 The commands below run one after another on the controller, in a copy of this page's directory, so no file is left behind. Where only part of an
 output matters, ``...`` stands for the rest; the BMC solver timing is never included.
 
+The commands read these files.  The controller has two regions inside ``Running``; ``Safety`` is written first, so it runs first in each cycle and ``Motion`` sees the permission of the same cycle:
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+The swapped controller is the same model with the two regions written in the opposite order; the emphasized lines are ``Motion``, which now stands in front of ``Safety`` and so sees the permission of the previous cycle:
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: controller_swapped.fcstm
+   :emphasize-lines: 12-18
+
 The two queries of the BMC steps:
 
 .. literalinclude:: motor_reach.fbmcq
@@ -857,6 +870,19 @@ The two queries of the BMC steps:
 
 .. literalinclude:: motor_needs_permit.fbmcq
    :language: text
+
+The template directory ``listed_template`` lists ``region`` under ``features`` and writes the number of states and of regions into one file; ``plain_template``, used in the second record, is the same directory without the ``features`` line:
+
+.. literalinclude:: listed_template/config.yaml
+   :language: yaml
+   :caption: listed_template/config.yaml
+
+.. literalinclude:: listed_template/summary.txt.j2
+   :language: text
+   :caption: listed_template/summary.txt.j2
+
+The first record runs the simulator.  A fault cycle turns the motor off in the same cycle:
+
 
 .. code-block:: console
 
@@ -875,6 +901,11 @@ The two queries of the BMC steps:
    Cycle: 4
    Current State: Controller.Running{Safety: Watching, Motion: Off}
    ...
+
+The next record inspects the controller and then the swapped one:
+
+.. code-block:: console
+
    $ pyfcstm inspect -i controller.fcstm --color never
    [WARN] FCSTM Inspect Report: controller.fcstm
    ...
@@ -887,6 +918,11 @@ The two queries of the BMC steps:
    [INFO] I_REGION_BACKWARD_READ
      Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
    ...
+
+The next record asks the two BMC questions of the controller:
+
+.. code-block:: console
+
    $ pyfcstm bmc -i controller.fcstm -q motor_reach.fbmcq
    BMC reach <= 4: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -899,6 +935,11 @@ The two queries of the BMC steps:
    ...
    Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
    ...
+
+The next record generates code.  ``summary.txt`` shows where ``states: 7`` and ``regions: 2`` come from: the template counts ``model.walk_states()``, which yields the six states written in ``controller.fcstm`` and the gate state that the forced transition ``!Running -> Idle`` expands into, and ``model.walk_regions()``, which yields ``Safety`` and ``Motion``:
+
+.. code-block:: console
+
    $ pyfcstm generate -i controller.fcstm --template python -o out
    $ LC_ALL=C ls out
    README.md
@@ -908,6 +949,11 @@ The two queries of the BMC steps:
    $ cat listed_out/summary.txt
    states: 7
    regions: 2
+
+The last record of the sequence prints the PlantUML text:
+
+.. code-block:: console
+
    $ pyfcstm plantuml -i controller.fcstm
    ...
        state "Running" as controller__running <<composite>> {

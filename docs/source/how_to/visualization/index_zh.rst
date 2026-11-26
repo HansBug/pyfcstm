@@ -13,16 +13,18 @@
 具体输入和视觉证据
 ------------------
 
-下面的具体示例使用 ``docs/source/tutorials/visualization/example.fcstm``。可视化教程已经从该源码生成
-``output_minimal.puml.svg``、``output_normal.puml.svg`` 和 ``output_full.puml.svg``，所以本任务指南可以引用真实渲染产物，而不是只让读者相信选项名。
+下面的具体示例使用 ``docs/source/tutorials/visualization/example.fcstm``，请在仓库根目录运行。可视化教程展示了该源码在三个详细级别下的图（``output_minimal.puml.svg``、``output_normal.puml.svg`` 和 ``output_full.puml.svg``，由教程旁边已提交的 ``.puml`` 文件绘出），所以本任务指南可以引用真实渲染产物，而不是只让读者相信选项名。
 
 比较渲染图片前，先导出 PlantUML 源码：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml
+   $ pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml
+   $ head -n 2 example.puml
+   @startuml
+   hide empty description
 
-成功信号是 ``/tmp/example.puml`` 存在、以 ``@startuml`` 开头，并包含预期状态名。若源码导出失败，先修复 DSL/模型错误，再改渲染器设置。渲染选项无法修复无效的 PlantUML 源码。
+成功信号是 ``example.puml`` 存在、以 ``@startuml`` 开头，并包含预期状态名。若源码导出失败，先修复 DSL/模型错误，再改渲染器设置。渲染选项无法修复无效的 PlantUML 源码。
 
 先选择源码还是渲染产物
 ----------------------
@@ -60,12 +62,12 @@
      - 副作用
      - 第一排查步骤
    * - 审阅图表源码。
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o /tmp/example.puml``
-     - ``/tmp/example.puml`` 以 ``@startuml`` 开头，且是可比较差异的文本。
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -o example.puml``
+     - ``example.puml`` 以 ``@startuml`` 开头，且是可比较差异的文本。
      - 只写指定源码文件。
      - PlantUML 导出失败时，先对同一输入运行 ``inspect``。
    * - 比较细节预设。
-     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o /tmp/example.full.puml``
+     - ``pyfcstm plantuml -i docs/source/tutorials/visualization/example.fcstm -l full -o example.full.puml``
      - full 源码包含 minimal 预设隐藏的生命周期/动作细节。
      - 写出第二个源码文件供审阅。
      - 混用预设和 ``-c`` 覆盖前，先查 :doc:`/reference/visualization_options/index_zh`。
@@ -75,8 +77,8 @@
      - 不写图表文件。
      - 接受远程回退前，先判断隐私要求是否必须使用 ``--renderer local``。
    * - 无图形界面依赖地渲染。
-     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o /tmp/example.svg --no-open``
-     - ``/tmp/example.svg`` 存在，并且在文档/审查上下文中可读。
+     - ``pyfcstm visualize -i docs/source/tutorials/visualization/example.fcstm -t svg -o example.svg --no-open``
+     - ``example.svg`` 存在，并且在文档/审查上下文中可读。
      - 写出渲染文件，并可能填充渲染器缓存。
      - 若后端报告成功但文件缺失，把它当作渲染器失败，而不是 DSL 失败。
    * - 验证文档图。
@@ -470,14 +472,6 @@ CI 图表任务不应依赖桌面查看器：
    ...
                **region 2: Motion**
    ...
-   $ pyfcstm plantuml -i controller.fcstm -c max_depth=3
-   ...
-               **region 1: Safety**
-   ...
-           --
-   ...
-               **region 2: Motion**
-   ...
    $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
    ...
                **region 1: Safety**
@@ -505,7 +499,7 @@ CI 图表任务不应依赖桌面查看器：
    endlegend
    ...
 
-**预期信号。** 默认导出有一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。``max_depth=3`` 时输出相同；``max_depth=2`` 保留两个分区，但把其中的状态折叠成 ``...``；
+**预期信号。** 默认导出有一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。``max_depth=2`` 保留两个分区，但把其中的状态折叠成 ``...``；
 ``max_depth=1`` 把整个拥有者折叠起来。图例把两个 ``Ping`` 显示为不同的事件，各有自己从根开始的路径。可以用任何 PlantUML 环境渲染这份源码；本页假定使用默认的 Graphviz 布局：
 
 .. figure:: /_models/controller.fcstm.puml.svg
@@ -550,7 +544,7 @@ CI 图表任务不应依赖桌面查看器：
    Controller.Running.Motion True 2
    {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
 
-查看器与编辑器预览不在本指南的构建里运行：它们需要打包的查看器资源（开发检出里用 ``make build_assets`` 构建）或桌面编辑器。
+查看器需要打包的查看器资源（开发检出里用 ``make build_assets`` 构建），编辑器预览需要桌面编辑器，所以这些命令只展示，不在文档检查里运行。
 
 .. code-block:: bash
 
@@ -560,7 +554,7 @@ CI 图表任务不应依赖桌面查看器：
 在 VS Code 里打开 ``.fcstm`` 文件，从命令面板运行 ``Open Preview to the Side``\ （命令 ``fcstm.preview.open``）。预览遵循与查看器相同的约定。
 
 **预期信号。** JSON 显示 ``Running`` 有两个标为 ``region`` 的子节点，序号为 1 和 2，按书写顺序排列。``viewer.html`` 是可离线打开的自包含文件，显示并排的两个分区；
-``--open`` 在 Chromium 系浏览器的应用窗口里打开它（这条命令与这段描述是文档记载的行为，没有在这里运行）。
+``--open`` 在 Chromium 系浏览器的应用窗口里打开它。
 
 **文件副作用。** ``-o`` 写入指定文件。``--open`` 同样先写 HTML，再打开窗口。
 
@@ -572,7 +566,7 @@ CI 图表任务不应依赖桌面查看器：
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **起点。** 一条 PlantUML 流水线。PlantUML 内置的 Smetana 布局不支持并发分区，会丢掉第一个之后的所有区域。``pyfcstm`` 从不写布局指令，所以只有你或你的工具强制指定时才会遇到
-（例如 ``!pragma layout smetana``）。这个限制来自 PlantUML 本身；由于这个构建里没有 PlantUML 渲染器，这里没有复现它。
+（例如 ``!pragma layout smetana``）。这个限制来自 PlantUML 本身。
 
 **命令或代码。** 检查导出的源码里没有布局指令（第一行打印 ``pragma layout`` 是否出现，第二行统计 ``--`` 分隔线的个数），并用默认的 Graphviz 布局渲染：
 

@@ -184,21 +184,128 @@ Inspect 报告参考
    * - ``aspect_before`` / ``aspect_after``
      - 区域内声明的 ``>> during before`` 与 ``>> during after`` 动作的标签。
 
-下面的模型有两个区域，都写 ``out``\ 。演示脚本依次输出人读报告的开头几行、完整的 ``regions`` 数组、相邻的 ``states`` 事实，以及以 JSON 形式给出的盲目覆盖诊断。
+下面的模型有两个区域，都写 ``out``\ 。第一条命令输出人读报告的开头几行；其后的脚本输出完整的 ``regions`` 数组、相邻的 ``states`` 事实，以及以 JSON 形式给出的盲目覆盖诊断。
 
 .. literalinclude:: region_overwrite_basic.fcstm
    :language: fcstm
    :caption: region_overwrite_basic.fcstm
 
-.. literalinclude:: region_report.demo.sh
-   :language: bash
-   :caption: region_report.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_report.demo.sh.txt
-   :language: text
-   :caption: region_report.demo.sh.txt
+   $ pyfcstm inspect -i region_overwrite_basic.fcstm --color never
+   [WARN] FCSTM Inspect Report: region_overwrite_basic.fcstm
 
-输出这样读。``index`` 为 0 和 1 是声明顺序，所以 ``Root.First`` 先于 ``Root.Second`` 执行。\ ``Root.First.A`` 的 ``parent_path`` 是 ``Root.First``\ ，\ ``Root`` 是复合状态且没有直接的 ``substates``\ 。不含区域的模型根本没有 ``regions`` 键（第三段输出的 ``False``\ ）。完整的人读报告还带有通常的结构统计和 ``W_UNREFERENCED_VAR`` 这类无关警告，本页不再重复。
+   Summary
+     status: warning
+     root: Root
+     states: 3 total / 2 leaf
+     transitions: 2
+     regions: 2
+       Root.First: order 0 in Root; 1 states
+       Root.Second: order 1 in Root; 1 states
+     variables: 2
+       out: control; external supply: none
+       y: control; external supply: none
+   ...
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   report = json.loads(build_inspect_json("region_overwrite_basic.fcstm"))
+   print(json.dumps(report["regions"], indent=2, sort_keys=True))
+   for path in ("Root", "Root.First.A"):
+       state = [s for s in report["states"] if s["path"] == path][0]
+       print(path, state["parent_path"], state["is_composite"], state["substates"])
+   item = [d for d in report["diagnostics"] if d["code"] == "W_REGION_BLIND_OVERWRITE"][0]
+   print(json.dumps(item, indent=2, sort_keys=True))
+
+.. testoutput::
+
+   [
+     {
+       "aspect_after": [],
+       "aspect_before": [],
+       "index": 0,
+       "initial_targets": [
+         {
+           "event": null,
+           "guard": null,
+           "is_unconditional": true,
+           "target": "Root.First.A"
+         }
+       ],
+       "name": "First",
+       "owner_path": "Root",
+       "path": "Root.First",
+       "substates": [
+         "Root.First.A"
+       ]
+     },
+     {
+       "aspect_after": [],
+       "aspect_before": [],
+       "index": 1,
+       "initial_targets": [
+         {
+           "event": null,
+           "guard": null,
+           "is_unconditional": true,
+           "target": "Root.Second.B"
+         }
+       ],
+       "name": "Second",
+       "owner_path": "Root",
+       "path": "Root.Second",
+       "substates": [
+         "Root.Second.B"
+       ]
+     }
+   ]
+   Root None True []
+   Root.First.A Root.First False []
+   {
+     "code": "W_REGION_BLIND_OVERWRITE",
+     "message": "Region 'Root.Second' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.First'; that earlier write is lost whenever it runs.",
+     "refs": {
+       "owner_path": "Root",
+       "previous_region": "Root.First",
+       "previous_write_span": {
+         "column": 28,
+         "end_column": 36,
+         "end_line": 5,
+         "line": 5
+       },
+       "region": "Root.Second",
+       "variable": "out"
+     },
+     "severity": "warning",
+     "span": {
+       "column": 28,
+       "end_column": 40,
+       "end_line": 9,
+       "line": 9
+     }
+   }
+
+不含区域的模型根本没有 ``regions`` 键：
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   plain = json.loads(build_inspect_json("region_branch_plain_exits.fcstm"))
+   print("regions" in plain)
+
+.. testoutput::
+
+   False
+
+输出这样读。``index`` 为 0 和 1 是声明顺序，所以 ``Root.First`` 先于 ``Root.Second`` 执行。\ ``Root.First.A`` 的 ``parent_path`` 是 ``Root.First``\ ，\ ``Root`` 是复合状态且没有直接的 ``substates``\ 。不含区域的模型根本没有 ``regions`` 键（最后一段输出的 ``False``\ ）。完整的人读报告还带有通常的结构统计和 ``W_UNREFERENCED_VAR`` 这类无关警告，本页不再重复。
 
 .. _inspect-report-region-order-zh:
 
@@ -232,15 +339,47 @@ Inspect 报告参考
 
 声明在拥有者或更外层的切面，每周期只在整组区域外围执行一次，既不用到旧值，也不保护旧值，因此被忽略。诊断指向做覆盖的语句，\ ``previous_write_span`` 指出被丢掉的写入。
 
-下面的演示对 ``I_REGION_BACKWARD_READ`` 的六个模型与 ``W_REGION_BLIND_OVERWRITE`` 的八个模型运行 ``pyfcstm inspect --format json``\ ，只输出 ``I_REGION_BACKWARD_READ``、\ ``W_REGION_BLIND_OVERWRITE`` 和两条不可达诊断码。输出 ``(none of the four codes)`` 的模型没有触发其中任何一条。
+下面的脚本为 ``I_REGION_BACKWARD_READ`` 的六个模型与 ``W_REGION_BLIND_OVERWRITE`` 的八个模型生成检查报告，输出每个模型触发了这两条诊断码中的哪几条；空列表表示两条都没有触发。\ ``region_overwrite_middle_reads.fcstm`` 属于第二组，却触发了第一条诊断码，原因见后面的表格。
 
-.. literalinclude:: region_findings.demo.sh
-   :language: bash
-   :caption: region_findings.demo.sh
+.. testcode::
 
-.. literalinclude:: region_findings.demo.sh.txt
-   :language: text
-   :caption: region_findings.demo.sh.txt
+   import json
+   from pathlib import Path
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   wanted = {"I_REGION_BACKWARD_READ", "W_REGION_BLIND_OVERWRITE"}
+   for pattern in ("region_backward_read_*.fcstm", "region_overwrite_*.fcstm"):
+       for path in sorted(Path(".").glob(pattern)):
+           report = json.loads(build_inspect_json(str(path)))
+           print(path.name, sorted({d["code"] for d in report["diagnostics"]} & wanted))
+
+.. testoutput::
+
+   region_backward_read_active.fcstm ['I_REGION_BACKWARD_READ']
+   region_backward_read_forward.fcstm []
+   region_backward_read_no_writer.fcstm []
+   region_backward_read_own_write.fcstm []
+   region_backward_read_two_writers.fcstm ['I_REGION_BACKWARD_READ']
+   region_backward_read_variable.fcstm ['I_REGION_BACKWARD_READ']
+   region_overwrite_aspect.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_basic.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_can_finish.fcstm []
+   region_overwrite_conditional.fcstm []
+   region_overwrite_middle_reads.fcstm ['I_REGION_BACKWARD_READ']
+   region_overwrite_skip_middle.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_some_states.fcstm []
+   region_overwrite_uses_old.fcstm []
+
+一条发现的信息，在人读报告里是这样打印的：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_backward_read_two_writers.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.First', 'Root.Second'; it sees the value from the previous cycle.
+   ...
 
 .. list-table:: 各模型为什么报告或保持安静
    :header-rows: 1
@@ -292,6 +431,8 @@ Inspect 报告参考
      - 覆盖诊断为否
      - ``Middle`` 在两次写入之间读了 ``out``\ ，所以第一次写入被用到。\ ``Middle`` 读取 ``Last`` 写的值，本身会被报告为 ``I_REGION_BACKWARD_READ``\ 。
 
+.. _inspect-report-region-reachability-zh:
+
 分支规则与可达性
 ~~~~~~~~~~~~~~~~~
 
@@ -312,19 +453,48 @@ Inspect 报告参考
    * - 历史默认目标（\ ``[H] -> Child``\ ，经 ``Owner.[H]`` 进入）
      - 与初始转换一样，是一条分支的起点。
 
-演示脚本对成对的模型输出不可达的发现。这些发现来自默认的静态报告，不需要 ``--enable-verify``\ 。
+下面的脚本对成对的模型输出不可达的发现，每条发现给出诊断码和所在行。这些发现来自默认的静态报告，不需要 ``--enable-verify``\ 。
 
 .. literalinclude:: region_owner_never_completes.fcstm
    :language: fcstm
    :caption: region_owner_never_completes.fcstm
 
-.. literalinclude:: region_reachability.demo.sh
-   :language: bash
-   :caption: region_reachability.demo.sh
+.. testcode::
 
-.. literalinclude:: region_reachability.demo.sh.txt
-   :language: text
-   :caption: region_reachability.demo.sh.txt
+   import json
+   from pathlib import Path
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   patterns = ("region_owner_*.fcstm", "region_branch_*.fcstm", "region_over_history_initial.fcstm")
+   for pattern in patterns:
+       for path in sorted(Path(".").glob(pattern)):
+           report = json.loads(build_inspect_json(str(path)))
+           found = [(d["code"], d["span"]["line"]) for d in report["diagnostics"] if d["code"].startswith("W_UNREACHABLE")]
+           print(path.name, found)
+
+.. testoutput::
+
+   region_owner_completes.fcstm []
+   region_owner_never_completes.fcstm [('W_UNREACHABLE_STATE', 15), ('W_UNREACHABLE_TRANSITION', 17)]
+   region_branch_forced.fcstm []
+   region_branch_history.fcstm []
+   region_branch_plain_exits.fcstm []
+   region_branch_plain_stuck.fcstm [('W_UNREACHABLE_STATE', 9), ('W_UNREACHABLE_TRANSITION', 11)]
+   region_over_history_initial.fcstm []
+
+人读报告给出了第一个模型的原因：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_owner_never_completes.fcstm --color never
+   ...
+   [WARN] W_UNREACHABLE_STATE
+     State 'Root.Next' is unreachable from the root entry path.
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'Root.Job' -> 'Root.Next' is unreachable for reasons: owner_never_completes.
+   ...
 
 在 ``region_owner_never_completes.fcstm`` 里，\ ``Monitor`` 区域没有 ``[*]`` 出口，所以 ``Job -> Next`` 永远不会执行：\ ``Root.Next`` 不可达，转换得到 ``owner_never_completes``\ 。给 ``Monitor`` 加上出口（\ ``region_owner_completes.fcstm``\ ）后，两条发现都消失。
 
@@ -335,7 +505,7 @@ Inspect 报告参考
 
 结构分析里保留了三处近似，方向都是\ *漏报*\ ，所以报告为空并不证明可达。
 
-#. 只经 ``Owner.[H]`` 进入的复合状态，它的普通初始子状态仍被视为可达。在 ``region_over_history_initial.fcstm`` 里，\ ``Work`` 只经 ``Work.[H]`` 进入，默认目标是 ``Slow``\ ；\ ``Fast`` 永远进不去，而上面的演示没有为它输出任何发现。
+#. 只经 ``Owner.[H]`` 进入的复合状态，它的普通初始子状态仍被视为可达。在 ``region_over_history_initial.fcstm`` 里，\ ``Work`` 只经 ``Work.[H]`` 进入，默认目标是 ``Slow``\ ；\ ``Fast`` 永远进不去，而上面的脚本没有为它输出任何发现。
 #. ``pyfcstm.verify`` 的算法判断的是可执行的机器，其中强制转换声明是一个中继，并且对它保持不看守卫的过近似。一个只有强制转换声明能把它带去别处的复合状态，其后的状态仍可能被列为可达。
 #. 单个强制转换声明，只要有一个展开从不可达状态出发，就整体被标记。这是早于区域的有意聚合。
 

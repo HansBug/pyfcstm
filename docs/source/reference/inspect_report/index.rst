@@ -207,27 +207,135 @@ hidden flag variables to ``variables``.
    * - ``aspect_before`` / ``aspect_after``
      - Labels of the ``>> during before`` and ``>> during after`` actions declared in the region.
 
-The model below has two regions that both write ``out``. The demo prints the
-first lines of the human report, the whole ``regions`` array, the neighbouring
-``states`` facts, and the blind-overwrite diagnostic as JSON.
+The model below has two regions that both write ``out``. The first
+command prints the first lines of the human report. The script after it prints the whole
+``regions`` array, the neighbouring ``states`` facts, and the blind-overwrite
+diagnostic as JSON.
 
 .. literalinclude:: region_overwrite_basic.fcstm
    :language: fcstm
    :caption: region_overwrite_basic.fcstm
 
-.. literalinclude:: region_report.demo.sh
-   :language: bash
-   :caption: region_report.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_report.demo.sh.txt
-   :language: text
-   :caption: region_report.demo.sh.txt
+   $ pyfcstm inspect -i region_overwrite_basic.fcstm --color never
+   [WARN] FCSTM Inspect Report: region_overwrite_basic.fcstm
+
+   Summary
+     status: warning
+     root: Root
+     states: 3 total / 2 leaf
+     transitions: 2
+     regions: 2
+       Root.First: order 0 in Root; 1 states
+       Root.Second: order 1 in Root; 1 states
+     variables: 2
+       out: control; external supply: none
+       y: control; external supply: none
+   ...
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   report = json.loads(build_inspect_json("region_overwrite_basic.fcstm"))
+   print(json.dumps(report["regions"], indent=2, sort_keys=True))
+   for path in ("Root", "Root.First.A"):
+       state = [s for s in report["states"] if s["path"] == path][0]
+       print(path, state["parent_path"], state["is_composite"], state["substates"])
+   item = [d for d in report["diagnostics"] if d["code"] == "W_REGION_BLIND_OVERWRITE"][0]
+   print(json.dumps(item, indent=2, sort_keys=True))
+
+.. testoutput::
+
+   [
+     {
+       "aspect_after": [],
+       "aspect_before": [],
+       "index": 0,
+       "initial_targets": [
+         {
+           "event": null,
+           "guard": null,
+           "is_unconditional": true,
+           "target": "Root.First.A"
+         }
+       ],
+       "name": "First",
+       "owner_path": "Root",
+       "path": "Root.First",
+       "substates": [
+         "Root.First.A"
+       ]
+     },
+     {
+       "aspect_after": [],
+       "aspect_before": [],
+       "index": 1,
+       "initial_targets": [
+         {
+           "event": null,
+           "guard": null,
+           "is_unconditional": true,
+           "target": "Root.Second.B"
+         }
+       ],
+       "name": "Second",
+       "owner_path": "Root",
+       "path": "Root.Second",
+       "substates": [
+         "Root.Second.B"
+       ]
+     }
+   ]
+   Root None True []
+   Root.First.A Root.First False []
+   {
+     "code": "W_REGION_BLIND_OVERWRITE",
+     "message": "Region 'Root.Second' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.First'; that earlier write is lost whenever it runs.",
+     "refs": {
+       "owner_path": "Root",
+       "previous_region": "Root.First",
+       "previous_write_span": {
+         "column": 28,
+         "end_column": 36,
+         "end_line": 5,
+         "line": 5
+       },
+       "region": "Root.Second",
+       "variable": "out"
+     },
+     "severity": "warning",
+     "span": {
+       "column": 28,
+       "end_column": 40,
+       "end_line": 9,
+       "line": 9
+     }
+   }
+
+A model without regions has no ``regions`` key at all:
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   plain = json.loads(build_inspect_json("region_branch_plain_exits.fcstm"))
+   print("regions" in plain)
+
+.. testoutput::
+
+   False
 
 Read the output as follows. ``index`` 0 and 1 are the declaration order, so
 ``Root.First`` runs before ``Root.Second``. ``Root.First.A`` reports
 ``Root.First`` as its ``parent_path``, and ``Root`` is composite with no direct
 ``substates``. A model without regions has no ``regions`` key at all (``False``
-in the third block). The full human report, which this page does not repeat,
+in the last block). The full human report, which this page does not repeat,
 also carries the usual structure statistics and unrelated warnings such as
 ``W_UNREFERENCED_VAR``.
 
@@ -286,18 +394,51 @@ group of regions, so they neither use nor shield the earlier value and are
 ignored. The diagnostic points at the overwriting statement; ``previous_write_span``
 names the lost write.
 
-The demo below runs six models of ``I_REGION_BACKWARD_READ`` and eight of ``W_REGION_BLIND_OVERWRITE`` through ``pyfcstm inspect --format json``
-and prints only ``I_REGION_BACKWARD_READ``, ``W_REGION_BLIND_OVERWRITE`` and the
-two unreachable codes. A model that prints ``(none of the four codes)`` triggers
-none of them.
+The script below builds the inspect report of six models of ``I_REGION_BACKWARD_READ`` and eight of
+``W_REGION_BLIND_OVERWRITE`` and prints which of the two codes each model
+triggers; an empty list means neither. ``region_overwrite_middle_reads.fcstm``
+belongs to the second family but triggers the first code, which the table
+below explains.
 
-.. literalinclude:: region_findings.demo.sh
-   :language: bash
-   :caption: region_findings.demo.sh
+.. testcode::
 
-.. literalinclude:: region_findings.demo.sh.txt
-   :language: text
-   :caption: region_findings.demo.sh.txt
+   import json
+   from pathlib import Path
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   wanted = {"I_REGION_BACKWARD_READ", "W_REGION_BLIND_OVERWRITE"}
+   for pattern in ("region_backward_read_*.fcstm", "region_overwrite_*.fcstm"):
+       for path in sorted(Path(".").glob(pattern)):
+           report = json.loads(build_inspect_json(str(path)))
+           print(path.name, sorted({d["code"] for d in report["diagnostics"]} & wanted))
+
+.. testoutput::
+
+   region_backward_read_active.fcstm ['I_REGION_BACKWARD_READ']
+   region_backward_read_forward.fcstm []
+   region_backward_read_no_writer.fcstm []
+   region_backward_read_own_write.fcstm []
+   region_backward_read_two_writers.fcstm ['I_REGION_BACKWARD_READ']
+   region_backward_read_variable.fcstm ['I_REGION_BACKWARD_READ']
+   region_overwrite_aspect.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_basic.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_can_finish.fcstm []
+   region_overwrite_conditional.fcstm []
+   region_overwrite_middle_reads.fcstm ['I_REGION_BACKWARD_READ']
+   region_overwrite_skip_middle.fcstm ['W_REGION_BLIND_OVERWRITE']
+   region_overwrite_some_states.fcstm []
+   region_overwrite_uses_old.fcstm []
+
+The message of one finding, as the human report prints it:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_backward_read_two_writers.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.First', 'Root.Second'; it sees the value from the previous cycle.
+   ...
 
 .. list-table:: Why each model reports or stays quiet
    :header-rows: 1
@@ -349,6 +490,8 @@ none of them.
      - no for the overwrite
      - ``Middle`` reads ``out`` between the two writes, so the first write is used. ``Middle`` reading what ``Last`` writes is itself reported as ``I_REGION_BACKWARD_READ``.
 
+.. _inspect-report-region-reachability:
+
 Branch rules and reachability
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -372,20 +515,50 @@ branch, and a model without composite states has none. The rules are:
    * - History default (``[H] -> Child``, entered through ``Owner.[H]``)
      - Starts a branch the way the initial transition does.
 
-The demo prints the unreachable findings for matching pairs of models. These
-findings come from the default static report; ``--enable-verify`` is not needed.
+The script prints the unreachable findings for matching pairs of models, as
+the code and the line of each finding. These findings come from the default
+static report; ``--enable-verify`` is not needed.
 
 .. literalinclude:: region_owner_never_completes.fcstm
    :language: fcstm
    :caption: region_owner_never_completes.fcstm
 
-.. literalinclude:: region_reachability.demo.sh
-   :language: bash
-   :caption: region_reachability.demo.sh
+.. testcode::
 
-.. literalinclude:: region_reachability.demo.sh.txt
-   :language: text
-   :caption: region_reachability.demo.sh.txt
+   import json
+   from pathlib import Path
+
+   from pyfcstm.entry.inspect import build_inspect_json
+
+   patterns = ("region_owner_*.fcstm", "region_branch_*.fcstm", "region_over_history_initial.fcstm")
+   for pattern in patterns:
+       for path in sorted(Path(".").glob(pattern)):
+           report = json.loads(build_inspect_json(str(path)))
+           found = [(d["code"], d["span"]["line"]) for d in report["diagnostics"] if d["code"].startswith("W_UNREACHABLE")]
+           print(path.name, found)
+
+.. testoutput::
+
+   region_owner_completes.fcstm []
+   region_owner_never_completes.fcstm [('W_UNREACHABLE_STATE', 15), ('W_UNREACHABLE_TRANSITION', 17)]
+   region_branch_forced.fcstm []
+   region_branch_history.fcstm []
+   region_branch_plain_exits.fcstm []
+   region_branch_plain_stuck.fcstm [('W_UNREACHABLE_STATE', 9), ('W_UNREACHABLE_TRANSITION', 11)]
+   region_over_history_initial.fcstm []
+
+The human report names the reason for the first model:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_owner_never_completes.fcstm --color never
+   ...
+   [WARN] W_UNREACHABLE_STATE
+     State 'Root.Next' is unreachable from the root entry path.
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'Root.Job' -> 'Root.Next' is unreachable for reasons: owner_never_completes.
+   ...
 
 In ``region_owner_never_completes.fcstm`` the ``Monitor`` region has no ``[*]``
 exit, so ``Job -> Next`` never runs: ``Root.Next`` is unreachable and the
@@ -411,7 +584,7 @@ Three approximations stay in the structural analysis. All three err toward
 #. A composite state entered only through ``Owner.[H]`` keeps its ordinary
    initial child reachable. In ``region_over_history_initial.fcstm`` ``Work`` is
    entered only through ``Work.[H]``, whose default is ``Slow``; ``Fast`` can
-   never be entered, and the demo above prints no finding for it.
+   never be entered, and the script above prints no finding for it.
 #. The algorithms of ``pyfcstm.verify`` judge the machine that runs, where a
    forced declaration is a relay, and stay guard-agnostic about it. A state
    behind a composite state that only a forced declaration can take elsewhere may

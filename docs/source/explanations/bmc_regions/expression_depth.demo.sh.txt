@@ -1,0 +1,8 @@
+# chain.fbmcq: 50 terms joined by &&
+$ pyfcstm bmc -i blocked.fcstm -q chain.fbmcq --color never
+BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+exit=0
+# chain.fbmcq: 150 terms joined by &&
+$ pyfcstm bmc -i blocked.fcstm -q chain.fbmcq --color never
+Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+exit=1

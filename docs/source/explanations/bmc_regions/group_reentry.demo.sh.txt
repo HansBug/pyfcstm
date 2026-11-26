@@ -1,0 +1,4 @@
+$ pyfcstm bmc -i spin.fcstm -q spin.fbmcq
+Unexpected error found when running pyfcstm!
+_BmcCliInternalError: state 'Root.Spin' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+exit=1

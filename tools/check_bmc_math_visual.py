@@ -21,6 +21,7 @@ _PAGE_DIRECTORIES = (
     "explanations/bmc_semantics",
     "explanations/bmc_properties",
     "explanations/bmc_solving",
+    "explanations/bmc_regions",
 )
 _VIEWPORTS = {
     "desktop": {"width": 1440, "height": 1000},
@@ -153,7 +154,7 @@ def _check_page(page, url: str) -> Dict[str, object]:
             }
           });
           const documentOverflow = document.documentElement.scrollWidth > viewportWidth + 1;
-          const anchors = [...document.querySelectorAll('[id^="equation-bmc-"]')].map(
+          const anchors = [...document.querySelectorAll('[id^="equation-bmc-"], [id^="equation-eq-region-"]')].map(
             (node) => node.id
           );
           return {

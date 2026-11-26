@@ -60,6 +60,12 @@ _EQUATION_LABELS = (
     "bmc-core-subset-minimality",
     "bmc-proof-input-binding",
     "bmc-proof-input-bijection",
+    # explanations/bmc_regions: how regions enter the bounded transition system.
+    "eq-region-position-domain",
+    "eq-region-value-chain",
+    "eq-region-owner-start",
+    "eq-region-joint-completion",
+    "eq-region-group-reentry",
 )
 
 _PAGE_PAIRS = (
@@ -68,6 +74,7 @@ _PAGE_PAIRS = (
     "explanations/bmc_semantics/index",
     "explanations/bmc_properties/index",
     "explanations/bmc_solving/index",
+    "explanations/bmc_regions/index",
     "reference/bmc_query/index",
     "reference/bmc_results/index",
     # The CLI reference documents ``pyfcstm bmc`` alongside the other commands,
@@ -81,6 +88,7 @@ _EQUATION_PAIRS = (
     "explanations/bmc_semantics/index",
     "explanations/bmc_properties/index",
     "explanations/bmc_solving/index",
+    "explanations/bmc_regions/index",
 )
 
 _SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli.schema.json")
@@ -214,6 +222,28 @@ _EXPLANATION_TYPES = (
     "BmcSourceRef",
 )
 
+#: Names the region-encoding page has to document, in both languages.
+#:
+#: The three position markers are public constants, the others are the witness
+#: fields, the option, and the diagnostics a reader meets on that page.  They are
+#: transcribed from pyfcstm/bmc/domain.py, engine.py, witness.py and binding.py.
+_REGION_POSITION_MARKERS = (
+    "REGION_DONE_ID",
+    "REGION_INACTIVE_ID",
+    "REGION_PENDING_ID",
+)
+_REGION_VOCABULARY = _REGION_POSITION_MARKERS + (
+    "region_position",
+    "local_cases",
+    "case_label",
+    "max_group_reentries",
+    "BmcBuildError",
+    "invalid_start_position",
+    "invalid_active_pattern",
+    "expression_too_deep",
+    "--no-runtime-safety",
+)
+
 #: Which prose page owns which part of the vocabulary.
 #:
 #: Keyed by page pair, so each requirement is checked in the English page and its
@@ -260,6 +290,8 @@ _EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
             "structural_only",
         )
     ),
+    # explanations/bmc_regions: the region encoding vocabulary a reader can look up.
+    "explanations/bmc_regions/index": _REGION_VOCABULARY,
 }
 
 #: Vocabularies that must be tabulated together rather than mentioned apart.
@@ -274,6 +306,8 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
         _PROOF_VERIFICATION_METHODS,
         _PROOF_NODE_KINDS,
     ),
+    # The three markers are one closed set, so they sit in one table.
+    "explanations/bmc_regions/index": (_REGION_POSITION_MARKERS,),
 }
 
 #: Rules the reference page must mark as currently unreachable.
@@ -583,11 +617,13 @@ def _check_pages(errors: List[str]) -> None:
             "bmc_semantics/index",
             "bmc_properties/index",
             "bmc_solving/index",
+            "bmc_regions/index",
         ),
         "explanations/index_zh.rst": (
             "bmc_semantics/index_zh",
             "bmc_properties/index_zh",
             "bmc_solving/index_zh",
+            "bmc_regions/index_zh",
         ),
         "reference/index.rst": ("bmc_query/index", "bmc_results/index"),
         "reference/index_zh.rst": (
@@ -1582,6 +1618,58 @@ def check_rendered(html_roots: Dict[str, Path]) -> None:
         )
 
 
+#: Pages whose example resources are verified as files.
+_RESOURCE_PAGES = ("explanations/bmc_regions/index",)
+
+
+def _page_resources(path: Path) -> Tuple[str, ...]:
+    """Return the files a page includes or offers for download.
+
+    :param path: Page to scan.
+    :type path: pathlib.Path
+    :return: Resource paths as written, relative to the page, sorted and unique.
+    :rtype: Tuple[str, ...]
+    """
+    text = _visible_text(path)
+    found = set(re.findall(r"^\s*\.\. literalinclude::\s+(\S+)", text, re.MULTILINE))
+    found.update(re.findall(r":download:`[^`<]*<([^>`]+)>`", text))
+    return tuple(sorted(found))
+
+
+def _check_page_resources(errors: List[str]) -> None:
+    """Confirm each page's resources exist and both languages use the same set.
+
+    A demo source needs its recorded output next to it, because the page includes
+    the output and the generated-resources job compares it against a fresh run.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "docs/source"
+    for relative in _RESOURCE_PAGES:
+        sets: Dict[str, Tuple[str, ...]] = {}
+        for label, path in _prose_pages(relative):
+            resources = _page_resources(path)
+            sets[label] = resources
+            for resource in resources:
+                if not (path.parent / resource).is_file():
+                    errors.append("%s uses %s, which does not exist." % (label, resource))
+        english, chinese = (sets[label] for label, _path in _prose_pages(relative))
+        if english != chinese:
+            errors.append(
+                "%s: English and Chinese pages include different resources: %s."
+                % (relative, ", ".join(sorted(set(english) ^ set(chinese))))
+            )
+        directory = (source / relative).parent
+        for demo in sorted(
+            list(directory.glob("*.demo.sh")) + list(directory.glob("*.demo.py"))
+        ):
+            if not (directory / (demo.name + ".txt")).is_file():
+                errors.append("%s has no recorded output %s.txt." % (demo.name, demo.name))
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -1591,6 +1679,7 @@ def check() -> None:
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)
+    _check_page_resources(errors)
     _check_schema(errors)
     _check_explanation_vocabulary(errors)
     _check_tabulated_vocabulary(errors)

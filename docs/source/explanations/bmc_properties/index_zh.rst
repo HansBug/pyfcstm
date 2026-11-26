@@ -208,6 +208,8 @@
 
 ``_lower_call_count`` 实现 :eq:`bmc-call-count`；``_call_match_expr`` 在调用记录快照上计算 ``where``。测试查询统计一次 ``x == 0`` 的 ``Before`` 调用和一次 ``x == 1`` 的 ``After`` 调用。反例 ``call_count("Root.A.After", step=*, where x == 0) >= 1`` 为 UNSAT。参见 ``test_compile_call_count_filters_use_call_time_snapshots`` 和 ``test/bmc/test_call_predicate_guards.py`` 中的守卫用例。省略步选择器时以当前谓词步骤为锚；``*`` 覆盖 :math:`0\le i<N`，越界相对点会被裁剪。未定义的 ``where`` 表达式无法匹配调用记录，因为其定义性会与值合取。
 
+对含区域的模型，``active(...)`` 还接受配置模式，并且在调用的 ``where`` 里描述调用那一刻的整台机器；两者怎样降低见 :doc:`/explanations/bmc_regions/index_zh`。
+
 ``cover`` 不下沉任意帧谓词。它验证裸 ``case("label")`` 原子，只接受公开的 ``transition`` 与 ``fallback`` 分支类别，并在有界步骤间析取匹配的选择变量。
 
 .. math::

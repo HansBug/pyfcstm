@@ -1,0 +1,1 @@
+check reach <= 3: active("Root.Job{A: [done], B: [done]}");

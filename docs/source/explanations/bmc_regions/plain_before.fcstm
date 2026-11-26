@@ -1,0 +1,14 @@
+state Root {
+    state Job {
+        during before abstract Prep;
+        region A {
+            [*] -> P;
+            state P { enter abstract OnP; }
+        }
+        region B {
+            [*] -> Q;
+            state Q { enter abstract OnQ; }
+        }
+    }
+    [*] -> Job;
+}

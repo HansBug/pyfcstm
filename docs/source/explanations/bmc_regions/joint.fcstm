@@ -1,0 +1,10 @@
+input int ok;
+state Root {
+    [*] -> Job;
+    state Job {
+        region A { [*] -> A1; state A1; A1 -> [*]; }
+        region B { [*] -> B1; state B1; B1 -> [*]; }
+    }
+    state Next;
+    Job -> Next : if [ok != 0];
+}

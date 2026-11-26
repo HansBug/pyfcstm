@@ -1,0 +1,15 @@
+input int d;
+state Root {
+    [*] -> Q;
+    state Q {
+        region R {
+            [*] -> W;
+            state W;
+            W -> [*];
+        }
+    }
+    state T1;
+    state T2;
+    Q -> T1 : if [d == 0];
+    Q -> T2 : if [10 % d == 0];
+}

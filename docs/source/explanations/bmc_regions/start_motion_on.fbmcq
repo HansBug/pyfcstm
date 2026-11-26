@@ -1,0 +1,2 @@
+init state("Controller.Running{Motion: On}");
+check reach <= 1: active("Controller.Running{Safety: Watching, Motion: On}");

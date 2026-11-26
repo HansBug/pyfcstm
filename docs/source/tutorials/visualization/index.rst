@@ -18,14 +18,14 @@ Generate PlantUML source
 
 Use ``plantuml`` when you want deterministic text output:
 
-.. literalinclude:: cli_basic.demo.sh
-   :language: bash
-   :caption: Basic CLI visualization
+.. code-block:: console
 
-Expected feedback:
+   $ pyfcstm plantuml -i example.fcstm -o output_cli_basic.puml
+   $ head -n 2 output_cli_basic.puml
+   @startuml
+   hide empty description
 
-.. literalinclude:: cli_basic.demo.sh.txt
-   :language: text
+The command prints nothing when it writes a file. The first lines of the file show that it is PlantUML source.
 
 Rendered example
 ----------------
@@ -45,11 +45,11 @@ Try detail presets
 
 Use ``-l`` for the built-in detail presets:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
-   pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
-   pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
+   $ pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
+   $ pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
+   $ pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
 
 The option reference explains which facts each preset affects.
 

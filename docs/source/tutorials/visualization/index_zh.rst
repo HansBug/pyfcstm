@@ -17,14 +17,14 @@
 
 需要确定性的文本输出时，使用 ``plantuml``：
 
-.. literalinclude:: cli_basic.demo.sh
-   :language: bash
-   :caption: 基本 CLI 可视化
+.. code-block:: console
 
-预期反馈：
+   $ pyfcstm plantuml -i example.fcstm -o output_cli_basic.puml
+   $ head -n 2 output_cli_basic.puml
+   @startuml
+   hide empty description
 
-.. literalinclude:: cli_basic.demo.sh.txt
-   :language: text
+写文件时命令本身不打印任何内容；文件开头几行说明它是 PlantUML 源码。
 
 渲染示例
 --------
@@ -43,11 +43,11 @@
 
 用 ``-l`` 选择内置详细级别预设：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
-   pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
-   pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
+   $ pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml
+   $ pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml
+   $ pyfcstm plantuml -i example.fcstm -l full -o output_full.puml
 
 选项参考会解释每个预设影响哪些事实。
 

@@ -139,6 +139,10 @@ sees the previous cycle (a backward dependency).
 **Command or code.** ``order_regions.demo.py`` sends ``/Start`` in the second
 cycle and sets ``fault`` to 1 in cycles 4 and 5:
 
+.. literalinclude:: order_regions.demo.py
+   :language: python
+   :caption: order_regions.demo.py
+
 .. literalinclude:: order_regions.demo.py.txt
    :language: text
 
@@ -210,11 +214,19 @@ entered.
 **Command or code.** ``preempt_owner.demo.py`` runs the two models, sending
 ``/Cancel`` (and ``/ADone`` in the second run):
 
+.. literalinclude:: preempt_owner.demo.py
+   :language: python
+   :caption: preempt_owner.demo.py
+
 .. literalinclude:: preempt_owner.demo.py.txt
    :language: text
 
 The forced transition is shorthand.  ``preempt_expansion.demo.py`` prints the
 expanded model with ``to_ast_node()``; it shows what each region really contains:
+
+.. literalinclude:: preempt_expansion.demo.py
+   :language: python
+   :caption: preempt_expansion.demo.py
 
 .. literalinclude:: preempt_expansion.demo.py.txt
    :language: text
@@ -302,10 +314,20 @@ leaf transitions runs no aspect of that region).
 9. Diagnose common region errors
 --------------------------------
 
-**Input.** One small model per mistake, named ``err_*.fcstm``.
+**Input.** One small model per mistake, named ``err_*.fcstm.txt``.  The
+suffix keeps the documentation build from drawing invalid models; ``pyfcstm``
+reads the files as they are.  Two of them:
+
+.. literalinclude:: err_cross_region.fcstm.txt
+   :language: fcstm
+   :caption: err_cross_region.fcstm.txt
+
+.. literalinclude:: err_active_region.fcstm.txt
+   :language: fcstm
+   :caption: err_active_region.fcstm.txt
 
 **Command or code.** Each ``err_*.demox.sh`` runs
-``pyfcstm inspect -i err_<name>.fcstm --color never``.  These are negative
+``pyfcstm inspect -i err_<name>.fcstm.txt --color never``.  These are negative
 examples; do not copy the models.
 
 .. list-table::

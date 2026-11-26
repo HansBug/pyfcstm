@@ -4,7 +4,7 @@
 ============
 
 已经知道区域（region）是什么、需要完成一个具体的建模任务时使用本页：拆分状态、嵌套区域、共用事件、
-安排顺序、联合完成、整组打断、读取其他区域、添加切面，或修复被拒绝的模型。第一个带引导的模型见
+安排顺序、联合完成（joint completion）、整组打断、读取其他区域、添加切面（aspect），或修复被拒绝的模型。第一个带引导的模型见
 :doc:`/tutorials/regions/index_zh`；每条规则的来由见
 :doc:`/explanations/region_semantics/index_zh`；确切的写法与位置值见
 :doc:`/reference/region_model/index_zh`。
@@ -24,7 +24,7 @@
    :language: fcstm
    :caption: panel_regions.fcstm
 
-**命令或代码。** 用同一组输入运行两个模型，每个周期后打印配置：
+**命令或代码。** 用同一组输入运行两个模型，每个周期后打印配置（configuration）：
 
 .. literalinclude:: split_state.demo.py
    :language: python
@@ -40,7 +40,7 @@
 **文件副作用。** 无。脚本读取两个 ``.fcstm`` 文件并输出到标准输出。
 
 **失败时先查什么。** 加载失败时运行 ``pyfcstm inspect -i panel_regions.fcstm`` 读第一条错误；常见原因是有状态留在区域之外
-（拥有者要么含区域，要么含子状态，不能混排，见任务 9）。
+（拥有者（owner）要么含区域，要么含子状态，不能混排，见任务 9）。
 
 **参考链接。** :doc:`/reference/region_model/index_zh`。
 
@@ -111,6 +111,10 @@
 
 **命令或代码。** ``order_regions.demo.py`` 在第二个周期发送 ``/Start``，并在第 4、5 个周期把 ``fault`` 置为 1：
 
+.. literalinclude:: order_regions.demo.py
+   :language: python
+   :caption: order_regions.demo.py
+
 .. literalinclude:: order_regions.demo.py.txt
    :language: text
 
@@ -162,15 +166,23 @@
 6. 从拥有者外面一次性打断整组
 -----------------------------
 
-**起点。** ``preempt_group.fcstm``：拥有者上的强制转换 ``!Job -> Idle : /Cancel``，以及把一位数字追加到 ``order`` 的 ``exit`` 动作。
+**起点。** ``preempt_group.fcstm``：拥有者上的强制转换（forced transition） ``!Job -> Idle : /Cancel``，以及把一位数字追加到 ``order`` 的 ``exit`` 动作。
 ``preempt_blocked.fcstm`` 把强制转换指向一个进不去的状态。
 
 **命令或代码。** ``preempt_owner.demo.py`` 运行这两个模型，发送 ``/Cancel``\ （第二次运行还发送 ``/ADone``）：
+
+.. literalinclude:: preempt_owner.demo.py
+   :language: python
+   :caption: preempt_owner.demo.py
 
 .. literalinclude:: preempt_owner.demo.py.txt
    :language: text
 
 强制转换是简写。``preempt_expansion.demo.py`` 用 ``to_ast_node()`` 打印展开后的模型，可以看到每个区域里实际有什么：
+
+.. literalinclude:: preempt_expansion.demo.py
+   :language: python
+   :caption: preempt_expansion.demo.py
 
 .. literalinclude:: preempt_expansion.demo.py.txt
    :language: text
@@ -240,9 +252,17 @@
 9. 排查区域模型的常见错误
 -------------------------
 
-**起点。** 每种错误一个很小的模型，文件名为 ``err_*.fcstm``。
+**起点。** 每种错误一个很小的模型，文件名为 ``err_*.fcstm.txt``。加 ``.txt`` 后缀是为了让文档构建不去绘制无效的模型；``pyfcstm`` 按原样读取这些文件。其中两个：
 
-**命令或代码。** 每个 ``err_*.demox.sh`` 运行 ``pyfcstm inspect -i err_<名字>.fcstm --color never``。这些都是负例，不要复制这些模型。
+.. literalinclude:: err_cross_region.fcstm.txt
+   :language: fcstm
+   :caption: err_cross_region.fcstm.txt
+
+.. literalinclude:: err_active_region.fcstm.txt
+   :language: fcstm
+   :caption: err_active_region.fcstm.txt
+
+**命令或代码。** 每个 ``err_*.demox.sh`` 运行 ``pyfcstm inspect -i err_<名字>.fcstm.txt --color never``。这些都是负例，不要复制这些模型。
 
 .. list-table::
    :header-rows: 1
@@ -304,7 +324,7 @@
 
    * - 任务
      - 页面
-   * - 热启动、事件名、“什么都没发生”与 REPL
+   * - 热启动（hot start）、事件名、“什么都没发生”与 REPL
      - :doc:`/how_to/simulation/index_zh`
    * - 顺序诊断与 ``owner_never_completes``
      - :doc:`/how_to/inspect/index_zh`

@@ -882,6 +882,18 @@ the property kind, as in the cards above.  The helper
    :language: python
    :caption: region_summary.py
 
+The demo scripts of tasks 18 to 20 source ``region_run.sh``.  Its
+function runs the CLI command of the task (the ``pyfcstm bmc ... --json -o``
+line) and then the helper above on the JSON file it wrote:
+
+.. literalinclude:: region_run.sh
+   :language: bash
+   :caption: region_run.sh
+
+Outside the scripts, the same task is two commands: ``pyfcstm bmc -i
+region_controller.fcstm -q region_start.fbmcq --json -o result.json`` followed
+by ``python region_summary.py result.json``.
+
 18. Check a property from a given position
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1055,9 +1067,15 @@ and compare with the CLI on the same two models:
 
 **Expected output.** The six-lap model compiles with a limit of 16 or 7 and is
 refused with 6; the message names the state and the option.  The unbounded loop
-is refused at every limit: a larger number never helps there.  On the command
-line the same message appears as ``_BmcCliInternalError`` with exit code 1
-(the CLI reports this build failure through its unexpected-error path).
+is refused at every limit: a larger number never helps there.
+
+The command-line output above is not the way to read this limit.  The
+six-lap model builds, and its exit code 1 is an ordinary verdict:
+``reach terminated()`` has no witness within one step (``GOAL UNREALIZABLE
+WITHIN BOUND``), which says nothing about the build.  For the unbounded loop
+the CLI currently stops with exit code 1 and a Python traceback; only its last
+line, the same message, is useful.  The CLI has no option for the limit, which
+is why this card works through the Python API.
 
 **File side effect.** None.
 
@@ -1075,11 +1093,9 @@ of variables the transitions write, with the bound ``k`` and with the number of
 states and regions; regions add up rather than multiply, but regions that
 exclude each other can grow exponentially when the solver must prove that
 something is impossible.  The measurements behind this are on synthetic models
-and are not a promise: see the `performance curve
-<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7181487794>`_ and the
-`analytical model
-<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7182704825>`_, and
-:doc:`/explanations/bmc_scaling/index` for the reasoning.
+and are not a promise: :doc:`/explanations/bmc_scaling/index` has the data and
+the reasoning, ``tools/measure_bmc_scaling.py`` regenerates it, and `issue #600
+<https://github.com/HansBug/pyfcstm/issues/600>`_ tracks the optimization ideas.
 
 **CLI.** Raise the bound one step at a time, classify the status instead of
 assuming SAT or UNSAT, and enforce a ceiling with ``--max-bound``:

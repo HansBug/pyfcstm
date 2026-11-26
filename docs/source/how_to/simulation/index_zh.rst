@@ -47,7 +47,7 @@
    * - ``history [n|all]``
      - 显示最近历史行或全部保留历史。
    * - ``init <position> [var=value...]``
-     - 使用显式变量在某个状态（含并行区域的模型也可以是配置文本）热启动并重建运行时。
+     - 使用显式变量在某个状态（含并行区域的模型也可以是配置（configuration）文本）热启动并重建运行时。
    * - ``setting [key] [value]``
      - 查看或修改显示、历史、日志设置。
    * - ``export <path>``
@@ -231,7 +231,7 @@
    :language: fcstm
    :caption: hot_controller.fcstm
 
-**命令或代码。** ``initial_state`` 接受位置的五种写法；脚本还演示了只写拥有者的情形：
+**命令或代码。** ``initial_state`` 接受位置的五种写法；脚本还演示了只写拥有者（owner）的情形：
 
 .. literalinclude:: hot_start_forms.demo.py
    :language: python
@@ -252,7 +252,7 @@
 给全变量，包括隐藏变量
 ~~~~~~~~~~~~~~~~~~~~~~
 
-**起点。** 模型转换会加入隐藏变量的模型：强制转换对应 ``__forced_*``，历史对应 ``__hist_*``，``active()`` 查询对应 ``__active_*``。它们是普通变量，
+**起点。** 模型转换会加入隐藏变量的模型：强制转换（forced transition）对应 ``__forced_*``，历史对应 ``__hist_*``，``active()`` 查询对应 ``__active_*``。它们是普通变量，
 运行时既不推导，也不核对它们与位置是否一致。``hot_watch.fcstm`` 使用了 ``active()``。
 
 **命令或代码。**
@@ -277,6 +277,10 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 **起点。** ``hot_controller.fcstm`` 与下面三种拒绝。脚本 ``hot_start_errors.demo.py`` 构造三次运行时，并每次打印 ``ValueError``。
+
+.. literalinclude:: hot_start_errors.demo.py
+   :language: python
+   :caption: hot_start_errors.demo.py
 
 .. literalinclude:: hot_start_errors.demo.py.txt
    :language: text
@@ -381,6 +385,10 @@
 （全体区域已完成；退出码在 ``repl_init_done.demox.sh.exitcode`` 里，为 1。）
 
 在交互命令行里，Tab 补全只提供确实能解析的短事件名，并且能补全区域里的状态。交互命令行使用的补全器给出：
+
+.. literalinclude:: repl_completion.demo.py
+   :language: python
+   :caption: repl_completion.demo.py
 
 .. literalinclude:: repl_completion.demo.py.txt
    :language: text

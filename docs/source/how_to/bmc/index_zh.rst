@@ -142,7 +142,7 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
      - ``check cover <= 1: case("Root.Idle::transition::Root.Done::0");``
 
 **作用。** 命令向模型提出一个有界问题。查询类别决定 SAT 表示正向见证还是反例。
-共同的热启动行让第 0 帧成为 ``Root.Idle``；下面边界为 1 的 ``forbid`` 和
+共同的热启动（hot start）行让第 0 帧成为 ``Root.Idle``；下面边界为 1 的 ``forbid`` 和
 ``cover`` 结果依赖这个前提。
 
 **预期输出。** 直接 ``reach`` 命令的 JSON 包含 ``"kind": "reach"``、
@@ -807,10 +807,19 @@ assumptions_self_conflict``。
    :language: python
    :caption: region_summary.py
 
+任务 18 到 20 的演示脚本会引用 ``region_run.sh``。它的函数先运行任务里的命令行命令（``pyfcstm bmc ... --json -o`` 那一行），再对写出的 JSON 文件运行上面的辅助脚本：
+
+.. literalinclude:: region_run.sh
+   :language: bash
+   :caption: region_run.sh
+
+脚本之外，同一件事就是两条命令：``pyfcstm bmc -i region_controller.fcstm -q region_start.fbmcq --json -o result.json``，然后
+``python region_summary.py result.json``。
+
 18. 从给定位置起检查性质
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-**输入。** ``region_controller.fcstm`` 与 ``region_start.fbmcq``。``init state(...)`` 接受配置文本、经过区域的状态路径，或只写拥有者。
+**输入。** ``region_controller.fcstm`` 与 ``region_start.fbmcq``。``init state(...)`` 接受配置（configuration）文本、经过区域的状态路径，或只写拥有者（owner）。
 持久变量保留各自的初始值，除非用 ``havoc`` 放开，所以这里放开并约束 ``permit`` 与 ``motor``。
 
 .. literalinclude:: region_start.fbmcq
@@ -825,7 +834,7 @@ assumptions_self_conflict``。
 .. literalinclude:: region_start.demo.sh.txt
    :language: text
 
-**预期输出。** 第 0 帧恰好是你写的配置。查询要求一步内到达 ``Controller.Idle``，离开 ``Running`` 的唯一途径是 ``Stop`` 强制转换，所以第 1 帧是 ``Controller.Idle``。
+**预期输出。** 第 0 帧恰好是你写的配置。查询要求一步内到达 ``Controller.Idle``，离开 ``Running`` 的唯一途径是 ``Stop`` 强制转换（forced transition），所以第 1 帧是 ``Controller.Idle``。
 第 0 步为每个有动作的区域列出一个局部情形：``Safety`` 与 ``Motion`` 各走自己的 ``__region_done__`` 转换，然后拥有者走向 ``Idle`` 的转换；下一张卡会解释这些条目。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
 （``Failure boundary: INITIALIZATION``），因为初始值 ``permit = 0`` 与 ``motor = 0`` 与它矛盾。
 
@@ -940,7 +949,8 @@ assumptions_self_conflict``。
    :language: text
 
 **预期输出。** 六圈模型在上限为 16 或 7 时能编译，为 6 时被拒绝；消息会指出状态和选项名。无界的循环在任何上限下都被拒绝：调大数字对它没有帮助。
-在命令行里，同样的消息以 ``_BmcCliInternalError`` 出现，退出码为 1（命令行经由它的意外错误路径报告这个构建失败）。
+上面的命令行输出不是读取这个上限的办法。六圈模型能构建，它的退出码 1 是一个普通的结论：``reach terminated()`` 在一步内没有见证（``GOAL UNREALIZABLE WITHIN BOUND``），
+这与构建无关。对于无界循环，命令行目前以退出码 1 和一段 Python 追踪信息停止，只有最后一行（同样的消息）有用。命令行没有设置这个上限的选项，所以本卡通过 Python 接口来做。
 
 **文件副作用。** 无。
 
@@ -952,9 +962,7 @@ assumptions_self_conflict``。
 ~~~~~~~~~~~~~~~~
 
 **输入。** 一条很慢或超时的查询。代价随转换写入的变量数、上界 ``k``、状态数与区域数增长；区域之间是相加而不是相乘，但彼此互斥的区域在求解器必须证明
-“不可能”时可能指数增长。这些结论来自合成模型上的测量，不是承诺：见\ `性能曲线
-<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7181487794>`_\ 与\ `解析模型
-<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7182704825>`_\ ，推理见 :doc:`/explanations/bmc_scaling/index_zh`。
+“不可能”时可能指数增长。这些结论来自合成模型上的测量，不是承诺：数据与推理见 :doc:`/explanations/bmc_scaling/index_zh`，``tools/measure_bmc_scaling.py`` 可以重新生成数据，优化思路记录在\ `问题 #600 <https://github.com/HansBug/pyfcstm/issues/600>`_\ 。
 
 **命令行。** 一次把上界加一，对状态分类而不是默认它是 SAT 或 UNSAT，并用 ``--max-bound`` 设上限：
 

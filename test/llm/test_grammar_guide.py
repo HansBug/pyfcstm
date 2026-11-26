@@ -296,6 +296,7 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
         "## Events",
         "## Forced Transitions",
         "## History",
+        "## Regions",
         "## Lifecycle Actions",
         "## Aspect Actions",
         "## Expressions",
@@ -331,6 +332,18 @@ def test_grammar_guide_positive_examples_parse_and_validate():
 
 
 @pytest.mark.unittest
+def test_grammar_guide_region_examples_build_models_with_regions():
+    guide = llm.get_grammar_guide_prompt_for_llm()
+    regions_section = guide.split("\n## Regions\n", 1)[1].split("\n## ", 1)[0]
+    examples = _FCSTM_BLOCK_RE.findall(regions_section)
+
+    assert len(examples) >= 3
+    for index, example in enumerate(examples, start=1):
+        model = load_state_machine_from_text(example, path=os.getcwd())
+        assert model.has_regions, f"region example {index} built no region"
+
+
+@pytest.mark.unittest
 def test_grammar_guide_invalid_examples_are_rejected():
     guide = llm.get_grammar_guide_prompt_for_llm()
     examples = _INVALID_FCSTM_BLOCK_RE.findall(guide)
@@ -339,3 +352,26 @@ def test_grammar_guide_invalid_examples_are_rejected():
     for example in examples:
         with pytest.raises((GrammarParseError, SyntaxError, ValueError)):
             load_state_machine_from_text(example, path=os.getcwd())
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "BadMixedChildren",
+        "BadCrossRegionTransition",
+        "BadRegionAction",
+        "BadActivePath",
+    ],
+)
+def test_grammar_guide_region_invalid_examples_are_present_and_rejected(marker):
+    guide = llm.get_grammar_guide_prompt_for_llm()
+    examples = [
+        example
+        for example in _INVALID_FCSTM_BLOCK_RE.findall(guide)
+        if f"state {marker} " in example
+    ]
+
+    assert len(examples) == 1
+    with pytest.raises((GrammarParseError, SyntaxError, ValueError)):
+        load_state_machine_from_text(examples[0], path=os.getcwd())

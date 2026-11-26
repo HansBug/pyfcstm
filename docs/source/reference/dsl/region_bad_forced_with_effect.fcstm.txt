@@ -1,0 +1,6 @@
+state Root {
+    [*] -> Run;
+    state Run { region A { state Leaf; [*] -> Leaf; } }
+    state Idle;
+    !Run -> Idle : /Stop effect { }
+}

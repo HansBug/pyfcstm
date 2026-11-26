@@ -1,0 +1,27 @@
+// Event ownership inside regions: a bare name belongs to the region, `::`
+// belongs to the source state, and ``/path`` starts at the root.
+state Plant {
+    event Reset;
+    [*] -> Job;
+    state Job {
+        event Abort;
+        region Left {
+            event Go;
+            [*] -> L1;
+            state L1;
+            state L2;
+            L1 -> L2 : Go;
+            L2 -> L1 :: Back;
+            L2 -> L1 : /Reset;
+        }
+        region Right {
+            event Go;
+            [*] -> R1;
+            state R1;
+            state R2;
+            R1 -> R2 : /Job.Left.Go;
+            R2 -> R1 : Go;
+            R1 -> R2 : /Job.Abort;
+        }
+    }
+}

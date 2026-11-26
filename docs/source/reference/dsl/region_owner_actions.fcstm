@@ -1,0 +1,37 @@
+// Every action appends a two-digit code to `seq`, so the order in which the
+// actions ran can be read back from the variable.
+def int seq = 0;
+state Root {
+    event Fin;
+    [*] -> Job;
+    state Job {
+        enter { seq = seq * 100 + 10; }
+        during before { seq = seq * 100 + 11; }
+        during after { seq = seq * 100 + 12; }
+        exit { seq = seq * 100 + 13; }
+        >> during before { seq = seq * 100 + 20; }
+        >> during after { seq = seq * 100 + 21; }
+        region A {
+            >> during before { seq = seq * 100 + 30; }
+            >> during after { seq = seq * 100 + 31; }
+            [*] -> A1;
+            state A1 {
+                enter { seq = seq * 100 + 32; }
+                during { seq = seq * 100 + 33; }
+                exit { seq = seq * 100 + 34; }
+            }
+            A1 -> [*] : /Fin;
+        }
+        region B {
+            [*] -> B1;
+            state B1 {
+                enter { seq = seq * 100 + 42; }
+                during { seq = seq * 100 + 43; }
+                exit { seq = seq * 100 + 44; }
+            }
+            B1 -> [*] : /Fin;
+        }
+    }
+    state Done { enter { seq = seq * 100 + 90; } }
+    Job -> Done;
+}

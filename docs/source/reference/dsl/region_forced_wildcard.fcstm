@@ -1,0 +1,12 @@
+state Plant {
+    event Fault;
+    [*] -> Idle;
+    state Idle;
+    state Run {
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1; state B1; state B2; B1 -> B2 : /Next; }
+    }
+    state Safe;
+    Idle -> Run : /Go;
+    !* -> Safe : /Fault;
+}

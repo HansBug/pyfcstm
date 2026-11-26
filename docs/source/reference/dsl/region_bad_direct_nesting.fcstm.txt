@@ -1,0 +1,5 @@
+state Root {
+    region A {
+        region B { state Leaf; [*] -> Leaf; }
+    }
+}

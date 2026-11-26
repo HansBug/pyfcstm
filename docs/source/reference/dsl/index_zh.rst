@@ -349,8 +349,12 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. literalinclude:: region_single.fcstm
    :language: fcstm
 
-.. literalinclude:: region_single.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i region_single.fcstm --no-color -e "cycle"
+   ...
+   Cycle: 1
+   Current State: Root{Active: region_count}
 
 含两个区域的控制器，以及在拥有者自己的作用域里放事件与强制转换的写法（教程里的模型）：
 
@@ -362,11 +366,36 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. literalinclude:: region_nested_active.fcstm
    :language: fcstm
 
-.. literalinclude:: region_nested_active.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_nested_active.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(list(model.defines))
+   for query in model.active_queries:
+       print('.'.join(query.state_path), '->', query.variable_name)
+
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.cycle_count, runtime.configuration)
+   for event in ['/Go', '/Trip', '/Stop', '/Resume']:
+       runtime.cycle(event)
+       print(runtime.cycle_count, event, runtime.configuration)
+
+.. testoutput::
+
+   ['__hist_goto', '__hist_Job_Panel_On', '__active_Plant_Job_Line_Cell_Feed_Busy', '__forced_0']
+   Plant.Job.Line.Cell.Feed.Busy -> __active_Plant_Job_Line_Cell_Feed_Busy
+   1 Plant.Job{Line: Cell{Feed: Idle, Check: Watch}, Panel: On.Quiet}
+   2 /Go Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Quiet}
+   3 /Trip Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
+   4 /Stop Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: Off}
+   5 /Resume Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
 
 输出逐周期给出配置的位置文本：区域块按书写顺序列出各区域，``Cell{Feed: Busy, Check: Alarm}`` 是嵌套的拥有者。``Check`` 在 ``Feed`` 改变的同一周期就读到了变化，
-因为 ``Feed`` 写在前面；把两者对调，``Check`` 要晚一个周期才看到。输出开头的隐藏变量见 :ref:`dsl-region-active-zh`。
+因为 ``Feed`` 写在前面；把两者对调，``Check`` 要晚一个周期才看到。输出第一行的隐藏变量见 :ref:`dsl-region-active-zh`。
 
 区域体
 ~~~~~~~~~~~~~~~~~~~~
@@ -463,11 +492,50 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. literalinclude:: region_events.fcstm
    :language: fcstm
 
-.. literalinclude:: region_events.demo.py.txt
-   :language: text
+.. testcode::
 
-从上往下读输出。第一块显示每个事件归哪个命名空间：``Left`` 与 ``Right`` 各自拥有一个 ``Go``。第二块显示每条转换引用了什么：``Right`` 里的 ``R1 -> R2``
-写成了根路径，所以用的是 ``Left`` 的事件。周期部分里，``/Job.Left.Go`` 同时推动两个区域，并在 ``consumed_events`` 里出现两次（每个用到它的区域一次）；
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_events.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   for state in model.walk_states():
+       for event in state.events.values():
+           print('state', event.path_name)
+   for region in model.walk_regions():
+       for event in region.events.values():
+           print('region', event.path_name)
+
+.. testoutput::
+
+   state Plant.Reset
+   state Plant.Job.Abort
+   state Plant.Job.Left.L2.Back
+   region Plant.Job.Left.Go
+   region Plant.Job.Right.Go
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeEventError
+
+   with open('region_events.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   runtime.cycle()
+   print(runtime.configuration)
+   for event in ['/Job.Left.Go', 'Plant.Job.Right.Go', 'Plant.Job.Abort', '/Job.Abort']:
+       result = runtime.cycle(event)
+       print(event, runtime.configuration, list(result.consumed_events))
+
+.. testoutput::
+
+   Plant.Job{Left: L1, Right: R1}
+   /Job.Left.Go Plant.Job{Left: L2, Right: R2} ['Plant.Job.Left.Go', 'Plant.Job.Left.Go']
+   Plant.Job.Right.Go Plant.Job{Left: L2, Right: R1} ['Plant.Job.Right.Go']
+   Plant.Job.Abort Plant.Job{Left: L2, Right: R2} ['Plant.Job.Abort']
+   /Job.Abort Plant.Job{Left: L2, Right: R2} []
+
+第一个脚本显示每个事件归哪个命名空间：``Left`` 与 ``Right`` 各自拥有一个 ``Go``。第二个脚本的周期里，``/Job.Left.Go`` 同时推动两个区域，
+因为 ``Right`` 里的 ``R1 -> R2`` 写成了根路径，所以用的是 ``Left`` 的事件，它在 ``consumed_events`` 里出现两次（每个用到它的区域一次）；
 ``Plant.Job.Right.Go`` 只推动 ``Right``；``/Job.Abort`` 什么也没消耗，因为 ``R2`` 没有对应的转换。这些输出能确定有哪些事件、谁消耗它们，
 不能说明各区域的运行顺序，那部分见 :doc:`../../explanations/region_semantics/index_zh`。
 
@@ -501,10 +569,70 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. literalinclude:: region_owner_actions.fcstm
    :language: fcstm
 
-.. literalinclude:: region_owner_actions.demo.py.txt
-   :language: text
+模型给每个动作分配了一个代码，所以一个周期里打印出的代码，就是这些动作运行的顺序。
 
-周期 1 进入拥有者（``10``），运行它的普通 ``during before``\ （``11``），进入 ``A1``\ （``32``）；随后区域 ``A`` 在拥有者切面（``20``、``21``）和自己的切面（``30``、``31``）之间工作，
+.. list-table:: ``region_owner_actions.fcstm`` 的动作代码
+   :header-rows: 1
+   :widths: 12 38 12 38
+
+   * - 代码
+     - 动作
+     - 代码
+     - 动作
+   * - ``10``
+     - ``Job`` 的 ``enter``
+     - ``32``
+     - ``A1`` 的 ``enter``
+   * - ``11``
+     - ``Job`` 的 ``during before``
+     - ``33``
+     - ``A1`` 的 ``during``
+   * - ``12``
+     - ``Job`` 的 ``during after``
+     - ``34``
+     - ``A1`` 的 ``exit``
+   * - ``13``
+     - ``Job`` 的 ``exit``
+     - ``42``
+     - ``B1`` 的 ``enter``
+   * - ``20``
+     - ``Job`` 的 ``>> during before``
+     - ``43``
+     - ``B1`` 的 ``during``
+   * - ``21``
+     - ``Job`` 的 ``>> during after``
+     - ``44``
+     - ``B1`` 的 ``exit``
+   * - ``30``
+     - ``A`` 的 ``>> during before``
+     - ``90``
+     - ``Done`` 的 ``enter``
+   * - ``31``
+     - ``A`` 的 ``>> during after``
+     -
+     -
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_owner_actions.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   seen = ''
+   for event in [None, None, '/Fin']:
+       runtime.cycle(event)
+       total = str(runtime.vars['seq'])
+       print(runtime.configuration, ' '.join(total[i:i + 2] for i in range(len(seen), len(total), 2)))
+       seen = total
+
+.. testoutput::
+
+   Root.Job{A: A1, B: B1} 10 11 32 20 30 33 31 42 43 21
+   Root.Job{A: A1, B: B1} 20 30 33 31 43 21
+   Root.Done 34 44 12 13 90
+
+脚本为每个周期打印配置和该周期里运行的动作的代码。周期 1 进入拥有者（``10``），运行它的普通 ``during before``\ （``11``），进入 ``A1``\ （``32``）；随后区域 ``A`` 在拥有者切面（``20``、``21``）和自己的切面（``30``、``31``）之间工作，
 区域 ``B`` 在同一周期接着工作。``B`` 没有切面，所以 ``43`` 单独出现。周期 2 是稳态：拥有者的切面对整组只出现一次，而不是每个叶子一次。周期 3 是退出：
 两个区域都由 ``/Fin`` 结束，``A1`` 与 ``B1`` 按书写顺序退出（``34``、``44``），整组把控制交还时拥有者的普通 ``during after`` 运行一次（``12``），
 随后拥有者退出（``13``）并进入 ``Done``\ （``90``）。周期 3 没有切面运行，因为拥有者之下没有 ``during`` 工作。这条轨迹不包含推测检查中被拒绝的候选转换；被拒绝的候选不留痕迹。
@@ -581,11 +709,81 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
      - error
      - 区域缺少初始转换。
 
-下面每个用例都用 ``load_state_machine_from_text`` 加载并打印它报告的内容。语法错误单独报告，并掩盖同一文本里的全部模型错误。每个块以用例名和加载的文本开头，
-以 ``->`` 开头的一行结束。
+下面的脚本为上表的每个诊断码各加载一个用例，另加一个语法错误，用 ``load_state_machine_from_text`` 加载并打印它报告的内容。语法错误单独报告，并掩盖同一文本里的全部模型错误。每个块以用例名和加载的文本开头，
+以 ``->`` 开头的一行结束。把这些用例下载到一个空目录：:download:`region_bad_empty_region.fcstm.txt <region_bad_empty_region.fcstm.txt>`, :download:`region_bad_duplicate_region.fcstm.txt <region_bad_duplicate_region.fcstm.txt>`, :download:`region_bad_active_region.fcstm.txt <region_bad_active_region.fcstm.txt>`, :download:`region_bad_across_regions.fcstm.txt <region_bad_across_regions.fcstm.txt>`, :download:`region_bad_event_of_owner_by_bare_name.fcstm.txt <region_bad_event_of_owner_by_bare_name.fcstm.txt>`, :download:`region_bad_region_without_initial.fcstm.txt <region_bad_region_without_initial.fcstm.txt>`, :download:`region_bad_direct_nesting.fcstm.txt <region_bad_direct_nesting.fcstm.txt>`。
 
-.. literalinclude:: region_diagnostics.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.dsl.error import GrammarParseError
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   for name in ['empty_region', 'duplicate_region', 'active_region', 'across_regions',
+                'event_of_owner_by_bare_name', 'region_without_initial', 'direct_nesting']:
+       with open('region_bad_%s.fcstm.txt' % name) as stream:
+           text = stream.read()
+       print('==', name)
+       print(text.rstrip())
+       try:
+           load_state_machine_from_text(text)
+       except GrammarParseError as error:
+           print('-> GrammarParseError:', str(error).splitlines()[1])
+       except ModelValidationError as error:
+           for item in error.diagnostics:
+               print('->', item.code, item.refs.get('reason'))
+
+.. testoutput::
+
+   == empty_region
+   state Root {
+       region Empty {
+       }
+   }
+   -> E_REGION_STRUCTURE empty_region
+   == duplicate_region
+   state Root {
+       region A { state Leaf; [*] -> Leaf; }
+       region A { state Leaf; [*] -> Leaf; }
+   }
+   -> E_DUPLICATE_REGION None
+   == active_region
+   state Root {
+       during before { if [active("Root.A")] { } }
+       region A { state Leaf; [*] -> Leaf; }
+   }
+   -> E_ACTIVE_QUERY_TARGET region
+   == across_regions
+   state Root {
+       region A { state L; [*] -> L; L -> M; }
+       region B { state M; [*] -> M; }
+   }
+   -> E_DANGLING_TRANSITION tgt_not_found
+   == event_of_owner_by_bare_name
+   state Root {
+       [*] -> Job;
+       state Job {
+           event Abort;
+           region A {
+               [*] -> L1;
+               state L1;
+               state L2;
+               L1 -> L2 : Job.Abort;
+           }
+       }
+   }
+   -> E_MISSING_STATE event_path_not_found
+   == region_without_initial
+   state Root {
+       region A { state Leaf; }
+   }
+   -> E_INITIAL_TRANSITION_INVALID missing_entry
+   == direct_nesting
+   state Root {
+       region A {
+           region B { state Leaf; [*] -> Leaf; }
+       }
+   }
+   -> GrammarParseError: Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
 
 命令行打印同样的消息但不带诊断码：对无效模型运行 ``pyfcstm inspect -i`` 以状态 1 退出，输出一条以 ``Invalid state machine model in <file>:`` 开头、可能占多行的消息；
 加 ``--collect-errors`` 会报告全部模型错误而不是在第一个处停止。各诊断码在注册表里的条目见 :doc:`../diagnostics_codes/index_zh`。
@@ -898,12 +1096,159 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
 .. literalinclude:: region_forced_in_region.fcstm
    :language: fcstm
 
-.. literalinclude:: region_forced_expansion.demo.py.txt
-   :language: text
+.. testcode::
 
-第一块展开教程里的控制器，两个区域是 ``Safety`` 与 ``Motion``：两个区域都得到跟随与起始转换，运行的最后一个周期显示 ``/Stop`` 在一个周期内结束两个区域并离开 ``Running``，
-``__forced_0`` 回到 ``0``。第二块是上面的 ``!*`` 模型，``!*`` 展开成三条转换（``expansion_count`` 为 3）。最后一块展开写在区域里的声明。输出能确定展开的形式，
-不能说明退出的运行顺序，那部分由共享语义用例
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'], list(model.forced_variables))
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1 ['__forced_0']
+   ...
+           region Safety {
+   ...
+               Watching -> [*] : if [__forced_0 == 1];
+               Watching -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+           region Motion {
+   ...
+               Off -> [*] : if [__forced_0 == 1];
+               Off -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+       pseudo state __forced_gate_0;
+   ...
+       Running -> Idle : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Running -> __forced_gate_0 : Stop;
+   ...
+       __forced_gate_0 -> Idle : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_wildcard.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   3
+   def int __forced_0 = 0;
+   state Plant {
+       state Idle;
+       state Run {
+           region A {
+               state A1;
+               A1 -> [*] : if [__forced_0 == 1];
+               A1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> A1;
+           }
+           region B {
+               state B1;
+               state B2;
+               B1 -> [*] : if [__forced_0 == 1];
+               B1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               B2 -> [*] : if [__forced_0 == 1];
+               B2 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> B1;
+               B1 -> B2 : /Next;
+           }
+       }
+       state Safe;
+       pseudo state __forced_gate_0;
+       event Fault;
+       event Next;
+       event Go;
+       Idle -> Safe : Fault;
+       Run -> Safe : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Run -> __forced_gate_0 : Fault;
+       Safe -> Safe : Fault;
+       [*] -> Idle;
+       Idle -> Run : Go;
+       __forced_gate_0 -> Safe : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_in_region.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1
+   def int __forced_0 = 0;
+   state Plant {
+       state Job {
+           region Panel {
+               state On {
+                   state Quiet;
+                   state Loud;
+                   Quiet -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   Loud -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   [*] -> Quiet;
+                   Quiet -> Loud : /Trip;
+               }
+               state Off;
+               pseudo state __forced_gate_0;
+               On -> Off : if [__forced_0 == 1] effect {
+                   __forced_0 = 0;
+               }
+               On -> __forced_gate_0 : /Stop;
+               [*] -> On;
+               __forced_gate_0 -> Off : if [__forced_0 == 0];
+           }
+   ...
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle /Stop --input fault=0 --input requested=1"
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   Variables:
+     __forced_0 = 0
+   ...
+   Cycle: 4
+   Current State: Controller.Idle
+   Variables:
+     __forced_0 = 0
+   ...
+
+第一个脚本展开教程里的控制器（:download:`controller.fcstm </_models/controller.fcstm>`），两个区域是 ``Safety`` 与 ``Motion``：两个区域都得到跟随与起始转换；输出里显示了上表引用的那部分导出文本，
+末尾的终端记录显示 ``/Stop`` 在一个周期内结束两个区域并离开 ``Running``，``__forced_0`` 回到 ``0``。第二个脚本是上面的 ``!*`` 模型，``!*`` 展开成三条转换（``expansion_count`` 为 3）。
+第三个脚本展开写在区域里的声明。输出能确定展开的形式，不能说明退出的运行顺序，那部分由共享语义用例
 ``region_forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
 与 ``region_group_preemption_skips_exit_of_finished_region`` 固定。
 
@@ -1092,7 +1437,7 @@ PlantUML、图形查看器与 ``pyfcstm inspect`` 仍按书写的模型，把一
      - 在同一区域里从兄弟状态用 ``On.[H]`` 进入；记录变量 ``__hist_<owner>`` 是普通变量。
    * - 拥有历史的状态，其子树里任何位置有区域拥有者
      - ``E_REGION_STRUCTURE``，``reason: history_boundary``
-     - 报在拥有历史的状态上；见 :ref:`dsl-region-diagnostics-zh` 中的 ``history_owner_with_region``。
+     - 报在拥有历史的状态上；:ref:`region-limits-run-zh` 里的脚本会打印它。
    * - 直接写在区域体里的 ``[H] -> Child;``
      - 语法错误
      - 区域不是历史的拥有者；把状态包进一个普通状态。
@@ -2015,7 +2360,7 @@ DSL 覆盖矩阵
      - :doc:`/how_to/regions/index_zh`
      - :ref:`dsl-region-forced-zh`
      - :doc:`/explanations/region_semantics/index_zh`
-     - ``region_forced_expansion.demo.py`` 导出文本
+     - 在 :ref:`dsl-region-forced-zh` 下打印的导出文本
      - 已同步
    * - ``dsl-region-history``
      - 区域
@@ -2024,7 +2369,7 @@ DSL 覆盖矩阵
      - :doc:`/how_to/regions/index_zh`
      - :ref:`dsl-history-regions-zh`
      - :ref:`dsl-history-semantics-zh`
-     - ``region_nested_active.fcstm`` 运行与 ``history_owner_with_region``
+     - ``region_nested_active.fcstm`` 运行与 :ref:`region-limits-run-zh` 里的历史脚本
      - 已同步
    * - ``dsl-region-diagnostics``
      - 诊断
@@ -2033,7 +2378,7 @@ DSL 覆盖矩阵
      - :doc:`/how_to/regions/index_zh`
      - :ref:`dsl-region-diagnostics-zh`
      - :doc:`/explanations/region_semantics/index_zh`
-     - ``region_diagnostics.demo.py`` 报告
+     - 在 :ref:`dsl-region-diagnostics-zh` 下打印的加载报告
      - 已同步
 
 .. _dsl-fact-check-notes-zh:
@@ -2046,6 +2391,6 @@ DSL 覆盖矩阵
 * 导入组装事实来自 ``pyfcstm/model/imports.py``。
 * 目标风险诊断来自 ``pyfcstm/diagnostics/codes.yaml`` 和 ``pyfcstm/diagnostics/analyzers/``。
 * 区域语法来自 ``GrammarParser.g4`` 里的 ``region_definition`` 与 ``state_owner_statement``；区域结构检查来自
-  ``pyfcstm/model/region.py`` 的 ``validate_region_structure``；:ref:`dsl-region-forms-zh` 下的示例由本页旁边的 ``region_*.demo.*`` 脚本加载并运行，输出原样收录。
+  ``pyfcstm/model/region.py`` 的 ``validate_region_structure``；:ref:`dsl-region-forms-zh` 及之后各区域小节里的示例都针对本检出运行，输出原样收录。
 * 强制与历史的展开文本来自 ``StateMachine.to_ast_node()``；隐藏变量的名字来自 ``forced_variables``、``active_queries`` 与 ``history_owners``。
 * 面向 LLM 的语法指南在 ``pyfcstm/llm/fcstm_grammar_guide.md`` 中。本页不修改该打包指南。

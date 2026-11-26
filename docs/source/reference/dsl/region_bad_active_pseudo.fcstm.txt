@@ -1,4 +1,0 @@
-state Root {
-    during before { if [active("Root.A.Relay")] { } }
-    region A { state Leaf; pseudo state Relay; [*] -> Leaf; }
-}

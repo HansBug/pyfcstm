@@ -1,6 +1,0 @@
-state Root {
-    [*] -> Idle;
-    state Idle;
-    state Run { region A { state Leaf; [*] -> Leaf; } }
-    Idle -> Run.A.Leaf;
-}

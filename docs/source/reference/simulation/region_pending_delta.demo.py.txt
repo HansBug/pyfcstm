@@ -1,4 +1,0 @@
-cold start         delta=True  Plant  cycle_count=1  ticks=0
-Gate left out      delta=True  Plant.Job{Count: Counting, Gate: [init]}  cycle_count=1  ticks=0
-owner path alone   delta=True  Plant.Job{Count: [init], Gate: [init]}  cycle_count=1  ticks=0
-ready=1            delta=False  Plant.Job{Count: Counting, Gate: Open}  cycle_count=1  ticks=1

@@ -73,44 +73,58 @@ Region 模型与配置
 模式下，省略的区域表示等待初始化，``str()`` 会将其显式输出为 ``[init]``。
 配置文本拒绝旧标记 ``[*]``；DSL 的初始和终止转换仍使用 ``[*]``。
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> from pyfcstm.model import Configuration, load_state_machine_from_text
-   >>> source = '''state Root {
-   ...     region Left { state Idle; [*] -> Idle; Idle -> [*]; }
-   ...     region Right { state Working; [*] -> Working; }
-   ... }'''
-   >>> model = load_state_machine_from_text(source)
-   >>> config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
-   >>> str(config)
-   'Root{Left: [done], Right: Working}'
-   >>> [state.path for state in config.leaves]
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   config = Configuration.parse(model, 'Root{Right: Working, Left: [done]}')
+   print(config)
+   print([state.path for state in config.leaves])
+   print(config.is_active('Root'), config.is_active('Root.Left.Idle'))
+   print(config.region_status('Root.Left'), config.region_status('Root.Right'))
+   print(Configuration.from_dict(model, config.to_dict()) == config)
+
+.. testoutput::
+
+   Root{Left: [done], Right: Working}
    [('Root', 'Right', 'Working')]
-   >>> config.is_active('Root'), config.is_active('Root.Left.Idle')
-   (True, False)
-   >>> config.region_status('Root.Left'), config.region_status('Root.Right')
-   ('done', 'live')
-   >>> Configuration.from_dict(model, config.to_dict()) == config
+   True False
+   done live
    True
 
 ``str(config)`` 是规范化的位置文本。``repr(config)`` 还显示校验模式，便于调试；
 它不是可执行的构造表达式，也不是解析器接受的输入。重新解析非稳定配置时，需要显式传入模式：
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> pending = Configuration.parse(model, 'Root', mode='initialization')
-   >>> str(pending)
-   'Root{Left: [init], Right: [init]}'
-   >>> repr(pending)
-   "Configuration(mode='initialization', position='Root{Left: [init], Right: [init]}')"
-   >>> Configuration.parse(model, str(pending), mode=pending.mode) == pending
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   pending = Configuration.parse(model, 'Root', mode='initialization')
+   print(pending)
+   print(repr(pending))
+   print(Configuration.parse(model, str(pending), mode=pending.mode) == pending)
+   mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
+   print(mixed)
+   print(mixed.region_status('Root.Left'), mixed.region_status('Root.Right'))
+   print(Configuration.parse(model, str(mixed), mode=mixed.mode) == mixed)
+
+.. testoutput::
+
+   Root{Left: [init], Right: [init]}
+   Configuration(mode='initialization', position='Root{Left: [init], Right: [init]}')
    True
-   >>> mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
-   >>> str(mixed)
-   'Root{Left: [done], Right: [init]}'
-   >>> mixed.region_status('Root.Left'), mixed.region_status('Root.Right')
-   ('done', 'pending')
-   >>> Configuration.parse(model, str(mixed), mode=mixed.mode) == mixed
+   Root{Left: [done], Right: [init]}
+   done pending
    True
 
 词法单元之间允许空白，包括换行。标识符遵循 ``[A-Za-z_][A-Za-z_0-9]*``；
@@ -118,25 +132,45 @@ Region 模型与配置
 语法错误抛出 ``ValueError``，包含从 1 开始的行号和字符列号；制表符算一个字符，
 换行字符分隔行。模型校验另行报告无效路径、区域项或校验模式。
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> Configuration.parse(model, 'Root{\n Left: @\n}', mode='transient')
-   Traceback (most recent call last):
-       ...
-   ValueError: Expected a configuration identifier at line 2, column 8, got '@'.
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   try:
+       Configuration.parse(model, 'Root{\n Left: @\n}', mode='transient')
+   except ValueError as error:
+       print(error)
+
+.. testoutput::
+
+   Expected a configuration identifier at line 2, column 8, got '@'.
 
 非字符串输入抛出 ``TypeError``。嵌套过深时抛出说明原因的 ``ValueError``，
 不会直接泄漏 Python 的 ``RecursionError``；可支持的深度取决于解释器可用的调用栈。
 错误消息缩短过长的记号或路径片段、转义不可打印字符，并用 ``end of input``
 明确表示输入已结束。调用方可以捕获 ``ValueError``，直接展示输入问题：
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> try:
-   ...     Configuration.parse(model, 'Root{Left: Working', mode='transient')
-   ... except ValueError as error:
-   ...     # ValueError: the input is missing its closing region-block brace.
-   ...     print(error)
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   try:
+       Configuration.parse(model, 'Root{Left: Working', mode='transient')
+   except ValueError as error:
+       print(error)
+
+.. testoutput::
+
    Expected '}' at line 1, column 19, got end of input.
 
 ``is_active`` 接受状态路径，包括活动祖先，但拒绝区域路径。
@@ -164,13 +198,25 @@ Region 模型与配置
 是文本标记，不是 JSON 字符串值。省略外层 ``mode`` 时默认 ``stable``。
 文本不编码模式，因此重新解析非稳定值时必须再次传入模式。
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> pending.to_dict()
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   source = '''state Root {
+       region Left { state Idle; [*] -> Idle; Idle -> [*]; }
+       region Right { state Working; [*] -> Working; }
+   }'''
+   model = load_state_machine_from_text(source)
+   pending = Configuration.parse(model, 'Root', mode='initialization')
+   mixed = Configuration.parse(model, 'Root{Left: [done]}', mode='transient')
+   print(pending.to_dict())
+   print(mixed.to_dict())
+   print(Configuration.from_dict(model, mixed.to_dict()) == mixed)
+
+.. testoutput::
+
    {'mode': 'initialization', 'state': 'Root', 'regions': []}
-   >>> mixed.to_dict()
    {'mode': 'transient', 'state': 'Root', 'regions': [{'name': 'Left', 'configuration': None}]}
-   >>> Configuration.from_dict(model, mixed.to_dict()) == mixed
    True
 
 活动查询
@@ -194,13 +240,18 @@ Region 模型与配置
 ``model.active_variables(config)`` 为绑定到同一个模型对象的配置计算标志值，
 不会执行任何动作。
 
-.. code-block:: pycon
+.. testcode::
 
-   >>> model = load_state_machine_from_text('state Root { during { if [active("Root")] {} } }')
-   >>> config = Configuration.parse(model, 'Root')
-   >>> query, = model.active_queries
-   >>> query.state_path, model.active_variables(config)[query.variable_name]
-   (('Root',), 1)
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+
+   model = load_state_machine_from_text('state Root { during { if [active("Root")] {} } }')
+   config = Configuration.parse(model, 'Root')
+   query, = model.active_queries
+   print(query.state_path, model.active_variables(config)[query.variable_name])
+
+.. testoutput::
+
+   ('Root',) 1
 
 ``to_ast_node()`` 导出当前模型，包括语法糖展开结果，不能当作无损源文本往返接口。
 Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC 报告添加字段。
@@ -210,7 +261,7 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
 界限与已知差距
 ------------------------------
 
-下表列出与含区域的模型有关的全部界限和已知差距。数字只在真实运行产生过的地方出现：本页旁边的 ``region_limits.demo.py`` 复现这些界限和核对过的差距，它的输出在表之后。
+下表列出与含区域的模型有关的全部界限和已知差距。数字只在真实运行产生过的地方出现：表后的例子复现这些界限和核对过的差距。
 最后一列写着“已记录”的行，描述的是取自对应 issue、没有为本页重新运行的差距。
 
 .. list-table:: 含区域模型的界限与已知差距
@@ -274,11 +325,11 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
    * - 复合状态里只会绕回的候选
      - 在不含区域的模型里，经伪状态绕回自己起点的候选使整个周期成为 Delta，而不是让后面的候选触发（下面的输出；
        `issue #578 <https://github.com/HansBug/pyfcstm/issues/578>`_\ ）。同一个 issue 还记录了第二个缺陷，即 Delta 周期里 handler 已被调用；那一个没有重新运行。
-     - ``limits_composite_loop.fcstm`` 与演示输出。
+     - ``limits_composite_loop.fcstm`` 与它后面的终端记录。
      - :ref:`region-limits-run-zh`
    * - 触达区域的强制声明的导出文本
      - ``to_ast_node()`` 文本加载得到的机器，在 `issue #580 <https://github.com/HansBug/pyfcstm/issues/580>`_ 的复现上行为相同（退出顺序与结果一致，见下面的输出）；该 issue 记录的是更早的行为。
-     - ``region_limits.demo.py``。
+     - :ref:`region-limits-run-zh` 里的脚本。
      - :ref:`region-limits-run-zh`
    * - 行为类 inspect 诊断与语法糖
      - 哪些诊断码属于书写的模型、哪些属于实际运行的机器，仍在归类；实际运行的机器上的发现可能提到隐藏变量或生成的状态
@@ -295,7 +346,7 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
        其中 scopes 是降级之后的状态数（含 ``__forced_gate_0`` 这类隐藏的门状态）加区域数；教程里的控制器降级后有 7 个状态和 2 个区域，所以是 9。这些值是经验公式，不是证明过的上界；一个周期需要更多时失败，报 ``Speculative search exceeded the capacity safety limit`` 并点名对应的宏。
        要在所有编译单元里调大该宏（\ `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_\ ）。
      - ``pyfcstm/render/c_kernel.py`` 的 ``_plan_capacity``；``test/render/test_c_kernel.py``。
-     - :ref:`region-limits-run-zh`、:doc:`/reference/builtin_templates/index_zh`
+     - :doc:`/reference/builtin_templates/index_zh`
    * - 生成的 Python 运行时
      - 每个生成的 ``machine.py`` 都带着通用的搜索内核（位置解析、记忆化、整组初始化），不管模型有没有区域，并且做与仿真器相同的推测工作；进一步的专用化记录在
        `issue #596 <https://github.com/HansBug/pyfcstm/issues/596>`_\ 。64 与 1000 这两个界限同样适用。
@@ -311,19 +362,183 @@ Configuration JSON 是独立的位置值契约，不会给公共 inspect 或 BMC
 复现这些界限
 ~~~~~~~~~~~~~~~~~~~~
 
+把 :download:`limits_composite_loop.fcstm <limits_composite_loop.fcstm>` 和
+:download:`limits_history_default.fcstm <limits_history_default.fcstm>` 下载到一个空目录，即可运行两段终端记录。脚本只需要 ``pyfcstm``。这些数字都不是性能数据。
+
+一个周期内相互嵌套进入的拥有者：64 层可以运行，第 65 层被拒绝。
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
+
+   for depth in (64, 65):
+       name, text = 'Leaf', 'state Leaf;'
+       for index in range(depth):
+           text = 'state S%d { region R { [*] -> %s; %s } }' % (index, name, text)
+           name = 'S%d' % index
+       model = load_state_machine_from_text('state Root { [*] -> %s; %s }' % (name, text))
+       try:
+           SimulationRuntime(model).cycle()
+           print(depth, 'nested owners: the first cycle runs')
+       except SimulationRuntimeDfsError as error:
+           print(depth, 'nested owners:', str(error).split(';')[0])
+
+.. testoutput::
+
+   64 nested owners: the first cycle runs
+   65 nested owners: Group initialization nested deeper than the structural safety limit (64) within one cycle
+
+一个周期内的步数：一个转 500 圈的伪状态需要超过 1000 个推测步。
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
+
+   chain = ('def int n = 0; state Root { [*] -> p; pseudo state p; state Done; '
+            'p -> p : if [n < 500] effect { n = n + 1; }; p -> Done; }')
+   try:
+       SimulationRuntime(load_state_machine_from_text(chain)).cycle()
+   except SimulationRuntimeDfsError as error:
+       print(str(error).split(';')[0])
+
+.. testoutput::
+
+   Speculative DFS exceeded the step safety limit (1000) without reaching a stoppable state or pruning
+
+BMC 中同一拥有者的重入：默认上限 16 能构建计数器停在 3 的模型，拒绝停在 20 的模型；该选项也可以把第一个模型的上限调低。
+
+.. testcode::
+
+   from pyfcstm.bmc import BmcOptions, build_bmc_core_formula, prepare_bmc_query
+   from pyfcstm.bmc.errors import BmcBuildError
+   from pyfcstm.model import load_state_machine_from_text
+
+   text = ('def int n = 0; state Root { [*] -> O; '
+           'state O { region A { [*] -> p; pseudo state p; p -> [*]; } } state Done; '
+           'O -> O : if [n < %d] effect { n = n + 1; }; O -> Done; }')
+   query = 'check reach <= 1: active("Root.Done");'
+   for limit, options in [(3, BmcOptions()), (20, BmcOptions()), (3, BmcOptions(max_group_reentries=2))]:
+       context = prepare_bmc_query(load_state_machine_from_text(text % limit), query, options)
+       try:
+           build_bmc_core_formula(context)
+           print('n < %d, max_group_reentries=%d: built' % (limit, options.max_group_reentries))
+       except BmcBuildError as error:
+           print('n < %d, max_group_reentries=%d: %s' % (limit, options.max_group_reentries, error))
+
+.. testoutput::
+
+   n < 3, max_group_reentries=16: built
+   n < 20, max_group_reentries=16: state 'Root.O' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   n < 3, max_group_reentries=2: state 'Root.O' re-enters its own group more than 2 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+BMC 表达式深度：一个比较前面加 98 个前缀取反可以接受，99 个被拒绝。
+
+.. testcode::
+
+   from pyfcstm.bmc import prepare_bmc_query
+   from pyfcstm.bmc.errors import InvalidBmcQuery
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text('def int x = 0; state Root { [*] -> A; state A; }')
+   for count in (98, 99):
+       try:
+           prepare_bmc_query(model, 'check reach <= 1: ' + '!' * count + '(x == 0);')
+           print(count, 'prefix negations: accepted')
+       except InvalidBmcQuery as error:
+           print(count, 'prefix negations:', error)
+
+.. testoutput::
+
+   98 prefix negations: accepted
+   99 prefix negations: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+
+子树里含区域的历史拥有者被拒绝。
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   try:
+       load_state_machine_from_text(
+           'state Root { [*] -> P; state P { [*] -> Q; [H] -> Q; '
+           'state Q { region A { state L; [*] -> L; } } } }')
+   except ModelValidationError as error:
+       print(', '.join('%s (%s)' % (item.code, item.refs['reason']) for item in error.diagnostics))
+
+.. testoutput::
+
+   E_REGION_STRUCTURE (history_boundary)
+
+不含区域的模型里，复合状态中只会绕回的候选（``limits_composite_loop.fcstm``）。两个 ``Root.Go`` 周期都以 Delta 结束，尽管 ``S -> T`` 本可以触发；机器停在 ``Root.S``，``x`` 不变。
+
 .. literalinclude:: limits_composite_loop.fcstm
    :language: fcstm
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i limits_composite_loop.fcstm -e "cycle; cycle Root.Go; cycle Root.Go; cycle"
+   ...
+   [WARNING] Cycle 2 completed as Delta ...
+   ...
+   [WARNING] Cycle 3 completed as Delta ...
+   ...
+   Cycle: 4
+   Current State: Root.S
+   Variables:
+     x = 2
+
+``to_ast_node()`` 的文本运行起来和它的来源机器一样（以触达区域的强制声明为例）：两台机器给出相同的退出顺序和结果。
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   text = '''def int seq = 0;
+   state Root {
+       event Stop;
+       [*] -> Run;
+       state Run {
+           region A { [*] -> A1; state A1 { exit { seq = seq * 10 + 1; } } }
+           region B { [*] -> B1; state B1 { exit { seq = seq * 10 + 2; } } }
+       }
+       state Idle;
+       !Run -> Idle : /Stop;
+   }'''
+   original = load_state_machine_from_text(text)
+   reloaded = load_state_machine_from_text(str(original.to_ast_node()))
+   for machine in (original, reloaded):
+       runtime = SimulationRuntime(machine)
+       runtime.cycle()
+       runtime.cycle(['Root.Stop'])
+       print(runtime.configuration, runtime.vars['seq'])
+
+.. testoutput::
+
+   Root.Idle 12
+   Root.Idle 12
+
+只经历史默认目标进入的状态不会被报告为不可达（``limits_history_default.fcstm``）。``P`` 只经历史默认目标 ``B`` 进入且没有出路，所以没有任何东西会记录 ``A``，``inspect`` 仍然打印 ``unreachable: 0``。
 
 .. literalinclude:: limits_history_default.fcstm
    :language: fcstm
 
-.. literalinclude:: region_limits.demo.py.txt
-   :language: text
+.. code-block:: console
 
-按顺序读各块。深度一块显示 64 层与 65 层嵌套拥有者之间的边界；步数一块显示 500 圈的链被拒绝；BMC 几块显示默认的 16 次重入上限（``n < 3`` 能构建，``n < 20`` 不能）、
-该选项可以调低或调高，以及表达式深度的 98/99 边界；历史一块显示拒绝。复合状态一块显示整个周期变成 Delta（两个 ``Root.Go`` 周期的 ``delta=True``），尽管 ``S -> T`` 本可以触发；
-导出一块显示两台机器一致；inspect 一块对一个 ``Root.P.A`` 进不去的模型显示 ``unreachable: 0``，因为 ``P`` 只经历史默认目标 ``B`` 进入且没有出路，所以没有任何东西会记录 ``A``。
-容量一块打印 C 模板对教程控制器和一台平铺机器使用的默认值。这些数字都不是性能数据。
+   $ pyfcstm inspect -i limits_history_default.fcstm --color never
+   ...
+     unreachable: 0 leaf states / 0 transitions
+   ...
+   $ pyfcstm simulate -i limits_history_default.fcstm -e "cycle; cycle /Go"
+   ...
+   Cycle: 2
+   Current State: Root.P.B
+   ...
+
+生成的 C 系运行时的默认容量没有在这里运行：表中那一行取自 ``pyfcstm/render/c_kernel.py`` 的 ``_plan_capacity``。
 
 相关参考：:doc:`../dsl/index_zh`、:doc:`../diagnostics_codes/index_zh`、
 :doc:`/api_doc_zh`。

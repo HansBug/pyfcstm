@@ -1,5 +1,0 @@
-active_variables(Root.Job{Feed: Busy, Check: Watch})
-   __active_Root_Job_Feed_Busy = 1
-without the flag: initial_vars must provide all variables. Missing: ['__active_Root_Job_Feed_Busy']
-with the flag:    Root.Job{Feed: Busy, Check: Watch}  alarm=1
-flag given as 0:  Root.Job{Feed: Busy, Check: Watch}  alarm=0

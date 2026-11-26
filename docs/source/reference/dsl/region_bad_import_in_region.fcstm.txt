@@ -1,7 +1,0 @@
-state Root {
-    region A {
-        import "part.fcstm" as Part;
-        state Leaf;
-        [*] -> Leaf;
-    }
-}

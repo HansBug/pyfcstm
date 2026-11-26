@@ -1,4 +1,0 @@
-state Root {
-    during before { if [active("A.Leaf")] { } }
-    region A { state Leaf; [*] -> Leaf; }
-}

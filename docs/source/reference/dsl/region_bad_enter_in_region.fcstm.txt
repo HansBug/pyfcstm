@@ -1,7 +1,0 @@
-state Root {
-    region A {
-        enter { }
-        state Leaf;
-        [*] -> Leaf;
-    }
-}

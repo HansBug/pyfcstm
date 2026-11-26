@@ -11,7 +11,7 @@ model=../../tutorials/regions/controller.fcstm
 
 echo '$ pyfcstm generate -i controller.fcstm --template python -o out'
 pyfcstm generate -i "$model" --template python -o "$workdir/out"
-ls "$workdir/out"
+LC_ALL=C ls "$workdir/out"
 
 # The same six cycles are driven through the generated runtime and through the simulator.
 cat > "$workdir/drive.py" <<'PY'

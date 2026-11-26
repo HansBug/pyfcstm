@@ -11,7 +11,7 @@ model=../../tutorials/regions/controller.fcstm
 
 echo '$ pyfcstm generate -i controller.fcstm --template c -o out'
 pyfcstm generate -i "$model" --template c -o "$workdir/out"
-ls "$workdir/out"
+LC_ALL=C ls "$workdir/out"
 
 echo
 echo '$ capacity macros chosen for this model'

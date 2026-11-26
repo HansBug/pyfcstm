@@ -37,7 +37,7 @@ echo
 
 echo '$ pyfcstm generate -i controller.fcstm --template python -o out'
 pyfcstm generate -i controller.fcstm --template python -o out
-ls out
+LC_ALL=C ls out
 echo
 
 echo '$ pyfcstm generate -i controller.fcstm -t listed_template -o listed_out'

@@ -82,8 +82,10 @@
 .. code-block:: console
 
    $ pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
-   $ head -n 1 traffic_light.puml
+   $ cat traffic_light.puml
    @startuml
+   ...
+   @enduml
 
 如果当前环境有可用的 PlantUML 渲染器，``visualize`` 可以直接渲染最终 ``png`` / ``svg`` / ``pdf`` 文件：
 

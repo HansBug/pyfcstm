@@ -94,8 +94,10 @@ For a stable, versionable diagram source file, use ``plantuml``:
 .. code-block:: console
 
    $ pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
-   $ head -n 1 traffic_light.puml
+   $ cat traffic_light.puml
    @startuml
+   ...
+   @enduml
 
 When your environment has a PlantUML renderer available, ``visualize`` can
 render a final ``png`` / ``svg`` / ``pdf`` file directly:

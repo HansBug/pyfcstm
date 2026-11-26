@@ -342,7 +342,7 @@
 .. literalinclude:: hot_delta.demo.py.txt
    :language: text
 
-**预期信号。** ``flag=0`` 时这个周期是 Delta：``delta=True``，配置和变量都不变，连 ``Left`` 的 ``during``（本会让 ``work`` 增加）也被回滚。第一条检查指出失败的转换
+**预期信号。** ``flag=0`` 时这个周期是 Delta：``delta=True``，配置和变量都不变，连 ``Left`` 的 ``during``\ （本会让 ``work`` 增加）也被回滚。第一条检查指出失败的转换
 （``guard_false``，``flag > 0``）。``flag=1`` 时同一个调用让 ``Right`` 就位并执行 ``Left`` 的 ``during``。Delta 是整个周期没有提交；各区域只是原地停留的周期不是 Delta。
 命令行用 ``pyfcstm simulate --diagnostics`` 与 ``why`` 给出同样的证据，见 :doc:`diagnostics_zh`。
 

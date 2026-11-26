@@ -438,8 +438,7 @@ note: keep the order when the previous-cycle value is what you want
 **File side effect.** None; the reports go to stdout.
 
 **First failure check.** If the code does not disappear after the reorder,
-check that no other earlier region still reads a value produced by a later one
-(the report lists one diagnostic per reading site).
+check that no other earlier region still reads a value produced by a later one.
 
 **Reference link.** :doc:`/reference/inspect_report/index`.
 
@@ -500,8 +499,7 @@ transition ``Job -> Next`` runs only after every region is done.
 ``owner_never_completes`` on ``Job -> Next``.  Give ``B`` a way to finish
 (``region_owner_completes_fixed.fcstm``) and the count of reports with that
 reason becomes ``0``.  A forced transition on the owner is always reachable
-and is not affected.  With ``--enable-verify`` the structural analyses read the
-same rule.
+and is not affected.
 
 **File side effect.** None.
 

@@ -415,7 +415,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 退出码是 1（``region_refused.demox.sh.exitcode``）。消息里的路径被脚本缩短了；工具本身打印的是绝对路径。
 
-**预期信号。** 消息指出第一个区域，并给出两条出路：写模板的人，在模板确实能渲染区域之后才声明 ``features: [region]``（见 :doc:`/how_to/templates/index_zh`）；
+**预期信号。** 消息指出第一个区域，并给出两条出路：写模板的人，在模板确实能渲染区域之后才声明 ``features: [region]``\ （见 :doc:`/how_to/templates/index_zh`）；
 写模型的人，改用支持区域的模板。改用内置模板则成功：
 
 .. literalinclude:: region_refused_fixed.demo.sh.txt

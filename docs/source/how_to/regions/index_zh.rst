@@ -105,7 +105,7 @@
 4. 决定区域的书写顺序
 ---------------------
 
-**起点。** ``controller.fcstm``（``Safety`` 在 ``Motion`` 之前）与 ``controller_swapped.fcstm``（两个区域对调）。书写顺序就是
+**起点。** ``controller.fcstm``\ （``Safety`` 在 ``Motion`` 之前）与 ``controller_swapped.fcstm``\ （两个区域对调）。书写顺序就是
 执行顺序。经验法则：读取另一个区域所写内容的区域放在它后面（前向依赖）；读取靠后区域的值，看到的是上一个周期的值
 （反向依赖）。
 
@@ -155,7 +155,7 @@
 **文件副作用。** 无。
 
 **失败时先查什么。** 拥有者不动时，检查每个区域是否都有能触发的 ``-> [*]``，以及拥有者出边的条件能否变真。某个区域永远
-不能完成时 ``inspect`` 会报告 ``owner_never_completes``（见 inspect 页）。
+不能完成时 ``inspect`` 会报告 ``owner_never_completes``\ （见 inspect 页）。
 
 **参考链接。** :doc:`/reference/region_model/index_zh`。
 
@@ -165,7 +165,7 @@
 **起点。** ``preempt_group.fcstm``：拥有者上的强制转换 ``!Job -> Idle : /Cancel``，以及把一位数字追加到 ``order`` 的 ``exit`` 动作。
 ``preempt_blocked.fcstm`` 把强制转换指向一个进不去的状态。
 
-**命令或代码。** ``preempt_owner.demo.py`` 运行这两个模型，发送 ``/Cancel``（第二次运行还发送 ``/ADone``）：
+**命令或代码。** ``preempt_owner.demo.py`` 运行这两个模型，发送 ``/Cancel``\ （第二次运行还发送 ``/ADone``）：
 
 .. literalinclude:: preempt_owner.demo.py.txt
    :language: text

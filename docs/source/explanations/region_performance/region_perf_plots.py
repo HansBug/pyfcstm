@@ -7,8 +7,9 @@ to this file; the figure text is the only thing that differs between languages.
 
 The output is reproducible: the hash salt is fixed, text stays text (the SVG names
 fonts, it does not embed them) and no date is written. Latin text is laid out with
-DejaVu Sans and Chinese text with Droid Sans Fallback; the SVG lists CJK fonts that
-a browser is likely to have after those two.
+DejaVu Sans (bundled with matplotlib) and Chinese text with the SimHei font that the
+repository ships in ``docs/source/_libs``, so the layout does not depend on the fonts
+installed on the machine; the SVG lists CJK fonts that a browser is likely to have.
 """
 
 import argparse
@@ -20,6 +21,7 @@ import sys
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.font_manager as font_manager  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
@@ -96,7 +98,15 @@ def setup(lang):
     :return: ``None``.
     :rtype: None
     """
-    families = ["DejaVu Sans"] + (["Droid Sans Fallback"] if lang == "zh" else [])
+    families = ["DejaVu Sans"]
+    if lang == "zh":
+        # The font file is part of the repository, so every machine lays the
+        # Chinese labels out with the same glyph metrics.
+        simhei = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "_libs", "SimHei.ttf"
+        )
+        font_manager.fontManager.addfont(simhei)
+        families.append("SimHei")
     plt.rcParams.update(
         {
             "svg.fonttype": "none",

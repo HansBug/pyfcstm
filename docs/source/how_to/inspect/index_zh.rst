@@ -363,6 +363,85 @@ Inspect 任务指南
 
 参考链接。目标相关数值诊断见 :doc:`../../reference/diagnostics_codes/index_zh`。
 
+13. 读懂并修复 ``I_REGION_BACKWARD_READ``
+----------------------------------------
+
+输入。``region_read_back.fcstm``：``Reader`` 写在 ``Writer`` 之前，并读取 ``Writer`` 赋值的 ``level``。区域按书写顺序执行，所以 ``Reader`` 读到的是上一个周期的 ``level``。
+
+.. literalinclude:: region_read_back.fcstm
+   :language: fcstm
+   :caption: region_read_back.fcstm
+
+命令或代码。``region_order_diagnostics.demo.sh`` 打印报告里某个诊断码对应的那一块，若没有该诊断就说明未报告：
+
+.. literalinclude:: region_order_diagnostics.demo.sh
+   :language: bash
+
+.. literalinclude:: region_order_diagnostics.demo.sh.txt
+   :language: text
+   :end-before: == region_blind_overwrite.fcstm
+
+预期信号。第一个模型得到 ``[INFO] I_REGION_BACKWARD_READ``，指出读取的区域、变量和写入它的靠后区域，并给出读取处的位置。第二个模型
+``region_read_back_fixed.fcstm`` 把 ``Writer`` 声明在前，这个诊断码不再报告。这条消息是提示：想要上一个周期的值就保持顺序（``confirm_order``），需要本周期的值就调整顺序
+（``reorder_regions``）。靠前的区域用 ``active()`` 查询靠后区域的状态时也报同一个诊断码。
+
+文件副作用。无；报告输出到标准输出。
+
+首个失败检查。调整顺序后诊断码仍未消失时，检查是否还有别的靠前区域在读取靠后区域产生的值。
+
+参考链接。:doc:`/reference/inspect_report/index_zh`。
+
+14. 读懂并修复 ``W_REGION_BLIND_OVERWRITE``
+-------------------------------------------
+
+输入。``region_blind_overwrite.fcstm``：``Early`` 每个周期写 ``out = 1``，``Late`` 每个周期赋值 ``out = y + 2`` 且不读取 ``out``，所以第一次写入必然丢失。
+
+.. literalinclude:: region_blind_overwrite.fcstm
+   :language: fcstm
+   :caption: region_blind_overwrite.fcstm
+
+命令或代码。同一个脚本，这是它的后半部分：
+
+.. literalinclude:: region_order_diagnostics.demo.sh.txt
+   :language: text
+   :start-after: region_read_back_fixed.fcstm: I_REGION_BACKWARD_READ is not reported
+
+预期信号。警告指向 ``Late`` 里的覆盖语句；在机器可读的报告里，``previous_write_span`` 指出被丢掉的写入。报告建议的修法是合并两个值（
+``region_blind_overwrite_fixed.fcstm`` 里的 ``out = out + y + 2;``，之后不再报告这个诊断码），或者给每个区域各用一个变量。这条警告刻意收得很窄：有条件的覆盖、只有部分状态执行的覆盖、
+能够结束的区域、抽象动作，或者中间的区域读了该变量，都不会报告。
+
+文件副作用。无。
+
+首个失败检查。预期有警告却没有时，检查靠后区域的每个叶子状态是否都在 ``during`` 顶层写这个变量，以及是否有东西先读了它。
+
+参考链接。:doc:`/reference/inspect_report/index_zh`。
+
+15. 理解 ``owner_never_completes``
+----------------------------------
+
+输入。``region_never_completes.fcstm``：``Job`` 拥有两个区域。``A`` 可以用 ``Run -> [*]`` 结束；``B`` 没有 ``-> [*]``。普通转换 ``Job -> Next`` 只在所有区域都完成后才执行。
+
+.. literalinclude:: region_never_completes.fcstm
+   :language: fcstm
+   :caption: region_never_completes.fcstm
+
+命令或代码。
+
+.. literalinclude:: region_owner_never_completes.demo.sh
+   :language: bash
+
+.. literalinclude:: region_owner_never_completes.demo.sh.txt
+   :language: text
+
+预期信号。``Job -> Next`` 上出现 ``W_UNREACHABLE_TRANSITION``，原因是 ``owner_never_completes``。给 ``B`` 一条能结束的路径
+（``region_owner_completes_fixed.fcstm``）后，带这个原因的报告数量变成 ``0``。拥有者上的强制转换总是可达，不受影响。
+
+文件副作用。无。
+
+首个失败检查。在报告摘要里列出各区域，检查每个区域是否都有条件或事件可能发生的 ``-> [*]``。
+
+参考链接。:doc:`/reference/inspect_report/index_zh`。
+
 故障速查
 ----------------------------------------
 

@@ -1,0 +1,13 @@
+input int go;
+state Root {
+    region R {
+        [*] -> X;
+        state X;
+        X -> Y : if [active("Root.S")];
+        state Y;
+    }
+    region S {
+        [*] -> Z;
+        state Z;
+    }
+}

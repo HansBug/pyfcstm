@@ -1,0 +1,22 @@
+output int order = 0;
+
+state Workflow {
+    event Cancel;
+    [*] -> Job;
+    state Job {
+        exit { order = order * 10 + 3; }
+        region A {
+            [*] -> Working;
+            state Working { exit { order = order * 10 + 1; } }
+        }
+        region B {
+            [*] -> Working;
+            state Working { exit { order = order * 10 + 2; } }
+        }
+    }
+    state Blocked {
+        [*] -> Inside : if [order < 0];
+        state Inside;
+    }
+    !Job -> Blocked : /Cancel;
+}

@@ -1,0 +1,2 @@
+init state("Controller.Running{Safety: Watching, Motion: Off}") havoc { permit, motor };
+check cover <= 1: case("Controller.Running.Motion.Off::transition::Controller.Running.Motion.On::2");

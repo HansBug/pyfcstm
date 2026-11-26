@@ -384,3 +384,137 @@ change summary or in the team validation notes:
   reserves ``-t`` / ``--template-dir`` for trusted custom templates;
 * confirmation that C-family statements are tied to the C runtime helper facts
   and not described as Python or all-platform behavior.
+
+Tasks for models with regions
+-----------------------------
+
+Every built-in template (``python``, ``c``, ``c_poll``, ``cpp`` and
+``cpp_poll``) generates a runtime for a model with regions.  The cards below
+use ``region_controller.fcstm``, the interlock controller of
+:doc:`/tutorials/regions/index`, and state the same six facts: **Input**,
+**Command or code**, **Expected signal**, **File side effect**, **First
+failure check** and **Reference link**.  The generated runtimes match
+:class:`pyfcstm.simulate.SimulationRuntime` cycle by cycle; the modeling tasks
+are on :doc:`/how_to/regions/index`.
+
+Generate the five runtimes and run the Python one
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``region_controller.fcstm`` and a Python 3.7+ interpreter.  The
+generated ``machine.py`` has no dependency on ``pyfcstm``.  The program
+``region_app.py`` subclasses the generated class, implements the two input
+readers, and reads the position through ``configuration``, ``leaves``,
+``is_active`` and ``region_status``; it also restores a hot start and sends
+events.
+
+.. literalinclude:: region_app.py
+   :language: python
+   :caption: region_app.py
+
+**Command or code.**
+
+.. literalinclude:: region_generate.demo.sh
+   :language: bash
+
+.. literalinclude:: region_generate.demo.sh.txt
+   :language: text
+
+**Expected signal.** The first five lines are the generated files of each
+template.  The program prints the position as text
+(``Controller.Running{Safety: Watching, Motion: On}``), the active leaves, and
+the variables.  A raised ``fault`` turns the motor off in the same cycle.
+The hot start places both regions without any ``enter`` action, and
+``initial_vars`` carries the hidden variable ``__forced_0`` like any other.
+The ``/Stop`` event leaves ``Running`` in one cycle.
+
+**File side effect.** ``pyfcstm generate`` writes the files above into the
+output directory and, with ``--clear``, empties it first.  The script writes
+to a scratch directory and removes it afterwards.
+
+**First failure check.** If the program raises ``SimulationRuntimeEventError``,
+read the message: a name that depends on the position is resolved once for
+every active leaf, so use the full path or ``/Name``.  If a class name or
+method is not what you expected, read the generated ``README.md``: it is
+written for this model.
+
+**Reference link.** :doc:`/reference/builtin_templates/index`.
+
+Set the capacity macros of the C runtime
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** The ``c`` runtime of the same model, a C compiler, and
+``region_capacity_app.c``.  The machine reserves its storage statically; two
+macros in ``machine.h`` size it:
+``CONTROLLER_MACHINE_ARENA_CAPACITY`` (configurations and work items examined
+by one decision) and ``CONTROLLER_MACHINE_TRAIL_CAPACITY`` (nested checks).
+The defaults are computed from the model.  Override them only if a cycle
+fails with the capacity message.  Define an overridden value identically for
+``machine.c`` and every file that includes ``machine.h``.
+
+.. literalinclude:: region_capacity_app.c
+   :language: c
+   :caption: region_capacity_app.c
+
+**Command or code.** The script builds the program three times: with the
+defaults, with a value that is too small (to show the failure), and with larger
+values:
+
+.. literalinclude:: region_capacity.demo.sh
+   :language: bash
+
+.. literalinclude:: region_capacity.demo.sh.txt
+   :language: text
+
+**Expected signal.** The defaults suffice: three cycles, exit 0.  With
+``ARENA_CAPACITY=4`` cycle 2 (the one that enters the regions) fails with
+``Speculative search exceeded the capacity safety limit`` and the message names
+the macro; the machine reports the failure instead of misbehaving.  Larger
+values also succeed and make the storage bigger (``storage bytes``).  To confirm
+that a chosen value is enough, run the scenarios you care about with it: a value
+that is too small fails loudly, so a clean run is the evidence.  Storage size is
+platform dependent (the numbers above come from one 64-bit build).
+
+**File side effect.** The script writes the generated sources and the binary
+to a scratch directory and removes it.
+
+**First failure check.** Read the failure message: it names the macro to raise.
+If the program fails only in some builds, check that every translation unit
+sees the same ``-D`` value.
+
+**Reference link.** :doc:`/reference/builtin_templates/index`.
+
+Handle a template that does not declare ``region``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``plain_template/``, a custom template whose ``config.yaml`` does
+not list ``region`` under ``features``, and a model with regions.  A template
+written for one active path would produce wrong code for regions, so
+``pyfcstm generate`` refuses before it writes anything.  This is a negative
+example.
+
+**Command or code.**
+
+.. literalinclude:: region_refused.demox.sh
+   :language: bash
+
+.. literalinclude:: region_refused.demox.sh.err
+   :language: text
+
+The exit code is 1 (``region_refused.demox.sh.exitcode``).  The paths in the
+message are shortened by the script; the tool prints absolute paths.
+
+**Expected signal.** The message names the first region, and gives two ways
+out: if you write the template, declare ``features: [region]`` only after the
+template really renders regions (see :doc:`/how_to/templates/index`); if you
+write the model, use a template that supports regions.  Using a built-in
+template succeeds:
+
+.. literalinclude:: region_refused_fixed.demo.sh.txt
+   :language: text
+
+**File side effect.** None on failure: no output directory is created.
+
+**First failure check.** Read the line that starts ``If you write this
+template`` or ``If you write the model`` and take the branch that applies.
+
+**Reference link.** :doc:`/reference/template_config/index`.

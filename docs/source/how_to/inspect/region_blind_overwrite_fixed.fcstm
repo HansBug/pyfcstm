@@ -1,0 +1,13 @@
+input int y;
+output int out = 0;
+
+state Root {
+    region Early {
+        [*] -> A;
+        state A { during { out = 1; } }
+    }
+    region Late {
+        [*] -> B;
+        state B { during { out = out + y + 2; } }
+    }
+}

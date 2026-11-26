@@ -868,6 +868,255 @@ A replay that does not reproduce the error exits ``4`` instead.
 **Reference.** See :doc:`../../reference/bmc_results/index` for the
 ``runtime_safety`` result, the ``runtime_error_prefix`` witness and exit ``5``.
 
+Tasks for models with regions
+-----------------------------
+
+These cards use ``region_controller.fcstm``, the interlock controller of
+:doc:`/tutorials/regions/index` (``Safety`` before ``Motion`` inside
+``Running``).  Download it next to the query files named in each card.  A
+bounded result says nothing beyond its bound, and SAT or UNSAT is read through
+the property kind, as in the cards above.  The helper
+``region_summary.py`` prints the deterministic parts of a JSON result:
+
+.. literalinclude:: region_summary.py
+   :language: python
+   :caption: region_summary.py
+
+18. Check a property from a given position
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``region_controller.fcstm`` and ``region_start.fbmcq``.  ``init
+state(...)`` accepts configuration text, a state path through regions, or an
+owner written alone.  Persistent variables keep their initializers unless you
+``havoc`` them, so ``permit`` and ``motor`` are released and constrained.
+
+.. literalinclude:: region_start.fbmcq
+   :language: text
+   :caption: region_start.fbmcq
+
+**CLI.**
+
+.. literalinclude:: region_start.demo.sh
+   :language: bash
+
+.. literalinclude:: region_start.demo.sh.txt
+   :language: text
+
+**Expected output.** Frame 0 is exactly the configuration you wrote.  The
+query asks for ``Controller.Idle`` within one step, and the only way out of
+``Running`` is the ``Stop`` forced transition, so frame 1 is ``Controller.Idle``.
+Step 0 lists one local case per region that did something: ``Safety`` and
+``Motion`` each take their ``__region_done__`` transition, then the owner takes
+its transition to ``Idle``; the next card explains these entries.
+Without ``havoc { permit, motor }`` the same ``where`` clause makes the scenario
+infeasible (``Failure boundary: INITIALIZATION``), because the initializers
+``permit = 0`` and ``motor = 0`` contradict it.
+
+**File side effect.** None; the temporary JSON file lives in ``.region_tmp`` and
+the script removes it.
+
+**First failure check.** If the verdict is ``SCENARIO INFEASIBLE``, read the
+``Failure boundary`` line of the human report and compare the ``where`` clause
+with the variable initializers.  If compilation stops with
+``invalid_start_position``, the start text is wrong.  These are negative
+examples: ``region_bad_start.fbmcq`` names a state that does not exist and
+``region_all_done.fbmcq`` marks every region of an owner ``[done]``, which is
+never a resting position.
+
+.. literalinclude:: region_bad_start.demox.sh.err
+   :language: text
+
+.. literalinclude:: region_all_done.demox.sh.err
+   :language: text
+
+Both commands exit with code 1 (``region_bad_start.demox.sh.exitcode`` and
+``region_all_done.demox.sh.exitcode``).
+
+**Reference.** :doc:`/reference/bmc_query/index`.
+
+19. Match a position with an ``active`` configuration pattern
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** Three queries over the same model.  ``init state(...)``
+*constructs* a position, so a region it leaves out waits for initialization.
+``active("...{...}")`` *matches* one, so a region it leaves out is free.
+
+.. literalinclude:: region_pattern_construct.fbmcq
+   :language: text
+   :caption: region_pattern_construct.fbmcq
+
+.. literalinclude:: region_pattern_match.fbmcq
+   :language: text
+   :caption: region_pattern_match.fbmcq
+
+.. literalinclude:: region_pattern_construct_miss.fbmcq
+   :language: text
+   :caption: region_pattern_construct_miss.fbmcq
+
+**CLI.**
+
+.. literalinclude:: region_pattern.demo.sh
+   :language: bash
+
+.. literalinclude:: region_pattern.demo.sh.txt
+   :language: text
+
+**Expected output.** The script prints frame 0 only: the property already
+holds there, and later frames are free choices of the solver.  The first
+query leaves ``Safety`` out of the start text: frame 0 shows ``Safety:
+[init]``, and the pattern that writes ``[init]`` matches it.  The second query
+starts with both regions written and the pattern leaves ``Safety`` out, so
+``Watching`` does not matter.  The third query
+starts with ``Safety: Watching`` and asks for ``Safety: [init]``: no witness
+(exit 1, ``no_witness``).  The pattern holds exactly where the written regions
+agree, and the ``[init]`` marker also holds for a region that has not started
+in a call made while its owner is being entered.
+
+**File side effect.** None.
+
+**First failure check.** If a pattern is rejected, compilation stops with
+``invalid_active_pattern`` (negative example ``region_bad_pattern.fbmcq``,
+exit code 1 in ``region_bad_pattern.demox.sh.exitcode``):
+
+.. literalinclude:: region_bad_pattern.demox.sh.err
+   :language: text
+
+If a pattern matches too much, check which regions you left out.
+
+**Reference.** :doc:`/reference/bmc_query/index`.
+
+20. Read ``local_cases`` and ``case_label``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``region_cases.fbmcq`` and ``region_cover.fbmcq``.  Each witness
+step is one whole cycle.  ``case_label`` is the label of the case that runs
+outside every region, or ``null`` if there is none.  ``local_cases`` lists, in
+execution order, one entry per scope that did something: ``scope`` (a state
+path, or ``null`` outside every region), ``kind`` and ``label``.
+
+.. literalinclude:: region_cases.fbmcq
+   :language: text
+   :caption: region_cases.fbmcq
+
+**CLI.**
+
+.. literalinclude:: region_cases.demo.sh
+   :language: bash
+
+.. literalinclude:: region_cases.demo.sh.txt
+   :language: text
+
+**Expected output.** Step 0 enters ``Running``: ``case_label`` names the outer
+transition, the first ``local`` line has scope ``None`` (outside every
+region), and the owner scope shows one ``initial`` case per region.  Step 1
+has ``case_label=None`` because every case ran inside a region: ``Safety``
+stays (``fallback``) and ``Motion`` moves (``transition``).  The
+human trace prints the same cases with scopes relative to the owner.  A
+``cover`` query takes a naked ``case("label")``; copy the label from a
+witness.  The ``::2`` at the end of a label is the case's ordinal among the
+expanded cases, not a count of anything you wrote.
+
+**File side effect.** None.
+
+**First failure check.** If ``cover`` says the label is unknown, the message is
+``Failed to compile BMC query: cover case label is unknown``: copy the label
+from a witness of a ``reach`` query on the same model.
+
+**Reference.** :doc:`/reference/bmc_results/index`.
+
+21. Handle ``max_group_reentries`` being exceeded
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** A state that owns regions can be entered again inside one cycle
+(``Owner -> Owner``).  When the values change on each lap, the relation unrolls
+the laps one by one, at most ``BmcOptions.max_group_reentries`` times (16 by
+default), and raises ``BmcBuildError`` beyond that instead of approximating.
+``region_reentry_six.fcstm`` needs six laps; ``region_reentry_loop.fcstm``
+has a guard (``n < limit``) that no value can stop.
+
+.. literalinclude:: region_reentry_six.fcstm
+   :language: fcstm
+   :caption: region_reentry_six.fcstm
+
+**Command or code.** The CLI has no option for the limit, so raise it in
+Python:
+
+.. literalinclude:: region_reentry.demo.py
+   :language: python
+   :caption: region_reentry.demo.py
+
+.. literalinclude:: region_reentry.demo.py.txt
+   :language: text
+
+and compare with the CLI on the same two models:
+
+.. literalinclude:: region_reentry.demo.sh.txt
+   :language: text
+
+**Expected output.** The six-lap model compiles with a limit of 16 or 7 and is
+refused with 6; the message names the state and the option.  The unbounded loop
+is refused at every limit: a larger number never helps there.  On the command
+line the same message appears as ``_BmcCliInternalError`` with exit code 1
+(the CLI reports this build failure through its unexpected-error path).
+
+**File side effect.** None.
+
+**First failure check.** First ask whether the loop is meant to stop: make the
+guard depend on a counter or a constant so some value stops it.  Raise the
+limit only when the loop is bounded and just longer than 16.
+
+**Reference.** :doc:`/reference/bmc_results/index`.
+
+22. Make a query affordable
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** A query that is slow or times out.  The cost grows with the number
+of variables the transitions write, with the bound ``k`` and with the number of
+states and regions; regions add up rather than multiply, but regions that
+exclude each other can grow exponentially when the solver must prove that
+something is impossible.  The measurements behind this are on synthetic models
+and are not a promise: see the `performance curve
+<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7181487794>`_ and the
+`analytical model
+<https://github.com/HansBug/pyfcstm/pull/599#issuecomment-7182704825>`_, and
+:doc:`/explanations/bmc_scaling/index` for the reasoning.
+
+**CLI.** Raise the bound one step at a time, classify the status instead of
+assuming SAT or UNSAT, and enforce a ceiling with ``--max-bound``:
+
+.. literalinclude:: region_tractable.demo.sh
+   :language: bash
+
+.. literalinclude:: region_tractable.demo.sh.txt
+   :language: text
+
+**Expected output.** ``k=1`` is UNSAT (no witness yet) and ``k=2`` is the
+first bound with a witness, so a deeper bound adds nothing for this question;
+the policy rejects ``k=3`` with exit 1 before solving.  Treat ``unknown`` and
+``timeout`` as *inconclusive* results with their own expected exit handling in
+CI; pass ``--timeout-ms`` to bound each ``check()``.  This run did not time
+out, so it shows no ``timeout`` line.
+
+Steps to shrink a query that is too slow:
+
+1. Reduce the variables the regions write: ``havoc`` only what the property
+   needs and ``where``-constrain the rest.
+2. Start from a position (task 18) instead of the cold start, so the first
+   bound is not spent walking there.
+3. Ask for the smallest ``k`` that can show the behavior, then deepen it.
+4. Query one property at a time; do not combine unrelated predicates.
+5. If regions are mutually exclusive (one can only run when another does
+   not), expect proofs of impossibility to be the slow case and keep ``k``
+   small there.
+
+**File side effect.** None.
+
+**First failure check.** Read ``result.status``.  ``timeout`` means one
+solver ``check()`` did not finish within ``--timeout-ms``; it is not a
+verdict.
+
+**Reference.** :doc:`/reference/bmc_results/index`.
+
 Choose and compare a solver profile
 -----------------------------------
 

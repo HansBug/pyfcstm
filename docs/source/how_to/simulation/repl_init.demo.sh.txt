@@ -1,0 +1,27 @@
+────────────────────────────────────────────────────────────
+>>> init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0
+────────────────────────────────────────────────────────────
+Initialized from state: Controller.Running{Safety: Watching, Motion: On}
+Cycle: 0
+Current State: Controller.Running{Safety: Watching, Motion: On}
+Variables:
+  __forced_0 = 0
+  motor = 1
+  permit = 1
+
+────────────────────────────────────────────────────────────
+>>> events
+────────────────────────────────────────────────────────────
+Available Events:
+  • Controller.Stop
+
+────────────────────────────────────────────────────────────
+>>> init Controller.Running permit=1 motor=0 __forced_0=0
+────────────────────────────────────────────────────────────
+Initialized from state: Controller.Running
+Cycle: 0
+Current State: Controller.Running{Safety: [init], Motion: [init]}
+Variables:
+  __forced_0 = 0
+  motor = 0
+  permit = 1

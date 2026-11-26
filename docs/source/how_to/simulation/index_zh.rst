@@ -214,3 +214,181 @@
 --------------------------------
 
 排查迁移为何未执行，见 :doc:`diagnostics_zh`；其中包含 Python 采集、交互查询、逐拍输入和 JSONL 示例。
+
+含区域模型的任务
+----------------
+
+下面的任务卡使用含区域（region）的模型。每张卡都给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、\ **预期信号**\ 、\ **文件副作用**\ 、\ **失败时先查什么**\ 、\ **参考链接**\ 。
+请在本目录里运行。``hot_controller.fcstm`` 是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器；建模任务本身见 :doc:`/how_to/regions/index_zh`。
+
+从一个位置热启动含区域的模型
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``hot_controller.fcstm`` 和一个起始位置。位置是一棵树：写出来的部分就位，不执行 ``enter`` 动作；没写出来的部分等待初始化。
+所有变量都要给全，包括模型转换加入的隐藏变量（这里是 ``__forced_0``）。
+
+.. literalinclude:: hot_controller.fcstm
+   :language: fcstm
+   :caption: hot_controller.fcstm
+
+**命令或代码。** ``initial_state`` 接受位置的五种写法；脚本还演示了只写拥有者的情形：
+
+.. literalinclude:: hot_start_forms.demo.py
+   :language: python
+   :caption: hot_start_forms.demo.py
+
+.. literalinclude:: hot_start_forms.demo.py.txt
+   :language: text
+
+**预期信号。** 配置文本和 ``Configuration`` 对象把每个区域都放好。点路径、元组路径和 ``State`` 对象只指明一个叶子：没有经过的区域等待
+（``[init]``），第一个周期里走各自的初始转换。只写拥有者时整组等待，各区域按书写顺序启动。已就位的部分不执行任何 ``enter`` 动作。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 起始位置和预期不同时，在第一个周期之前打印 ``runtime.configuration``，它会准确显示哪些已就位、哪些在等待。
+
+**参考链接。** 位置文本与校验模式见 :doc:`/reference/region_model/index_zh`，构造函数见 :doc:`/reference/simulation/index_zh`。
+
+给全变量，包括隐藏变量
+~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** 模型转换会加入隐藏变量的模型：强制转换对应 ``__forced_*``，历史对应 ``__hist_*``，``active()`` 查询对应 ``__active_*``。它们是普通变量，
+运行时既不推导，也不核对它们与位置是否一致。``hot_watch.fcstm`` 使用了 ``active()``。
+
+**命令或代码。**
+
+.. literalinclude:: hot_active_variables.demo.py
+   :language: python
+   :caption: hot_active_variables.demo.py
+
+.. literalinclude:: hot_active_variables.demo.py.txt
+   :language: text
+
+**预期信号。** ``model.active_queries`` 列出查询及其变量名；``model.active_variables(config)`` 算出与位置匹配的取值。运行时接受它们作为
+``initial_vars``，并在 ``runtime.vars`` 里显示。若传入与位置不一致的值，运行时按你传入的值运行。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 构造时报缺少某个变量，就列出 ``model.active_queries`` 以及模型里的 ``__forced_*``、``__hist_*`` 变量并补上。
+
+**参考链接。** :doc:`/reference/region_model/index_zh`。
+
+排除三种典型的热启动报错
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``hot_controller.fcstm`` 与下面三种拒绝。脚本 ``hot_start_errors.demo.py`` 构造三次运行时，并每次打印 ``ValueError``。
+
+.. literalinclude:: hot_start_errors.demo.py.txt
+   :language: text
+
+**命令或代码与修法。**
+
+* *漏掉隐藏变量*\ （第一行）：把 ``__forced_0`` 加进 ``initial_vars``。不要因为源文本里没写就省掉它。
+* *全体区域已完成*\ （第二行）：一个拥有者的区域全部为 ``[done]`` 的配置，在任何层级都不可能是停驻位置。留一个区域在工作，或改从拥有者续接的状态启动。
+* *未知状态*\ （第三行）：路径不存在。打印 ``[s.path for s in model.walk_states()]``，从中复制一条路径。
+
+**预期信号。** 每种拒绝都在任何周期运行之前抛出 ``ValueError``。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 读报错：每条都会指出缺少的变量、全体已完成的拥有者，或未知路径。
+
+**参考链接。** :doc:`/reference/simulation/index_zh`。
+
+解决事件名歧义
+~~~~~~~~~~~~~~
+
+**起点。** ``leaf_events.fcstm``：两个叶子各声明了名为 ``Ping`` 的事件，一个叶子声明了 ``Go``。完整路径与 ``/名字`` 在任何位置含义相同。
+短名对每个活动叶子各解析一次：没有匹配是错误，找到同一个事件就使用，找到不同事件则是歧义。
+
+.. literalinclude:: leaf_events.fcstm
+   :language: fcstm
+   :caption: leaf_events.fcstm
+
+**命令或代码。**
+
+.. literalinclude:: event_names.demo.py
+   :language: python
+   :caption: event_names.demo.py
+
+.. literalinclude:: event_names.demo.py.txt
+   :language: text
+
+**预期信号。** ``Go`` 解析为一个事件；``/Reset`` 在任何位置都能解析；``Ping`` 抛出歧义错误，列出每个候选及其来源叶子；``Nope`` 抛出查找错误，列出尝试过的叶子。
+``cycle(['Ping'])`` 以同样的歧义被拒绝，而完整路径让一个区域动，两条完整路径让两个区域都动。裸名字不会向上查找，
+已完成的区域和还在等待初始化的区域不参与解析。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** 把报错里的完整路径复制到调用或模型里。
+
+**参考链接。** :doc:`/reference/simulation/index_zh`。
+
+查明这一拍为什么什么都没发生
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``hot_stuck.fcstm``：``Right`` 只有在 ``flag > 0`` 时才能启动。从 ``Root.Pair{Left: Busy}`` 以 ``flag=0`` 热启动，等待中的区域到不了停驻位置。
+
+.. literalinclude:: hot_stuck.fcstm
+   :language: fcstm
+   :caption: hot_stuck.fcstm
+
+**命令或代码。**
+
+.. literalinclude:: hot_delta.demo.py
+   :language: python
+   :caption: hot_delta.demo.py
+
+.. literalinclude:: hot_delta.demo.py.txt
+   :language: text
+
+**预期信号。** ``flag=0`` 时这个周期是 Delta：``delta=True``，配置和变量都不变，连 ``Left`` 的 ``during``\ （本会让 ``work`` 增加）也被回滚。第一条检查指出失败的转换
+（``guard_false``，``flag > 0``）。``flag=1`` 时同一个调用让 ``Right`` 就位并执行 ``Left`` 的 ``during``。Delta 是整个周期没有提交；各区域只是原地停留的周期不是 Delta。
+命令行用 ``pyfcstm simulate --diagnostics`` 与 ``why`` 给出同样的证据，见 :doc:`diagnostics_zh`。
+
+**文件副作用。** 无；Delta 的警告输出到标准错误。
+
+**失败时先查什么。** 读第一条结果为 ``guard_false`` 或 ``successor_rejected`` 的检查，看它的 ``vars``：那是检查时刻的值，不是最终值。
+
+**参考链接。** :doc:`/reference/simulation/diagnostics_zh`。
+
+在交互命令行里用 ``init`` 输入配置文本并查看 ``events``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**起点。** ``hot_controller.fcstm``。``init`` 接受花括号里的配置文本；每个变量只给一次。
+
+**命令或代码。**
+
+.. literalinclude:: repl_init.demo.sh
+   :language: bash
+
+.. literalinclude:: repl_init.demo.sh.txt
+   :language: text
+
+**预期信号。** ``init`` 报告它构建出的位置。只写拥有者时，每个区域都显示 ``[init]``。``events`` 只列出从活动叶子出发确实存在的事件。位置在所有地方
+（``current``、历史表格、导出）都按配置文本显示。
+
+两种拒绝，都是负例：
+
+.. literalinclude:: repl_init_duplicate.demox.sh.txt
+   :language: text
+
+（同一个变量赋值两次；退出码在 ``repl_init_duplicate.demox.sh.exitcode`` 里，为 1。）
+
+.. literalinclude:: repl_init_done.demox.sh.txt
+   :language: text
+
+（全体区域已完成；退出码在 ``repl_init_done.demox.sh.exitcode`` 里，为 1。）
+
+在交互命令行里，Tab 补全只提供确实能解析的短事件名，并且能补全区域里的状态。交互命令行使用的补全器给出：
+
+.. literalinclude:: repl_completion.demo.py.txt
+   :language: text
+
+``cycle S`` 没有候选，因为 ``Start`` 声明在拥有者上，裸名字不会向上查找；``cycle Co`` 给出完整路径。
+
+**文件副作用。** 无。
+
+**失败时先查什么。** ``init`` 说缺少变量时，对一次正常启动运行 ``current``：它会列出所有变量，包括隐藏变量。
+
+**参考链接。** :doc:`/reference/simulation/index_zh`。

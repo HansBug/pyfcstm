@@ -1,0 +1,19 @@
+input int go;
+
+state Root {
+    [*] -> Job;
+    state Job {
+        region A {
+            [*] -> Run;
+            state Run;
+            Run -> [*] : if [go != 0];
+        }
+        region B {
+            [*] -> Wait;
+            state Wait;
+            Wait -> [*] : if [go != 0];
+        }
+    }
+    state Next;
+    Job -> Next;
+}

@@ -1,0 +1,7 @@
+'Go' -> Root.P.L.X.Go
+'/Reset' -> Root.Reset
+'Ping' -> ModelValueError: Position-dependent event name 'Ping' is ambiguous: Root.P.L.X.Ping (from Root.P.L.X); Root.P.R.Y.Ping (from Root.P.R.Y); use the full event path or a root-based "/path".
+'Nope' -> ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf (Root.P.L.X, Root.P.R.Y); use the full event path or a root-based "/path".
+cycle(['Ping']) -> refused: Position-dependent event name 'Ping' is ambiguous: Root.P.L.X.Ping (from Root.P.L.X); Root.P.R.Y.Ping (from Root.P.R.Y); use the full event path or a root-based "/path".
+cycle(['Root.P.L.X.Ping']) -> Root.P{L: X, R: Y}
+cycle(['Root.P.L.X.Ping', 'Root.P.R.Y.Ping']) -> Root.P{L: X, R: Y2}

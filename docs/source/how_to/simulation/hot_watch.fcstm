@@ -1,0 +1,22 @@
+input int go;
+
+state Plant {
+    region Earlier {
+        [*] -> Waiting;
+        state Waiting;
+        state Saw;
+        Waiting -> Saw : if [active("Plant.Trigger.Fired")];
+    }
+    region Trigger {
+        [*] -> Quiet;
+        state Quiet;
+        state Fired;
+        Quiet -> Fired : if [go != 0];
+    }
+    region Later {
+        [*] -> Waiting;
+        state Waiting;
+        state Saw;
+        Waiting -> Saw : if [active("/Trigger.Fired")];
+    }
+}

@@ -1,0 +1,44 @@
+output int order = 0;
+def int __forced_0 = 0;
+state Workflow {
+    state Job {
+        exit {
+            order = order * 10 + 3;
+        }
+        region A {
+            state Working {
+                exit {
+                    order = order * 10 + 1;
+                }
+            }
+            Working -> [*] : if [__forced_0 == 1];
+            Working -> [*] : /Cancel effect {
+                __forced_0 = 1;
+            }
+            [*] -> Working;
+            Working -> [*] : /ADone;
+        }
+        region B {
+            state Working {
+                exit {
+                    order = order * 10 + 2;
+                }
+            }
+            Working -> [*] : if [__forced_0 == 1];
+            Working -> [*] : /Cancel effect {
+                __forced_0 = 1;
+            }
+            [*] -> Working;
+        }
+    }
+    state Idle;
+    pseudo state __forced_gate_0;
+    event ADone;
+    event Cancel;
+    Job -> Idle : if [__forced_0 == 1] effect {
+        __forced_0 = 0;
+    }
+    Job -> __forced_gate_0 : Cancel;
+    [*] -> Job;
+    __forced_gate_0 -> Idle : if [__forced_0 == 0];
+}

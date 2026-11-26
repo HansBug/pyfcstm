@@ -1,0 +1,11 @@
+== join_done.fcstm
+a_ready=0 b_ready=0 -> Job.Work{A: Run, B: Run} {'stage': 0}
+a_ready=1 b_ready=0 -> Job.Work{A: [done], B: Run} {'stage': 0}
+a_ready=1 b_ready=0 -> Job.Work{A: [done], B: Run} {'stage': 0}
+a_ready=1 b_ready=1 -> Job.Next {'stage': 1}
+== join_gate.fcstm
+a_ready=1 b_ready=0 gate=0 -> Job.Work{A: Run, B: Run} {'ticks': 1}
+a_ready=1 b_ready=1 gate=0 -> Job.Work{A: [done], B: Run} {'ticks': 2}
+a_ready=1 b_ready=1 gate=0 -> Job.Work{A: [done], B: Run} {'ticks': 3}
+a_ready=1 b_ready=1 gate=1 -> Job.Next {'ticks': 3}
+a_ready=1 b_ready=1 gate=1 -> Job.Next {'ticks': 3}

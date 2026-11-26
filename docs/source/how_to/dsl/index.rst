@@ -853,6 +853,15 @@ Expected excerpt:
    root: Factory
    diagnostics: 0 errors / 3 warnings / 0 infos
 
+Model parallel work with regions
+--------------------------------
+
+A state that runs several ordered parts in the same cycle uses ``region``
+blocks instead of plain substates.  The tasks for them (splitting a state,
+nesting, sharing an event, choosing the writing order, joining, interrupting the
+group, reading another region, aspects and the common errors) are on
+:doc:`/how_to/regions/index`; the syntax is in :doc:`/reference/dsl/index`.
+
 .. _dsl-diagnostics-task:
 
 Diagnose and repair DSL errors

@@ -474,6 +474,41 @@ PlantUML 源码是文本，不是图片：
      - SVG 存在，并且视觉检查确认标签可读。
      - 如果渲染失败，先运行 ``visualize --check``，再改图形选项。
 
+对含区域的模型做端到端验收
+--------------------------
+
+**起点。** ``region_controller.fcstm``\ （:doc:`/tutorials/regions/index_zh` 里联锁控制器的副本）和 ``region_motion.fbmcq``。任务是让一个含区域（region）的模型走完软件包的每一条命令，
+并在接受模型之前知道每一步必须显示什么。
+
+.. literalinclude:: region_motion.fbmcq
+   :language: text
+   :caption: region_motion.fbmcq
+
+**命令或代码。** 一个脚本按顺序运行六步；每一步只打印携带验收信号的行：
+
+.. literalinclude:: region_acceptance.demo.sh
+   :language: bash
+
+.. literalinclude:: region_acceptance.demo.sh.txt
+   :language: text
+
+**预期信号。** 每一步显示下面的内容时才接受这个模型。
+
+1. *simulate。* 位置按配置文本打印。第 1 个周期是 ``Controller.Idle``；``/Start`` 事件进入 ``Running``，两个区域按书写顺序初始化（``Motion: Off``）；下一个周期 ``Motion`` 打开；
+   ``fault=1`` 在同一个周期里把它关掉。
+2. *inspect。* 摘要列出 ``regions: 2`` 及其顺序（``order 0`` 是 ``Safety``）和变量。``status: warning`` 来自这个小模型上的普通警告，不是区域造成的。
+3. *bmc。* ``sat witness_found``、``replay ok: True``，帧的配置就是仿真走过的位置。每个满足性见证都先在仿真器上回放，再报告结论。
+4. *generate。* ``machine.py`` 与两份 README 文件存在。
+5. *plantuml。* 一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。
+6. *diagram。* JSON 摘要统计出与 ``inspect`` 相同的状态数与转换数（6 个状态，7 条转换）。
+
+**文件副作用。** 脚本把所有东西写入临时目录，结束后删除。在项目里，``generate`` 把运行时写入输出目录，各个 ``-o`` 选项写入指定的文件。
+
+**失败时先查什么。** 逐步运行，在第一个不一致的步骤停下。第 1 步与第 3 步对某个位置的结论不同，说明两次运行之间模型变了，或者查询从另一个位置起步；
+第 2 步失败时，先读它的第一条错误，因为其他命令读取的是同一个模型。
+
+**参考链接。** :doc:`/reference/cli/index_zh`；建模任务见 :doc:`/how_to/regions/index_zh`。
+
 后续阅读
 --------
 

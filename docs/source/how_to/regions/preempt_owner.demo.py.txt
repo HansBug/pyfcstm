@@ -1,0 +1,12 @@
+== preempt_group.fcstm
+- -> Workflow.Job{A: Working, B: Working} order=0
+['/Cancel'] -> Workflow.Idle order=123
+== preempt_group.fcstm
+- -> Workflow.Job{A: Working, B: Working} order=0
+['/ADone'] -> Workflow.Job{A: [done], B: Working} order=1
+['/Cancel'] -> Workflow.Idle order=123
+== preempt_blocked.fcstm
+- -> Workflow.Job{A: Working, B: Working} order=0
+['/Cancel'] -> Workflow.Job{A: [done], B: Working} order=1
+- -> Workflow.Job{A: [done], B: Working} order=1
+['/Cancel'] -> Workflow.Job{A: [done], B: Working} order=1

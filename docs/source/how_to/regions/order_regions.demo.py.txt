@@ -1,0 +1,14 @@
+== controller.fcstm
+cycle 1 fault=0 permit=0 motor=0 Controller.Idle
+cycle 2 fault=0 permit=1 motor=0 Controller.Running{Safety: Watching, Motion: Off}
+cycle 3 fault=0 permit=1 motor=1 Controller.Running{Safety: Watching, Motion: On}
+cycle 4 fault=1 permit=0 motor=0 Controller.Running{Safety: Watching, Motion: Off}
+cycle 5 fault=1 permit=0 motor=0 Controller.Running{Safety: Watching, Motion: Off}
+cycle 6 fault=0 permit=1 motor=1 Controller.Running{Safety: Watching, Motion: On}
+== controller_swapped.fcstm
+cycle 1 fault=0 permit=0 motor=0 Controller.Idle
+cycle 2 fault=0 permit=1 motor=0 Controller.Running{Motion: Off, Safety: Watching}
+cycle 3 fault=0 permit=1 motor=1 Controller.Running{Motion: On, Safety: Watching}
+cycle 4 fault=1 permit=0 motor=1 Controller.Running{Motion: On, Safety: Watching}
+cycle 5 fault=1 permit=0 motor=0 Controller.Running{Motion: Off, Safety: Watching}
+cycle 6 fault=0 permit=1 motor=0 Controller.Running{Motion: Off, Safety: Watching}

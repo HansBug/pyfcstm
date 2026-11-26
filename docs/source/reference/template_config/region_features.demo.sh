@@ -18,7 +18,7 @@ run_case() {
     echo "exit=$?"
     sed "s#$work#<work>#g" stderr.txt
     cat stdout.txt
-    echo "files written: $(ls out 2>/dev/null | tr '\n' ' ')"
+    echo "files written: $(LC_ALL=C ls out 2>/dev/null | tr '\n' ' ')"
 }
 
 make_template declared 'features: [region]'

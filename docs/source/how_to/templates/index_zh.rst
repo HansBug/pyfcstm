@@ -339,7 +339,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 
 **起点。** 一个自定义模板目录和一个含区域（region）的模型（``region_controller.fcstm``，即 :doc:`/tutorials/regions/index_zh` 里的联锁控制器）。模板是为某一种执行模型写的。
 ``config.yaml`` 里的 ``features: [region]`` 声明该模板能渲染含区域的模型。没有这个声明，``pyfcstm generate`` 在写任何文件之前就拒绝这样的模型；
-不含区域的模型无论声明如何都能渲染，所以现有模板的输出保持不变。``region_listing_template/`` 是一个最小模板，它声明了这个特性，并按书写顺序列出每个拥有者及其区域：
+不含区域的模型无论声明如何都能渲染，所以现有模板的输出保持不变。``region_listing_template/`` 是一个最小模板，它声明了这个特性，并按书写顺序列出每个拥有者（owner）及其区域：
 
 .. literalinclude:: region_listing_template/config.yaml
    :language: yaml

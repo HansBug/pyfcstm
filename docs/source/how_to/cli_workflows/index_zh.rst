@@ -497,7 +497,7 @@ PlantUML 源码是文本，不是图片：
 1. *simulate。* 位置按配置文本打印。第 1 个周期是 ``Controller.Idle``；``/Start`` 事件进入 ``Running``，两个区域按书写顺序初始化（``Motion: Off``）；下一个周期 ``Motion`` 打开；
    ``fault=1`` 在同一个周期里把它关掉。
 2. *inspect。* 摘要列出 ``regions: 2`` 及其顺序（``order 0`` 是 ``Safety``）和变量。``status: warning`` 来自这个小模型上的普通警告，不是区域造成的。
-3. *bmc。* ``sat witness_found``、``replay ok: True``，帧的配置就是仿真走过的位置。每个满足性见证都先在仿真器上回放，再报告结论。
+3. *bmc。* ``sat witness_found``、``replay ok: True``，帧的配置就是仿真走过的位置。每个满足性见证（witness）都先在仿真器上回放，再报告结论。
 4. *generate。* ``machine.py`` 与两份 README 文件存在。
 5. *plantuml。* 一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。
 6. *diagram。* JSON 摘要统计出与 ``inspect`` 相同的状态数与转换数（6 个状态，7 条转换）。

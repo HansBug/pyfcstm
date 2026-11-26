@@ -331,6 +331,10 @@ Fix three typical hot-start errors
 ``hot_start_errors.demo.py`` constructs a runtime three times and prints the
 ``ValueError`` each time.
 
+.. literalinclude:: hot_start_errors.demo.py
+   :language: python
+   :caption: hot_start_errors.demo.py
+
 .. literalinclude:: hot_start_errors.demo.py.txt
    :language: text
 
@@ -461,6 +465,10 @@ Two refusals, both negative examples:
 In the interactive REPL, Tab completion offers only short event names that
 would actually resolve, and it completes states inside regions.  The completer
 used by the REPL gives:
+
+.. literalinclude:: repl_completion.demo.py
+   :language: python
+   :caption: repl_completion.demo.py
 
 .. literalinclude:: repl_completion.demo.py.txt
    :language: text

@@ -1,0 +1,29 @@
+input int fault;
+input int requested;
+control int permit = 0;
+
+state Controller {
+    [*] -> Idle;
+
+    state Idle;
+
+    state Running {
+        region Safety {
+            [*] -> Watching;
+            state Watching {
+                during {
+                    permit = 1;
+                }
+            }
+        }
+        region Motion {
+            [*] -> Off;
+            state Off;
+            state On;
+            Off -> On : if [permit != 0 && requested != 0];
+            On -> Off : if [permit == 0 || requested == 0];
+        }
+    }
+
+    Idle -> Running : /Start;
+}

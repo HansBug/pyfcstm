@@ -1,0 +1,5 @@
+init state("Controller.Running{Safety: Watching, Motion: Off}");
+
+assume always: fault == 1;
+
+check forbid <= 3: active("Controller.Running{Motion: On}");

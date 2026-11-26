@@ -52,6 +52,24 @@ task-specific semantic discrimination when present, and mutation
 discrimination. Reference queries define the oracle only; they do not require
 one output spelling.
 
+## Region Tasks
+
+Two further tasks use models with regions and follow the same complete/facts
+pair, nominal oracle and one-defect mutation as the seven property kinds above.
+They are named after their model rather than a property kind, because each one
+exercises a start or observation form of models with regions:
+
+| Task | Nominal intent | Mutation check |
+|---|---|---|
+| `region_interlock` | a region start position written with braces, and a configuration pattern, under a forbid property | the supervising region ignores the fault input |
+| `region_done` | a configuration pattern with a finished region and a waiting region under a reach property | the waiting region can no longer start |
+
+They add four task files, so a full matrix has 18 tasks and 54 single-generation
+cases across three providers. The saved core run named below predates them and
+cannot stand as evidence for the current Guide. Its recorded prompt, Guide and
+semantic-source digests no longer match, and replay rejects it with a
+`replay_snapshot_mismatch`; new live evidence is a separate immutable run.
+
 ## Generality Smokes
 
 Four private smoke tasks exercise the same Guide outside the core generation

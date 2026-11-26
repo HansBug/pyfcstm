@@ -379,7 +379,35 @@ C 家族辅助函数由 C 家族模板通过 ``type: import`` 显式注册。它
    #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
    ...
 
-``ARENA_CAPACITY`` 限制一个周期的一次决策最多考察多少个配置和待办项，\ ``TRAIL_CAPACITY`` 限制最多嵌套多少层检查；\ ``STORAGE_BYTES`` 由两者算出。控制联锁模型需要 108 和 52，上面的头文件里能看到。同一条命令在只含一个复合状态和一条事件转换的简单模型上得到 8 和 4，在两个区域的 ``region_blind_overwrite.fcstm`` 上得到 60 和 36，在 ``region_never_completes.fcstm`` 上得到 84 和 44，后两个模型见\ :doc:`诊断页 </explanations/diagnostics/index_zh>`\ 。这三组是那条命令的记录值，本页不重新运行。这些数字来自模型，而不是引擎的固定上限。它们是这四个模型上实测的默认值，不是可以跨模板版本依赖的公式。
+``ARENA_CAPACITY`` 限制一个周期的一次决策最多考察多少个配置和待办项，\ ``TRAIL_CAPACITY`` 限制最多嵌套多少层检查；\ ``STORAGE_BYTES`` 由两者算出。控制联锁模型需要 108 和 52，上面的头文件里能看到。同一条命令在其他模型上得到不同的数对：没有区域、只有一条转换的 ``region_plain.fcstm`` 得到 8 和 4，两个区域的 ``region_blind_overwrite.fcstm`` 得到 60 和 36，``region_never_completes.fcstm`` 得到 84 和 44，后两个模型见\ :doc:`诊断页 </explanations/diagnostics/index_zh>`\ 。这些数字来自模型，而不是引擎的固定上限。它们是这四个模型在当前版本的模板上得到的值，不是可以跨模板版本依赖的公式。
+
+.. literalinclude:: /_models/region_plain.fcstm
+   :language: fcstm
+   :caption: ``region_plain.fcstm``
+
+.. code-block:: console
+
+   $ pyfcstm generate -i docs/source/_models/region_plain.fcstm --template c -o plain_c
+   $ cat plain_c/machine.h
+   ...
+   #define ROOT_MACHINE_ARENA_CAPACITY 8
+   ...
+   #define ROOT_MACHINE_TRAIL_CAPACITY 4
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_blind_overwrite.fcstm --template c -o blind_c
+   $ cat blind_c/machine.h
+   ...
+   #define DRIVE_MACHINE_ARENA_CAPACITY 60
+   ...
+   #define DRIVE_MACHINE_TRAIL_CAPACITY 36
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_never_completes.fcstm --template c -o never_c
+   $ cat never_c/machine.h
+   ...
+   #define LINE_MACHINE_ARENA_CAPACITY 84
+   ...
+   #define LINE_MACHINE_TRAIL_CAPACITY 44
+   ...
 
 周期需要的容量超过设定时，会失败并给出点明宏名的消息，不会悄悄出错。要提高容量，请为 ``machine.c`` 和每个包含 ``machine.h`` 的文件定义相同的值，因为机器的大小取决于它。两点需要据此规划，生成的 README 里都写了：一个机器的大小随状态与区域数增长，所以大模型的机器应放在静态存储里而不是栈上；同时进入一串嵌套的拥有者（owner）时，第一个进入这串嵌套的周期，耗时每多一层就翻一倍。
 
@@ -462,7 +490,7 @@ C 家族辅助函数由 C 家族模板通过 ``type: import`` 显式注册。它
    leaves: (('Controller', 'Idle'),)
    is_active Controller.Running: False
 
-C 运行时驱动同样的六个周期。这需要 C 编译器，所以下面的命令不在文档检查里运行；输出是在生成的文件上运行它们得到的记录：
+C 运行时驱动同样的六个周期。这需要 C 编译器，所以与本页其余的命令和输出不同，这段 C 程序和它的命令\ **不**\ 在文档检查里运行。后面的六行是这些命令在有 C 编译器的环境里运行一次的输出，这里没有再次核对；可以和前面经过检查的 Python 输出对照：
 
 .. code-block:: c
    :caption: app.c
@@ -520,7 +548,7 @@ C 运行时驱动同样的六个周期。这需要 C 编译器，所以下面的
    Controller.Running{Safety: Watching, Motion: Off}
    Controller.Idle
 
-Python 运行时在每个周期都与仿真器一致，记录下来的 C 输出也是同样的六行。这个序列展示了控制联锁模型逐周期的行为：周期 4 的故障让 ``Motion`` 区域在同一周期里回到 ``Off``\ ，因为 ``Safety`` 先运行。\ ``/Stop`` 之后机器是 ``Controller.Idle``\ ，生成的 Python 运行时对 ``Controller.Running`` 的 ``is_active`` 报告 ``False``\ ，叶子是 ``(('Controller', 'Idle'),)``\ 。
+Python 运行时在每个周期都与仿真器一致，记录下来的 C 输出（未再核对）也是同样的六行。这个序列展示了控制联锁模型逐周期的行为：周期 4 的故障让 ``Motion`` 区域在同一周期里回到 ``Off``\ ，因为 ``Safety`` 先运行。\ ``/Stop`` 之后机器是 ``Controller.Idle``\ ，生成的 Python 运行时对 ``Controller.Running`` 的 ``is_active`` 报告 ``False``\ ，叶子是 ``(('Controller', 'Idle'),)``\ 。
 
 这证明了什么，没有证明什么。它证明：对这个模型和这六个周期，生成的 Python 与 C 运行时和仿真器在位置文本上一致，而位置文本正是调用者读取的东西。它不证明对每个模型都一致。那个结论依赖每个支持区域的模板都必须对照 ``SimulationRuntime`` 通过的共享 ``regions`` 用例，以及放在单元测试之外的随机模型差分检验；本页没有重跑它们。
 

@@ -49,7 +49,14 @@ model.
 generated code has to mean one thing. The same swapped controller is run below
 in the simulator and in the generated Python runtime, and then checked by
 bounded model checking against the property "the motor is on only while
-``permit`` is not 0":
+``permit`` is not 0". The swapped controller writes ``Motion`` (line 12) before
+``Safety`` (line 19); ``controller.fcstm`` is the same model with ``Safety``
+first, listed in :doc:`the semantics page </explanations/region_semantics/index>`:
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: ``controller_swapped.fcstm``
+   :emphasize-lines: 12,19
 
 .. code-block:: console
 
@@ -201,7 +208,9 @@ What the first release does not do
 
 Each item below is a deliberate boundary of the language. The grammar rejects
 four of the five examples and the model builder rejects the jump between regions;
-the output is real:
+the output is real. The script prints the error count and the first error
+only; the remaining errors of a grammar failure are follow-ups of the first one
+(such as the closing brace that no longer matches) and are left out:
 
 .. testcode::
 

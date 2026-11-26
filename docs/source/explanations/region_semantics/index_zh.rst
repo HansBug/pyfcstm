@@ -57,7 +57,8 @@
    runtime.cycle([])
    result = runtime.cycle(["/Start"], trace=True)
    for entry in result.trace:
-       print(entry.kind, entry.transition_label or entry.action_path or ".".join(entry.state_path), "permit =", entry.vars["permit"])
+       where = entry.transition_label or entry.action_path or ".".join(entry.state_path)
+       print(entry.kind, where, "permit =", entry.vars["permit"])
    print(runtime.configuration)
 
 .. testoutput::
@@ -119,7 +120,8 @@
        result = runtime.cycle([], inputs={"fault": fault}, trace=True)
        print("cycle", runtime.cycle_count, "fault", fault)
        for entry in result.trace:
-           print(" ", entry.kind, entry.transition_label or entry.action_path or ".".join(entry.state_path), "permit =", entry.vars["permit"], "motor =", entry.vars["motor"])
+           where = entry.transition_label or entry.action_path or ".".join(entry.state_path)
+           print(" ", entry.kind, where, "permit =", entry.vars["permit"], "motor =", entry.vars["motor"])
 
 .. testoutput::
 
@@ -139,7 +141,7 @@
 
 从上往下读四个周期：
 
-* **周期 1** 进入根状态与 ``Idle``\ ，此时还没有区域。
+* **周期 1** 是脚本里的第一个 ``runtime.cycle([])``\ ，没有打印。之后 ``Idle`` 处于活动，可以从周期 2 离开它看出来。
 * **周期 2** 带着 ``/Start``\ 。离开 ``Idle``\ ，进入 ``Running``\ ，然后各区域依次启动：``Safety`` 先走初始转换并执行第一次 ``during``\ （``permit`` 变为 1），``Motion`` 才走自己的初始转换，进入 ``Off`` 并在同一周期执行 ``Off`` 的 ``during``\ 。
 * **周期 3** 先执行 ``Safety`` 的 ``during``\ ，再轮到 ``Motion``\ 。``Motion`` 发现 ``permit != 0 && requested != 0``\ ，执行 ``Off -> On``\ ；``On`` 的 ``during`` 在同一周期打开电机。
 * **周期 4** 把 ``fault`` 置 1。``Safety`` 先把 ``permit`` 清零，``Motion`` 随后读到新值，执行 ``On -> Off``\ 。
@@ -175,7 +177,14 @@
      - 周期计数加一，历史记录写入结果配置。
      - 上面命令行输出的 ``Cycle:`` 一行。
 
-**顺序靠什么保证。**\ 区域按书写顺序执行，是因为 ``region`` 块的先后属于模型本身：``to_ast_node()``\ 、格式化和重新加载都保持它。下面的脚本加载 ``controller_swapped.fcstm``\ （两个区域写成相反顺序的控制器，\ :download:`下载 </_models/controller_swapped.fcstm>`\ ），用 ``to_ast_node()`` 导出，再把导出的文本加载一遍。两个模型列出的 ``Running`` 的区域都保持书写顺序：
+下面是此后要用的 ``controller_swapped.fcstm``\ 。它就是前面各节的控制器，只是两个区域的书写顺序相反：\ ``Motion``\ （第 12 行）排在 ``Safety``\ （第 19 行）之前，其余完全相同。
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: ``controller_swapped.fcstm``
+   :emphasize-lines: 12,19
+
+**顺序靠什么保证。**\ 区域按书写顺序执行，是因为 ``region`` 块的先后属于模型本身：``to_ast_node()``\ 、格式化和重新加载都保持它。下面的脚本加载 ``controller_swapped.fcstm``\ （上面展示的两个区域写成相反顺序的控制器），用 ``to_ast_node()`` 导出，再把导出的文本加载一遍。两个模型列出的 ``Running`` 的区域都保持书写顺序：
 
 .. testcode::
 
@@ -284,7 +293,8 @@
            runtime.cycle(events)
        for fault in (1, 1, 0, 0):
            runtime.cycle([], inputs={"fault": fault})
-           print(name, runtime.cycle_count, "fault", fault, "permit", runtime.vars["permit"], "motor", runtime.vars["motor"])
+           print(name, runtime.cycle_count, "fault", fault, end=" ")
+           print("permit", runtime.vars["permit"], "motor", runtime.vars["motor"])
 
 .. testoutput::
 
@@ -556,7 +566,7 @@
    :language: fcstm
    :caption: ``group_delta.fcstm``
 
-脚本把这个模型运行两次：``cold`` 从头开始，``hot`` 在 ``R1`` 处于 ``A``\ 、``R2`` 仍在等待初始化的位置开始（热启动，hot start）。以 ``Cycle`` 开头的几行是模拟器自己给出的 Delta 提示：
+脚本把这个模型运行两次：``cold`` 从头开始，``hot`` 在 ``R1`` 处于 ``A``\ 、``R2`` 仍在等待初始化的位置开始（热启动，hot start）。以 ``Cycle`` 开头的几行是模拟器自己给出的 Delta 提示。提示写到标准错误，所以脚本用 ``flush=True`` 输出，让每条提示紧挨着它所属的那一行：
 
 .. testcode::
 
@@ -565,11 +575,17 @@
 
    model = load_state_machine_from_text(open("group_delta.fcstm").read())
    cold = SimulationRuntime(model, input_source={"g": 0})
-   hot = SimulationRuntime(model, input_source={"g": 0}, initial_state="Root.P{R1: A, R2: [init]}", initial_vars={"n": 0})
+   hot = SimulationRuntime(
+       model,
+       input_source={"g": 0},
+       initial_state="Root.P{R1: A, R2: [init]}",
+       initial_vars={"n": 0},
+   )
    for g in (0, 0, 1):
        for name, runtime in (("cold", cold), ("hot", hot)):
            result = runtime.cycle([], inputs={"g": g})
-           print(name, runtime.cycle_count, "g =", g, runtime.configuration, "n =", runtime.vars["n"], "delta =", result.delta, flush=True)
+           print(name, runtime.cycle_count, "g =", g, runtime.configuration, end=" ", flush=True)
+           print("n =", runtime.vars["n"], "delta =", result.delta, flush=True)
 
 .. testoutput::
 
@@ -590,28 +606,45 @@
 
 **为什么以周期为回滚单位。**\ 没有每个区域各自的事务。周期是别的工具能观察到的唯一单位（输入、输出、生成代码），所以它要么完整发生，要么完全不发生。周期里的各个候选在副本上试，第一个到达合法位置的获胜。
 
-**界限。**\ 组可以在一个周期内互相重入。模拟器对一个周期内嵌套或重复超过 64 个组的链，给出有记载的错误。脚本先构造互相嵌套的 64 个组，它能启动；再构造 65 个：
+**界限。**\ 组可以在一个周期内互相重入。模拟器对一个周期内嵌套或重复超过 64 个组的链，给出有记载的错误。脚本先打印两个组互相嵌套的模型；\ ``nested_model`` 每多一个组，就把同样的 ``region R { ... state O { ... } }`` 再套一层。随后它启动 64 个组的链（能启动）和 65 个组的链：
 
 .. testcode::
 
    from pyfcstm.model import load_state_machine_from_text
    from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
-   def start(owners):
-       inner = "region R { [*] -> O; state O { " * (owners - 1) + "region R { [*] -> L; state L; }" + " } }" * (owners - 1)
-       SimulationRuntime(load_state_machine_from_text("state Root { [*] -> P; state P { %s } }" % inner)).cycle([])
 
-   start(64)
-   print("64 groups inside one another start")
-   try:
-       start(65)
-   except SimulationRuntimeDfsError as error:
-       print(error)
+   def nested_model(groups):
+       body = "region R { [*] -> L; state L; }"
+       for _ in range(groups - 1):
+           body = "region R {\n[*] -> O;\nstate O {\n%s\n}\n}" % body
+       return "state Root {\n[*] -> P;\nstate P {\n%s\n}\n}" % body
+
+
+   print(nested_model(2))
+   for groups in (64, 65):
+       machine = load_state_machine_from_text(nested_model(groups))
+       try:
+           SimulationRuntime(machine).cycle([])
+           print(groups, "groups inside one another start")
+       except SimulationRuntimeDfsError as error:
+           print(groups, "groups:", error)
 
 .. testoutput::
 
+   state Root {
+   [*] -> P;
+   state P {
+   region R {
+   [*] -> O;
+   state O {
+   region R { [*] -> L; state L; }
+   }
+   }
+   }
+   }
    64 groups inside one another start
-   Group initialization nested deeper than the structural safety limit (64) within one cycle; the state machine either enters more than 64 groups inside one another or one after another in the same cycle, or re-enters a group without bound.
+   65 groups: Group initialization nested deeper than the structural safety limit (64) within one cycle; the state machine either enters more than 64 groups inside one another or one after another in the same cycle, or re-enters a group without bound.
 
 
 .. _region-semantics-aspects-zh:
@@ -784,7 +817,7 @@
    3 Root.Off {'x': 2, '__forced_0': 0}
 
 
-周期 2 里，``A`` 的 ``during`` 在 ``A`` 轮完之\ *后*\ 才把 ``x`` 变成 2，所以 ``A`` 继续工作。排在后面的 ``B`` 在轮到自己时看到 ``x >= 2``\ ，立即完成（``B: [done]``\ ，``__forced_0`` 为 1）。``A`` 在周期 3 看到已置起的变量时完成，拥有者在同一周期离开。条件是在停驻的状态上、每个区域轮到时判一次，退出之后不再重判。
+周期 2 里，``A`` 的 ``during`` 在 ``A`` 轮完之\ *后*\ 才把 ``x`` 变成 2，所以 ``A`` 继续工作。排在后面的 ``B`` 在轮到自己时看到 ``x >= 2``\ ，立即完成（``B: [done]``\ ，``__forced_0`` 为 1）。``A`` 在周期 3 看到已置起的变量时完成，拥有者在同一周期离开。条件由每个区域在自己的轮次判断，所以 ``A`` 与 ``B`` 在同一个周期里结果不同。
 
 **区域按书写顺序离开。**\ 下面的脚本让控制器运行到两个区域都在工作，发送 ``/Stop``\ ，并打印被退出的状态：
 
@@ -892,14 +925,19 @@
    written = load_state_machine_from_text(open("controller.fcstm").read())
    reloaded = load_state_machine_from_text(str(written.to_ast_node()))
    print(written.forced_variables, reloaded.forced_variables)
-   rows = []
-   for model in (written, reloaded):
+
+
+   def run(model):
        runtime = SimulationRuntime(model, input_source={"fault": 0, "requested": 1})
-       rows.append([])
+       history = []
        for events in (None, ["/Start"], None, None, ["/Stop"]):
            runtime.cycle(events)
-           rows[-1].append((str(runtime.configuration), dict(runtime.vars)))
-   print(rows[0][-1], rows[0] == rows[1])
+           history.append((str(runtime.configuration), dict(runtime.vars)))
+       return history
+
+
+   first, second = run(written), run(reloaded)
+   print(first[-1], first == second)
 
 .. testoutput::
 
@@ -909,7 +947,7 @@
 
 导出的文本加载出的机器里 ``__forced_0`` 是普通变量，没有任何东西再把它标成强制（空元组）。两台机器每个周期的配置与变量都相同。热启动、生成的运行时、有界模型检查与验证流水线也是如此：它们取实际运行的机器。图与 ``pyfcstm inspect`` 的报告则按书写的模型呈现，因为它们描述的是你写了什么。
 
-**这不能说明什么。**\ 展开式并不复现其他工具的每个细节，上面两处差异是有意保留的。比较见\ :doc:`/explanations/region_design/index_zh`\ ，遗留事项见\ :ref:`region-semantics-limits-zh`\ 。
+**这不能说明什么。**\ 展开式并不复现其他工具的每个细节，上面提到的那一处已知缺口（issue #591）仍未解决。比较见\ :doc:`/explanations/region_design/index_zh`\ ，遗留事项见\ :ref:`region-semantics-limits-zh`\ 。
 
 .. _region-semantics-active-zh:
 
@@ -1102,10 +1140,21 @@
 
    model = load_state_machine_from_text(open("controller.fcstm").read())
    variables = {"permit": 1, "motor": 0, "__forced_0": 0}
-   for text in ("Controller.Running{Safety: Watching, Motion: Off}", "Controller.Running{Safety: [done], Motion: On}", "Controller.Running.Motion.On", "Controller.Running"):
-       runtime = SimulationRuntime(model, initial_state=text, initial_vars=variables, input_source={"fault": 0, "requested": 1})
+   for text in (
+       "Controller.Running{Safety: Watching, Motion: Off}",
+       "Controller.Running{Safety: [done], Motion: On}",
+       "Controller.Running.Motion.On",
+       "Controller.Running",
+   ):
+       runtime = SimulationRuntime(
+           model,
+           initial_state=text,
+           initial_vars=variables,
+           input_source={"fault": 0, "requested": 1},
+       )
        result = runtime.cycle([], trace=True)
-       print(text, "->", runtime.configuration, [".".join(e.state_path) for e in result.trace if e.kind == "state_enter"])
+       entered = [".".join(e.state_path) for e in result.trace if e.kind == "state_enter"]
+       print(text, "->", runtime.configuration, entered)
 
 .. testoutput::
 
@@ -1339,6 +1388,6 @@
 * **没有广播，没有队列。**\ 事件是周期的输入。区域不能向另一个区域发送事件，同一周期的后续步骤里也不会投递任何东西。请用变量。
 * **不能在区域之间跳转。**\ 转换不能从一个区域离开去另一个区域的状态，也不能从拥有者外面进入区域里的状态。转换以拥有者为终点，由拥有者启动每个区域。
 * **拥有者的历史。**\ 含区域的拥有者不能声明历史。区域内部的复合状态的历史可以工作（见历史相关的用例族）。
-* **强制转换。**\ 与不含区域的模型的两处差异列在\ :ref:`region-semantics-forced-zh`\ 。展开会给模型增加一个隐藏变量。
+* **强制转换。**\ 与不含区域的模型的差异（目标进不去时改为计入下一条声明）见\ :ref:`region-semantics-forced-zh`\ 。展开会给模型增加一个隐藏变量。
 * **与其他工具的比较**\ （Stateflow 用户会注意到什么，以及实测的差距）见\ :doc:`设计页 </explanations/region_design/index_zh>`\ 。
 * **已知的差距与模型的限制**\ 汇集在\ :doc:`/reference/region_model/index_zh`\ 的 “界限与已知差距”一节。

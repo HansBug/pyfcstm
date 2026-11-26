@@ -1,0 +1,14 @@
+def int out = 0;
+state Root {
+    region First {
+        state A { during { out = 1; } }
+        [*] -> A;
+    }
+    region Second {
+        state B1 { during { out = 2; } }
+        state B2;
+        [*] -> B1;
+        B1 -> B2 :: Switch;
+        B2 -> B1 :: Switch;
+    }
+}

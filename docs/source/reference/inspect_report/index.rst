@@ -186,89 +186,261 @@ a state that owns regions is ``is_composite`` with an empty ``substates``. The
 report describes the model as written, so ``active("...")`` queries never add
 hidden flag variables to ``variables``.
 
-.. code-block:: console
+.. list-table:: ``RegionInfo`` fields
+   :header-rows: 1
+   :widths: 24 76
 
-   $ pyfcstm inspect -i order_demo.fcstm --format json
+   * - Field
+     - Meaning
+   * - ``path``
+     - Dotted path of the region, owner path plus the region name, for example ``Root.First``.
+   * - ``name``
+     - Region name as written.
+   * - ``owner_path``
+     - Dotted path of the state that owns the region.
+   * - ``index``
+     - Zero-based declaration order among the owner's regions. It is the execution order.
+   * - ``substates``
+     - Direct child state paths of the region.
+   * - ``initial_targets``
+     - Targets of the region's ``[*] -> ...`` transitions, each with ``target``, ``guard``, ``event`` and ``is_unconditional``.
+   * - ``aspect_before`` / ``aspect_after``
+     - Labels of the ``>> during before`` and ``>> during after`` actions declared in the region.
 
-.. code-block:: fcstm
+The model below has two regions that both write ``out``. The demo prints the
+first lines of the human report, the whole ``regions`` array, the neighbouring
+``states`` facts, and the blind-overwrite diagnostic as JSON.
 
-   def int level = 0;
-   def int seen = 0;
-   def int out = 0;
-   def int y = 0;
-   state Root {
-       region Reader {
-           state Idle { during { seen = level; out = 1; } }
-           [*] -> Idle;
-       }
-       region Writer {
-           state Busy { during { level = level + 1; out = y + 2; } }
-           [*] -> Busy;
-       }
-   }
+.. literalinclude:: region_overwrite_basic.fcstm
+   :language: fcstm
+   :caption: region_overwrite_basic.fcstm
 
-The report's ``regions`` entry for the first region and its two ordering
-diagnostics are:
+.. literalinclude:: region_report.demo.sh
+   :language: bash
+   :caption: region_report.demo.sh
 
-.. code-block:: json
+.. literalinclude:: region_report.demo.sh.txt
+   :language: text
+   :caption: region_report.demo.sh.txt
 
-   {
-     "path": "Root.Reader", "name": "Reader", "owner_path": "Root", "index": 0,
-     "substates": ["Root.Reader.Idle"],
-     "initial_targets": [{"target": "Root.Reader.Idle", "guard": null, "event": null, "is_unconditional": true}],
-     "aspect_before": [], "aspect_after": []
-   }
+Read the output as follows. ``index`` 0 and 1 are the declaration order, so
+``Root.First`` runs before ``Root.Second``. ``Root.First.A`` reports
+``Root.First`` as its ``parent_path``, and ``Root`` is composite with no direct
+``substates``. A model without regions has no ``regions`` key at all (``False``
+in the third block). The full human report, which this page does not repeat,
+also carries the usual structure statistics and unrelated warnings such as
+``W_UNREFERENCED_VAR``.
 
-.. code-block:: json
+.. _inspect-report-region-order:
 
-   {
-     "code": "I_REGION_BACKWARD_READ", "severity": "info",
-     "message": "Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.",
-     "span": {"line": 7, "column": 31, "end_line": 7, "end_column": 44},
-     "refs": {"owner_path": "Root", "reader_region": "Root.Reader", "target_kind": "variable", "target": "level", "writer_regions": ["Root.Writer"]}
-   }
+Order diagnostics
+~~~~~~~~~~~~~~~~~
 
-.. code-block:: json
+Both order diagnostics are judged on the model as written, before ``active()``
+queries are lowered to hidden flag variables. Both look at the regions of one
+owner at a time; a region nested in a region is examined when its own owner is
+reached, and its accesses also count for the enclosing region. Neither is
+produced for a model without regions.
 
-   {
-     "code": "W_REGION_BLIND_OVERWRITE", "severity": "warning",
-     "message": "Region 'Root.Writer' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Reader'; that earlier write is lost whenever it runs.",
-     "span": {"line": 11, "column": 50, "end_line": 11, "end_column": 62},
-     "refs": {"owner_path": "Root", "region": "Root.Writer", "previous_region": "Root.Reader", "variable": "out", "previous_write_span": {"line": 7, "column": 45, "end_line": 7, "end_column": 53}}
-   }
+.. list-table:: Order diagnostics
+   :header-rows: 1
+   :widths: 28 12 60
 
-``I_REGION_BACKWARD_READ`` is informational: an earlier region reads what a
-later region writes or contains (through ``active()``), so it sees the previous
-cycle's value. ``W_REGION_BLIND_OVERWRITE`` is reported only when a later region
-overwrites the variable in *every* cycle and never reads it first: every
-non-pseudo leaf state writes it unconditionally at the top of its ``during``,
-nothing in the region reads it before that write, the region cannot finish, and
-nothing that runs after the earlier write reads it. It points at the overwriting
-statement and ``previous_write_span`` names the lost write. ``out = out + y +
-2;``, a conditional overwrite, an overwrite performed by only some states (a
-default value in front, an override behind) and a region that reads the
-variable first are not reported. Aspects declared on the owner run once around
-the whole group of regions and neither use nor shield the earlier value.
+   * - Code
+     - Severity
+     - ``refs`` fields
+   * - ``I_REGION_BACKWARD_READ``
+     - ``info``
+     - ``owner_path``, ``reader_region``, ``target_kind`` (``variable`` or ``active``), ``target`` (variable name, or the dotted path of the queried state), ``writer_regions`` (all later regions that write the variable or contain the queried state).
+   * - ``W_REGION_BLIND_OVERWRITE``
+     - ``warning``
+     - ``owner_path``, ``region`` (the later, overwriting region), ``previous_region`` (the nearest earlier region that also writes the variable), ``variable``, ``previous_write_span`` (the lost write).
 
-Reachability follows region semantics. Entering a state that owns regions
-reaches the initial targets of every region. The owner's ordinary outgoing
-transitions run only after every region is done, so they count as reachable
-only when each region can reach its ``[*]`` exit; otherwise they are reported
-by ``W_UNREACHABLE_TRANSITION`` with the reason ``owner_never_completes``.
-Forced transitions declared on the owner are always reachable with the owner.
+``I_REGION_BACKWARD_READ`` fires when a region reads a variable, or queries
+``active("...")`` for a state, that a *later* region of the same owner writes or
+contains. The earlier region runs first, so it sees the previous cycle's value.
+It is informational because that is the defined behavior of ordered regions;
+the message exists so that the order can be confirmed as intended. It is not
+reported when the read follows a write of the same variable in the same action
+chain (the region reads its own fresh value), when the writer is an *earlier*
+region (a forward read), or when no later region writes the variable.
+
+``W_REGION_BLIND_OVERWRITE`` fires only when an earlier write is lost in every
+cycle. All of the following must hold:
+
+* every non-pseudo leaf state of the later region writes the variable
+  unconditionally at the top level of its ``during`` actions, or of a
+  ``>> during before`` action declared in that region;
+* nothing in the later region reads the variable ahead of that write: no guard,
+  effect, ``enter``, ``exit``, right-hand side, ``if`` condition or earlier
+  statement, and no state of the region that does not write it;
+* the later region cannot finish (it has no ``[*]`` exit), contains no nested
+  region owner, and has no abstract or ``ref`` action that a handler could use
+  to read the variable;
+* nothing that runs after the earlier write in the same cycle reads the
+  variable, no region in between reads it or has an abstract action, and the
+  earlier region has no abstract action.
+
+Aspects declared on the owner or further out run once per cycle around the whole
+group of regions, so they neither use nor shield the earlier value and are
+ignored. The diagnostic points at the overwriting statement; ``previous_write_span``
+names the lost write.
+
+The demo below runs the six models of each code through ``pyfcstm inspect --format json``
+and prints only ``I_REGION_BACKWARD_READ``, ``W_REGION_BLIND_OVERWRITE`` and the
+two unreachable codes. A model that prints ``(none of the four codes)`` triggers
+none of them.
+
+.. literalinclude:: region_findings.demo.sh
+   :language: bash
+   :caption: region_findings.demo.sh
+
+.. literalinclude:: region_findings.demo.sh.txt
+   :language: text
+   :caption: region_findings.demo.sh.txt
+
+.. list-table:: Why each model reports or stays quiet
+   :header-rows: 1
+   :widths: 38 14 48
+
+   * - Model file
+     - Reported
+     - Reason
+   * - ``region_backward_read_variable.fcstm``
+     - yes
+     - ``Reader`` declared first reads ``level`` in ``seen = level;``; ``Writer`` writes it.
+   * - ``region_backward_read_active.fcstm``
+     - yes
+     - ``active("Root.Writer.Busy")`` queries a state of the later region: ``target_kind`` is ``active``.
+   * - ``region_backward_read_two_writers.fcstm``
+     - yes
+     - Two later regions write ``level``; ``writer_regions`` lists both (the message joins them in one clause).
+   * - ``region_backward_read_own_write.fcstm``
+     - no
+     - ``level = 5; seen = level;`` reads the region's own fresh write.
+   * - ``region_backward_read_forward.fcstm``
+     - no
+     - The writer is declared first; the reader sees the current cycle's value.
+   * - ``region_backward_read_no_writer.fcstm``
+     - no
+     - Nothing in a later region writes ``level``.
+   * - ``region_overwrite_basic.fcstm``
+     - yes
+     - ``Second`` has one leaf that writes ``out = y + 2;`` at the top of ``during`` and cannot finish.
+   * - ``region_overwrite_aspect.fcstm``
+     - yes
+     - The overwrite sits in a region-level ``>> during before`` action, which runs ahead of every ``during``.
+   * - ``region_overwrite_skip_middle.fcstm``
+     - yes
+     - ``Middle`` neither reads nor writes ``out``; ``previous_region`` is ``Root.First``.
+   * - ``region_overwrite_uses_old.fcstm``
+     - no
+     - ``out = out + y + 2;`` uses the earlier value.
+   * - ``region_overwrite_conditional.fcstm``
+     - no
+     - The write is inside ``if [y > 0] { ... }``.
+   * - ``region_overwrite_some_states.fcstm``
+     - no
+     - ``B2`` does not write ``out``, so the default in front survives while the region rests there.
+   * - ``region_overwrite_can_finish.fcstm``
+     - no
+     - ``B -> [*]`` lets the region finish, and a finished region stops writing.
+   * - ``region_overwrite_middle_reads.fcstm``
+     - no for the overwrite
+     - ``Middle`` reads ``out`` between the two writes, so the first write is used. ``Middle`` reading what ``Last`` writes is itself reported as ``I_REGION_BACKWARD_READ``.
+
+Branch rules and reachability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The reachability of the report and the structural algorithms of
+``pyfcstm.verify`` read a composite state as *branches*: a state that owns
+regions has one branch per region, a plain composite state is the case of one
+branch, and a model without composite states has none. The rules are:
+
+.. list-table:: Branch rules
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Construct
+     - Rule
+   * - Entering a state that owns regions
+     - Reaches the initial targets of every region.
+   * - Ordinary transition leaving a composite state (``Job -> Next``)
+     - Counts as reachable only when some child of the state (every region, for an owner) can reach ``[*]``. Otherwise it is reported by ``W_UNREACHABLE_TRANSITION`` with the reason ``owner_never_completes`` and its target by ``W_UNREACHABLE_STATE``.
+   * - Forced transition (``!Group -> Next :: Stop``)
+     - Leaves from every leaf of the state, so it is reachable with the state. The exits that its expansion adds below the state do not count as a child leaving on its own.
+   * - History default (``[H] -> Child``, entered through ``Owner.[H]``)
+     - Starts a branch the way the initial transition does.
+
+The demo prints the unreachable findings for matching pairs of models. These
+findings come from the default static report; ``--enable-verify`` is not needed.
+
+.. literalinclude:: region_owner_never_completes.fcstm
+   :language: fcstm
+   :caption: region_owner_never_completes.fcstm
+
+.. literalinclude:: region_reachability.demo.sh
+   :language: bash
+   :caption: region_reachability.demo.sh
+
+.. literalinclude:: region_reachability.demo.sh.txt
+   :language: text
+   :caption: region_reachability.demo.sh.txt
+
+In ``region_owner_never_completes.fcstm`` the ``Monitor`` region has no ``[*]``
+exit, so ``Job -> Next`` never runs: ``Root.Next`` is unreachable and the
+transition gets ``owner_never_completes``. Giving ``Monitor`` an exit
+(``region_owner_completes.fcstm``) removes both findings.
+
+**The one intended output change for a model without regions.** A plain
+composite state none of whose children can leave never takes its ordinary
+outgoing transitions. ``region_branch_plain_stuck.fcstm`` shows it:
+``Group -> Next`` gets ``owner_never_completes`` and ``Root.Next`` is
+unreachable, where earlier reports treated the composite state as something the
+machine could simply leave. The simulator already behaved that way.
+``region_branch_plain_exits.fcstm`` (``B -> [*]``), ``region_branch_forced.fcstm``
+(a forced transition) and ``region_branch_history.fcstm`` (a forced transition
+and a ``[H]`` default) print nothing.
+
+Known over-approximations
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Three approximations stay in the structural analysis. All three err toward
+*missing* a finding, so an empty report is not a proof of reachability.
+
+#. A composite state entered only through ``Owner.[H]`` keeps its ordinary
+   initial child reachable. In ``region_over_history_initial.fcstm`` ``Work`` is
+   entered only through ``Work.[H]``, whose default is ``Slow``; ``Fast`` can
+   never be entered, and the demo above prints no finding for it.
+#. The algorithms of ``pyfcstm.verify`` judge the machine that runs, where a
+   forced declaration is a relay, and stay guard-agnostic about it. A state
+   behind a composite state that only a forced declaration can take elsewhere may
+   still be listed as reachable.
+#. A single forced declaration is marked as a whole as soon as one of its
+   expansions starts from an unreachable state. This aggregation predates regions.
 
 With ``--enable-verify`` the topology algorithms
 (``topological_reachable_set``, ``unreachable_states``,
 ``strongly_connected_components``, ``topological_finite``,
 ``topological_inevitable_terminator`` and
-``event_emission_to_consumer_reachable``) run on a model with regions as they run
-on any other model: every state that owns regions, and every plain composite
-state, is read as branches that must all be over before the state goes on.  A
-state is unreachable when no reachable position holds it, a leaf has no way out
-when the branches around it cannot all finish (the report calls that a
-deadlock), and the topology is non-terminating when some reachable position can
-repeat or cannot move.  The solver-local algorithms run inside regions, and the
+``event_emission_to_consumer_reachable``) run on a model with regions as on any
+other model. A state is unreachable when no reachable position holds it. A leaf
+has no way out when the branches around it cannot all finish (the report calls
+that a deadlock). The topology is non-terminating when some reachable position
+can repeat or cannot move. The solver-local algorithms run inside regions; the
 lifecycle check of a state inside a region is skipped.
+
+jsfcstm boundary
+~~~~~~~~~~~~~~~~
+
+The jsfcstm structural inspector does not produce a report for a model with
+regions. ``isInspectable(machine)`` returns ``false`` for a machine that declares
+regions or uses ``active()`` queries, and ``inspectModel`` throws an ``Error``
+(``inspectModel does not support machines with regions or active() queries``)
+instead of returning one. The jsfcstm semantic analysis still checks such a
+model, and the reachability rule above, including ``owner_never_completes`` for
+models without regions, is implemented in jsfcstm as well. ``pyfcstm inspect``
+is the way to get the order diagnostics and the ``regions`` array.
 
 Which machine a finding is judged on
 ------------------------------------

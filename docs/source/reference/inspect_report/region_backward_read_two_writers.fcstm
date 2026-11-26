@@ -1,0 +1,16 @@
+def int level = 0;
+def int seen = 0;
+state Root {
+    region Reader {
+        state Idle { during { seen = level; } }
+        [*] -> Idle;
+    }
+    region First {
+        state A { during { level = 1; } }
+        [*] -> A;
+    }
+    region Second {
+        state B { during { level = level + 1; } }
+        [*] -> B;
+    }
+}

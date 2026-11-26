@@ -1,0 +1,23 @@
+=== owner of regions ===
+--- region_owner_never_completes.fcstm
+W_UNREACHABLE_STATE line 15 Root.Next
+W_UNREACHABLE_TRANSITION line 17 reasons=owner_never_completes
+--- region_owner_completes.fcstm
+(no unreachable state or transition)
+
+=== plain composite state, no regions ===
+--- region_branch_plain_stuck.fcstm
+W_UNREACHABLE_STATE line 9 Root.Next
+W_UNREACHABLE_TRANSITION line 11 reasons=owner_never_completes
+--- region_branch_plain_exits.fcstm
+(no unreachable state or transition)
+
+=== forced transition and history default ===
+--- region_branch_forced.fcstm
+(no unreachable state or transition)
+--- region_branch_history.fcstm
+(no unreachable state or transition)
+
+=== known over-approximation ===
+--- region_over_history_initial.fcstm
+(no unreachable state or transition)

@@ -146,6 +146,166 @@
 
 这不等于检查运行了状态空间搜索。适配器遍历注册表元数据，只保留封闭且复杂度和调用次数都在策略内的结构与局部 SMT 算法。inspect 不解析 ``.fbmcq`` 查询，也不加载 :mod:`pyfcstm.bmc`。结果是有用的模型派生反馈，不是对所有事件调度和抽象处理器的完整证明。
 
+检查里的有序区域
+----------------
+
+拥有者（owner）是带有区域（region）的状态。它在一个周期内按书写顺序依次推进各区域，所有区域共用同一组变量。因此顺序靠后的区域能读到靠前区域在同一周期写入的值，而靠前的区域只能在下一个周期读到靠后区域的写入。这是明确定义的行为，见\ :doc:`含区域的模型怎样执行一个周期 </explanations/region_semantics/index_zh>`\ ，所以检查不把它当成错误。检查只报告两种容易在不知不觉中写错顺序的情形：\ ``I_REGION_BACKWARD_READ``\ （提示级）和\ ``W_REGION_BLIND_OVERWRITE``\ （警告级）。两者都按书写的模型判断，并且只由 Python 的检查管线发出；注册表把它们的发射层级记为 ``partial_static_pipeline``\ ，原因是 jsfcstm 编辑器不发出它们。
+
+轨迹四：区域读取靠后区域写入的值
+--------------------------------
+
+教程里的控制联锁模型先写 ``Safety`` 再写 ``Motion``\ 。\ ``Safety`` 写 ``permit``\ ，\ ``Motion`` 在条件里读它。把两个区域对调就得到 ``controller_swapped.fcstm``\ ，其中 ``Motion`` 在前。同一条命令对前一种顺序什么也不报，对后一种报一条提示：
+
+.. literalinclude:: region_backward_read.demo.sh
+   :language: bash
+   :caption: region_backward_read.demo.sh
+
+.. literalinclude:: region_backward_read.demo.sh.txt
+   :language: text
+   :caption: region_backward_read.demo.sh.txt
+
+按四步读这段输出：
+
+1. ``False`` 那一行对应 ``controller.fcstm``\ ：生产者先运行，没有区域读到过期一个周期的值。
+2. 在 ``controller_swapped.fcstm`` 里，第 16 行的条件读取 ``permit``\ ，而写它的 ``Safety`` 排在后面。源码范围指向读取它的转换，不是写入处。
+3. ``refs`` 给出机器可读的形式：\ ``reader_region``\ 、排在后面的 ``writer_regions``\ ，以及 ``target_kind``\ 。这里是 ``variable``\ ；靠前的区域用 ``active("...")`` 询问某个状态时则是 ``active``\ 。
+4. 两次运行展示了这条提示代表什么。周期 4 里故障已经出现。在 ``controller.fcstm`` 中 ``Safety`` 先把 ``permit`` 置 0，\ ``Motion`` 离开 ``On``\ ，该周期结束时 ``motor`` 为 ``0``\ 。在 ``controller_swapped.fcstm`` 中 ``Motion`` 仍读到 ``permit = 1``\ ，\ ``motor`` 一直保持 ``1`` 到周期 5。
+
+严重级别刻意定为 ``info``\ 。读取上一周期的值有时正是本意，例如一个区域有意比生产者晚一个周期响应某个条件。两条建议动作是 ``confirm_order``\ （保持顺序）和 ``reorder_regions``\ （先声明生产者）；\ ``do_not`` 条目写明不要把它当成缺陷。读取之前在同一动作链里已经写过同一个变量时，读到的是该区域自己的新值，不会报告。
+
+这条提示不说明什么：它不说明模型有错，不说明读取方真的会用到有影响的过期值，也不说明对调顺序是安全的。对调还会改变夹在两者之间的其他区域所看到的内容。
+
+轨迹五：靠后的区域不看旧值就覆盖
+--------------------------------
+
+.. literalinclude:: region_blind_overwrite.fcstm
+   :language: fcstm
+   :caption: region_blind_overwrite.fcstm
+
+.. literalinclude:: region_blind_overwrite.demo.sh
+   :language: bash
+   :caption: region_blind_overwrite.demo.sh
+
+.. literalinclude:: region_blind_overwrite.demo.sh.txt
+   :language: text
+   :caption: region_blind_overwrite.demo.sh.txt
+
+``Planner`` 写 ``speed = 5``\ ，排在它后面的 ``Limiter`` 写 ``speed = 0`` 而不读 ``speed``\ 。两个仿真周期显示了后果：每个周期结束时 ``speed`` 都是 ``0``\ ，\ ``Planner`` 的写入从不产生效果。警告指向覆盖语句（第 14 行），\ ``previous_write_span`` 指向被丢掉的写入（第 8 行）。
+
+警告刻意收得很窄，因为多个区域写同一个变量本身是正当的（“前面给默认值，后面覆盖”）。只有确定会丢失时才报告，下面各项必须同时成立：
+
+.. list-table:: ``W_REGION_BLIND_OVERWRITE`` 的报告条件
+   :header-rows: 1
+   :widths: 34 66
+
+   * - 条件
+     - 为什么此时一定丢失
+   * - 靠后区域的每个非伪状态叶子都在 ``during`` 动作（或排在它们之前的 ``>> during before`` 切面）的最外层无条件写这个变量
+     - 无论区域停在哪个状态，变量在每个周期都被覆盖。
+   * - 靠后区域里没有任何东西先于这次写入读取该变量：条件、效果、\ ``enter``\ 、\ ``exit``\ 、右侧表达式、\ ``if`` 条件、更早的语句都不读，也没有不写它的状态
+     - 新值不可能依赖旧值。
+   * - 靠后区域不能完成（没有 ``[*]`` 出口），不含嵌套的拥有者，也没有抽象动作或 ``ref`` 动作
+     - 已完成的区域不再写入，而处理函数可能读取这个变量。
+   * - 排在先前写入之后运行的东西都不读该变量：同一块里后面的语句、该叶子的其他 ``during`` 动作、\ ``>> during after`` 切面、夹在中间的区域，且靠前的区域没有抽象动作
+     - 在被替换之前没有任何使用者看到先前的值。
+
+声明在拥有者或更外层的切面每周期只围绕整组区域运行一次，既不使用先前的值也不保护它，规则忽略它们。
+
+对照运行把四个版本的 ``Limiter`` 交给同一条命令：
+
+.. literalinclude:: region_blind_overwrite_contrast.demo.sh
+   :language: bash
+   :caption: region_blind_overwrite_contrast.demo.sh
+
+.. literalinclude:: region_blind_overwrite_contrast.demo.sh.txt
+   :language: text
+   :caption: region_blind_overwrite_contrast.demo.sh.txt
+
+只有第一个版本被报告。\ ``speed = speed - 1`` 用到了旧值，有条件的写入并非每个周期都覆盖，最后一个版本先读 ``speed`` 再写。这些都可能是有意把前后的值结合起来，警告因此保持沉默。这也意味着检查没有报告并不能证明没有写入丢失：藏在条件之后或抽象动作之后的丢失不会被发现。
+
+书写的机器与运行的机器各判断什么
+--------------------------------
+
+FCSTM 的一些结构是语法糖。\ ``active("...")`` 被替换成隐藏的标志变量，强制转换被展开成中继状态和隐藏变量，历史（history）被降级成隐藏变量和带条件的初始转换。书写的模型保留作者写下的文字；运行的机器才是仿真器、生成代码和有界模型检查（BMC）真正执行的东西。检查两者都用，某条发现用哪一个，取决于它说的是什么。
+
+.. list-table:: 一条发现按哪台机器判断
+   :header-rows: 1
+   :widths: 34 66
+
+   * - 发现
+     - 判断依据
+   * - 检查报告本身（状态、转换、区域、变量），以及所有关于书写内容的发现，包括 ``I_REGION_BACKWARD_READ``\ 、\ ``W_REGION_BLIND_OVERWRITE`` 和 ``W_FORCED_GUARD_UNSAT``
+     - 书写的模型。发现里出现的是 ``active("Panel.Switch.Pressed")`` 而不是隐藏标志，并指向作者写下的声明。
+   * - 加上 ``--enable-verify`` 后的 ``W_DEAD_GUARD``\ 、\ ``W_GUARD_TAUTOLOGY``\ 、\ ``W_EFFECT_SMT_NO_OP``\ 、\ ``I_EFFECT_GUARD_CONTRADICT``\ 、\ ``W_TRANSITION_SHADOWED``\ 、\ ``I_ENTER_DURING_CONTRADICT``\ 、\ ``W_COMPOSITE_INIT_INCOMPLETE``\ 、\ ``I_NONTRIVIAL_SCC``\ 、\ ``W_TOPOLOGICAL_NOEXIT``\ 、\ ``I_TOPOLOGICAL_NON_TERMINATING`` 和 ``W_EVENT_UNREACHABLE_EMIT``
+     - 运行的机器。使用历史、\ ``active()`` 或强制声明的模型，与它导出的文本给出相同的发现。
+
+.. literalinclude:: region_written_vs_running.fcstm
+   :language: fcstm
+   :caption: region_written_vs_running.fcstm
+
+.. literalinclude:: region_written_vs_running.demo.sh.txt
+   :language: text
+   :caption: region_written_vs_running.demo.sh.txt（region_written_vs_running.demo.sh 的输出）
+
+模型里靠前的区域 ``Lamp`` 询问 ``Panel.Switch.Pressed``\ ，第 14 行对同一个状态问 ``active(...) && !active(...)``\ 。不加 ``--enable-verify`` 时，检查报告一条向后读取，写出的是状态路径。加上它之后，求解器读的是降级后的机器，查询在那里是隐藏标志 ``__active_Panel_Switch_Pressed``\ ，所以自相矛盾的条件成为 ``W_DEAD_GUARD``\ ，它的 ``guard`` 文本里出现的就是这个标志。因此运行的机器的发现可能写出隐藏变量或生成的伪状态。每条这样的发现都指回它降级前的声明、历史或被查询的状态，修复时改的仍是书写的文本。\ ``active("...")`` 上的条件与任何关于其标志的条件一样被判断，不会被跳过。
+
+分支、拥有者完成与 ``owner_never_completes``
+---------------------------------------------
+
+结构算法（状态与转换的可达性、拓扑、强连通分量）通过分支来读一个复合状态。拥有区域的状态每个区域一条分支；不含区域的复合状态只有一条分支，所以不含区域的模型是最普通的特例。下面三条规则来自运行时离开复合状态的方式：
+
+* 离开复合状态的普通转换，只有在该状态完成后才会被采用，这要求所有分支都结束。只有每条分支都能到达自己的 ``[*]`` 出口时，它才算可达。
+* 强制转换从源状态之下的每个叶子离开，所以总是与拥有者一起可达。\ ``!S -> T`` 展开后加在 ``S`` 之下的出口，不算子状态自行离开。
+* 经 ``Owner.[H]`` 进入的历史默认目标，与初始转换一样是一条分支的起点。
+
+当拥有者没有任何一条分支能结束时，它的普通外出转换永远不会运行。检查用 ``W_UNREACHABLE_TRANSITION`` 报告该转换，并在 ``unreachable_transition_reasons`` 里给出原因 ``owner_never_completes``\ ，它指向的状态用 ``W_UNREACHABLE_STATE`` 报告：
+
+.. literalinclude:: region_never_completes.fcstm
+   :language: fcstm
+   :caption: region_never_completes.fcstm
+
+.. literalinclude:: region_never_completes.demo.sh
+   :language: bash
+   :caption: region_never_completes.demo.sh
+
+.. literalinclude:: region_never_completes.demo.sh.txt
+   :language: text
+   :caption: region_never_completes.demo.sh.txt
+
+``fault`` 非零时 ``Safety`` 能完成，但 ``Motion`` 没有 ``[*]`` 出口。运行证实了静态结论：\ ``Safety`` 在周期 2 变成 ``[done]``\ ，拥有者永远停在 ``Work``\ 。给 ``Motion`` 加上 ``Spin -> [*]`` 后两个区域都能完成，同样的输入就把机器带到 ``Stopped``\ 。输出最后一部分是这条规则给\ **不含**\ 区域的模型带来的唯一变化：所有子状态都无法离开的复合状态，永远不会采用它的普通外出转换。仿真器本来就是这样运行的；早先的报告把这样的状态当成机器可以随意离开的状态。
+
+已知的过近似
+------------
+
+结构分析有三处已知的限制。前两处偏向漏报，所以没有报告时只能理解为“没有发现”，不是证明。
+
+.. list-table:: 已知的过近似
+   :header-rows: 1
+   :widths: 30 40 30
+
+   * - 限制
+     - 影响
+     - 下方演示
+   * - 只经历史进入的复合状态，其普通初始子状态仍被视为可达。
+     - 初始转换会进入、历史却从不进入的子状态，不会得到 ``W_UNREACHABLE_STATE``\ 。
+     - 情形 1。
+   * - ``pyfcstm.verify`` 判断的是运行的机器，其中强制声明是中继，按结构判断时不看声明的条件。
+     - 一个复合状态之后的状态，如果只有强制声明能把机器从复合状态带到别处，仍可能被列为可达。
+     - 情形 2。
+   * - 强制声明会展开成每个叶子一条转换，报告时按一条声明算。
+     - 只要有一个展开从不可达状态出发，整条声明都被标记，所以被标记的声明不表示每个展开都不可达。
+     - 未演示：本页没有任何运行能产生它。
+
+.. literalinclude:: region_inspect_overapprox.demo.sh
+   :language: bash
+   :caption: region_inspect_overapprox.demo.sh
+
+.. literalinclude:: region_inspect_overapprox.demo.sh.txt
+   :language: text
+   :caption: region_inspect_overapprox.demo.sh.txt
+
+情形 1 中第一次进入 ``Mode`` 走的是 ``[H] -> Warm``\ ，所以 ``Cold`` 从不会被进入，仿真也停在 ``Warm``\ ，检查却没有报告不可达状态。情形 2 中条件永远不成立，\ ``Stopped`` 无法进入，\ ``W_UNREACHABLE_STATE`` 却没有列出它；不可满足的条件只由验证类发现（\ ``W_UNREACHABLE_TRANSITION`` 和 ``W_DEAD_GUARD``\ ）找出。模型依赖强制转换或历史时，请把验证类发现和可达性列表放在一起看。
+
 严重级别、风险和发射层级
 ------------------------
 

@@ -1,0 +1,31 @@
+$ pyfcstm inspect -i region_blind_overwrite.fcstm
+[WARN] W_REGION_BLIND_OVERWRITE
+  Region 'Drive.Limiter' overwrites variable 'speed' in every cycle without using the value written by the earlier region 'Drive.Planner'; that earlier write is lost whenever it runs.
+  --> region_blind_overwrite.fcstm:14:22
+    |
+ 13 |         state Clamp {
+ 14 |             during { speed = 0; }
+    |                      ^^^^^^^^^^
+ 15 |         }
+    |
+   = source: inspect-static
+$ refs
+{
+  "owner_path": "Drive",
+  "previous_region": "Drive.Planner",
+  "previous_write_span": {
+    "column": 22,
+    "end_column": 32,
+    "end_line": 8,
+    "line": 8
+  },
+  "region": "Drive.Limiter",
+  "variable": "speed"
+}
+$ pyfcstm simulate: two cycles
+Cycle: 1
+Current State: Drive{Planner: Plan, Limiter: Clamp}
+  speed = 0
+Cycle: 2
+Current State: Drive{Planner: Plan, Limiter: Clamp}
+  speed = 0

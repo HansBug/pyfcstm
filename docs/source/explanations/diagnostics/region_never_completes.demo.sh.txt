@@ -1,0 +1,26 @@
+$ pyfcstm inspect -i region_never_completes.fcstm
+  W_UNREACHABLE_STATE: State 'Line.Stopped' is unreachable from the root entry path.
+  W_UNREACHABLE_TRANSITION: Authored transition 'Line.Work' -> 'Line.Stopped' is unreachable for reasons: owner_never_completes.
+$ pyfcstm simulate: fault=1 for three cycles
+Cycle: 1
+Current State: Line.Work{Safety: Watch, Motion: Spin}
+Cycle: 2
+Current State: Line.Work{Safety: [done], Motion: Spin}
+Cycle: 3
+Current State: Line.Work{Safety: [done], Motion: Spin}
+Cycle: 4
+Current State: Line.Work{Safety: [done], Motion: Spin}
+
+--- the same machine, Motion can also finish
+14:            Spin -> [*] : if [fault != 0];
+(no output above means both are reachable)
+Cycle: 1
+Current State: Line.Work{Safety: Watch, Motion: Spin}
+Cycle: 2
+Current State: Line.Stopped
+Cycle: 3
+Current State: Line.Stopped
+
+--- a composite state without regions, whose only child cannot leave
+  W_UNREACHABLE_STATE: State 'Line.Stopped' is unreachable from the root entry path.
+  W_UNREACHABLE_TRANSITION: Authored transition 'Line.Work' -> 'Line.Stopped' is unreachable for reasons: owner_never_completes.

@@ -207,6 +207,283 @@ within the selected complexity and call-count policy. Inspect does not parse
 model-derived feedback, not a proof over all event schedules and abstract
 handlers.
 
+Ordered regions in inspect
+--------------------------
+
+A state that owns regions runs them one after another in declaration order,
+on one shared set of variables, inside a single cycle. A region later in the
+order therefore sees what an earlier region wrote in the same cycle, while an
+earlier region sees what a later region wrote only one cycle late. That is
+defined behavior, described in
+:doc:`How a cycle runs a model with regions </explanations/region_semantics/index>`,
+so inspect does not call it an error. It reports the two situations where the
+order is easy to get wrong without noticing: ``I_REGION_BACKWARD_READ`` (an
+information) and ``W_REGION_BLIND_OVERWRITE`` (a warning). Both are judged on
+the model as written, and both are emitted by the Python inspect pipeline only;
+the registry lists them with the emit tier ``partial_static_pipeline`` because
+the jsfcstm editor does not emit them.
+
+Trace 4: a region reads what a later region writes
+--------------------------------------------------
+
+The tutorial controller declares ``Safety`` before ``Motion``. ``Safety`` writes
+``permit``, and ``Motion`` reads it in its guards. Swapping the two regions
+gives ``controller_swapped.fcstm``, where ``Motion`` comes first. The same
+command reports nothing for the first order and one information for the second:
+
+.. literalinclude:: region_backward_read.demo.sh
+   :language: bash
+   :caption: region_backward_read.demo.sh
+
+.. literalinclude:: region_backward_read.demo.sh.txt
+   :language: text
+   :caption: region_backward_read.demo.sh.txt
+
+Read the output in four steps:
+
+1. The ``False`` line is ``controller.fcstm``: the producer runs first, so no
+   region reads a value that is one cycle old.
+2. In ``controller_swapped.fcstm`` the guard on line 16 reads ``permit`` while
+   ``Safety``, which writes it, comes later. The span points at the reading
+   transition, not at the write.
+3. ``refs`` carries the machine-readable form: ``reader_region``, the
+   ``writer_regions`` that sit later in the order, and ``target_kind``, which is
+   ``variable`` here and ``active`` when the earlier region asks about a state
+   with ``active("...")`` instead.
+4. The two runs show what the information stands for. In cycle 4 the fault is
+   already present. In ``controller.fcstm`` ``Safety`` lowers ``permit`` first,
+   so ``Motion`` leaves ``On`` and ``motor`` is ``0`` at the end of that cycle.
+   In ``controller_swapped.fcstm`` ``Motion`` still reads ``permit = 1`` and
+   ``motor`` stays ``1`` until cycle 5.
+
+The severity is ``info`` on purpose. Reading the previous cycle's value is
+sometimes exactly the intent, for example when a region reacts to a condition
+one cycle after the producer set it. The two recommended actions are
+``confirm_order`` (keep the order) and ``reorder_regions`` (declare the producer
+first); the ``do_not`` entry says not to treat the finding as a defect. Reads
+that follow a write of the same variable in the same action chain read the
+region's own fresh value and are not reported.
+
+What the information does not say: it does not say the model is wrong, that the
+reader ever executes with a stale value that matters, or that reordering is
+safe. Reordering changes what every other region between the two sees as well.
+
+Trace 5: a later region overwrites the value without looking
+------------------------------------------------------------
+
+.. literalinclude:: region_blind_overwrite.fcstm
+   :language: fcstm
+   :caption: region_blind_overwrite.fcstm
+
+.. literalinclude:: region_blind_overwrite.demo.sh
+   :language: bash
+   :caption: region_blind_overwrite.demo.sh
+
+.. literalinclude:: region_blind_overwrite.demo.sh.txt
+   :language: text
+   :caption: region_blind_overwrite.demo.sh.txt
+
+``Planner`` writes ``speed = 5`` and ``Limiter``, which runs after it, writes
+``speed = 0`` without reading ``speed``. The two simulated cycles show the
+consequence: ``speed`` is ``0`` at the end of each cycle, so the write of
+``Planner`` never has an effect. The warning points at the overwriting
+statement (line 14) and ``previous_write_span`` points at the lost write
+(line 8).
+
+The warning is deliberately narrow, because writing one variable from several
+regions is legitimate ("a default in front, an override behind"). It is
+reported only when the loss is certain. All of these must hold:
+
+.. list-table:: When ``W_REGION_BLIND_OVERWRITE`` is reported
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Condition
+     - Why the loss is then certain
+   * - Every non-pseudo leaf state of the later region writes the variable
+       unconditionally at the top level of its ``during`` actions (or of a
+       ``>> during before`` aspect ahead of them)
+     - Whichever state the region rests in, the variable is overwritten in
+       every cycle.
+   * - Nothing in the later region reads the variable ahead of that write: no
+       guard, effect, ``enter``, ``exit``, right-hand side, ``if`` condition or
+       earlier statement, and no state that does not write it
+     - The new value cannot depend on the old one.
+   * - The later region cannot finish (no ``[*]`` exit), has no nested owner
+       and no abstract or ``ref`` action
+     - A finished region stops writing, and a handler could read the variable.
+   * - Nothing that runs after the earlier write reads the variable: later
+       statements of the same block, other ``during`` actions of that leaf,
+       ``>> during after`` aspects, regions in between, and no abstract action in
+       the earlier region
+     - No consumer sees the earlier value before it is replaced.
+
+Aspects declared on the owner or further out run once around the whole group of
+regions, so they neither use the earlier value nor shield it, and the rule
+ignores them.
+
+The contrast run feeds four versions of ``Limiter`` to the same command:
+
+.. literalinclude:: region_blind_overwrite_contrast.demo.sh
+   :language: bash
+   :caption: region_blind_overwrite_contrast.demo.sh
+
+.. literalinclude:: region_blind_overwrite_contrast.demo.sh.txt
+   :language: text
+   :caption: region_blind_overwrite_contrast.demo.sh.txt
+
+Only the first version is reported. ``speed = speed - 1`` uses the old value,
+the conditional write does not overwrite in every cycle, and the last version
+reads ``speed`` before writing it. Each of those is a combination of the
+earlier values that may be intended, and the warning stays silent. This also
+means a silent inspect does not prove that no write is lost: a lost write
+behind a condition, or behind an abstract action, is not found.
+
+What the written machine and the running machine each judge
+-----------------------------------------------------------
+
+Some FCSTM constructs are syntactic sugar. ``active("...")`` is replaced by a
+hidden flag variable, a forced transition is expanded into relay states and a
+hidden variable, and history is lowered into hidden variables and guarded
+initial transitions. The model as written keeps the text the author wrote; the
+machine that runs is what the simulator, generated code and BMC execute.
+Inspect uses both, and which one a finding uses follows from what the finding
+is about.
+
+.. list-table:: Which machine a finding is judged on
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Finding
+     - Judged on
+   * - The inspect report itself (states, transitions, regions, variables) and
+       every finding about what was written, including
+       ``I_REGION_BACKWARD_READ``, ``W_REGION_BLIND_OVERWRITE`` and
+       ``W_FORCED_GUARD_UNSAT``
+     - The model as written. A finding names ``active("Panel.Switch.Pressed")``
+       and not a hidden flag, and points at the declaration the author wrote.
+   * - With ``--enable-verify``: ``W_DEAD_GUARD``, ``W_GUARD_TAUTOLOGY``,
+       ``W_EFFECT_SMT_NO_OP``, ``I_EFFECT_GUARD_CONTRADICT``,
+       ``W_TRANSITION_SHADOWED``, ``I_ENTER_DURING_CONTRADICT``,
+       ``W_COMPOSITE_INIT_INCOMPLETE``, ``I_NONTRIVIAL_SCC``,
+       ``W_TOPOLOGICAL_NOEXIT``, ``I_TOPOLOGICAL_NON_TERMINATING`` and
+       ``W_EVENT_UNREACHABLE_EMIT``
+     - The machine that runs. A model that uses history, ``active()`` or a
+       forced declaration and the text it exports give the same findings.
+
+.. literalinclude:: region_written_vs_running.fcstm
+   :language: fcstm
+   :caption: region_written_vs_running.fcstm
+
+.. literalinclude:: region_written_vs_running.demo.sh.txt
+   :language: text
+   :caption: region_written_vs_running.demo.sh.txt (output of region_written_vs_running.demo.sh)
+
+The model asks about ``Panel.Switch.Pressed`` from the earlier region
+``Lamp``. Line 14 asks for ``active(...) && !active(...)`` of the same state.
+Without ``--enable-verify`` inspect reports the backward read, naming the state
+path. With it, the solver reads the lowered machine, where the query is the hidden
+flag ``__active_Panel_Switch_Pressed``, so the contradictory guard is a
+``W_DEAD_GUARD`` and its ``guard`` text shows the flag. A finding of the machine
+that runs may therefore name a hidden variable or a generated pseudo state. Each
+such finding points at the declaration, history or queried state it was
+lowered from, so the repair still edits the written text. A condition on
+``active("...")`` is judged like any condition over its flag instead of being
+skipped.
+
+Branches, owner completion and ``owner_never_completes``
+--------------------------------------------------------
+
+The structural algorithms (reachability of states and transitions, topology,
+strongly connected components) read a composite state through its branches. A
+state that owns regions has one branch per region. A composite state without
+regions has one branch, so a model without regions is the plain special case.
+Three rules follow from how the runtime leaves a composite state:
+
+* An ordinary transition that leaves a composite state is taken only once the
+  state is complete, which needs every branch over. It counts as reachable only
+  when each branch can reach its ``[*]`` exit.
+* A forced transition leaves from every leaf below its source, so it is always
+  reachable together with the owner. The exits that the expansion of
+  ``!S -> T`` adds below ``S`` do not count as a child leaving on its own.
+* A history default entered through ``Owner.[H]`` starts a branch like the
+  initial transition does.
+
+When no branch of an owner can finish, its ordinary outgoing transitions never
+run. Inspect reports the transition with ``W_UNREACHABLE_TRANSITION`` and the
+reason ``owner_never_completes`` in ``unreachable_transition_reasons``, and the
+state it leads to with ``W_UNREACHABLE_STATE``:
+
+.. literalinclude:: region_never_completes.fcstm
+   :language: fcstm
+   :caption: region_never_completes.fcstm
+
+.. literalinclude:: region_never_completes.demo.sh
+   :language: bash
+   :caption: region_never_completes.demo.sh
+
+.. literalinclude:: region_never_completes.demo.sh.txt
+   :language: text
+   :caption: region_never_completes.demo.sh.txt
+
+``Safety`` can finish when ``fault`` is non-zero, but ``Motion`` has no ``[*]``
+exit. The run confirms the static answer: ``Safety`` becomes ``[done]`` in
+cycle 2 and the owner stays in ``Work`` forever. Adding ``Spin -> [*]`` to
+``Motion`` makes both regions able to finish, and the same input then moves the
+machine to ``Stopped``. The last part of the output is the one change this rule
+makes for models **without** regions: a composite state none of whose children
+can leave never takes its ordinary outgoing transitions. The simulator already
+behaved this way; earlier reports treated such a state as something the machine
+could simply leave.
+
+Known over-approximations
+-------------------------
+
+Three limits of the structural analysis are known. The first two lean in the
+direction of missing a problem, so treat a silent report as "no finding", not as
+proof.
+
+.. list-table:: Known over-approximations
+   :header-rows: 1
+   :widths: 30 40 30
+
+   * - Limit
+     - Effect
+     - Shown below
+   * - A composite state that is entered only through history keeps its ordinary
+       initial child reachable.
+     - ``W_UNREACHABLE_STATE`` is not reported for a child that the initial
+       transition would enter but that history never does.
+     - Case 1.
+   * - ``pyfcstm.verify`` judges the machine that runs, where a forced
+       declaration is a relay, and ignores the guard of the declaration when
+       it follows structure.
+     - A state behind a composite that only a forced declaration can take
+       elsewhere may still be listed as reachable.
+     - Case 2.
+   * - A forced declaration expands to one transition per leaf, and is
+       reported as one declaration.
+     - One expansion that starts from an unreachable state marks the whole
+       declaration, so a flagged declaration does not say every expansion is
+       dead.
+     - Not shown: no run in this page produces it.
+
+.. literalinclude:: region_inspect_overapprox.demo.sh
+   :language: bash
+   :caption: region_inspect_overapprox.demo.sh
+
+.. literalinclude:: region_inspect_overapprox.demo.sh.txt
+   :language: text
+   :caption: region_inspect_overapprox.demo.sh.txt
+
+In case 1 the first entry into ``Mode`` goes through ``[H] -> Warm``, so
+``Cold`` is never entered, and the simulation ends in ``Warm``. Inspect
+reports no unreachable state. In case 2 the guard can never hold, so ``Stopped``
+cannot be entered, yet ``W_UNREACHABLE_STATE`` does not list it; the
+unsatisfiable guard is found only by the verify findings (``W_UNREACHABLE_TRANSITION``
+and ``W_DEAD_GUARD``). Use the verify findings together with the reachability
+list when a model leans on forced transitions or history.
+
 Severity, risk, and emit tier
 -----------------------------
 

@@ -1,0 +1,38 @@
+--- 1. a state that only history skips
+input int go;
+
+state Plant {
+    [*] -> Idle;
+    state Idle;
+    state Mode {
+        [*] -> Cold;
+        [H] -> Warm;
+        state Cold;
+        state Warm;
+    }
+    Idle -> Mode.[H] : if [go != 0];
+}
+$ pyfcstm inspect
+  no unreachable-state, dead-guard or forced finding
+$ pyfcstm simulate
+Cycle: 1
+Current State: Plant.Idle
+Cycle: 2
+Current State: Plant.Mode.Warm
+
+--- 2. a forced declaration whose guard can never hold
+input int fault;
+
+state Line {
+    [*] -> Work;
+    state Work {
+        [*] -> Spin;
+        state Spin;
+    }
+    state Stopped;
+    !Work -> Stopped : if [fault != 0 && fault == 0];
+}
+$ pyfcstm inspect
+  no unreachable-state, dead-guard or forced finding
+$ pyfcstm inspect --enable-verify --max-complexity-tier smt_linear
+  W_UNREACHABLE_TRANSITION@10, W_DEAD_GUARD@10, W_DEAD_GUARD@10

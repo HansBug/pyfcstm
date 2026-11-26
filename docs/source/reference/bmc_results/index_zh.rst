@@ -621,21 +621,24 @@ scope 上面那句话。上面的区块不带粒度、成员数、带标签的�
    ...
    $ echo $?
    3
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+
+最后两条命令只给求解器一毫秒的预算。工作能否在这一预算内完成取决于机器的速度和负载，所以文档检查不运行它们。下面是两次记录下来的运行：
+
+.. code-block:: bash
+
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never --timeout-ms 1
-   ...
-   Explanation: PROOF EXPLANATION NOT ACHIEVED
-   ...
-   $ echo $?
-   3
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never --timeout-ms 1
+
+.. code-block:: text
+
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
    ...
    Explanation: FORMAL EXPLANATION NOT ACHIEVED
    Reason: component probe did not start: budget exhausted before the probe started; ...
    ...
-   $ echo $?
-   3
+   (both commands end with exit status 3)
 
 把规则套用到未展示的那个组合上：一个已构造但报告为 ``partial`` 的证明，标题会是
 ``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。

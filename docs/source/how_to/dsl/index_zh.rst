@@ -13,7 +13,7 @@ DSL 任务指南
 
 本页不是语法目录，而是 FCSTM DSL 的任务手册。每个任务配方都说明什么时候使用、推荐写法、如何验证、预期诊断、常见错误和深入阅读位置。
 
-引用已检查示例的命令把示例路径写在 ``docs/source`` 之下，所以应从仓库根目录运行；需要自带模型的命令会先在当前目录创建该文件。
+引用示例的命令把示例路径写在 ``docs/source`` 之下，所以应从仓库根目录运行；需要自带模型的命令会先在当前目录创建该文件。
 
 术语约定：本页首次出现必要英文术语时采用“中文（English）”格式，后文只使用中文。诊断（diagnostics）是
 ``pyfcstm inspect`` 给出的检查结果，目标配置（target profile）是生成目标语言或运行时配置，拥有者作用域
@@ -104,7 +104,7 @@ DSL 任务指南
    $ echo $?
    1
 
-验证一个已检查层级示例：
+验证一个层级示例：
 
 .. code-block:: console
 
@@ -122,7 +122,7 @@ DSL 任务指南
      Transition 'HierarchyDemo.Parent' -> '[*]' has no event or guard.
    ...
 
-伪状态只负责路由，是叶状态辅助节点，不应承载业务生命周期行为。这个遗留伪状态示例作为已检查资源保留：
+伪状态只负责路由，是叶状态辅助节点，不应承载业务生命周期行为。这个遗留伪状态示例保留如下：
 
 .. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
    :language: fcstm
@@ -152,7 +152,7 @@ DSL 任务指南
      - ``Worker -> Active : /Start;``
      - 事件路径从根状态下方开始。
 
-已检查示例：
+示例：
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
@@ -265,7 +265,7 @@ DSL 任务指南
      - 比较、``&&`` / ``and``、``||`` / ``or``、``!`` / ``not``、``=>`` / ``implies``、``xor``、``iff``、条件三目表达式
      - 数值赋值语句
 
-已检查示例：
+示例：
 
 .. literalinclude:: ../../tutorials/dsl/expression_condition_ternary.fcstm
    :language: fcstm
@@ -288,7 +288,7 @@ DSL 任务指南
 
 不要用 ``->`` 表示蕴含；它是转换语法。不要把 ``^`` 当布尔异或。完整优先级见 :ref:`dsl-expression-reference-zh` 和 :ref:`dsl-expression-separation-zh`。
 
-验证已检查表达式示例：
+验证表达式示例：
 
 .. code-block:: console
 
@@ -351,7 +351,7 @@ DSL 任务指南
    这张图用来区分动作路径和状态路径。``ref`` 复用命名生命周期动作，不调用状态或事件。
    如果 ``ref`` 路径看起来意外，应同时检查动作列表和引用关系。
 
-验证已检查生命周期示例：
+验证生命周期示例：
 
 .. code-block:: console
 
@@ -398,7 +398,7 @@ DSL 任务指南
 
 详见 :ref:`dsl-during-aspect-semantics-zh`。
 
-验证已检查切面示例：
+验证切面示例：
 
 .. code-block:: console
 

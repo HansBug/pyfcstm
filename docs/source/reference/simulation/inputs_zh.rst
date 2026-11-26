@@ -75,7 +75,7 @@
 
     source = PressureRamp(70.0, 5.0)
     print(source.get(), source.get())
-    source.cycle()  # A bound source is advanced by its runtime instead.
+    source.cycle()  # Runtime owns this call when the source is bound.
     print(source.get())
 
 .. testoutput::

@@ -1938,6 +1938,7 @@ a page: an example that needs one is not simple enough, so shorten the example i
   `.. literalinclude:: /_models/name.fcstm`, and is copied into the throwaway directory next to the page's own files. A
   model that only one page uses stays in that page's directory. Add a model only when the page shows it or a command
   reads it; every `.fcstm` under `docs/source` also produces a PlantUML text, a PNG and an SVG.
+- The examples need Python 3.8 or later (the documentation CI uses 3.11) and the Sybil version pinned in `requirements-doc.txt`.
 - Both language pages carry the same examples. Each page is run on its own, so an example of the Chinese page is checked
   as strictly as one of the English page.
 - This gate is separate from `make doctest`, which runs the `>>>` examples in the docstrings under
@@ -1992,7 +1993,7 @@ If a page needs a terminology reminder, add a compact term list near the beginni
 
 - Root level: `index_en.rst`, `index_zh.rst` (sources); `index.rst` (generated—do not edit directly)
 - Subsections: `index.rst` = English default; `index_zh.rst` = Chinese translation
-- Shared resources (images, demos, code) should be language-agnostic (no duplication per language)
+- Shared resources (images, models, code) should be language-agnostic (no duplication per language)
 - API docs ([api_doc/](docs/source/api_doc/)) typically have no language variants
 
 #### Build for Specific Language
@@ -2017,7 +2018,7 @@ When creating a new section:
     tutorials/dsl/index                # English/default version reference
 ```
 
-When translating: preserve all reST directives, file references, and code blocks; keep images/demos language-agnostic.
+When translating: preserve all reST directives, file references, and code blocks; keep images and models language-agnostic.
 
 #### DO and DO NOT
 
@@ -2030,14 +2031,14 @@ When translating: preserve all reST directives, file references, and code blocks
 **DO NOT**:
 - Edit [docs/source/index.rst](docs/source/index.rst) directly (generated at build time)
 - Create `index_en.rst` for subsections (use `index.rst` as English default)
-- Duplicate shared resources (images, demos) per language
+- Duplicate shared resources (images, models) per language
 - Translate code examples or API documentation (keep language-agnostic)
 
 #### Translation Checklist
 
 - [ ] Create `index_zh.rst` with translated content
 - [ ] Preserve all reST directives (`:maxdepth:`, `.. literalinclude::`, etc.)
-- [ ] Keep file references unchanged (images/demos work for all languages)
+- [ ] Keep file references unchanged (images and models work for all languages)
 - [ ] Update parent index to reference `index_zh` for Chinese builds
 - [ ] Verify shared resources are language-agnostic
 - [ ] Test: `READTHEDOCS_LANGUAGE=zh make html`

@@ -461,7 +461,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 * 拥有者的父作用域里的转换只能指向拥有者，不能指向它某个区域内部的状态，进入时由拥有者按书写顺序初始化全部区域；
 * 区域不能写成端点。
 
-以上都是错误，确切的原文见下文的报告。跨区域写法 ``L -> M;`` 与从外部写普通名字 ``Idle -> Leaf;`` 都报 ``E_DANGLING_TRANSITION``，``reason: tgt_not_found``，
+以上都是错误，诊断码和原因见下文的报告。跨区域写法 ``L -> M;`` 与从外部写普通名字 ``Idle -> Leaf;`` 都报 ``E_DANGLING_TRANSITION``，``reason: tgt_not_found``，
 因为这个名字不在持有该转换的作用域里。点分写法 ``Idle -> Run.A.Leaf;`` 与 ``Run.A -> Idle;`` 是语法错误：端点从来不是点分路径。
 
 .. _dsl-region-events-zh:

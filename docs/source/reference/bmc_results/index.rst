@@ -718,21 +718,24 @@ The runs below cover both halves of the rule.  The first commands write a second
    ...
    $ echo $?
    3
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+
+The last two commands give the solver a budget of one millisecond. Whether the work finishes inside that budget depends on the speed and the load of the machine, so the documentation checks do not run them. These are two recorded runs:
+
+.. code-block:: bash
+
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility proof --color never --timeout-ms 1
-   ...
-   Explanation: PROOF EXPLANATION NOT ACHIEVED
-   ...
-   $ echo $?
-   3
-   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+   pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
        --explain-infeasibility formal --color never --timeout-ms 1
+
+.. code-block:: text
+
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
    ...
    Explanation: FORMAL EXPLANATION NOT ACHIEVED
    Reason: component probe did not start: budget exhausted before the probe started; ...
    ...
-   $ echo $?
-   3
+   (both commands end with exit status 3)
 
 Applying the rule to the pairing not shown: a proof that was built but reported
 ``partial`` would open on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is

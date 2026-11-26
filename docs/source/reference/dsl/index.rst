@@ -510,7 +510,7 @@ borders of a region:
   inside one of its regions, and the owner enters all regions in written order;
 * a region cannot be written as an endpoint.
 
-All of these are errors; the report below gives the exact text. The
+All of these are errors; the report below gives the code and the reason. The
 cross-region form ``L -> M;`` and the plain-name form from outside
 ``Idle -> Leaf;`` both report ``E_DANGLING_TRANSITION`` with ``reason:
 tgt_not_found``, because the name does not exist in the scope that holds the

@@ -1290,6 +1290,10 @@ active("Root.B");``，以及先假设 ``d != 0`` 的变体。
    :language: fcstm
    :caption: region_reentry_six.fcstm
 
+.. literalinclude:: region_reentry_loop.fcstm
+   :language: fcstm
+   :caption: region_reentry_loop.fcstm
+
 **命令或代码。** 命令行没有设置这个上限的选项，所以在 Python 里调大它：
 
 .. testcode::

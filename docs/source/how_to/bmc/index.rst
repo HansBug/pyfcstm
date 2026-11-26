@@ -1429,6 +1429,10 @@ has a guard (``n < limit``) that no value can stop.
    :language: fcstm
    :caption: region_reentry_six.fcstm
 
+.. literalinclude:: region_reentry_loop.fcstm
+   :language: fcstm
+   :caption: region_reentry_loop.fcstm
+
 **Command or code.** The CLI has no option for the limit, so raise it in
 Python:
 

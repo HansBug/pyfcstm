@@ -3,7 +3,7 @@
 
 本教程运行一个小型控制器，它在同一个状态里有两个\ **区域（region）**\ ，你会看到区域的顺序起什么作用。最后你会得到：模拟过这个控制器，对调区域顺序并看到结果改变，读到对应的检查诊断，用有界模型检查在两个版本上检查同一条性质，生成并运行 Python 运行时，并看过模型的图。
 
-你需要装好 ``pyfcstm``，并把两个模型文件放在同一目录。把 :download:`controller.fcstm <controller.fcstm>` 和 :download:`controller_swapped.fcstm <controller_swapped.fcstm>` 下载到一个空目录，所有命令都在该目录里运行。命令只使用相对文件名。
+你需要装好 ``pyfcstm``，并把两个模型文件放在同一目录。把 :download:`controller.fcstm <controller.fcstm>` 和 :download:`controller_swapped.fcstm <controller_swapped.fcstm>` 下载到一个空目录，所有命令都在该目录里运行。命令只使用相对文件名。后面还有三个文件：``fault_beat_motor_off.fbmcq``\ （第 5 步）、\ ``run_scenario.py``\ （第 6 步）和 ``list_regions.py``\ （第 7 步）。运行用到它们的脚本之前，把每个文件下载到同一目录。
 
 1. 读模型
 ---------
@@ -52,7 +52,7 @@
    :language: bash
    :caption: ``simulate_swapped.demo.sh``
 
-:download:`下载 simulate_swapped.demo.sh <simulate_swapped.demo.sh>`，在放着模型的目录里用 ``sh simulate_swapped.demo.sh`` 运行。
+:download:`下载 simulate_swapped.demo.sh <simulate_swapped.demo.sh>` 到放着模型的目录里，并在那里用 ``sh simulate_swapped.demo.sh`` 运行。
 
 .. literalinclude:: simulate_swapped.demo.sh.txt
    :language: text
@@ -71,7 +71,7 @@
    :language: bash
    :caption: ``inspect_regions.demo.sh``
 
-:download:`下载 inspect_regions.demo.sh <inspect_regions.demo.sh>`，在放着模型的目录里用 ``sh inspect_regions.demo.sh`` 运行。
+:download:`下载 inspect_regions.demo.sh <inspect_regions.demo.sh>` 到放着模型的目录里，并在那里用 ``sh inspect_regions.demo.sh`` 运行。
 
 .. literalinclude:: inspect_regions.demo.sh.txt
    :language: text
@@ -100,7 +100,7 @@
    :language: bash
    :caption: ``bmc_interlock.demo.sh``
 
-:download:`下载 bmc_interlock.demo.sh <bmc_interlock.demo.sh>`，在放着模型的目录里用 ``sh bmc_interlock.demo.sh`` 运行。
+:download:`下载 bmc_interlock.demo.sh <bmc_interlock.demo.sh>` 到放着模型的目录里，并在那里用 ``sh bmc_interlock.demo.sh`` 运行。
 
 .. literalinclude:: bmc_interlock.demo.sh.txt
    :language: text
@@ -114,7 +114,7 @@
    :language: bash
    :caption: ``bmc_swapped.demox.sh``
 
-:download:`下载 bmc_swapped.demox.sh <bmc_swapped.demox.sh>`，用 ``sh bmc_swapped.demox.sh`` 运行。这个脚本按设计以退出状态 ``1`` 结束。不要把它的几行贴进交互式终端：检查失败时 ``set -e`` 会关掉终端。
+:download:`下载 bmc_swapped.demox.sh <bmc_swapped.demox.sh>`，用 ``sh bmc_swapped.demox.sh`` 运行。这个脚本按设计以退出状态 ``1`` 结束。不要把它的几行贴进交互式终端：检查失败时脚本最后一行的 ``exit 1`` 会关掉终端。
 
 .. literalinclude:: bmc_swapped.demox.sh.txt
    :language: text
@@ -131,7 +131,7 @@
    :language: bash
    :caption: ``generate_runtime.demo.sh``
 
-:download:`下载 generate_runtime.demo.sh <generate_runtime.demo.sh>`，在放着模型的目录里用 ``sh generate_runtime.demo.sh`` 运行。
+:download:`下载 generate_runtime.demo.sh <generate_runtime.demo.sh>` 到放着模型的目录里，并在那里用 ``sh generate_runtime.demo.sh`` 运行。它还需要下面链接的 ``run_scenario.py`` 放在同一目录，请先下载它。
 
 驱动脚本 ``run_scenario.py`` 在 ``inputs`` 参数里给出每个周期的输入，并打印周期数、\ ``configuration`` 和两个变量：
 
@@ -170,7 +170,7 @@
    :language: bash
    :caption: ``diagram_regions.demo.sh``
 
-:download:`下载 diagram_regions.demo.sh <diagram_regions.demo.sh>`，在放着模型的目录里用 ``sh diagram_regions.demo.sh`` 运行。
+:download:`下载 diagram_regions.demo.sh <diagram_regions.demo.sh>` 到放着模型的目录里，并在那里用 ``sh diagram_regions.demo.sh`` 运行。它还需要下面链接的 ``list_regions.py`` 放在同一目录，请先下载它。
 
 .. literalinclude:: diagram_regions.demo.sh.txt
    :language: text

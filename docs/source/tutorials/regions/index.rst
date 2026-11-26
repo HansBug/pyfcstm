@@ -12,7 +12,9 @@ You need ``pyfcstm`` installed and the two model files in this directory.
 Download :download:`controller.fcstm <controller.fcstm>` and
 :download:`controller_swapped.fcstm <controller_swapped.fcstm>` into an empty
 directory and run every command there. The commands use only relative file
-names.
+names. Three more files appear later: ``fault_beat_motor_off.fbmcq`` (step 5),
+``run_scenario.py`` (step 6) and ``list_regions.py`` (step 7). Download each one
+into the same directory before you run the script that uses it.
 
 1. Read the model
 -----------------
@@ -83,7 +85,7 @@ raise the fault in two consecutive cycles:
    :language: bash
    :caption: ``simulate_swapped.demo.sh``
 
-:download:`Download simulate_swapped.demo.sh <simulate_swapped.demo.sh>` and run it with ``sh simulate_swapped.demo.sh`` in the directory that holds the models.
+:download:`Download simulate_swapped.demo.sh <simulate_swapped.demo.sh>` into the directory that holds the models and run it there with ``sh simulate_swapped.demo.sh``.
 
 .. literalinclude:: simulate_swapped.demo.sh.txt
    :language: text
@@ -110,7 +112,7 @@ order.
    :language: bash
    :caption: ``inspect_regions.demo.sh``
 
-:download:`Download inspect_regions.demo.sh <inspect_regions.demo.sh>` and run it with ``sh inspect_regions.demo.sh`` in the directory that holds the models.
+:download:`Download inspect_regions.demo.sh <inspect_regions.demo.sh>` into the directory that holds the models and run it there with ``sh inspect_regions.demo.sh``.
 
 .. literalinclude:: inspect_regions.demo.sh.txt
    :language: text
@@ -153,7 +155,7 @@ Run it on the interlock model:
    :language: bash
    :caption: ``bmc_interlock.demo.sh``
 
-:download:`Download bmc_interlock.demo.sh <bmc_interlock.demo.sh>` and run it with ``sh bmc_interlock.demo.sh`` in the directory that holds the models.
+:download:`Download bmc_interlock.demo.sh <bmc_interlock.demo.sh>` into the directory that holds the models and run it there with ``sh bmc_interlock.demo.sh``.
 
 .. literalinclude:: bmc_interlock.demo.sh.txt
    :language: text
@@ -172,7 +174,7 @@ fail with exit status ``1``, because the property does not hold:
    :language: bash
    :caption: ``bmc_swapped.demox.sh``
 
-:download:`Download bmc_swapped.demox.sh <bmc_swapped.demox.sh>` and run it with ``sh bmc_swapped.demox.sh``. This script ends with exit status ``1`` by design. Do not paste its lines into an interactive shell: ``set -e`` closes the shell when the check fails.
+:download:`Download bmc_swapped.demox.sh <bmc_swapped.demox.sh>` and run it with ``sh bmc_swapped.demox.sh``. This script ends with exit status ``1`` by design. Do not paste its lines into an interactive shell: its last line, ``exit 1``, closes the shell when the check fails.
 
 .. literalinclude:: bmc_swapped.demox.sh.txt
    :language: text
@@ -197,7 +199,7 @@ the scenario of step 2:
    :language: bash
    :caption: ``generate_runtime.demo.sh``
 
-:download:`Download generate_runtime.demo.sh <generate_runtime.demo.sh>` and run it with ``sh generate_runtime.demo.sh`` in the directory that holds the models.
+:download:`Download generate_runtime.demo.sh <generate_runtime.demo.sh>` into the directory that holds the models and run it there with ``sh generate_runtime.demo.sh``. It needs ``run_scenario.py``, linked below, in the same directory: download it first.
 
 The driver ``run_scenario.py`` supplies the inputs of each cycle in the
 ``inputs`` argument and prints the cycle count, ``configuration`` and the two
@@ -249,7 +251,7 @@ portable JSON of the diagram, where each region is a node marked as a region:
    :language: bash
    :caption: ``diagram_regions.demo.sh``
 
-:download:`Download diagram_regions.demo.sh <diagram_regions.demo.sh>` and run it with ``sh diagram_regions.demo.sh`` in the directory that holds the models.
+:download:`Download diagram_regions.demo.sh <diagram_regions.demo.sh>` into the directory that holds the models and run it there with ``sh diagram_regions.demo.sh``. It needs ``list_regions.py``, linked below, in the same directory: download it first.
 
 .. literalinclude:: diagram_regions.demo.sh.txt
    :language: text

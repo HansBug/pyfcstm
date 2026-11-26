@@ -1,9 +1,0 @@
-────────────────────────────────────────────────────────────
->>> cycle --input fault=0 --input requested=1
-────────────────────────────────────────────────────────────
-Cycle: 3
-Current State: Controller.Running{Safety: Watching, Motion: On}
-Variables:
-  __forced_0 = 0
-  motor = 1
-  permit = 1

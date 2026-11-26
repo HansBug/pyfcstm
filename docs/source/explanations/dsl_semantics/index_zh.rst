@@ -44,9 +44,15 @@ DSL 语义解释
 
 检查命令能验证这一点：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   ...
+     root: Thermostat
+     states: 3 total / 2 leaf
+     transitions: 3
+     variables: 1
+   ...
 
 报告中的 ``root``、``states``、``transitions`` 和 ``variables`` 分别对应根状态、状态树、转换边和变量表。
 
@@ -652,17 +658,31 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
      from pyfcstm.model import load_state_machine_from_text
      from pyfcstm.utils.validate import ModelValidationError
 
+     text = """
+     state Root {
+         [*] -> H;
+         state H {
+             [*] -> A;
+             [H] -> A;
+             state A {
+                 region R { [*] -> X; state X; }
+             }
+             state B;
+             A -> B :: Go;
+         }
+         state Out;
+         H -> Out :: Leave;
+         Out -> H.[H] :: Back;
+     }
+     """
      try:
-         load_state_machine_from_text(
-             "state Root { [*] -> H; state H { [*] -> A; [H] -> A; state A { region R { [*] -> X; state X; } } state B; A -> B :: Go; }"
-             " state Out; H -> Out :: Leave; Out -> H.[H] :: Back; }"
-         )
+         load_state_machine_from_text(text)
      except ModelValidationError as error:
          print("ModelValidationError:", str(error).splitlines()[0])
 
   .. testoutput::
 
-     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 1)
+     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 4)
 
   含区域的拥有者自己也不能声明历史。可行的是：处在某个区域内部、自己声明历史的复合状态；这时记录属于该区域的分支，恢复时其他区域留在原处。
 * **不是持久化。**\ 记录就在状态机的变量里，与其他状态一样；跨进程保存由宿主负责（热启动通过 :meth:`pyfcstm.model.model.StateMachine.history_variables` 恢复它们）。

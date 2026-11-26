@@ -47,6 +47,20 @@ host tree into which imported modules can be rewritten.
    one variable table, one state tree, and one transition graph. Combo and
    forced expansion add generated structure onto those same surfaces.
 
+The inspect command reports the same three surfaces. ``root``, ``states``,
+``transitions`` and ``variables`` count the root state, the state tree, the
+transition graph and the variable table:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   ...
+     root: Thermostat
+     states: 3 total / 2 leaf
+     transitions: 3
+     variables: 1
+   ...
+
 .. _dsl-ownership-name-resolution:
 
 Ownership tree and name resolution
@@ -810,17 +824,31 @@ Boundaries and counterexamples
      from pyfcstm.model import load_state_machine_from_text
      from pyfcstm.utils.validate import ModelValidationError
 
+     text = """
+     state Root {
+         [*] -> H;
+         state H {
+             [*] -> A;
+             [H] -> A;
+             state A {
+                 region R { [*] -> X; state X; }
+             }
+             state B;
+             A -> B :: Go;
+         }
+         state Out;
+         H -> Out :: Leave;
+         Out -> H.[H] :: Back;
+     }
+     """
      try:
-         load_state_machine_from_text(
-             "state Root { [*] -> H; state H { [*] -> A; [H] -> A; state A { region R { [*] -> X; state X; } } state B; A -> B :: Go; }"
-             " state Out; H -> Out :: Leave; Out -> H.[H] :: Back; }"
-         )
+         load_state_machine_from_text(text)
      except ModelValidationError as error:
          print("ModelValidationError:", str(error).splitlines()[0])
 
   .. testoutput::
 
-     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 1)
+     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 4)
 
   An owner that has regions cannot declare history itself either. What works is a
   composite state that lives inside one region and declares its own history: the

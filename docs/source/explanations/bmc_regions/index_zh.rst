@@ -230,14 +230,20 @@
 
 三条查询：一条没有假设，一条固定 ``g == 0`` 并要求到达拥有者，一条固定 ``g == 0`` 且只要求看到任意轨迹。
 
+.. literalinclude:: blocked_free.fbmcq
+   :language: fbmcq
+   :caption: blocked_free.fbmcq
+
+.. literalinclude:: blocked_stuck.fbmcq
+   :language: fbmcq
+   :caption: blocked_stuck.fbmcq
+
+.. literalinclude:: blocked_zero.fbmcq
+   :language: fbmcq
+   :caption: blocked_zero.fbmcq
+
 .. code-block:: console
 
-   $ cat blocked_free.fbmcq blocked_stuck.fbmcq blocked_zero.fbmcq
-   check reach <= 1: active("Root.Run");
-   assume always: g == 0;
-   check reach <= 2: active("Root.Run");
-   assume always: g == 0;
-   check reach <= 2: true;
    $ pyfcstm bmc -i blocked.fcstm -q blocked_free.fbmcq --color never
    BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -286,18 +292,30 @@
    :language: fcstm
    :linenos:
 
-五条查询提出五个问题。第一条命令显示查询文件，之后每条命令只保留报告里正文讨论的标题行。
+五条查询提出五个问题，下面逐个文件列出。之后的命令只保留报告里正文讨论的标题行。
+
+.. literalinclude:: joint_a_done.fbmcq
+   :language: fbmcq
+   :caption: joint_a_done.fbmcq
+
+.. literalinclude:: joint_all_done.fbmcq
+   :language: fbmcq
+   :caption: joint_all_done.fbmcq
+
+.. literalinclude:: joint_next.fbmcq
+   :language: fbmcq
+   :caption: joint_next.fbmcq
+
+.. literalinclude:: joint_blocked_b_done.fbmcq
+   :language: fbmcq
+   :caption: joint_blocked_b_done.fbmcq
+
+.. literalinclude:: joint_blocked_next.fbmcq
+   :language: fbmcq
+   :caption: joint_blocked_next.fbmcq
 
 .. code-block:: console
 
-   $ cat joint_a_done.fbmcq joint_all_done.fbmcq joint_next.fbmcq joint_blocked_b_done.fbmcq joint_blocked_next.fbmcq
-   check reach <= 3: active("Root.Job{A: [done]}");
-   check reach <= 3: active("Root.Job{A: [done], B: [done]}");
-   check reach <= 3: active("Root.Next");
-   assume always: ok == 0;
-   check reach <= 3: active("Root.Job{B: [done]}");
-   assume always: ok == 0;
-   check reach <= 3: active("Root.Next");
    $ pyfcstm bmc -i joint.fcstm -q joint_a_done.fbmcq --color never
    BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
    ...
@@ -327,7 +345,15 @@
 
 切面给 :math:`\xi` 再加两类值：对每个声明了 ``>> during`` 动作的作用域，一个表示它的 ``before`` 动作在本周期已经运行的标志，和一个表示它欠着 ``after`` 动作的标志。标志随串联一起传递。因此 ``before`` 动作每个作用域每个周期运行一次，由外向内。欠着的 ``after`` 动作在它所属作用域的分支结束时结算，最内层的作用域先结算，所以下一个区域已经能看到它。不在区域内的作用域在周期末结算。公式随切面作用域的个数增长，而不随它们子集的个数增长。
 
-拥有者上不带 ``>>`` 的普通 ``during before`` 属于整组的初始化：它在进入第一个非伪状态的子状态之前运行一次。普通 ``during after`` 在把控制交还的已提交路径上运行一次。下一个脚本按调用顺序列出两个模型每一步的抽象动作，数据取自 ``pyfcstm bmc --json`` 写出的 JSON 结果。
+拥有者上不带 ``>>`` 的普通 ``during before`` 属于整组的初始化：它在进入第一个非伪状态的子状态之前运行一次。普通 ``during after`` 在把控制交还的已提交路径上运行一次。下一个脚本按调用顺序列出两个模型每一步的抽象动作，数据取自 ``pyfcstm bmc --json`` 写出的 JSON 结果。两条查询各占一行。
+
+.. literalinclude:: aspects.fbmcq
+   :language: fbmcq
+   :caption: aspects.fbmcq
+
+.. literalinclude:: plain_before.fbmcq
+   :language: fbmcq
+   :caption: plain_before.fbmcq
 
 .. code-block:: console
 
@@ -400,11 +426,12 @@
 
 让某个拥有者的全部区域都已完成的起点会在编译查询时被拒绝，因为没有任何帧可以保存这个位置（\ :eq:`eq-region-position-domain` 的第三行）。这是负例；查询是有意被拒绝的。
 
+.. literalinclude:: start_all_done.fbmcq
+   :language: fbmcq
+   :caption: start_all_done.fbmcq
+
 .. code-block:: console
 
-   $ cat start_all_done.fbmcq
-   init state("Root.Job{A: [done], B: [done]}");
-   check reach <= 1: true;
    $ pyfcstm bmc -i joint.fcstm -q start_all_done.fbmcq
    Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Root.Job'; a finished owner cannot be hot-started.
    $ echo $?
@@ -625,6 +652,16 @@
    :language: fcstm
    :linenos:
 
+两条查询各占一行。
+
+.. literalinclude:: dead_end.fbmcq
+   :language: fbmcq
+   :caption: dead_end.fbmcq
+
+.. literalinclude:: outranked.fbmcq
+   :language: fbmcq
+   :caption: outranked.fbmcq
+
 .. code-block:: console
 
    $ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never
@@ -655,7 +692,7 @@
    $ echo $?
    1
 
-默认情况下两个模型都报告 ``RUNTIME ERROR REACHABLE WITHIN BOUND``\ ，退出码为 5，并给出失败的操作和运行时复现了该错误的确认。使用 ``--no-runtime-safety`` 时，\ ``dead_end.fcstm`` 上的性质查询找到了见证，回放抛出仿真器自己的错误：命令行打印意外错误横幅，退出码是 1 而不是 4。只有在确认模型不会除以零或越界时才关闭这项检查；之后的结果依赖这个假设。
+默认情况下两个模型都报告 ``RUNTIME ERROR REACHABLE WITHIN BOUND``\ ，退出码为 5，并给出失败的操作和运行时复现了该错误的确认。使用 ``--no-runtime-safety`` 时这项检查被跳过，\ ``dead_end.fcstm`` 上的命令以仿真器自己的 ``SimulationRuntimeExpressionError`` 结束而不是给出结论：它打印意外错误横幅，退出码是 1 而不是 5。省略的回溯帧从命令的见证回放进入仿真器；页面没有显示见证本身。只有在确认模型不会除以零或越界时才关闭这项检查；之后的结果依赖这个假设。
 
 10. 公式台账
 ------------

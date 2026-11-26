@@ -7,9 +7,9 @@
 --------
 
 * **模型规模**\ ：对互不读取的区域，区域写法有 :math:`\sum S` 个叶子状态，展开成一台状态机（flat expansion）后有 :math:`\prod S` 个。这是精确式，并在 20 个小模型上核对过。节省的是模型，不是每个周期的时间：在这 20 个模型里，仿真器上有 17 个是展开式更快，只有展开式带 3840 条及以上转换时才更慢。
-* **仿真器**\ ：每个周期的时间主要由区域数 :math:`R` 决定，拟合是带小二次项的二次式。它不随每个区域的状态数 :math:`S` 变化，随每个状态的转换数 :math:`T` 缓慢增长，对写入的变量数 :math:`V` 是线性的。嵌套 :math:`D` 层约为一层的 :math:`D` 倍，仿真器的记忆化让第一次进入保持多项式增长。
+* **仿真器**\ ：每个周期的时间主要由区域数 :math:`R` 决定，拟合是带小二次项的二次式。它不随每个区域的状态数 :math:`S` 变化，随每个状态的转换数 :math:`T` 缓慢增长，对写入的变量数 :math:`V` 是线性的。嵌套 :math:`D` 层：纯拥有者链是一层的 4.4 倍（:math:`D = 12` 时 931 µs 对 212 µs）；每层还带第二个区域时约为一层的 :math:`D` 倍（3543 µs 对 354 µs）。仿真器的记忆化让第一次进入保持多项式增长。
 * **生成的 Python**\ ：在相同模型上，生成的运行时比仿真器快 2.6 到 8.4 倍（中位数 5.0）。它离手写的专用实现仍然很远（见\ :ref:`已知差距 <region-perf-python>`\ ）。
-* **生成的 C**\ ：每个周期的时间随 :math:`R` 超线性增长（:math:`R = 1..64` 上对数坐标斜率 1.43），单个机器的大小近似二次增长（:math:`R = 16` 到 :math:`R = 64` 之间斜率 1.9），进入嵌套拥有者的第一个周期每多一层乘 2.0 到 2.2。容量宏是模型规模的精确函数。
+* **生成的 C**\ ：每个周期的时间随 :math:`R` 超线性增长（:math:`R = 1..64` 上对数坐标斜率 1.43），单个机器的大小近似二次增长（:math:`R = 16` 到 :math:`R = 64` 之间斜率 1.9），进入嵌套拥有者的第一个周期从 :math:`D = 6` 起每多一层乘 2.0 到 2.2（:math:`D = 1..12` 全程约 1.8）。容量宏是模型规模的精确函数。
 
 怎样读这些数字
 --------------
@@ -309,27 +309,27 @@
 
    R sweep (R): us per cycle / first cycle us
      R=1: 234/500  R=2: 395/618  R=4: 683/1044  R=8: 1284/1964  R=16: 2511/3476  R=32: 5552/7551  R=64: 15436/18297  R=128: 44288/49382
-     linear R2 0.9711, slope 338.645 us per unit | quadratic R2 0.9999, x^2 term 1.7141 us | power exponent 1.06 (R2 0.982)
+     linear R2 0.9711, slope 338.645 us per unit | quadratic R2 0.9999, 96.17 + 126.2 x + 1.714 x^2 us | power exponent 1.06 (R2 0.982)
 
    S sweep (S): us per cycle / first cycle us
      S=3: 624/889  S=4: 696/1051  S=8: 640/877  S=16: 672/1157  S=32: 675/951  S=64: 703/1036  S=128: 741/1209
-     linear R2 0.6810, slope 0.714 us per unit | quadratic R2 0.6851, x^2 term -0.0017 us | power exponent 0.03 (R2 0.589)
+     linear R2 0.6810, slope 0.714 us per unit | quadratic R2 0.6851, 650.2 + 0.9244 x - 0.00165 x^2 us | power exponent 0.03 (R2 0.589)
 
    T sweep (T): us per cycle / first cycle us
      T=1: 552/895  T=2: 648/911  T=3: 678/902  T=4: 716/1069  T=5: 748/1056  T=6: 746/917  T=7: 775/907
-     linear R2 0.8856, slope 33.297 us per unit | quadratic R2 0.9741, x^2 term -6.0759 us | power exponent 0.17 (R2 0.979)
+     linear R2 0.8856, slope 33.297 us per unit | quadratic R2 0.9741, 488.7 + 81.9 x - 6.076 x^2 us | power exponent 0.17 (R2 0.979)
 
    V sweep (V): us per cycle / first cycle us
      V=1: 637/916  V=2: 674/1229  V=4: 731/981  V=8: 867/1080  V=16: 1049/1202  V=32: 1417/1453  V=64: 1981/1957
-     linear R2 0.9904, slope 21.310 us per unit | quadratic R2 0.9995, x^2 term -0.1211 us | power exponent 0.27 (R2 0.927)
+     linear R2 0.9904, slope 21.310 us per unit | quadratic R2 0.9995, 619 + 29 x - 0.1211 x^2 us | power exponent 0.27 (R2 0.927)
 
    D_chain sweep (D): us per cycle / first cycle us
      D=1: 212/340  D=2: 262/556  D=3: 316/821  D=4: 361/1125  D=5: 435/1510  D=6: 494/2271  D=8: 595/3214  D=10: 763/5884  D=12: 931/7201
-     linear R2 0.9901, slope 64.293 us per unit | quadratic R2 0.9982, x^2 term 1.8475 us | power exponent 0.60 (R2 0.950)
+     linear R2 0.9901, slope 64.293 us per unit | quadratic R2 0.9982, 174.3 + 40.44 x + 1.848 x^2 us | power exponent 0.60 (R2 0.950)
 
    D_branch sweep (D): us per cycle / first cycle us
      D=1: 354/510  D=2: 559/1004  D=3: 781/2120  D=4: 1000/2427  D=5: 1255/3279  D=6: 1514/4464  D=8: 2091/7589  D=10: 2899/11585  D=12: 3543/17332
-     linear R2 0.9881, slope 291.746 us per unit | quadratic R2 0.9989, x^2 term 9.7317 us | power exponent 0.94 (R2 0.982)
+     linear R2 0.9881, slope 291.746 us per unit | quadratic R2 0.9989, 182.5 + 166.1 x + 9.732 x^2 us | power exponent 0.94 (R2 0.982)
 
 拟合
 ~~~~
@@ -390,22 +390,23 @@
 
    R sweep (R): generated Python us per cycle, and simulator/generated ratio
      R=1: 40 (5.8x)  R=2: 69 (5.7x)  R=4: 131 (5.2x)  R=8: 273 (4.7x)  R=16: 614 (4.1x)  R=32: 1458 (3.8x)  R=64: 4800 (3.2x)  R=128: 17081 (2.6x)
-     linear R2 0.9448 | quadratic R2 1.0000, x^2 term 0.9177 us
+     linear R2 0.9448 | quadratic R2 1.0000, 58.39 + 15.5 x + 0.9177 x^2 us
    S sweep (S): generated Python us per cycle, and simulator/generated ratio
      S=3: 127 (4.9x)  S=4: 134 (5.2x)  S=8: 130 (4.9x)  S=16: 135 (5.0x)  S=32: 132 (5.1x)  S=64: 135 (5.2x)  S=128: 133 (5.6x)
-     linear R2 0.1552 | quadratic R2 0.3437, x^2 term -0.0008 us
+     linear R2 0.1552 | quadratic R2 0.3437, 130.3 + 0.1282 x - 0.0008119 x^2 us
    T sweep (T): generated Python us per cycle, and simulator/generated ratio
      T=1: 108 (5.1x)  T=2: 129 (5.0x)  T=3: 141 (4.8x)  T=4: 150 (4.8x)  T=5: 153 (4.9x)  T=6: 158 (4.7x)  T=7: 167 (4.6x)
-     linear R2 0.9121 | quadratic R2 0.9746, x^2 term -1.3360 us
+     linear R2 0.9121 | quadratic R2 0.9746, 92.45 + 19.52 x - 1.336 x^2 us
    V sweep (V): generated Python us per cycle, and simulator/generated ratio
      V=1: 129 (4.9x)  V=2: 140 (4.8x)  V=4: 145 (5.0x)  V=8: 173 (5.0x)  V=16: 222 (4.7x)  V=32: 303 (4.7x)  V=64: 478 (4.1x)
-     linear R2 0.9992 | quadratic R2 0.9994, x^2 term -0.0050 us
+     linear R2 0.9992 | quadratic R2 0.9994, 125.5 + 5.825 x - 0.004998 x^2 us
    D_chain sweep (D): generated Python us per cycle, and simulator/generated ratio
      D=1: 40 (5.3x)  D=2: 45 (5.8x)  D=3: 53 (6.0x)  D=4: 62 (5.8x)  D=5: 68 (6.4x)  D=6: 72 (6.8x)  D=8: 86 (6.9x)  D=10: 96 (8.0x)  D=12: 111 (8.4x)
-     linear R2 0.9965 | quadratic R2 0.9973, x^2 term -0.0545 us
+     linear R2 0.9965 | quadratic R2 0.9973, 32.77 + 7.045 x - 0.05447 x^2 us
+     first cycle us (minimum of fresh runs): D=1: 86  D=2: 151  D=3: 193  D=4: 275  D=5: 373  D=6: 501  D=8: 844  D=10: 1459  D=12: 1753
    D_branch sweep (D): generated Python us per cycle, and simulator/generated ratio
      D=1: 71 (5.0x)  D=2: 111 (5.0x)  D=3: 153 (5.1x)  D=4: 197 (5.1x)  D=5: 241 (5.2x)  D=6: 302 (5.0x)  D=8: 413 (5.1x)  D=10: 536 (5.4x)  D=12: 688 (5.1x)
-     linear R2 0.9896 | quadratic R2 0.9998, x^2 term 1.7943 us
+     linear R2 0.9896 | quadratic R2 0.9998, 38.26 + 32.4 x + 1.794 x^2 us
 
    ratio over all 47 points: median 5.0, min 2.6, max 8.4
    final variables equal to the simulator's after 1024 cycles: 47 of 47 points
@@ -419,6 +420,15 @@
      R=32: 1825459 bytes, 142.7 ms
      R=64: 3573103 bytes, 340.8 ms
      R=128: 7079885 bytes, 912.8 ms
+
+   generated machine.py bytes and import ms, by S (R=4):
+     S=3: 167685 bytes, 15.3 ms
+     S=4: 193990 bytes, 16.8 ms
+     S=8: 299207 bytes, 26.7 ms
+     S=16: 510659 bytes, 37.6 ms
+     S=32: 935306 bytes, 70.6 ms
+     S=64: 1785996 bytes, 131.0 ms
+     S=128: 3491361 bytes, 336.6 ms
 
 .. figure:: fig_python_vs_simulator_zh.plot.py.svg
    :alt: 生成的 Python 与仿真器在相同扫描上每个周期的时间
@@ -458,7 +468,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      R=16    3279.9 |  104560 |    981112 |      11.1
      R=32    9660.6 |  179976 |   3617848 |      21.4
      R=64   29617.3 |  331616 |  13867960 |      52.0
-     power exponent of ns per cycle 1.43 (R2 0.991); quadratic R2 0.9999; linear R2 0.967
+     power exponent of ns per cycle 1.43 (R2 0.991); quadratic R2 0.9999, -207.1 + 142.1 x + 5.067 x^2 ns; linear R2 0.967
 
    S sweep (S): ns per cycle | .text bytes | sizeof bytes | first cycle us
      S=3      302.4 |   35961 |     35800 |       4.3
@@ -467,7 +477,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      S=16     435.7 |   66938 |    222376 |       5.2
      S=32     742.9 |  103506 |    630184 |       5.7
      S=64    1165.5 |  178514 |   2035624 |       7.1
-     power exponent of ns per cycle 0.43 (R2 0.923); quadratic R2 0.9944; linear R2 0.994
+     power exponent of ns per cycle 0.43 (R2 0.923); quadratic R2 0.9944, 246.3 + 14.68 x - 0.003683 x^2 ns; linear R2 0.994
 
    T sweep (T): ns per cycle | .text bytes | sizeof bytes | first cycle us
      T=1      347.0 |   42020 |     92200 |       5.4
@@ -477,7 +487,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      T=5      474.5 |   65060 |     92200 |       5.9
      T=6      502.7 |   70660 |     92200 |       4.8
      T=7      486.5 |   76772 |     92200 |       5.0
-     power exponent of ns per cycle 0.19 (R2 0.862); quadratic R2 0.8854; linear R2 0.721
+     power exponent of ns per cycle 0.19 (R2 0.862); quadratic R2 0.8854, 272.4 + 77.48 x - 6.664 x^2 ns; linear R2 0.721
 
    V sweep (V): ns per cycle | .text bytes | sizeof bytes | first cycle us
      V=1      365.7 |   47748 |     92200 |       4.7
@@ -487,7 +497,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      V=16     525.0 |   84450 |    147160 |       4.9
      V=32     543.6 |  110602 |    205784 |       5.3
      V=64     576.1 |  177138 |    323032 |       5.0
-     power exponent of ns per cycle 0.15 (R2 0.729); quadratic R2 0.8806; linear R2 0.724
+     power exponent of ns per cycle 0.15 (R2 0.729); quadratic R2 0.8806, 313.6 + 11.36 x - 0.1138 x^2 ns; linear R2 0.724
 
    D_chain sweep (D): ns per cycle | .text bytes | sizeof bytes | first cycle us
      D=1       86.6 |   32329 |     14968 |       3.3
@@ -499,7 +509,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      D=8      605.4 |   41670 |     66040 |      92.2
      D=10     813.6 |   44230 |     87544 |     427.1
      D=12    1176.6 |   47498 |    112120 |    2093.5
-     power exponent of ns per cycle 1.05 (R2 0.966); quadratic R2 0.9973; linear R2 0.959
+     power exponent of ns per cycle 1.05 (R2 0.966); quadratic R2 0.9973, 75.86 + 17.38 x + 6.04 x^2 ns; linear R2 0.959
 
    the base model R=4 S=8 T=2 D=1 V=1 appears in several sweeps; its ns per cycle:
      347.1 358.1 402.5 365.7  (spread 16%)
@@ -570,7 +580,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
    :align: center
    :width: 70%
 
-   三种引擎在 ``R=1`` 链上第一个周期（进入每个嵌套拥有者的周期）的时间随 :math:`D` 的变化。纵轴为对数坐标。仿真器与 Python：5 个全新运行的最小值；C：7 次运行的最小值。这张图证明 C 运行时没有记忆化：它的第一个周期在 :math:`D = 1` 时是 3.3 µs，在 :math:`D = 12` 时是 2.1 ms，倍数为每层 2.0 到 2.2（:math:`D = 8` 到 10 为 4.6，10 到 12 为 4.9）。:math:`D = 12` 时它比生成的 Python（1.7 ms）更慢。数据来源：:file:`data/e2.jsonl`\ 、\ :file:`data/e3.jsonl` 与 :file:`data/e4.jsonl`\ 。
+   三种引擎在 ``R=1`` 链上第一个周期（进入每个嵌套拥有者的周期）的时间随 :math:`D` 的变化。纵轴为对数坐标。仿真器与 Python：5 个全新运行的最小值；C：7 次运行的最小值。这张图证明 C 运行时没有记忆化：它的第一个周期在 :math:`D = 1` 时是 3.3 µs，在 :math:`D = 12` 时是 2.1 ms，倍数从 :math:`D = 6` 起为每层 2.0 到 2.2（:math:`D = 6` 到 8 为 4.0，8 到 10 为 4.6，10 到 12 为 4.9；:math:`D = 4` 到 5 每层只有 1.5）。:math:`D = 12` 时它比生成的 Python（1.7 ms）更慢。数据来源：:file:`data/e2.jsonl`\ 、\ :file:`data/e3.jsonl` 与 :file:`data/e4.jsonl`\ 。
 
 后续周期不受影响：同一条 C 链的稳态时间在 :math:`D = 1` 时是 87 ns，在 :math:`D = 12` 时是 1177 ns。代价在机器进入拥有者时一次付清，启动时进入一次、以后不再离开的应用可以接受。反复重新进入嵌套拥有者会再次付出这个代价；这一情形扫描中没有测。
 
@@ -625,7 +635,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
      - :math:`R = 1` 时 15 KB，:math:`R = 64` 时 13.2 MiB
    * - 生成的 C，嵌套
      - 测量值
-     - :math:`D`\ ，第一个周期每层 2.0 到 2.2 倍
+     - :math:`D`\ ，从 :math:`D = 6` 起第一个周期每层 2.0 到 2.2 倍
      - :math:`D = 1` 时 3.3 µs，:math:`D = 12` 时 2.1 ms
 
 给建模者的建议
@@ -634,7 +644,7 @@ C 的测量使用相同的模型、``gcc -O2 -std=c99``\ 、一个绑定的核�
 * **为模型选区域，不要为速度选区域。**\ 区域互相独立时，模型文本随 :math:`R` 线性增长，展开式则是指数增长（:eq:`region-perf-uniform`\ ）。在仿真器里，行为相同的手写展开式在 1664 条转换以内每个周期更快（20 个核对过的模型中的 17 个），所以区域并不节省仿真时间。
 * **互相读取的区域保持各自的顺序。**\ 后面的区域读到前面的区域写下的值，读到的是新值（与相反顺序相比早一个周期）。展开式必须把写入代入条件，所以模型规模上的节省比公式 :eq:`region-perf-uniform` 暗示的小，改写后的形式也必须重新核对。
 * **选 C 目标之前先数作用域。**\ 内存近似是 :math:`P` 的二次函数；按默认容量，16 个区域、每个区域 8 个状态的机器每台约需 1 MiB。只有在了解自己模型的需求之后，才按 :doc:`/how_to/generation/index_zh` 的做法设置这些宏；值太小是运行时的错误，不是悄悄地行为异常。
-* **在意进入时间时，C 里要保持嵌套较浅。**\ 深度超过 4 之后每多一层，第一个周期乘 2.0 到 2.2；稳态时间不受影响。
+* **在意进入时间时，C 里要保持嵌套较浅。**\ 从深度 6 起每多一层，第一个周期乘 2.0 到 2.2（1 到 12 全程约 1.8）；稳态时间不受影响。
 * **在意周期时，每个转换少写变量。**\ :math:`V` 是仿真器里（每个变量 21 µs）和 Python 里（每个变量 5.5 µs）唯一有干净线性代价的参数。
 * **重复执行时用生成的 Python 或 C 运行时，不用仿真器**\ ，周期时间或占用空间是硬性要求时优先用 C。
 

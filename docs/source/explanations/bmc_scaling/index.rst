@@ -448,13 +448,14 @@ The command below compares every closed form with the committed data files.  It
 is a maintenance command that reads only ``data/*.jsonl``, so its output is the
 same on every run, but it is a script in the repository and not a ``pyfcstm``
 command, so the documentation check does not run it.  The output is copied here
-from a run in the repository.  Each line is one comparison; the numbers come from
+from a run at the repository root, which is why the data directory is given
+with its full path.  Each line is one comparison; the numbers come from
 the points in ``data/``, which were measured as described in the table of the two
 campaigns above.
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py check-formulas --data data
+   python tools/measure_bmc_scaling.py check-formulas --data docs/source/explanations/bmc_scaling/data
 
 .. code-block:: text
 
@@ -490,7 +491,7 @@ campaigns above.
    context cost, original campaign, N=100 V=16 k=5: build 78.1 s, 12672 contexts, 6.16 ms per context
    context cost, original campaign, N=100 V=64 k=5: build 87.9 s, 50688 contexts, 1.73 ms per context
    context cost, original campaign, N=100 V=64 k=5: build 88.8 s, 50688 contexts, 1.75 ms per context
-   closed forms agree with the data in data
+   closed forms agree with the data in docs/source/explanations/bmc_scaling/data
 
 **What it shows.** Each line names a closed form, the number of points it was
 compared with and the result. Lines that say "all equal" are exact; lines that
@@ -527,8 +528,8 @@ The per-context cost differs between the two campaigns. For :math:`N=100`,
 :math:`k=5`, the original campaign built in 19.3 to 19.6 s at :math:`V=4`, 76.4
 to 78.1 s at :math:`V=16` and 87.9 to 88.8 s at :math:`V=64`. That is about 6 ms
 per context at :math:`V=4` and 16, but 1.7 ms at :math:`V=64`, so the original
-scan flattens where the retest stays linear, and the original is about 4 to
-4.6 times slower than the retest at :math:`V=4` and :math:`V=16` and about 1.3 to
+scan flattens where the retest stays linear, and the original is about 3.9 to
+4.7 times slower than the retest at :math:`V=4` and :math:`V=16` and about 1.3 to
 1.4 times at :math:`V=64`. The original ran 56 processes at once and had no warm-up; whether
 either causes the gap was not tested, and the gap is not explained. The retest
 figures match :eq:`bmc-scaling-contexts`; treat the original figures as the
@@ -699,6 +700,14 @@ states that is impossible. **What you can conclude.** The family is unsatisfiabl
 for every :math:`m`. **What you cannot conclude.** One structure of mutual
 exclusion was measured; others may behave differently.
 
+The table is built from ``data/pigeonhole.jsonl`` (retest campaign, one fresh
+process per row, one run per row; ``Regions`` is the number of pigeons of the
+record, one more than its holes).  ``Solve seconds`` is the
+``t_solve`` field of the record and ``Conflicts`` is the ``conflicts``
+statistic of the query's own check (the next-to-last entry of ``checks``; for
+the two undecided rows, their only entry).  The ``check-formulas`` output
+below prints only the ratios of consecutive conflict counts.
+
 .. list-table:: Exclusive regions, unsatisfiable, retest
    :header-rows: 1
    :widths: 14 22 22 42
@@ -764,7 +773,8 @@ The table below is the largest size that finished inside each budget, taken from
 the original campaign (commit ``560b7dc4``, 56 processes at once, one run for
 points above 8 s). Every query is an unsatisfiable ``check reach``, and the time
 is build plus solve. A size is "the largest measured", so the true limit lies
-between it and the next measured size.
+between it and the next measured size.  The table is the transcribed output of
+the ``range-table`` command shown after it.
 
 .. list-table:: Largest measured size per time budget
    :header-rows: 1
@@ -838,7 +848,7 @@ table above is its output, transcribed.
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py range-table --data data
+   python tools/measure_bmc_scaling.py range-table --data docs/source/explanations/bmc_scaling/data
 
 .. figure:: time_flat.plot.py.svg
    :alt: Build, solve and total seconds against states, bound and transitions per state for region-free machines.
@@ -885,7 +895,7 @@ it.  The output is copied here from a run in the repository.  ``original`` and
 
 .. code-block:: bash
 
-   python tools/measure_bmc_scaling.py compare-retest --data data
+   python tools/measure_bmc_scaling.py compare-retest --data docs/source/explanations/bmc_scaling/data
 
 .. code-block:: text
 

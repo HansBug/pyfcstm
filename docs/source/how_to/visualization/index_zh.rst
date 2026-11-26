@@ -452,7 +452,7 @@ CI 图表任务不应依赖桌面查看器：
    :language: text
 
 **预期信号。** 默认导出有一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。``max_depth=3`` 时输出相同；``max_depth=2`` 保留两个分区，但把其中的状态折叠成 ``...``；
-``max_depth=1`` 把整个拥有者折叠起来。图例把两个 ``Ping`` 显示为不同的事件，各有自己从根开始的路径。可以用任何 PlantUML 环境渲染这份源码；默认的 Graphviz 布局会把分区并排放置：
+``max_depth=1`` 把整个拥有者折叠起来。图例把两个 ``Ping`` 显示为不同的事件，各有自己从根开始的路径。可以用任何 PlantUML 环境渲染这份源码；本页假定使用默认的 Graphviz 布局：
 
 .. figure:: region_controller.fcstm.puml.svg
    :alt: 联锁控制器的 PlantUML 图，Running 里有两个并发分区

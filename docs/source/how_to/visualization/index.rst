@@ -491,8 +491,8 @@ through the region (``/Left.Ping``).  ``region_events.fcstm`` declares a
 same; ``max_depth=2`` keeps the two partitions but collapses their states into
 ``...``; ``max_depth=1`` collapses the whole owner.  The legend shows the two
 ``Ping`` events as different events with their own root-based paths.  Render the
-source with any PlantUML setup; the default Graphviz layout puts the
-partitions side by side:
+source with any PlantUML setup; the default Graphviz layout is the one this
+page assumes:
 
 .. figure:: region_controller.fcstm.puml.svg
    :alt: PlantUML drawing of the interlock controller with two concurrent partitions in Running

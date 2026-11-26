@@ -387,7 +387,7 @@ Inspect 任务指南
 
 文件副作用。无；报告输出到标准输出。
 
-首个失败检查。调整顺序后诊断码仍未消失时，检查是否还有别的靠前区域在读取靠后区域产生的值（报告对每个读取处各给一条诊断）。
+首个失败检查。调整顺序后诊断码仍未消失时，检查是否还有别的靠前区域在读取靠后区域产生的值。
 
 参考链接。:doc:`/reference/inspect_report/index_zh`。
 
@@ -434,7 +434,7 @@ Inspect 任务指南
    :language: text
 
 预期信号。``Job -> Next`` 上出现 ``W_UNREACHABLE_TRANSITION``，原因是 ``owner_never_completes``。给 ``B`` 一条能结束的路径
-（``region_owner_completes_fixed.fcstm``）后，带这个原因的报告数量变成 ``0``。拥有者上的强制转换总是可达，不受影响。使用 ``--enable-verify`` 时，结构分析读取同一条规则。
+（``region_owner_completes_fixed.fcstm``）后，带这个原因的报告数量变成 ``0``。拥有者上的强制转换总是可达，不受影响。
 
 文件副作用。无。
 

@@ -147,17 +147,34 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 
 **预期输出。** 直接 ``reach`` 命令的 JSON 包含 ``"kind": "reach"``、
 ``"status": "sat"``、``"outcome": "witness_found"`` 和
-``"exit_code": 0``。已验证的夹具矩阵为：
+``"exit_code": 0``。用人类可读模式运行这七个文件，每份报告的第一行就是结论；只有 ``forbid`` 以 ``1`` 退出，
+因为它的反例表示性质被违反：
 
-.. code-block:: text
+.. code-block:: console
 
-   reach sat witness_found exit=0
-   forbid sat property_violated exit=1
-   invariant unsat property_satisfied exit=0
-   must_reach unsat property_satisfied exit=0
-   exists_always sat witness_found exit=0
-   response unsat property_satisfied exit=0
-   cover sat witness_found exit=0
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q forbid.fbmcq
+   BMC forbid <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq
+   BMC invariant <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q must_reach.fbmcq
+   BMC must_reach <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q exists_always.fbmcq
+   BMC exists_always <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response.fbmcq
+   BMC response <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q cover.fbmcq
+   BMC cover <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
 
 **文件副作用。** 除非增加 ``-o``，否则没有文件副作用。
 
@@ -278,13 +295,20 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 5. 审计人类可读见证与重放
 --------------------------
 
-**CLI。**
+**CLI。** 每次运行都会变化的行（求解耗时）和本任务不讨论的行用 ``...`` 省略：
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q calls.fbmcq
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q calls.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+     Replay: verified (2 frames, 1 step).
+   ...
+   Solver: SAT in ... ms
+   ...
+   Trace
+     0: Root.Idle -> Root.Idle [fallback; calls=Root.Idle.Tick]
+   ...
 
 **FBMCQ。**
 
@@ -384,12 +408,12 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 
 **CLI。**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q reach_bound_2.fbmcq \
-       --max-bound 1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach_bound_2.fbmcq --max-bound 1
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
 
 **FBMCQ。**
 
@@ -400,7 +424,7 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 **作用。** 查询请求边界 2，而命令行策略最多允许 1。
 
 **预期输出。** stderr 包含 ``Failed to compile BMC query``、``query_bound=2``
-和 ``max_bound=1``；命令退出 ``1``。
+和 ``max_bound=1``；命令退出 ``1``，如上面的块所示。
 
 **文件副作用。** 无。即使指定 ``-o``，策略拒绝发生在报告构造前，也不会创建或
 修改报告。
@@ -447,15 +471,22 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 10. 区分 ``response`` 违反与边界不完整
 ----------------------------------------
 
-**CLI。** 先运行缺失响应场景；需要短边界场景时，用同一命令形状替换为
-``response_incomplete.fbmcq``。
+**CLI。** 先运行缺失响应场景，再运行短边界场景。人类可读报告的第一行和退出码都能把两者区分开：
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q response_missing.fbmcq --json \
-       -o /tmp/bmc-response.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_missing.fbmcq
+   BMC response <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_incomplete.fbmcq
+   BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE
+   ...
+   $ echo $?
+   3
+
+给任一命令加上 ``--json -o /tmp/bmc-response.json``，就会写出下面描述的机器可读结果。
 
 **FBMCQ 文件：** ``response_missing.fbmcq``
 
@@ -473,12 +504,12 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 形状在边界 1 下无定论，因为两个后继帧的响应窗口越过已检查后缀。
 
 **预期输出。** ``response_missing.fbmcq`` 退出 ``1``，``status`` 为 ``sat``，
-``outcome`` 为 ``property_violated``。``response_incomplete.fbmcq`` 退出
+``outcome`` 为 ``property_violated``\ （JSON 中）。``response_incomplete.fbmcq`` 退出
 ``3``，主 ``status`` 为 ``unsat``，``outcome`` 为 ``incomplete``，
 ``incomplete`` 为 true，``incomplete_status`` 为 ``sat``，见证与重放均为
 ``null``。
 
-**文件副作用。** 在 ``/tmp`` 下原子创建或替换所选输出文件。
+**文件副作用。** 无；增加 ``-o`` 时，输出文件会被原子地创建或替换。
 
 **失败边界。** 当前结果与见证模式不能区分决定性 ``response`` 反例来自未定义
 触发器，还是来自已定义触发器但没有响应；必须结合查询和轨迹人工判断。后缀闭合前
@@ -492,11 +523,12 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
 
 **CLI。**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q invalid_state.fbmcq
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invalid_state.fbmcq
+   Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Missing'.
+   $ echo $?
+   1
 
 **FBMCQ。**
 
@@ -799,27 +831,15 @@ assumptions_self_conflict``。
 含区域模型的任务
 ----------------
 
-这些任务卡使用 ``region_controller.fcstm``，也就是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器（``Running`` 里 ``Safety`` 在 ``Motion`` 之前）。
-请把它下载到各任务卡所列查询文件旁边。有界结果不能说明界限之外的任何事情，SAT 与 UNSAT 要像上面的任务卡一样通过性质类别来解读。辅助脚本
-``region_summary.py`` 打印 JSON 结果中确定的部分：
-
-.. literalinclude:: region_summary.py
-   :language: python
-   :caption: region_summary.py
-
-任务 18 到 20 的演示脚本会引用 ``region_run.sh``。它的函数先运行任务里的命令行命令（``pyfcstm bmc ... --json -o`` 那一行），再对写出的 JSON 文件运行上面的辅助脚本：
-
-.. literalinclude:: region_run.sh
-   :language: bash
-   :caption: region_run.sh
-
-脚本之外，同一件事就是两条命令：``pyfcstm bmc -i region_controller.fcstm -q region_start.fbmcq --json -o result.json``，然后
-``python region_summary.py result.json``。
+这些任务卡使用 ``controller.fcstm``，也就是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器（``Running`` 里 ``Safety`` 在 ``Motion`` 之前）。
+请把它（:download:`controller.fcstm </_models/controller.fcstm>`）下载到各任务卡所列查询文件旁边。有界结果不能说明界限之外的任何事情，SAT 与 UNSAT 要像上面的任务卡一样通过性质类别来解读。
+这些任务卡用人类可读模式运行 ``pyfcstm bmc`` 并读轨迹；单独一行 ``...`` 表示任务卡不讨论的报告行，例如求解耗时。
+同样的事实也在 JSON 结果里（``witness.frames``、``witness.steps``），字段见 :doc:`/reference/bmc_results/index_zh`。
 
 18. 从给定位置起检查性质
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-**输入。** ``region_controller.fcstm`` 与 ``region_start.fbmcq``。``init state(...)`` 接受配置（configuration）文本、经过区域的状态路径，或只写拥有者（owner）。
+**输入。** ``controller.fcstm`` 与 ``region_start.fbmcq``。``init state(...)`` 接受配置（configuration）文本、经过区域的状态路径，或只写拥有者（owner）。
 持久变量保留各自的初始值，除非用 ``havoc`` 放开，所以这里放开并约束 ``permit`` 与 ``motor``。
 
 .. literalinclude:: region_start.fbmcq
@@ -828,29 +848,39 @@ assumptions_self_conflict``。
 
 **命令行。**
 
-.. literalinclude:: region_start.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_start.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_start.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: On}
+          -> Controller.Idle [transition; events=Controller.Stop]
+          Safety: Watching -> [done] [transition]
+          Motion: On -> [done] [transition]
+          Running: [start] -> Controller.Idle [transition]
+   ...
 
-**预期输出。** 第 0 帧恰好是你写的配置。查询要求一步内到达 ``Controller.Idle``，离开 ``Running`` 的唯一途径是 ``Stop`` 强制转换（forced transition），所以第 1 帧是 ``Controller.Idle``。
-第 0 步为每个有动作的区域列出一个局部情形：``Safety`` 与 ``Motion`` 各走自己的 ``__region_done__`` 转换，然后拥有者走向 ``Idle`` 的转换；下一张卡会解释这些条目。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
+**预期输出。** 第 0 帧恰好是你写的配置。查询要求一步内到达 ``Controller.Idle``，离开 ``Running`` 的唯一途径是 ``Stop`` 强制转换（forced transition），所以轨迹止于 ``Controller.Idle``。
+第 0 步为每个有动作的区域列出一个局部情形：``Safety`` 与 ``Motion`` 各走自己的转换到 ``[done]``\ （即 ``__region_done__`` 转换），然后拥有者走向 ``Idle`` 的转换；下一张卡会解释这些条目。如果不写 ``havoc { permit, motor }``，同样的 ``where`` 会让场景不可行
 （``Failure boundary: INITIALIZATION``），因为初始值 ``permit = 0`` 与 ``motor = 0`` 与它矛盾。
 
-**文件副作用。** 无；临时 JSON 文件放在 ``.region_tmp`` 里，脚本会把它删除。
+**文件副作用。** 无；报告写到标准输出。
 
 **失败时先查什么。** 结论是 ``SCENARIO INFEASIBLE`` 时，读人读报告里的 ``Failure boundary`` 一行，并把 ``where`` 与变量初始值对照。
 编译以 ``invalid_start_position`` 停止时，说明起始文本有误。下面是负例：``region_bad_start.fbmcq`` 写了不存在的状态，
-``region_all_done.fbmcq`` 把拥有者的全部区域都标成 ``[done]``，这永远不是停驻位置。
+``region_all_done.fbmcq`` 把拥有者的全部区域都标成 ``[done]``，这永远不是停驻位置。两条命令的退出码都是 1：
 
-.. literalinclude:: region_bad_start.demox.sh.err
-   :language: text
+.. code-block:: console
 
-.. literalinclude:: region_all_done.demox.sh.err
-   :language: text
-
-两条命令的退出码都是 1（``region_bad_start.demox.sh.exitcode`` 与 ``region_all_done.demox.sh.exitcode``）。
+   $ pyfcstm bmc -i controller.fcstm -q region_bad_start.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown configuration path: 'Controller.Running.Safety.Nope'.
+   $ echo $?
+   1
+   $ pyfcstm bmc -i controller.fcstm -q region_all_done.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Controller.Running'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
 
 **参考。** :doc:`/reference/bmc_query/index_zh`。
 
@@ -871,25 +901,42 @@ assumptions_self_conflict``。
    :language: text
    :caption: region_pattern_construct_miss.fbmcq
 
-**命令行。**
+**命令行。** 每条命令只打印第 0 帧（轨迹里的 ``0:`` 一行）：性质在那里已经成立，后面的帧是求解器的自由选择。
 
-.. literalinclude:: region_pattern.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_pattern.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_construct.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: [init], Motion: On}
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_match.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_construct_miss.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
 
-**预期输出。** 脚本只打印第 0 帧：性质在那里已经成立，后面的帧是求解器的自由选择。第一条查询的起始文本没有写 ``Safety``：第 0 帧显示 ``Safety: [init]``，写了 ``[init]`` 的模式能匹配它。第二条查询两个区域都写了，
+**预期输出。** 第一条查询的起始文本没有写 ``Safety``：第 0 帧显示 ``Safety: [init]``，写了 ``[init]`` 的模式能匹配它。第二条查询两个区域都写了，
 模式没有写 ``Safety``，所以 ``Watching`` 无关紧要。第三条查询以 ``Safety: Watching`` 起步，却要求 ``Safety: [init]``：没有见证
 （退出码 1，``no_witness``）。模式恰好在写出的区域一致时成立；在拥有者正被进入时发生的调用里，``[init]`` 对尚未启动的区域也成立。
 
 **文件副作用。** 无。
 
-**失败时先查什么。** 模式被拒绝时，编译以 ``invalid_active_pattern`` 停止（负例 ``region_bad_pattern.fbmcq``，退出码 1，见
-``region_bad_pattern.demox.sh.exitcode``）：
+**失败时先查什么。** 模式被拒绝时，编译以 ``invalid_active_pattern`` 停止（负例 ``region_bad_pattern.fbmcq``）：
 
-.. literalinclude:: region_bad_pattern.demox.sh.err
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_bad_pattern.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Controller.Running.Safety.Nope'.
+   $ echo $?
+   1
 
 模式匹配得过宽时，检查你省略了哪些区域。
 
@@ -905,16 +952,36 @@ assumptions_self_conflict``。
    :language: text
    :caption: region_cases.fbmcq
 
-**命令行。**
+**命令行。** 人读轨迹把每一步打印在以步号开头的一行，后面每个情形一行，作用域相对于拥有者。第二条命令覆盖一个局部情形：
 
-.. literalinclude:: region_cases.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_cases.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Idle
+          -> Controller.Running{Safety: Watching, Motion: Off} [transition; events=Controller.Start]
+          Controller.Idle -> Controller.Running [transition]
+          Running: [start] -> Safety.Watching [initial]
+          Running: [start] -> Motion.Off [initial]
+     1: Controller.Running{Safety: Watching, Motion: Off}
+          -> Controller.Running{Safety: Watching, Motion: On} [transition]
+          Safety: Watching -> Watching [fallback]
+          Motion: Off -> On [transition]
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_cover.fbmcq
+   BMC cover <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: Off}
+          -> Controller.Running{Safety: Watching, Motion: On} [transition]
+          Safety: Watching -> Watching [fallback]
+          Motion: Off -> On [transition]
+   ...
 
-**预期输出。** 第 0 步进入 ``Running``：``case_label`` 给出外层转换，第一行 ``local`` 的作用域是 ``None``\ （在所有区域之外），拥有者作用域里每个区域各有一个 ``initial`` 情形。
-第 1 步的 ``case_label=None``，因为所有情形都在区域里运行：``Safety`` 保持（``fallback``），``Motion`` 迁移（``transition``）。人读轨迹用相对拥有者的作用域打印同样的情形。
+**预期输出。** 第 0 步进入 ``Running``：``0:`` 下面第一行是外层转换（JSON 里的 ``case_label``），第一个情形在所有区域之外，拥有者作用域里每个区域各有一个 ``initial`` 情形。
+第 1 步没有外层情形，因为所有情形都在区域里运行：``Safety`` 保持（``fallback``），``Motion`` 迁移（``transition``）。JSON 里同样的情形是 ``local_cases``，第 1 步的 ``case_label`` 为 ``null``。
 ``cover`` 查询接受单独的 ``case("标签")``，请从见证里复制标签。标签末尾的 ``::2`` 是该情形在展开后的情形中的序号，不是你写下的任何东西的个数。
 
 **文件副作用。** 无。
@@ -936,19 +1003,45 @@ assumptions_self_conflict``。
 
 **命令或代码。** 命令行没有设置这个上限的选项，所以在 Python 里调大它：
 
-.. literalinclude:: region_reentry.demo.py
-   :language: python
-   :caption: region_reentry.demo.py
+.. testcode::
 
-.. literalinclude:: region_reentry.demo.py.txt
-   :language: text
+   from pyfcstm.bmc import BmcBuildError, BmcOptions, compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_file
+
+   query = "check reach <= 1: terminated();"
+   for name, limit in [("region_reentry_six", 7), ("region_reentry_six", 6), ("region_reentry_loop", 64)]:
+       model = load_state_machine_from_file(name + ".fcstm")
+       options = BmcOptions(max_group_reentries=limit)
+       try:
+           compile_bmc_query(model, query, options=options)
+           print(name, limit, "compiled")
+       except BmcBuildError as error:
+           print(name, limit, "refused:", error)
+
+.. testoutput::
+
+   region_reentry_six 7 compiled
+   region_reentry_six 6 refused: state 'Root.Owner' re-enters its own group more than 6 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   region_reentry_loop 64 refused: state 'Root.Owner' re-enters its own group more than 64 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
 
 再用命令行在同样两个模型上对照：
 
-.. literalinclude:: region_reentry.demo.sh.txt
-   :language: text
+.. code-block:: console
 
-**预期输出。** 六圈模型在上限为 16 或 7 时能编译，为 6 时被拒绝；消息会指出状态和选项名。无界的循环在任何上限下都被拒绝：调大数字对它没有帮助。
+   $ pyfcstm bmc -i region_reentry_six.fcstm -q region_reentry.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i region_reentry_loop.fcstm -q region_reentry.fbmcq
+   ...
+   Traceback (most recent call last):
+   ...
+   _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo $?
+   1
+
+**预期输出。** 六圈模型在上限为 16（默认值）或 7 时能编译，为 6 时被拒绝；消息会指出状态和选项名。无界的循环在任何上限下都被拒绝：调大数字对它没有帮助（上面命令行用默认上限 16 时出现的就是同样的消息）。
 上面的命令行输出不是读取这个上限的办法。六圈模型能构建，它的退出码 1 是一个普通的结论：``reach terminated()`` 在一步内没有见证（``GOAL UNREALIZABLE WITHIN BOUND``），
 这与构建无关。对于无界循环，命令行目前以退出码 1 和一段 Python 追踪信息停止，只有最后一行（同样的消息）有用。命令行没有设置这个上限的选项，所以本卡通过 Python 接口来做。
 
@@ -964,17 +1057,31 @@ assumptions_self_conflict``。
 **输入。** 一条很慢或超时的查询。代价随转换写入的变量数、上界 ``k``、状态数与区域数增长；区域之间是相加而不是相乘，但彼此互斥的区域在求解器必须证明
 “不可能”时可能指数增长。这些结论来自合成模型上的测量，不是承诺：数据与推理见 :doc:`/explanations/bmc_scaling/index_zh`，``tools/measure_bmc_scaling.py`` 可以重新生成数据，优化思路记录在\ `问题 #600 <https://github.com/HansBug/pyfcstm/issues/600>`_\ 。
 
-**命令行。** 一次把上界加一，对状态分类而不是默认它是 SAT 或 UNSAT，并用 ``--max-bound`` 设上限：
+**命令行。** 一次把上界加一，对结论分类而不是默认它是 SAT 或 UNSAT，并用 ``--max-bound`` 设上限。``k=1`` 的查询是
+``region_reach_k1.fbmcq``，``region_cases.fbmcq`` 是同一条查询取 ``k=2``：
 
-.. literalinclude:: region_tractable.demo.sh
-   :language: bash
-
-.. literalinclude:: region_tractable.demo.sh.txt
+.. literalinclude:: region_reach_k1.fbmcq
    :language: text
+   :caption: region_reach_k1.fbmcq
 
-**预期输出。** ``k=1`` 是 UNSAT（还没有见证），``k=2`` 是第一个有见证的上界，所以对这个问题再加深没有收益；策略在求解之前就以退出码 1 拒绝了 ``k=3``。
-把 ``unknown`` 与 ``timeout`` 当作\ *没有结论*\ 的结果，在 CI 里为它们单独设定预期的退出处理；用 ``--timeout-ms`` 给每次 ``check()`` 设上限。
-这次运行没有超时，所以没有 ``timeout`` 行。
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_reach_k1.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq --max-bound 1
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
+
+**预期输出。** ``k=1`` 还没有见证（退出码 1），``k=2`` 是第一个有见证的上界，所以对这个问题再加深没有收益；策略 ``--max-bound 1`` 在求解之前就以退出码 1 拒绝了 ``k=2`` 的查询。
+把 ``unknown`` 与 ``timeout`` 当作\ *没有结论*\ 的结果，在 CI 里为它们单独设定预期的退出处理；用 ``--timeout-ms`` 给每次 ``check()`` 设上限（退出码 3）。
+这些运行都没有超时，所以没有一条显示 ``timeout`` 结论。
 
 缩小一条太慢的查询的步骤：
 

@@ -1,8 +1,0 @@
--- region_pattern_construct.fbmcq (exit 0)
-reach status=sat outcome=witness_found exit=0
-  frame 0: Controller.Running{Safety: [init], Motion: On}
--- region_pattern_match.fbmcq (exit 0)
-reach status=sat outcome=witness_found exit=0
-  frame 0: Controller.Running{Safety: Watching, Motion: On}
--- region_pattern_construct_miss.fbmcq (exit 1)
-reach status=unsat outcome=no_witness exit=1

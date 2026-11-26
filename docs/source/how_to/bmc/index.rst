@@ -156,17 +156,35 @@ the bound-one ``forbid`` and ``cover`` results shown below.
 
 **Expected output.** For the direct ``reach`` command, JSON contains
 ``"kind": "reach"``, ``"status": "sat"``, ``"outcome": "witness_found"``,
-and ``"exit_code": 0``.  The verified fixture matrix is:
+and ``"exit_code": 0``.  Run each of the seven files in human mode to see the
+verdict on the first line of its report; only ``forbid`` exits ``1``, because
+its counterexample means the property is violated:
 
-.. code-block:: text
+.. code-block:: console
 
-   reach sat witness_found exit=0
-   forbid sat property_violated exit=1
-   invariant unsat property_satisfied exit=0
-   must_reach unsat property_satisfied exit=0
-   exists_always sat witness_found exit=0
-   response unsat property_satisfied exit=0
-   cover sat witness_found exit=0
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q forbid.fbmcq
+   BMC forbid <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invariant.fbmcq
+   BMC invariant <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q must_reach.fbmcq
+   BMC must_reach <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q exists_always.fbmcq
+   BMC exists_always <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response.fbmcq
+   BMC response <= 1: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q cover.fbmcq
+   BMC cover <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
 
 **File side effect.** None unless you add ``-o``.
 
@@ -294,13 +312,21 @@ key and allowed ``where`` expression.
 5. Audit a human witness and replay
 -----------------------------------
 
-**CLI.**
+**CLI.** The lines that vary from run to run (the solver time) or that this
+card does not discuss are left out:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q calls.fbmcq
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q calls.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+     Replay: verified (2 frames, 1 step).
+   ...
+   Solver: SAT in ... ms
+   ...
+   Trace
+     0: Root.Idle -> Root.Idle [fallback; calls=Root.Idle.Tick]
+   ...
 
 **FBMCQ.**
 
@@ -411,12 +437,12 @@ stdout, stderr, and UTF-8 rules.
 
 **CLI.**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q reach_bound_2.fbmcq \
-       --max-bound 1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q reach_bound_2.fbmcq --max-bound 1
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
 
 **FBMCQ.**
 
@@ -428,7 +454,8 @@ stdout, stderr, and UTF-8 rules.
 allows at most 1.
 
 **Expected output.** stderr contains ``Failed to compile BMC query``,
-``query_bound=2``, and ``max_bound=1``; the command exits ``1``.
+``query_bound=2``, and ``max_bound=1``; the command exits ``1``, as the block
+above shows.
 
 **File side effect.** None.  With ``-o``, no report would be created or modified
 because policy rejection happens before report construction.
@@ -479,15 +506,25 @@ and :doc:`../../explanations/bmc_solving/index` for the solve sequence.
 10. Distinguish response violations from an incomplete horizon
 --------------------------------------------------------------
 
-**CLI.** Run the missing-response case first; use ``response_incomplete.fbmcq``
-with the same command shape when you need the short-horizon case.
+**CLI.** Run the missing-response case first, then the short-horizon case.  The
+first line of the human report already tells them apart, and so do the exit
+codes:
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q response_missing.fbmcq --json \
-       -o /tmp/bmc-response.json
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_missing.fbmcq
+   BMC response <= 1: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q response_incomplete.fbmcq
+   BMC response <= 1: PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE
+   ...
+   $ echo $?
+   3
+
+Add ``--json -o /tmp/bmc-response.json`` to either command to write the
+machine-readable result described below.
 
 **FBMCQ file:** ``response_missing.fbmcq``
 
@@ -507,13 +544,13 @@ at bound 1 because a two-successor response window extends beyond the checked
 suffix.
 
 **Expected output.** ``response_missing.fbmcq`` exits ``1`` with ``status``
-``sat`` and ``outcome`` ``property_violated``.  ``response_incomplete.fbmcq``
+``sat`` and ``outcome`` ``property_violated`` in JSON.  ``response_incomplete.fbmcq``
 exits ``3`` with primary ``status`` ``unsat``, ``outcome`` ``incomplete``,
 ``incomplete`` true, and ``incomplete_status`` ``sat``; witness and replay are
 null.
 
-**File side effect.** The selected output file under ``/tmp`` is atomically
-created or replaced.
+**File side effect.** None unless you add ``-o``; then the output file is
+atomically created or replaced.
 
 **Failure boundary.** Current outcome and witness schemas do not classify
 whether a decisive response counterexample came from an undefined trigger or
@@ -530,11 +567,12 @@ fields.
 
 **CLI.**
 
-.. code-block:: bash
+.. code-block:: console
 
-   python -m pyfcstm bmc \
-       -i bmc_tasks.fcstm \
-       -q invalid_state.fbmcq
+   $ pyfcstm bmc -i bmc_tasks.fcstm -q invalid_state.fbmcq
+   Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Missing'.
+   $ echo $?
+   1
 
 **FBMCQ.**
 
@@ -871,33 +909,22 @@ A replay that does not reproduce the error exits ``4`` instead.
 Tasks for models with regions
 -----------------------------
 
-These cards use ``region_controller.fcstm``, the interlock controller of
+These cards use ``controller.fcstm``, the interlock controller of
 :doc:`/tutorials/regions/index` (``Safety`` before ``Motion`` inside
-``Running``).  Download it next to the query files named in each card.  A
-bounded result says nothing beyond its bound, and SAT or UNSAT is read through
-the property kind, as in the cards above.  The helper
-``region_summary.py`` prints the deterministic parts of a JSON result:
-
-.. literalinclude:: region_summary.py
-   :language: python
-   :caption: region_summary.py
-
-The demo scripts of tasks 18 to 20 source ``region_run.sh``.  Its
-function runs the CLI command of the task (the ``pyfcstm bmc ... --json -o``
-line) and then the helper above on the JSON file it wrote:
-
-.. literalinclude:: region_run.sh
-   :language: bash
-   :caption: region_run.sh
-
-Outside the scripts, the same task is two commands: ``pyfcstm bmc -i
-region_controller.fcstm -q region_start.fbmcq --json -o result.json`` followed
-by ``python region_summary.py result.json``.
+``Running``); download it
+(:download:`controller.fcstm </_models/controller.fcstm>`) next to the query
+files named in each card.  A bounded result says nothing beyond its bound, and
+SAT or UNSAT is read through the property kind, as in the cards above.  The
+cards run ``pyfcstm bmc`` in human mode and read the trace; a line that only
+says ``...`` stands for report lines the card does not discuss, such as the
+solver time.  The same facts are in the JSON result (``witness.frames``,
+``witness.steps``), whose fields are listed in
+:doc:`/reference/bmc_results/index`.
 
 18. Check a property from a given position
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``region_controller.fcstm`` and ``region_start.fbmcq``.  ``init
+**Input.** ``controller.fcstm`` and ``region_start.fbmcq``.  ``init
 state(...)`` accepts configuration text, a state path through regions, or an
 owner written alone.  Persistent variables keep their initializers unless you
 ``havoc`` them, so ``permit`` and ``motor`` are released and constrained.
@@ -908,24 +935,31 @@ owner written alone.  Persistent variables keep their initializers unless you
 
 **CLI.**
 
-.. literalinclude:: region_start.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_start.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_start.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: On}
+          -> Controller.Idle [transition; events=Controller.Stop]
+          Safety: Watching -> [done] [transition]
+          Motion: On -> [done] [transition]
+          Running: [start] -> Controller.Idle [transition]
+   ...
 
 **Expected output.** Frame 0 is exactly the configuration you wrote.  The
 query asks for ``Controller.Idle`` within one step, and the only way out of
-``Running`` is the ``Stop`` forced transition, so frame 1 is ``Controller.Idle``.
-Step 0 lists one local case per region that did something: ``Safety`` and
-``Motion`` each take their ``__region_done__`` transition, then the owner takes
-its transition to ``Idle``; the next card explains these entries.
+``Running`` is the ``Stop`` forced transition, so the trace ends in
+``Controller.Idle``.  Step 0 lists one local case per region that did
+something: ``Safety`` and ``Motion`` each take their transition to ``[done]``
+(the ``__region_done__`` transition), then the owner takes its transition to
+``Idle``; the next card explains these entries.
 Without ``havoc { permit, motor }`` the same ``where`` clause makes the scenario
 infeasible (``Failure boundary: INITIALIZATION``), because the initializers
 ``permit = 0`` and ``motor = 0`` contradict it.
 
-**File side effect.** None; the temporary JSON file lives in ``.region_tmp`` and
-the script removes it.
+**File side effect.** None; the report goes to stdout.
 
 **First failure check.** If the verdict is ``SCENARIO INFEASIBLE``, read the
 ``Failure boundary`` line of the human report and compare the ``where`` clause
@@ -933,16 +967,18 @@ with the variable initializers.  If compilation stops with
 ``invalid_start_position``, the start text is wrong.  These are negative
 examples: ``region_bad_start.fbmcq`` names a state that does not exist and
 ``region_all_done.fbmcq`` marks every region of an owner ``[done]``, which is
-never a resting position.
+never a resting position.  Both commands exit with code 1:
 
-.. literalinclude:: region_bad_start.demox.sh.err
-   :language: text
+.. code-block:: console
 
-.. literalinclude:: region_all_done.demox.sh.err
-   :language: text
-
-Both commands exit with code 1 (``region_bad_start.demox.sh.exitcode`` and
-``region_all_done.demox.sh.exitcode``).
+   $ pyfcstm bmc -i controller.fcstm -q region_bad_start.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown configuration path: 'Controller.Running.Safety.Nope'.
+   $ echo $?
+   1
+   $ pyfcstm bmc -i controller.fcstm -q region_all_done.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Controller.Running'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
 
 **Reference.** :doc:`/reference/bmc_query/index`.
 
@@ -965,16 +1001,30 @@ Both commands exit with code 1 (``region_bad_start.demox.sh.exitcode`` and
    :language: text
    :caption: region_pattern_construct_miss.fbmcq
 
-**CLI.**
+**CLI.** Each command prints frame 0 only (the ``0:`` line of the trace): the
+property already holds there, and later frames are free choices of the solver.
 
-.. literalinclude:: region_pattern.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_pattern.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_construct.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: [init], Motion: On}
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_match.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_pattern_construct_miss.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
 
-**Expected output.** The script prints frame 0 only: the property already
-holds there, and later frames are free choices of the solver.  The first
+**Expected output.** The first
 query leaves ``Safety`` out of the start text: frame 0 shows ``Safety:
 [init]``, and the pattern that writes ``[init]`` matches it.  The second query
 starts with both regions written and the pattern leaves ``Safety`` out, so
@@ -987,11 +1037,14 @@ in a call made while its owner is being entered.
 **File side effect.** None.
 
 **First failure check.** If a pattern is rejected, compilation stops with
-``invalid_active_pattern`` (negative example ``region_bad_pattern.fbmcq``,
-exit code 1 in ``region_bad_pattern.demox.sh.exitcode``):
+``invalid_active_pattern`` (negative example ``region_bad_pattern.fbmcq``):
 
-.. literalinclude:: region_bad_pattern.demox.sh.err
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_bad_pattern.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Controller.Running.Safety.Nope'.
+   $ echo $?
+   1
 
 If a pattern matches too much, check which regions you left out.
 
@@ -1010,20 +1063,42 @@ path, or ``null`` outside every region), ``kind`` and ``label``.
    :language: text
    :caption: region_cases.fbmcq
 
-**CLI.**
+**CLI.** The human trace prints each step on the line that starts with its
+index, followed by one line per case with its scope relative to the owner.  The
+second command covers one local case:
 
-.. literalinclude:: region_cases.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_cases.demo.sh.txt
-   :language: text
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Idle
+          -> Controller.Running{Safety: Watching, Motion: Off} [transition; events=Controller.Start]
+          Controller.Idle -> Controller.Running [transition]
+          Running: [start] -> Safety.Watching [initial]
+          Running: [start] -> Motion.Off [initial]
+     1: Controller.Running{Safety: Watching, Motion: Off}
+          -> Controller.Running{Safety: Watching, Motion: On} [transition]
+          Safety: Watching -> Watching [fallback]
+          Motion: Off -> On [transition]
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_cover.fbmcq
+   BMC cover <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: Watching, Motion: Off}
+          -> Controller.Running{Safety: Watching, Motion: On} [transition]
+          Safety: Watching -> Watching [fallback]
+          Motion: Off -> On [transition]
+   ...
 
-**Expected output.** Step 0 enters ``Running``: ``case_label`` names the outer
-transition, the first ``local`` line has scope ``None`` (outside every
-region), and the owner scope shows one ``initial`` case per region.  Step 1
-has ``case_label=None`` because every case ran inside a region: ``Safety``
-stays (``fallback``) and ``Motion`` moves (``transition``).  The
-human trace prints the same cases with scopes relative to the owner.  A
+**Expected output.** Step 0 enters ``Running``: the line under ``0:`` is the
+outer transition (``case_label`` in JSON), the first case is outside every
+region, and the owner scope shows one ``initial`` case per region.  Step 1 has
+no outer case because every case ran inside a region: ``Safety`` stays
+(``fallback``) and ``Motion`` moves (``transition``).  In JSON the same cases
+are ``local_cases``, with ``case_label`` set to ``null`` for step 1.  A
 ``cover`` query takes a naked ``case("label")``; copy the label from a
 witness.  The ``::2`` at the end of a label is the case's ordinal among the
 expanded cases, not a count of anything you wrote.
@@ -1053,21 +1128,48 @@ has a guard (``n < limit``) that no value can stop.
 **Command or code.** The CLI has no option for the limit, so raise it in
 Python:
 
-.. literalinclude:: region_reentry.demo.py
-   :language: python
-   :caption: region_reentry.demo.py
+.. testcode::
 
-.. literalinclude:: region_reentry.demo.py.txt
-   :language: text
+   from pyfcstm.bmc import BmcBuildError, BmcOptions, compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_file
 
-and compare with the CLI on the same two models:
+   query = "check reach <= 1: terminated();"
+   for name, limit in [("region_reentry_six", 7), ("region_reentry_six", 6), ("region_reentry_loop", 64)]:
+       model = load_state_machine_from_file(name + ".fcstm")
+       options = BmcOptions(max_group_reentries=limit)
+       try:
+           compile_bmc_query(model, query, options=options)
+           print(name, limit, "compiled")
+       except BmcBuildError as error:
+           print(name, limit, "refused:", error)
 
-.. literalinclude:: region_reentry.demo.sh.txt
-   :language: text
+.. testoutput::
 
-**Expected output.** The six-lap model compiles with a limit of 16 or 7 and is
-refused with 6; the message names the state and the option.  The unbounded loop
-is refused at every limit: a larger number never helps there.
+   region_reentry_six 7 compiled
+   region_reentry_six 6 refused: state 'Root.Owner' re-enters its own group more than 6 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   region_reentry_loop 64 refused: state 'Root.Owner' re-enters its own group more than 64 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+Compare with the CLI on the same two models:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i region_reentry_six.fcstm -q region_reentry.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i region_reentry_loop.fcstm -q region_reentry.fbmcq
+   ...
+   Traceback (most recent call last):
+   ...
+   _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo $?
+   1
+
+**Expected output.** The six-lap model compiles with a limit of 16 (the
+default) or 7 and is refused with 6; the message names the state and the option.
+The unbounded loop is refused at every limit: a larger number never helps there
+(the same message appears with the default limit of 16 in the CLI run above).
 
 The command-line output above is not the way to read this limit.  The
 six-lap model builds, and its exit code 1 is an ordinary verdict:
@@ -1097,21 +1199,37 @@ and are not a promise: :doc:`/explanations/bmc_scaling/index` has the data and
 the reasoning, ``tools/measure_bmc_scaling.py`` regenerates it, and `issue #600
 <https://github.com/HansBug/pyfcstm/issues/600>`_ tracks the optimization ideas.
 
-**CLI.** Raise the bound one step at a time, classify the status instead of
-assuming SAT or UNSAT, and enforce a ceiling with ``--max-bound``:
+**CLI.** Raise the bound one step at a time, classify the verdict instead of
+assuming SAT or UNSAT, and enforce a ceiling with ``--max-bound``.  The query
+for ``k=1`` is ``region_reach_k1.fbmcq``, and ``region_cases.fbmcq`` is the same
+query with ``k=2``:
 
-.. literalinclude:: region_tractable.demo.sh
-   :language: bash
-
-.. literalinclude:: region_tractable.demo.sh.txt
+.. literalinclude:: region_reach_k1.fbmcq
    :language: text
+   :caption: region_reach_k1.fbmcq
 
-**Expected output.** ``k=1`` is UNSAT (no witness yet) and ``k=2`` is the
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q region_reach_k1.fbmcq
+   BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_cases.fbmcq --max-bound 1
+   Failed to compile BMC query: max_bound policy rejected query_bound=2 with max_bound=1.
+   $ echo $?
+   1
+
+**Expected output.** ``k=1`` has no witness yet (exit 1) and ``k=2`` is the
 first bound with a witness, so a deeper bound adds nothing for this question;
-the policy rejects ``k=3`` with exit 1 before solving.  Treat ``unknown`` and
+the policy ``--max-bound 1`` rejects the ``k=2`` query with exit 1 before
+solving.  Treat ``unknown`` and
 ``timeout`` as *inconclusive* results with their own expected exit handling in
-CI; pass ``--timeout-ms`` to bound each ``check()``.  This run did not time
-out, so it shows no ``timeout`` line.
+CI (exit 3); pass ``--timeout-ms`` to bound each ``check()``.  These runs did
+not time out, so none of them shows a ``timeout`` verdict.
 
 Steps to shrink a query that is too slow:
 

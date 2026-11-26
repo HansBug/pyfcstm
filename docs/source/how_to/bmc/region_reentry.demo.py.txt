@@ -1,5 +1,0 @@
-region_reentry_six max_group_reentries=16: compiled
-region_reentry_six max_group_reentries=7: compiled
-region_reentry_six max_group_reentries=6: BmcBuildError: state 'Root.Owner' re-enters its own group more than 6 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
-region_reentry_loop max_group_reentries=16: BmcBuildError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
-region_reentry_loop max_group_reentries=64: BmcBuildError: state 'Root.Owner' re-enters its own group more than 64 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.

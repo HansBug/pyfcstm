@@ -1,4 +1,0 @@
--- region_reentry_six.fcstm (exit 1)
-BMC reach <= 1: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
--- region_reentry_loop.fcstm (exit 1)
-_BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.

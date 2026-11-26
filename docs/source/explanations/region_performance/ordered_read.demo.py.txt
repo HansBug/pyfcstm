@@ -1,0 +1,11 @@
+x0 : 0 0 1 1 0 0 1 1
+regions_reader_after_writer    c after cycles 1-8: 0 0 1 1 2 2 3 3
+regions_reader_before_writer   c after cycles 1-8: 0 0 0 1 1 2 2 3
+flat_naive                     c after cycles 1-8: 0 0 0 1 1 2 2 3
+flat_substituted               c after cycles 1-8: 0 0 1 1 2 2 3 3
+
+regions_reader_before_writer   differs from regions_reader_after_writer in  97 of 200 cycles
+flat_naive                     differs from regions_reader_after_writer in  97 of 200 cycles
+flat_substituted               differs from regions_reader_after_writer in   0 of 200 cycles
+
+flat_naive                     differs from regions_reader_before_writer in   0 of 200 cycles

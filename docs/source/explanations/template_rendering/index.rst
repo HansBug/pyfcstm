@@ -472,14 +472,42 @@ Two capacities size it, and they are derived from the model:
 ``ARENA_CAPACITY`` bounds how many configurations and pending work items one
 decision of a cycle may examine, and ``TRAIL_CAPACITY`` bounds how many checks may
 be nested; ``STORAGE_BYTES`` is computed from both. The controller needs 108
-and 52, as the header above shows. The same command gave 8 and 4 for a plain
-model with one composite state and one event transition, 60 and 36 for
-``region_blind_overwrite.fcstm`` (two regions) and 84 and 44 for
-``region_never_completes.fcstm``, both from :doc:`the diagnostics page
-</explanations/diagnostics/index>`. Those three pairs are recorded values from
-that command and this page does not rerun them. The numbers come from the model,
-not from a fixed engine limit. They are the measured defaults for these four
-models, not a formula you can rely on across template versions.
+and 52, as the header above shows. The same command on other models gives
+different pairs: 8 and 4 for ``region_plain.fcstm`` (no regions, one
+transition), 60 and 36 for ``region_blind_overwrite.fcstm`` (two regions) and
+84 and 44 for ``region_never_completes.fcstm``, the last two from
+:doc:`the diagnostics page </explanations/diagnostics/index>`. The numbers come
+from the model, not from a fixed engine limit. They are the values these four
+models get from this version of the template, not a formula you can rely on
+across template versions.
+
+.. literalinclude:: /_models/region_plain.fcstm
+   :language: fcstm
+   :caption: ``region_plain.fcstm``
+
+.. code-block:: console
+
+   $ pyfcstm generate -i docs/source/_models/region_plain.fcstm --template c -o plain_c
+   $ cat plain_c/machine.h
+   ...
+   #define ROOT_MACHINE_ARENA_CAPACITY 8
+   ...
+   #define ROOT_MACHINE_TRAIL_CAPACITY 4
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_blind_overwrite.fcstm --template c -o blind_c
+   $ cat blind_c/machine.h
+   ...
+   #define DRIVE_MACHINE_ARENA_CAPACITY 60
+   ...
+   #define DRIVE_MACHINE_TRAIL_CAPACITY 36
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_never_completes.fcstm --template c -o never_c
+   $ cat never_c/machine.h
+   ...
+   #define LINE_MACHINE_ARENA_CAPACITY 84
+   ...
+   #define LINE_MACHINE_TRAIL_CAPACITY 44
+   ...
 
 A cycle that needs more than the capacity fails with a message that names the
 macro. It does not misbehave silently. To raise a capacity, define the same value
@@ -584,7 +612,7 @@ whether the two agree:
    leaves: (('Controller', 'Idle'),)
    is_active Controller.Running: False
 
-The C runtime is driven by the same six cycles. This needs a C compiler, so the commands below are not run by the documentation check; the output is the recorded result of running them on the generated files:
+The C runtime is driven by the same six cycles. This needs a C compiler, so, unlike every other command and output on this page, the C program and its commands are **not** run by the documentation check. The six lines further down are what these commands printed when they were run once with a C compiler; they are not re-verified here; compare them with the checked Python output above:
 
 .. code-block:: c
    :caption: app.c
@@ -643,7 +671,7 @@ The C runtime is driven by the same six cycles. This needs a C compiler, so the 
    Controller.Idle
 
 The Python runtime agrees with the simulator in every cycle, and the recorded
-C output is the same six lines. The sequence shows the cycle-by-cycle
+C output (not re-verified) is the same six lines. The sequence shows the cycle-by-cycle
 behavior of the controller: the fault in cycle 4 turns the motor region ``Off``
 in the same cycle because ``Safety`` runs first. After ``/Stop`` the machine is
 ``Controller.Idle``, and the generated Python runtime reports ``is_active``

@@ -23,6 +23,10 @@
 （``CoolClosed``、``CoolOpen``、``HotClosed``、``HotOpen``）和八条转换；``panel_regions.fcstm`` 用两个各含两个状态的
 区域、四条转换表达同一件事。
 
+.. literalinclude:: panel_flat.fcstm
+   :language: fcstm
+   :caption: panel_flat.fcstm
+
 .. literalinclude:: panel_regions.fcstm
    :language: fcstm
    :caption: panel_regions.fcstm
@@ -109,6 +113,10 @@
 .. literalinclude:: shared_event.fcstm
    :language: fcstm
    :caption: shared_event.fcstm
+
+.. literalinclude:: scoped_event.fcstm
+   :language: fcstm
+   :caption: scoped_event.fcstm
 
 **命令或代码。**
 
@@ -263,6 +271,14 @@
 **起点。** ``join_done.fcstm``：每个区域以 ``Run -> [*]`` 结束，拥有者有一条普通出边 ``Work -> Next``。``join_gate.fcstm``
 给这条转换加了条件 ``gate``。
 
+.. literalinclude:: join_done.fcstm
+   :language: fcstm
+   :caption: join_done.fcstm
+
+.. literalinclude:: join_gate.fcstm
+   :language: fcstm
+   :caption: join_gate.fcstm
+
 **命令或代码。**
 
 先让 ``A`` 完成，``B`` 晚一个周期完成：
@@ -342,6 +358,14 @@
 **起点。** ``preempt_group.fcstm``：拥有者上的强制转换（forced transition） ``!Job -> Idle : /Cancel``，以及把一位数字追加到 ``order`` 的 ``exit`` 动作。
 ``preempt_blocked.fcstm`` 把强制转换指向一个进不去的状态。
 
+.. literalinclude:: preempt_group.fcstm
+   :language: fcstm
+   :caption: preempt_group.fcstm
+
+.. literalinclude:: preempt_blocked.fcstm
+   :language: fcstm
+   :caption: preempt_blocked.fcstm
+
 **命令或代码。** 先用 ``/ADone`` 让 ``A`` 完成，再发送 ``/Cancel``：
 
 .. code-block:: console
@@ -407,6 +431,13 @@
                    __forced_0 = 1;
                }
    ...
+           region B {
+   ...
+               Working -> [*] : if [__forced_0 == 1];
+               Working -> [*] : /Cancel effect {
+                   __forced_0 = 1;
+               }
+   ...
 
 **预期信号。** ``/Cancel`` 在一个周期里离开 ``Job``，退出按书写顺序执行：``1``\ （``A``）、``2``\ （``B``）、再是拥有者（``3``），
 所以 ``order = 123``。已经 ``[done]`` 的区域不会再次退出（``/ADone`` 之后 ``order = 1``，最后仍是 ``123``）。目标进不去时，
@@ -424,6 +455,10 @@
 
 **起点。** ``watch_regions.fcstm``：``Trigger`` 声明在两个读取者之间。``Later`` 把路径写成 ``active("/Trigger.Fired")``，
 ``Earlier`` 写成 ``active("Plant.Trigger.Fired")``；两者指向同一个状态。
+
+.. literalinclude:: watch_regions.fcstm
+   :language: fcstm
+   :caption: watch_regions.fcstm
 
 **命令或代码。**
 
@@ -472,6 +507,10 @@
 
 **起点。** ``aspect_regions.fcstm``：``Plant`` 有祖先切面 ``>> during before``；``Left`` 与 ``Right`` 各有自己的区域切面。
 ``Left`` 可以用 ``/End`` 结束；``Right`` 的叶子没有 ``during`` 动作。
+
+.. literalinclude:: aspect_regions.fcstm
+   :language: fcstm
+   :caption: aspect_regions.fcstm
 
 **命令或代码。** 每个周期后打印计数器，``/End`` 在第三个周期发送，第一个周期在输出中省略：
 
@@ -530,15 +569,35 @@
 9. 排查区域模型的常见错误
 -------------------------
 
-**起点。** 每种错误一个很小的模型，文件名为 ``err_*.fcstm.txt``。加 ``.txt`` 后缀是为了让文档构建不去绘制无效的模型；``pyfcstm`` 按原样读取这些文件。其中两个：
+**起点。** 每种错误一个很小的模型，文件名为 ``err_*.fcstm.txt``。加 ``.txt`` 后缀是为了让文档构建不去绘制无效的模型；``pyfcstm`` 按原样读取这些文件。这七个模型是：
 
 .. literalinclude:: err_cross_region.fcstm.txt
    :language: fcstm
    :caption: err_cross_region.fcstm.txt
 
+.. literalinclude:: err_mixed_children.fcstm.txt
+   :language: fcstm
+   :caption: err_mixed_children.fcstm.txt
+
+.. literalinclude:: err_empty_region.fcstm.txt
+   :language: fcstm
+   :caption: err_empty_region.fcstm.txt
+
+.. literalinclude:: err_duplicate_region.fcstm.txt
+   :language: fcstm
+   :caption: err_duplicate_region.fcstm.txt
+
 .. literalinclude:: err_active_region.fcstm.txt
    :language: fcstm
    :caption: err_active_region.fcstm.txt
+
+.. literalinclude:: err_history_owner.fcstm.txt
+   :language: fcstm
+   :caption: err_history_owner.fcstm.txt
+
+.. literalinclude:: err_region_in_region.fcstm.txt
+   :language: fcstm
+   :caption: err_region_in_region.fcstm.txt
 
 **命令或代码。** 对每个模型运行 ``pyfcstm inspect -i err_<名字>.fcstm.txt --color never``。这些都是负例，不要复制这些模型。每条命令都以退出码 1 结束：
 

@@ -18,7 +18,10 @@
 * :doc:`../../explanations/dsl_semantics/index_zh` 解释所有权、运行时语义、组合转换展开、强制转换展开和导入组装。
 * :doc:`../../reference/diagnostics_codes/index_zh` 解释诊断码和目标配置风险警告。
 
-下面所有命令都默认从仓库根目录复制运行。
+下面的命令按文件名读取本页的三个模型，所以请在放着这些模型的目录里运行：把
+:download:`first_thermostat.fcstm <first_thermostat.fcstm>`\ 、
+:download:`event_guard_mixed_invalid.fcstm.txt <event_guard_mixed_invalid.fcstm.txt>`\ 和
+:download:`documentation_blocks.fcstm <documentation_blocks.fcstm>`\ 下载到一个空目录，再在那里运行命令。
 
 术语约定：本页首次使用必要英文术语时采用“中文（English）”格式，后文只使用中文。持久变量
 （persistent variable）是模型长期保存的数据；复合状态（composite state）拥有子状态；初始转换

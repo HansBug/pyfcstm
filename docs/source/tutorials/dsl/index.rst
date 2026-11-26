@@ -23,7 +23,12 @@ DSL pages for breadth.
 * :doc:`../../reference/diagnostics_codes/index` explains diagnostic codes and
   target-profile warnings.
 
-All commands below are meant to be copied from the repository root.
+The commands below read this page's three models by file name, so run them in a
+directory that holds the models. Download
+:download:`first_thermostat.fcstm <first_thermostat.fcstm>`,
+:download:`event_guard_mixed_invalid.fcstm.txt <event_guard_mixed_invalid.fcstm.txt>` and
+:download:`documentation_blocks.fcstm <documentation_blocks.fcstm>` into an
+empty directory and run the commands there.
 
 Step 1: create the smallest shape
 ---------------------------------

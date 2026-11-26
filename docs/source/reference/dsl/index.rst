@@ -380,8 +380,12 @@ names because only the lower-case words are reserved:
 .. literalinclude:: region_single.fcstm
    :language: fcstm
 
-.. literalinclude:: region_single.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i region_single.fcstm --no-color -e "cycle"
+   ...
+   Cycle: 1
+   Current State: Root{Active: region_count}
 
 A controller with two regions, and an owner whose own scope holds the event and
 the forced transition (the model of the tutorial):
@@ -396,14 +400,39 @@ and an activity query that names a path through two region segments:
 .. literalinclude:: region_nested_active.fcstm
    :language: fcstm
 
-.. literalinclude:: region_nested_active.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_nested_active.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(list(model.defines))
+   for query in model.active_queries:
+       print('.'.join(query.state_path), '->', query.variable_name)
+
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.cycle_count, runtime.configuration)
+   for event in ['/Go', '/Trip', '/Stop', '/Resume']:
+       runtime.cycle(event)
+       print(runtime.cycle_count, event, runtime.configuration)
+
+.. testoutput::
+
+   ['__hist_goto', '__hist_Job_Panel_On', '__active_Plant_Job_Line_Cell_Feed_Busy', '__forced_0']
+   Plant.Job.Line.Cell.Feed.Busy -> __active_Plant_Job_Line_Cell_Feed_Busy
+   1 Plant.Job{Line: Cell{Feed: Idle, Check: Watch}, Panel: On.Quiet}
+   2 /Go Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Quiet}
+   3 /Trip Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
+   4 /Stop Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: Off}
+   5 /Resume Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
 
 The output shows the configuration text of every cycle: a region block lists
 its regions in written order, and ``Cell{Feed: Busy, Check: Alarm}`` is a
 nested owner. ``Check`` reads ``Feed`` in the same cycle it changes because
 ``Feed`` is written first; swap them and ``Check`` sees the change one cycle
-later. The hidden variables at the top of the output are explained in
+later. The hidden variables in the first line of the output are explained in
 :ref:`dsl-region-active`.
 
 Region body
@@ -522,18 +551,57 @@ owner or the ancestors for an event with the same name.
 .. literalinclude:: region_events.fcstm
    :language: fcstm
 
-.. literalinclude:: region_events.demo.py.txt
-   :language: text
+.. testcode::
 
-Read the output top to bottom. The first block shows the namespace that owns
-each event: ``Left`` and ``Right`` each own a ``Go``. The second block shows
-what each transition refers to: ``R1 -> R2`` in ``Right`` uses ``Left``'s event
-because it is written as a root path. In the cycles, ``/Job.Left.Go`` moves both
-regions and is listed twice in ``consumed_events`` (once per region that used
-it), ``Plant.Job.Right.Go`` moves only ``Right``, and ``/Job.Abort`` consumes
-nothing because ``R2`` has no transition on it. This establishes which events
-exist and who consumes them; it does not show the order in which regions run,
-which :doc:`../../explanations/region_semantics/index` covers.
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_events.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   for state in model.walk_states():
+       for event in state.events.values():
+           print('state', event.path_name)
+   for region in model.walk_regions():
+       for event in region.events.values():
+           print('region', event.path_name)
+
+.. testoutput::
+
+   state Plant.Reset
+   state Plant.Job.Abort
+   state Plant.Job.Left.L2.Back
+   region Plant.Job.Left.Go
+   region Plant.Job.Right.Go
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeEventError
+
+   with open('region_events.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   runtime.cycle()
+   print(runtime.configuration)
+   for event in ['/Job.Left.Go', 'Plant.Job.Right.Go', 'Plant.Job.Abort', '/Job.Abort']:
+       result = runtime.cycle(event)
+       print(event, runtime.configuration, list(result.consumed_events))
+
+.. testoutput::
+
+   Plant.Job{Left: L1, Right: R1}
+   /Job.Left.Go Plant.Job{Left: L2, Right: R2} ['Plant.Job.Left.Go', 'Plant.Job.Left.Go']
+   Plant.Job.Right.Go Plant.Job{Left: L2, Right: R1} ['Plant.Job.Right.Go']
+   Plant.Job.Abort Plant.Job{Left: L2, Right: R2} ['Plant.Job.Abort']
+   /Job.Abort Plant.Job{Left: L2, Right: R2} []
+
+The first script shows the namespace that owns each event: ``Left`` and
+``Right`` each own a ``Go``. In the cycles of the second script,
+``/Job.Left.Go`` moves both regions, because ``R1 -> R2`` in ``Right`` is
+written as a root path and so uses ``Left``'s event, and it is listed twice in
+``consumed_events`` (once per region that used it); ``Plant.Job.Right.Go`` moves
+only ``Right``, and ``/Job.Abort`` consumes nothing because ``R2`` has no
+transition on it. This establishes which events exist and who consumes them; it
+does not show the order in which regions run, which
+:doc:`../../explanations/region_semantics/index` covers.
 
 .. _dsl-region-owner-actions:
 
@@ -574,10 +642,72 @@ its own, only aspects.
 .. literalinclude:: region_owner_actions.fcstm
    :language: fcstm
 
-.. literalinclude:: region_owner_actions.demo.py.txt
-   :language: text
+The model assigns a code to every action, so the codes printed for one cycle
+are the order in which its actions ran.
 
-Cycle 1 enters the owner (``10``), runs its plain ``during before`` (``11``) and
+.. list-table:: Action codes of ``region_owner_actions.fcstm``
+   :header-rows: 1
+   :widths: 12 38 12 38
+
+   * - Code
+     - Action
+     - Code
+     - Action
+   * - ``10``
+     - ``Job`` ``enter``
+     - ``32``
+     - ``A1`` ``enter``
+   * - ``11``
+     - ``Job`` ``during before``
+     - ``33``
+     - ``A1`` ``during``
+   * - ``12``
+     - ``Job`` ``during after``
+     - ``34``
+     - ``A1`` ``exit``
+   * - ``13``
+     - ``Job`` ``exit``
+     - ``42``
+     - ``B1`` ``enter``
+   * - ``20``
+     - ``Job`` ``>> during before``
+     - ``43``
+     - ``B1`` ``during``
+   * - ``21``
+     - ``Job`` ``>> during after``
+     - ``44``
+     - ``B1`` ``exit``
+   * - ``30``
+     - ``A`` ``>> during before``
+     - ``90``
+     - ``Done`` ``enter``
+   * - ``31``
+     - ``A`` ``>> during after``
+     -
+     -
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_owner_actions.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   seen = ''
+   for event in [None, None, '/Fin']:
+       runtime.cycle(event)
+       total = str(runtime.vars['seq'])
+       print(runtime.configuration, ' '.join(total[i:i + 2] for i in range(len(seen), len(total), 2)))
+       seen = total
+
+.. testoutput::
+
+   Root.Job{A: A1, B: B1} 10 11 32 20 30 33 31 42 43 21
+   Root.Job{A: A1, B: B1} 20 30 33 31 43 21
+   Root.Done 34 44 12 13 90
+
+The script prints, for each cycle, the configuration and the codes of the
+actions that ran in it. Cycle 1 enters the owner (``10``), runs its plain ``during before`` (``11``) and
 enters ``A1`` (``32``); then region ``A`` does its work wrapped by the owner's
 aspect (``20``, ``21``) and its own (``30``, ``31``), and region ``B`` follows
 in the same cycle. ``B`` has no aspect, so ``43`` is bare. Cycle 2 shows the
@@ -679,13 +809,85 @@ Region diagnostics
      - error
      - A region without an initial transition.
 
-Every case below is loaded with ``load_state_machine_from_text`` and prints what
-it reports. A syntax error is reported alone and hides every model error of the
-same text. Each block starts with the case name and the text that was loaded,
-and ends with the line that begins with ``->``.
+The script below loads one case for each code of the table and one syntax
+error with ``load_state_machine_from_text`` and prints what it reports. A syntax
+error is reported alone and hides every model error of the same text. Each block
+starts with the case name and the text that was loaded, and ends with the line
+that begins with ``->``. Download the cases into an empty directory:
+:download:`region_bad_empty_region.fcstm.txt <region_bad_empty_region.fcstm.txt>`, :download:`region_bad_duplicate_region.fcstm.txt <region_bad_duplicate_region.fcstm.txt>`, :download:`region_bad_active_region.fcstm.txt <region_bad_active_region.fcstm.txt>`, :download:`region_bad_across_regions.fcstm.txt <region_bad_across_regions.fcstm.txt>`, :download:`region_bad_event_of_owner_by_bare_name.fcstm.txt <region_bad_event_of_owner_by_bare_name.fcstm.txt>`, :download:`region_bad_region_without_initial.fcstm.txt <region_bad_region_without_initial.fcstm.txt>`, :download:`region_bad_direct_nesting.fcstm.txt <region_bad_direct_nesting.fcstm.txt>`.
 
-.. literalinclude:: region_diagnostics.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.dsl.error import GrammarParseError
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   for name in ['empty_region', 'duplicate_region', 'active_region', 'across_regions',
+                'event_of_owner_by_bare_name', 'region_without_initial', 'direct_nesting']:
+       with open('region_bad_%s.fcstm.txt' % name) as stream:
+           text = stream.read()
+       print('==', name)
+       print(text.rstrip())
+       try:
+           load_state_machine_from_text(text)
+       except GrammarParseError as error:
+           print('-> GrammarParseError:', str(error).splitlines()[1])
+       except ModelValidationError as error:
+           for item in error.diagnostics:
+               print('->', item.code, item.refs.get('reason'))
+
+.. testoutput::
+
+   == empty_region
+   state Root {
+       region Empty {
+       }
+   }
+   -> E_REGION_STRUCTURE empty_region
+   == duplicate_region
+   state Root {
+       region A { state Leaf; [*] -> Leaf; }
+       region A { state Leaf; [*] -> Leaf; }
+   }
+   -> E_DUPLICATE_REGION None
+   == active_region
+   state Root {
+       during before { if [active("Root.A")] { } }
+       region A { state Leaf; [*] -> Leaf; }
+   }
+   -> E_ACTIVE_QUERY_TARGET region
+   == across_regions
+   state Root {
+       region A { state L; [*] -> L; L -> M; }
+       region B { state M; [*] -> M; }
+   }
+   -> E_DANGLING_TRANSITION tgt_not_found
+   == event_of_owner_by_bare_name
+   state Root {
+       [*] -> Job;
+       state Job {
+           event Abort;
+           region A {
+               [*] -> L1;
+               state L1;
+               state L2;
+               L1 -> L2 : Job.Abort;
+           }
+       }
+   }
+   -> E_MISSING_STATE event_path_not_found
+   == region_without_initial
+   state Root {
+       region A { state Leaf; }
+   }
+   -> E_INITIAL_TRANSITION_INVALID missing_entry
+   == direct_nesting
+   state Root {
+       region A {
+           region B { state Leaf; [*] -> Leaf; }
+       }
+   }
+   -> GrammarParseError: Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
 
 The command line prints the same message without the code: ``pyfcstm inspect
 -i`` with an invalid model exits with status 1 and a message that starts with
@@ -999,15 +1201,164 @@ What follows from this notation:
 .. literalinclude:: region_forced_in_region.fcstm
    :language: fcstm
 
-.. literalinclude:: region_forced_expansion.demo.py.txt
-   :language: text
+.. testcode::
 
-The first block expands the controller of the tutorial, where the two regions are
-``Safety`` and ``Motion``: both regions get follower and starter transitions, and
-the last cycle of the run shows that ``/Stop`` finishes both regions and leaves
-``Running`` in one cycle with ``__forced_0`` back at ``0``. The second block is
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'], list(model.forced_variables))
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1 ['__forced_0']
+   ...
+           region Safety {
+   ...
+               Watching -> [*] : if [__forced_0 == 1];
+               Watching -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+           region Motion {
+   ...
+               Off -> [*] : if [__forced_0 == 1];
+               Off -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+       pseudo state __forced_gate_0;
+   ...
+       Running -> Idle : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Running -> __forced_gate_0 : Stop;
+   ...
+       __forced_gate_0 -> Idle : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_wildcard.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   3
+   def int __forced_0 = 0;
+   state Plant {
+       state Idle;
+       state Run {
+           region A {
+               state A1;
+               A1 -> [*] : if [__forced_0 == 1];
+               A1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> A1;
+           }
+           region B {
+               state B1;
+               state B2;
+               B1 -> [*] : if [__forced_0 == 1];
+               B1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               B2 -> [*] : if [__forced_0 == 1];
+               B2 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> B1;
+               B1 -> B2 : /Next;
+           }
+       }
+       state Safe;
+       pseudo state __forced_gate_0;
+       event Fault;
+       event Next;
+       event Go;
+       Idle -> Safe : Fault;
+       Run -> Safe : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Run -> __forced_gate_0 : Fault;
+       Safe -> Safe : Fault;
+       [*] -> Idle;
+       Idle -> Run : Go;
+       __forced_gate_0 -> Safe : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_in_region.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1
+   def int __forced_0 = 0;
+   state Plant {
+       state Job {
+           region Panel {
+               state On {
+                   state Quiet;
+                   state Loud;
+                   Quiet -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   Loud -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   [*] -> Quiet;
+                   Quiet -> Loud : /Trip;
+               }
+               state Off;
+               pseudo state __forced_gate_0;
+               On -> Off : if [__forced_0 == 1] effect {
+                   __forced_0 = 0;
+               }
+               On -> __forced_gate_0 : /Stop;
+               [*] -> On;
+               __forced_gate_0 -> Off : if [__forced_0 == 0];
+           }
+   ...
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle /Stop --input fault=0 --input requested=1"
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   Variables:
+     __forced_0 = 0
+   ...
+   Cycle: 4
+   Current State: Controller.Idle
+   Variables:
+     __forced_0 = 0
+   ...
+
+The first script expands the controller of the tutorial
+(:download:`controller.fcstm </_models/controller.fcstm>`), where the two regions are
+``Safety`` and ``Motion``: both regions get follower and starter transitions; the
+parts of the export that the table above quotes are shown, and the terminal
+record at the end shows that ``/Stop`` finishes both regions and leaves
+``Running`` in one cycle with ``__forced_0`` back at ``0``. The second script is
 the ``!*`` model above, in which ``!*`` expands to three transitions
-(``expansion_count`` is 3). The last block expands a declaration written inside a
+(``expansion_count`` is 3). The third expands a declaration written inside a
 region. The output establishes the expansion; it does not show the order in
 which exits run, which the semantic fixtures
 ``region_forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
@@ -1285,8 +1636,8 @@ that spreads over several regions.
    * - A state that owns a history and has an owner of regions anywhere in its
        subtree
      - ``E_REGION_STRUCTURE``, ``reason: history_boundary``
-     - Reported on the history owner; see ``history_owner_with_region`` in
-       :ref:`dsl-region-diagnostics`.
+     - Reported on the history owner; the script of
+       :ref:`region-limits-run` prints it.
    * - ``[H] -> Child;`` written directly in a region body
      - Syntax error
      - A region is not a history owner; wrap the states in an ordinary state.
@@ -1985,7 +2336,7 @@ Every row still has a reference or explanation landing point.
      - :doc:`/how_to/regions/index`
      - :ref:`dsl-region-forms`
      - :doc:`/explanations/region_semantics/index`
-     - ``region_bad_*.fcstm.txt`` loader report
+     - the ``region_bad_*.fcstm.txt`` loader report
      - synced
    * - ``dsl-region-events``
      - region
@@ -2021,7 +2372,7 @@ Every row still has a reference or explanation landing point.
      - :doc:`/how_to/regions/index`
      - :ref:`dsl-region-forced`
      - :doc:`/explanations/region_semantics/index`
-     - ``region_forced_expansion.demo.py`` exported text
+     - the exported text printed under :ref:`dsl-region-forced`
      - synced
    * - ``dsl-region-history``
      - region
@@ -2030,7 +2381,7 @@ Every row still has a reference or explanation landing point.
      - :doc:`/how_to/regions/index`
      - :ref:`dsl-history-regions`
      - :ref:`dsl-history-semantics`
-     - ``region_nested_active.fcstm`` run and ``history_owner_with_region``
+     - ``region_nested_active.fcstm`` run and the history script of :ref:`region-limits-run`
      - synced
    * - ``dsl-region-diagnostics``
      - diagnostics
@@ -2039,7 +2390,7 @@ Every row still has a reference or explanation landing point.
      - :doc:`/how_to/regions/index`
      - :ref:`dsl-region-diagnostics`
      - :doc:`/explanations/region_semantics/index`
-     - ``region_diagnostics.demo.py`` report
+     - the loader report printed under :ref:`dsl-region-diagnostics`
      - synced
 
 .. _dsl-fact-check-notes:
@@ -2056,8 +2407,8 @@ Fact-check notes
 * Region syntax comes from ``region_definition`` and ``state_owner_statement`` in
   ``GrammarParser.g4``; region structure checks from
   ``pyfcstm/model/region.py`` (``validate_region_structure``); the examples under
-  :ref:`dsl-region-forms` are loaded and run by the ``region_*.demo.*`` scripts
-  next to this page, and their outputs are included verbatim.
+  :ref:`dsl-region-forms` and the later region sections are run against this
+  checkout, and their outputs are included verbatim.
 * Forced and history expansion text comes from ``StateMachine.to_ast_node()``;
   the hidden-variable names come from ``forced_variables``, ``active_queries``
   and ``history_owners``.

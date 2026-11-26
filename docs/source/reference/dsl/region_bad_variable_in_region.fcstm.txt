@@ -1,7 +1,0 @@
-state Root {
-    region A {
-        def int x = 0;
-        state Leaf;
-        [*] -> Leaf;
-    }
-}

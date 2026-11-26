@@ -1,5 +1,0 @@
-state Root {
-    [*] -> Plain;
-    state Plain;
-    region A { state Leaf; [*] -> Leaf; }
-}

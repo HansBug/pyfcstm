@@ -235,8 +235,10 @@ Three things become visible:
   it appears in ``StateMachine.defines``, ``runtime.vars``, the variable
   snapshots of abstract handlers and the variable tables of generated code, and
   it is an ordinary variable everywhere: a hot start supplies it like every
-  other variable, and BMC treats it like every other variable. The machine only
-  raises it inside a cycle, so it is 0 at every point where a run rests.
+  other variable, and BMC treats it like every other variable. The machine
+  raises it inside a cycle and a finished declaration leaves it at 0, so it is 0
+  wherever a run rests, except while a group is left half-way because the target
+  cannot be entered: it stays 1 until the group leaves.
   :attr:`pyfcstm.model.model.StateMachine.forced_variables` lists the names.
 - A transition with an event that leaves a state on the way of a forced exit is
   split through a generated pseudo state ``__forced_gate_<n>``. The pseudo

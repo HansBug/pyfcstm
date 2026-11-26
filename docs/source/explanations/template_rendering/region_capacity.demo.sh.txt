@@ -1,5 +1,0 @@
-model                          ARENA  TRAIL
-plain                              8      4
-two_regions                       60     36
-controller                       108     52
-never_completes                   84     44

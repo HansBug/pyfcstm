@@ -384,13 +384,28 @@ declare it:
    :language: yaml
    :caption: region_declared_template/config.yaml
 
-.. literalinclude:: region_template_refusal.demox.sh
-   :language: bash
-   :caption: region_template_refusal.demox.sh
+.. code-block:: console
 
-.. literalinclude:: region_template_refusal.demox.sh.txt
-   :language: text
-   :caption: region_template_refusal.demox.sh.txt (exit code 1, see region_template_refusal.demox.sh.exitcode)
+   $ pyfcstm generate -i controller.fcstm -t region_plain_template -o out
+   generate with template directory '...region_plain_template' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i ...controller.fcstm --template c -o out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out || echo "output directory not created"
+   output directory not created
+   $ pyfcstm generate -i controller.fcstm -t region_declared_template -o declared_out
+   $ cat declared_out/states.txt
+   Controller
+   Idle
+   Running
+   Watching
+   Off
+   On
+   __forced_gate_0
 
 Read the output from the top:
 
@@ -399,14 +414,15 @@ Read the output from the top:
 2. The command exits with ``1`` and writes a refusal for the unsupported ``region``
    feature (its diagnostic code is ``E_UNSUPPORTED_FEATURE``; the printed text does not show the code). Its first line names the template directory, so a template author
    can tell a template without the feature from a model written wrongly. The
-   directory shown here is shortened by the script; the real message carries the
-   path you passed. The ``(line 12)`` in the first line is the line of the model that
+   directory is shown here as ``...``; the real message carries the path you
+   passed. The ``(line 12)`` in the first line is the line of the model that
    declares the first region.
 3. The message has two readers. The template author is told what to declare and
    when: only once the template really renders regions. The model author gets a
    list of built-in templates that support regions and a command that can be
    copied.
-4. ``output directory: not created`` is the point of refusing early. A refusal
+4. The ``test -e out`` line prints ``output directory not created``, which is the
+   point of refusing early. A refusal
    after rendering had started could leave a half-written tree that looks like
    a result.
 5. The second run declares ``region`` and succeeds. The template sees the machine
@@ -443,19 +459,25 @@ reserves its memory statically. The memory is part of the machine structure
 (``_private[...STORAGE_BYTES]``), so nothing is allocated while a cycle runs.
 Two capacities size it, and they are derived from the model:
 
-.. literalinclude:: region_capacity.demo.sh
-   :language: bash
-   :caption: region_capacity.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_capacity.demo.sh.txt
-   :language: text
-   :caption: region_capacity.demo.sh.txt
+   $ pyfcstm generate -i controller.fcstm --template c -o controller_c
+   $ cat controller_c/machine.h
+   ...
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   ...
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
 
 ``ARENA_CAPACITY`` bounds how many configurations and pending work items one
 decision of a cycle may examine, and ``TRAIL_CAPACITY`` bounds how many checks may
-be nested; ``STORAGE_BYTES`` is computed from both. The plain model with one composite state needs
-8 and 4. The two-region model needs 60 and 36, and the controller, which has
-more states and transitions, needs 108 and 52. The numbers come from the model,
+be nested; ``STORAGE_BYTES`` is computed from both. The controller needs 108
+and 52, as the header above shows. The same command gave 8 and 4 for a plain
+model with one composite state and one event transition, 60 and 36 for
+``region_blind_overwrite.fcstm`` (two regions) and 84 and 44 for
+``region_never_completes.fcstm``, both from :doc:`the diagnostics page
+</explanations/diagnostics/index>`. Those three pairs are recorded values from
+that command and this page does not rerun them. The numbers come from the model,
 not from a fixed engine limit. They are the measured defaults for these four
 models, not a formula you can rely on across template versions.
 
@@ -518,27 +540,110 @@ has not been initialized, text ``[init]``) and ``inactive`` (its owner is not in
 the position). The C runtime spells them as constants such as
 ``CONTROLLER_MACHINE_REGION_STATUS_LIVE``.
 
-The two runs below drive the same six cycles of the controller (start it, run
-calmly, raise a fault for two cycles, stop it) through a generated runtime and
-through ``pyfcstm simulate``, and compare the text after each cycle:
+The script below drives the same six cycles of the controller (start it, run
+calmly, raise a fault for two cycles, stop it) through the generated Python
+runtime and through the simulator, and prints the text after each cycle with
+whether the two agree:
 
-.. literalinclude:: region_generated_runtime.demo.sh
-   :language: bash
-   :caption: region_generated_runtime.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_generated_runtime.demo.sh.txt
-   :language: text
-   :caption: region_generated_runtime.demo.sh.txt
+   $ pyfcstm generate -i controller.fcstm --template python -o python_out
+   $ ls python_out/machine.py
+   python_out/machine.py
 
-.. literalinclude:: region_generated_c_runtime.demo.sh
-   :language: bash
-   :caption: region_generated_c_runtime.demo.sh
+.. testcode::
 
-.. literalinclude:: region_generated_c_runtime.demo.sh.txt
-   :language: text
-   :caption: region_generated_c_runtime.demo.sh.txt
+   import sys
 
-In both runs ``diff`` finds no difference. The sequence shows the cycle-by-cycle
+   sys.path.insert(0, "python_out")
+   from machine import ControllerMachine
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   steps = [(None, 0, 0), (["/Start"], 0, 1), (None, 0, 1), (None, 1, 1), (None, 1, 1), (["/Stop"], 0, 0)]
+   model = load_state_machine_from_text(open("controller.fcstm").read())
+   simulator = SimulationRuntime(model, input_source={"fault": 0, "requested": 0})
+   generated = ControllerMachine()
+   for events, fault, requested in steps:
+       inputs = {"fault": fault, "requested": requested}
+       simulator.cycle(events, inputs=inputs)
+       generated.cycle(events, inputs=inputs)
+       print(generated.configuration, generated.configuration == str(simulator.configuration))
+   print("leaves:", generated.leaves)
+   print("is_active Controller.Running:", generated.is_active("Controller.Running"))
+
+.. testoutput::
+
+   Controller.Idle True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: On} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Idle True
+   leaves: (('Controller', 'Idle'),)
+   is_active Controller.Running: False
+
+The C runtime is driven by the same six cycles. This needs a C compiler, so the commands below are not run by the documentation check; the output is the recorded result of running them on the generated files:
+
+.. code-block:: c
+   :caption: app.c
+
+   #include <stdio.h>
+   #include "machine.h"
+
+   static void show(const ControllerMachine *machine)
+   {
+       ControllerMachineConfiguration configuration;
+       char text[128];
+       if (ControllerMachine_get_configuration(machine, &configuration) != CONTROLLER_MACHINE_SUCCESS) {
+           puts("ended");
+           return;
+       }
+       ControllerMachine_configuration_format(&configuration, text, sizeof(text));
+       puts(text);
+   }
+
+   int main(void)
+   {
+       static ControllerMachine machine;
+       ControllerMachineEventId start = CONTROLLER_MACHINE_EVENT_CONTROLLER_START;
+       ControllerMachineEventId stop = CONTROLLER_MACHINE_EVENT_CONTROLLER_STOP;
+       ControllerMachineInputs calm = {0, 1}, fault = {1, 1}, idle = {0, 0};
+
+       ControllerMachine_init(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &idle);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &start, 1, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &stop, 1, &idle);
+       show(&machine);
+       return 0;
+   }
+
+.. code-block:: bash
+
+   pyfcstm generate -i controller.fcstm --template c -o controller_c
+   cc -std=c99 -Wall -Wextra -pedantic -DPYFCSTM_GENERATED_NO_HEAP -Icontroller_c controller_c/machine.c app.c -lm -o app
+   ./app
+
+.. code-block:: text
+
+   Controller.Idle
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Idle
+
+The Python runtime agrees with the simulator in every cycle, and the recorded
+C output is the same six lines. The sequence shows the cycle-by-cycle
 behavior of the controller: the fault in cycle 4 turns the motor region ``Off``
 in the same cycle because ``Safety`` runs first. After ``/Stop`` the machine is
 ``Controller.Idle``, and the generated Python runtime reports ``is_active``
@@ -565,4 +670,4 @@ Use this split when writing or reviewing docs:
 * how-to pages show short commands and representative output snippets;
 * the generated README lists the concrete machine class, C prefix, event ids,
   state ids, hook names, hot-start snippets, and build command for that model;
-* tests and smoke demos prove selected generated README examples still execute.
+* tests and smoke checks prove selected generated README examples still execute.

@@ -61,3 +61,4 @@
 * 用 :doc:`/how_to/templates/index_zh` 编写自定义模板（custom template）目录。
 * 用 :doc:`/explanations/template_rendering/index_zh` 理解渲染器（renderer）流程。
 * 用 :doc:`/reference/builtin_templates/index_zh` 查内置模板契约。
+* 为含区域的模型生成运行时，并用 ``configuration`` 读取位置，见 :doc:`/tutorials/regions/index_zh`。

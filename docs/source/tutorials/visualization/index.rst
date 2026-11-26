@@ -97,3 +97,5 @@ Where to go next
   end-to-end path.
 * :doc:`/explanations/visualization/index` explains why the viewer is one
   self-contained document, why ``--open`` blocks, and who removes what.
+* :doc:`/tutorials/regions/index` shows how regions appear in the PlantUML text
+  and in the viewer.

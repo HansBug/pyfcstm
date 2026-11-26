@@ -112,3 +112,10 @@ Custom numeric input generators
 For models that read environment values each cycle, follow the executable
 construction and subclass examples in :doc:`../../reference/simulation/inputs`.
 They cover explicit overrides, correlated vectors, and failure-safe advancement.
+
+Where to go next
+----------------
+
+* :doc:`/tutorials/regions/index` runs a model whose states own ordered
+  parallel regions, and shows that the writing order of regions changes the
+  result of a cycle.

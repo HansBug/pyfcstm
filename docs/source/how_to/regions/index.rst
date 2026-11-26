@@ -30,6 +30,10 @@ concerns.  ``panel_flat.fcstm`` has four states (``CoolClosed``, ``CoolOpen``,
 ``HotClosed``, ``HotOpen``) and eight transitions; ``panel_regions.fcstm``
 says the same with two regions of two states and four transitions.
 
+.. literalinclude:: panel_flat.fcstm
+   :language: fcstm
+   :caption: panel_flat.fcstm
+
 .. literalinclude:: panel_regions.fcstm
    :language: fcstm
    :caption: panel_regions.fcstm
@@ -130,6 +134,10 @@ each region declares its own ``Ping`` and uses ``: Ping``.
 .. literalinclude:: shared_event.fcstm
    :language: fcstm
    :caption: shared_event.fcstm
+
+.. literalinclude:: scoped_event.fcstm
+   :language: fcstm
+   :caption: scoped_event.fcstm
 
 **Command or code.**
 
@@ -298,6 +306,14 @@ the regions in the file before you change a guard.
 owner has an ordinary outgoing transition ``Work -> Next``.
 ``join_gate.fcstm`` adds a guard ``gate`` to that transition.
 
+.. literalinclude:: join_done.fcstm
+   :language: fcstm
+   :caption: join_done.fcstm
+
+.. literalinclude:: join_gate.fcstm
+   :language: fcstm
+   :caption: join_gate.fcstm
+
 **Command or code.**
 
 Let ``A`` finish first and ``B`` one cycle later:
@@ -385,6 +401,14 @@ a ``-> [*]`` that can fire and that the owner's outgoing guard can become true.
 ``preempt_blocked.fcstm`` points the forced transition at a state that cannot be
 entered.
 
+.. literalinclude:: preempt_group.fcstm
+   :language: fcstm
+   :caption: preempt_group.fcstm
+
+.. literalinclude:: preempt_blocked.fcstm
+   :language: fcstm
+   :caption: preempt_blocked.fcstm
+
 **Command or code.** Finish ``A`` with ``/ADone``, then send ``/Cancel``:
 
 .. code-block:: console
@@ -453,6 +477,13 @@ the parts this card discusses):
                    __forced_0 = 1;
                }
    ...
+           region B {
+   ...
+               Working -> [*] : if [__forced_0 == 1];
+               Working -> [*] : /Cancel effect {
+                   __forced_0 = 1;
+               }
+   ...
 
 **Expected signal.** ``/Cancel`` leaves ``Job`` in one cycle and the exits run
 in writing order: ``1`` (``A``), ``2`` (``B``), then the owner (``3``), so
@@ -478,6 +509,10 @@ from its initial transition.
 **Input.** ``watch_regions.fcstm``: ``Trigger`` is declared between two
 readers.  ``Later`` writes the path as ``active("/Trigger.Fired")`` and
 ``Earlier`` as ``active("Plant.Trigger.Fired")``; both name the same state.
+
+.. literalinclude:: watch_regions.fcstm
+   :language: fcstm
+   :caption: watch_regions.fcstm
 
 **Command or code.**
 
@@ -531,6 +566,10 @@ the reader is declared before the writer.
 ``>> during before``; ``Left`` and ``Right`` have their own region aspects.
 ``Left`` can finish with ``/End``; ``Right`` has a leaf with no ``during``
 action.
+
+.. literalinclude:: aspect_regions.fcstm
+   :language: fcstm
+   :caption: aspect_regions.fcstm
 
 **Command or code.** The counters are printed after every cycle; the ``/End``
 event is sent in the third cycle, and the first cycle is left out:
@@ -596,15 +635,35 @@ leaf transitions runs no aspect of that region).
 
 **Input.** One small model per mistake, named ``err_*.fcstm.txt``.  The
 suffix keeps the documentation build from drawing invalid models; ``pyfcstm``
-reads the files as they are.  Two of them:
+reads the files as they are.  The seven models:
 
 .. literalinclude:: err_cross_region.fcstm.txt
    :language: fcstm
    :caption: err_cross_region.fcstm.txt
 
+.. literalinclude:: err_mixed_children.fcstm.txt
+   :language: fcstm
+   :caption: err_mixed_children.fcstm.txt
+
+.. literalinclude:: err_empty_region.fcstm.txt
+   :language: fcstm
+   :caption: err_empty_region.fcstm.txt
+
+.. literalinclude:: err_duplicate_region.fcstm.txt
+   :language: fcstm
+   :caption: err_duplicate_region.fcstm.txt
+
 .. literalinclude:: err_active_region.fcstm.txt
    :language: fcstm
    :caption: err_active_region.fcstm.txt
+
+.. literalinclude:: err_history_owner.fcstm.txt
+   :language: fcstm
+   :caption: err_history_owner.fcstm.txt
+
+.. literalinclude:: err_region_in_region.fcstm.txt
+   :language: fcstm
+   :caption: err_region_in_region.fcstm.txt
 
 **Command or code.** Run ``pyfcstm inspect -i err_<name>.fcstm.txt --color never``
 on each model.  These are negative examples; do not copy the models.  Every

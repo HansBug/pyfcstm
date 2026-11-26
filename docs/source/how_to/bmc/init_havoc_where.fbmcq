@@ -1,0 +1,2 @@
+init state("Root.Idle") havoc { x } where x == 7;
+check reach <= 1: x == 7;

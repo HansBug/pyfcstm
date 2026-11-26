@@ -356,7 +356,7 @@ for each one-line ``config.yaml``:
 
 The key is also checked by ``pyfcstm generate``. The next commands build four
 template directories and render ``controller.fcstm`` (two regions) or
-``region_plain.fcstm`` (none) into each one. A refused run exits with status 1,
+``plain_no_region.fcstm`` (none) into each one. A refused run exits with status 1,
 writes nothing, and prints the model's region count, where the first region is,
 what a template author should declare, which built-in templates to use instead,
 and one command that can be copied. The suggested template is the first name of
@@ -367,9 +367,9 @@ in ``controller.fcstm``.
    :language: fcstm
    :caption: controller.fcstm
 
-.. literalinclude:: region_plain.fcstm
+.. literalinclude:: /_models/plain_no_region.fcstm
    :language: fcstm
-   :caption: region_plain.fcstm
+   :caption: plain_no_region.fcstm
 
 .. code-block:: console
 
@@ -401,12 +401,16 @@ in ``controller.fcstm``.
    ...
    $ echo $?
    1
+   $ test -e out_empty_list || echo "nothing was written"
+   nothing was written
    $ pyfcstm generate -i controller.fcstm -t null_value -o out_null_value
    generate with template directory '...null_value' does not support region models yet. (line 12)
    ...
    $ echo $?
    1
-   $ pyfcstm generate -i region_plain.fcstm -t undeclared -o out_plain
+   $ test -e out_null_value || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i plain_no_region.fcstm -t undeclared -o out_plain
    $ cat out_plain/names.txt
    name: Plain
 

@@ -106,9 +106,17 @@
 在终端里看区域诊断
 ------------------
 
-下面的目录逐个说明诊断码。本节在本页旁边的模型上运行与区域有关的诊断码，因此每条信息和每个退出状态都是真实的。故意写成不合法的模型使用扩展名 ``.fcstm.txt``\ ，它们出现在各自诊断码的目录条目里；它们是负例，请勿当作起点复制。
+下面的目录逐个说明诊断码。本节在本页旁边的模型上运行与区域有关的诊断码，因此每条信息和每个退出状态都是真实的。故意写成不合法的模型使用扩展名 ``.fcstm.txt``\ ，它们出现在各自诊断码的目录条目里，或紧挨在运行它们的命令之前；它们是负例，请勿当作起点复制。
 
 ``pyfcstm inspect`` 把 ``E_REGION_STRUCTURE`` 报成一行，其中带有出错构造所在的行号。修复后的模型，以及历史放在区域子树之外的模型都会被接受；完整报告很长，这里只保留摘要里的 ``regions:`` 一行。
+
+.. literalinclude:: region_diag_history_boundary.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_history_boundary.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_empty_region_fixed.fcstm
+   :language: fcstm
+   :caption: region_diag_empty_region_fixed.fcstm
 
 .. code-block:: console
 
@@ -130,6 +138,14 @@
    ...
 
 原因 ``mixed_children`` 与 ``owner_statements`` 无法用文本写出：解析器在构建模型之前就拒绝了文本，用户看到的是语法错误。只有用公开的节点类构造语法树才能触发它们。
+
+.. literalinclude:: region_diag_mixed_children.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_mixed_children.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_owner_transition.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_owner_transition.fcstm.txt (negative example, do not copy)
 
 .. code-block:: console
 
@@ -159,6 +175,22 @@
    ...
 
 ``E_ACTIVE_QUERY_TARGET`` 为每一种被拒绝的查询写法给出一个原因。\ ``region_diag_active_ok.fcstm`` 展示被接受的相对根写法 ``active("/B")``\ 。
+
+.. literalinclude:: region_diag_active_invalid_path.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_invalid_path.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_region.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_region.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_pseudo.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_pseudo.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_ok.fcstm
+   :language: fcstm
+   :caption: region_diag_active_ok.fcstm
 
 .. code-block:: console
 

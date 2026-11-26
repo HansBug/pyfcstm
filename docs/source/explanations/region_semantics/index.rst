@@ -42,6 +42,10 @@ Terms
    * - Done
      - A region that finished through a ``-> [*]`` transition written directly
        in it. Its configuration text is ``[done]``.
+   * - Delta
+     - A cycle in which no legal configuration can be reached. It commits
+       nothing: positions and variables stay as they were, and the cycle still
+       counts.
    * - waiting for initialization
      - A region that has not been entered yet. Its configuration text is
        ``[init]``.
@@ -183,6 +187,10 @@ in a trace on this page.
 of the ``region`` blocks is part of the model: ``to_ast_node()``, formatting and
 re-loading keep it.
 
+.. literalinclude:: order_kept.demo.py
+   :language: python
+   :caption: ``order_kept.demo.py``
+
 .. literalinclude:: order_kept.demo.py.txt
    :language: text
    :caption: ``order_kept.demo.py`` (the script prints the region names of
@@ -210,6 +218,10 @@ cycle later. When several regions write the same variable, the last write wins.
    :language: fcstm
    :caption: ``visible_backward.fcstm``: the reader is declared first
 
+.. literalinclude:: visibility.demo.py
+   :language: python
+   :caption: ``visibility.demo.py``
+
 .. literalinclude:: visibility.demo.py.txt
    :language: text
 
@@ -217,8 +229,8 @@ cycle later. When several regions write the same variable, the last write wins.
   that ``W`` just wrote.
 * In the backward model ``y`` is always one behind: ``Rd`` runs before ``W`` and
   copies last cycle's ``x``. ``W`` is not re-run to make up for it.
-* In the multiple-writer model the three regions write ``x = 1``, ``x = 2`` (in
-  ``R1`` and ``R2``) and the chain ``y + 1``, ``y * 10``, ``y + 3`` runs in
+* In the multiple-writer model the three regions write ``x = 1`` (in
+  ``R1``), ``x = 2`` (in ``R2``) and the chain ``y + 1``, ``y * 10``, ``y + 3`` runs in
   written order, so ``x`` ends at 2 and ``y`` goes 13, 143, 1443. Nothing is
   reported and nothing rolls back.
 * In the input model both regions add the same ``k`` in each cycle: 2 in cycle
@@ -230,6 +242,10 @@ cycle later. When several regions write the same variable, the last write wins.
 **The interlock, both orders.** The controller is the example where the order
 changes observable behaviour. The same input sequence runs against the model
 with ``Safety`` first and against the swapped model with ``Motion`` first:
+
+.. literalinclude:: interlock.demo.py
+   :language: python
+   :caption: ``interlock.demo.py``
 
 .. literalinclude:: interlock.demo.py.txt
    :language: text
@@ -406,6 +422,10 @@ In cycle 2 region ``R1`` writes ``x = 2``. Then ``R2`` tries ``B -> C``, which
 would add 10 to ``t``, but ``C``'s initial transition needs ``x > 100``, so ``C``
 cannot be entered. The candidate is dropped with its effect, and ``B -> D`` runs.
 
+.. literalinclude:: fallback.demo.py
+   :language: python
+   :caption: ``fallback.demo.py``
+
 .. literalinclude:: fallback.demo.py.txt
    :language: text
 
@@ -436,6 +456,10 @@ inside it are tried on a copy; the first one that reaches a legal position wins.
 stops a chain that nests or repeats more than 64 groups in one cycle with a
 documented error:
 
+.. literalinclude:: nesting_limit.demo.py
+   :language: python
+   :caption: ``nesting_limit.demo.py``
+
 .. literalinclude:: nesting_limit.demo.py.txt
    :language: text
 
@@ -457,6 +481,10 @@ Each ``seq`` digit marks one block: 1 and 9 are the ``before`` and ``after`` of
 ``P``, 2 and 8 those of region ``A``, 3 and 7 those of ``Q``, and 4, 5, 6 the
 ``during`` blocks of ``X1``, ``Y1``, ``B1``.
 
+.. literalinclude:: aspect_order.demo.py
+   :language: python
+   :caption: ``aspect_order.demo.py``
+
 .. literalinclude:: aspect_order.demo.py.txt
    :language: text
 
@@ -474,16 +502,23 @@ below its scope, after the conditions of the branches that were judged earlier.
    :language: fcstm
    :caption: ``aspect_position.fcstm``
 
+.. literalinclude:: aspect_position.demo.py
+   :language: python
+   :caption: ``aspect_position.demo.py``
+
 .. literalinclude:: aspect_position.demo.py.txt
    :language: text
 
 In cycle 2 ``R1``'s condition ``tick >= 2`` is judged first and sees ``tick = 1``;
 then the root's ``before`` makes it 2 and ``P``'s ``before`` runs; ``R2``'s
 condition, judged after them, sees ``tick = 2`` and takes ``U -> V``. The root's
-``after`` runs once at the end. The last block shows that the aspect of
-``region_aspect.fcstm``'s ``R1`` is counted once per cycle (``r1`` stays 1)
-until ``R1`` is Done; from then on, in cycles 2 and 3, only ``R2``'s aspect
-continues (``r2`` 2, 3) and ``R1``'s ``after`` does not run again.
+``after`` runs once at the end. The last block is
+``region_aspect.fcstm``: the ``before`` and ``after`` of ``R1`` run once in each
+of cycles 1 and 2 (``r1`` and ``r1after`` go 1, 2) and only around ``R1``'s
+branch, while ``R2``'s own ``before`` runs in every cycle (``r2`` 1 to 4). In
+cycle 3 ``R1`` finishes through ``A -> [*]``, which is not ``during`` work, so
+its aspects do not run (``r1`` stays 2); from then on only ``R2``'s aspect
+continues.
 
 **What this does not say.** Pseudo states on the way to a resting state do not
 trigger aspects, as in models without regions.
@@ -499,6 +534,10 @@ Nothing in the simulator takes a group away at once. The event or condition is
 judged by each region at its own turn, regions leave in written order and the
 owner continues through its own transition when the last one is Done.
 
+.. literalinclude:: forced.demo.py
+   :language: python
+   :caption: ``forced.demo.py``
+
 .. literalinclude:: forced.demo.py.txt
    :language: text
 
@@ -508,9 +547,10 @@ The first block is the model in ``forced_condition.fcstm``: ``!P -> Off : if [x
 * Each region gets two transitions to ``[*]``: a **starter** with the declared
   condition (``x >= 2``) whose effect raises ``__forced_0``, and, written in front
   of it, a **follower** that fires when the variable is already raised.
-* The owner gets two transitions to ``Off``: one after the group ended, which
-  clears the variable, and one for the case that no region exists below the
-  owner.
+* The owner gets two transitions to ``Off``: one that waits for the raised
+  variable and lowers it, which is the case after the group ended, and, behind
+  it, the declared transition, kept for the case that control comes back to the
+  owner without the variable raised.
 
 The third block is the run, and it shows the three consequences:
 
@@ -536,6 +576,10 @@ The third block is the run, and it shows the three consequences:
    :language: fcstm
    :caption: ``forced_blocked.fcstm``
 
+.. literalinclude:: forced_blocked.demo.py
+   :language: python
+   :caption: ``forced_blocked.demo.py``
+
 .. literalinclude:: forced_blocked.demo.py.txt
    :language: text
 
@@ -556,6 +600,10 @@ ordinary transitions only, and it is a known gap (see
 
 **It is shorthand, and it behaves like its expansion.** The model that runs and
 the model loaded from its exported text take the same cycles:
+
+.. literalinclude:: forced_equivalence.demo.py
+   :language: python
+   :caption: ``forced_equivalence.demo.py``
 
 .. literalinclude:: forced_equivalence.demo.py.txt
    :language: text
@@ -592,6 +640,10 @@ and ``exit_other`` inside ``Normal``'s ``exit``, ``effect_source`` and
 ``enter_other`` inside ``Tripped``'s ``enter``. The value 1 means active and 2
 means not active.
 
+.. literalinclude:: active_query.demo.py
+   :language: python
+   :caption: ``active_query.demo.py``
+
 .. literalinclude:: active_query.demo.py.txt
    :language: text
 
@@ -607,6 +659,10 @@ means not active.
   next. The same one-cycle lag as for variables.
 
 **How it works.** ``active()`` is shorthand for an ordinary flag:
+
+.. literalinclude:: active_lowering.demo.py
+   :language: python
+   :caption: ``active_lowering.demo.py``
 
 .. literalinclude:: active_lowering.demo.py.txt
    :language: text
@@ -630,6 +686,10 @@ Configuration is a tree
 text form that reads back into the same value. Every model has a
 ``runtime.configuration``; ``runtime.current_state`` is a ``State`` for models
 without regions and a configuration for models with regions.
+
+.. literalinclude:: configuration_text.demo.py
+   :language: python
+   :caption: ``configuration_text.demo.py``
 
 .. literalinclude:: configuration_text.demo.py.txt
    :language: text
@@ -717,6 +777,10 @@ active leaf, and the three outcomes are "none found", "one event" and
    :language: fcstm
    :caption: ``event_names.fcstm``
 
+.. literalinclude:: event_names.demo.py
+   :language: python
+   :caption: ``event_names.demo.py``
+
 .. literalinclude:: event_names.demo.py.txt
    :language: text
 
@@ -724,7 +788,7 @@ active leaf, and the three outcomes are "none found", "one event" and
   the event is used. ``Trip`` works the same for ``Safety``.
 * ``Ping`` exists on both leaves with different meanings. The cycle is refused
   and the message lists every candidate with the leaf that led to it; nothing
-  runs. The fix is the full path or ``/Running.Ping``-style root path.
+  runs. The fix is the full path (``Controller.Running.Motion.Off.Ping``).
 * ``Stop`` is an event of the owner ``Running``, and ``Reset`` an event of the
   root. A bare name is looked up only in the namespace of each active leaf, so
   neither is found. This is the rule models without regions have always had.
@@ -753,6 +817,10 @@ the time of the call.
 .. literalinclude:: handler_context.fcstm
    :language: fcstm
    :caption: ``handler_context.fcstm``
+
+.. literalinclude:: handler_context.demo.py
+   :language: python
+   :caption: ``handler_context.demo.py``
 
 .. literalinclude:: handler_context.demo.py.txt
    :language: text
@@ -846,7 +914,8 @@ listed so that the page stays valid while cases are added.
      - :ref:`region-semantics-active`
    * - ``region_hot_start_*``
      - 17
-     - The five spellings, waiting and Done regions, nested owners, rejected
+     - Starts that name every leaf, a Done region, a path into a region or an owner
+       alone; waiting and Done regions, nested owners, rejected
        positions and the supply of hidden variables.
      - Hot start
    * - ``region_event_name_*``, ``region_scoped_*``

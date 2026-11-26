@@ -2,11 +2,13 @@ import sys
 
 from pyfcstm.dsl.error import GrammarParseError
 from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.utils.validate import ModelValidationError
 
 CASES = [
-    ("history written on an owner", "state Root { [*] -> P; state P { [H] -> A; region R { [*] -> A; state A; } } }"),
+    ("history written on an owner", "state Root { [*] -> P; state P { region R { [*] -> A; state A; } [H] -> A; } }"),
     ("child states mixed with a region", "state Root { [*] -> P; state P { state X; region R { [*] -> A; state A; } } }"),
     ("enter block inside a region", "state Root { [*] -> P; state P { region R { enter { } [*] -> A; state A; } } }"),
+    ("a transition from one region to a state of another", "state Root { [*] -> P; state P { region R1 { [*] -> A; state A; } region R2 { [*] -> B; state B; B -> A; } } }"),
     ("a variable declared in a region", "state Root { [*] -> P; state P { region R { def int x = 0; [*] -> A; state A; } } }"),
 ]
 
@@ -19,6 +21,9 @@ for title, text in CASES:
         failed += 1
         print("GrammarParseError:", str(error).splitlines()[0])
         print("GrammarParseError:", str(error).splitlines()[1])
+    except ModelValidationError as error:
+        failed += 1
+        print("ModelValidationError:", str(error).splitlines()[0])
     else:
         print("accepted")
 sys.exit(1 if failed else 0)

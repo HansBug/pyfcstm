@@ -7,6 +7,6 @@ state Root {
     region Sensor {
         state Ready;
         [*] -> Ready;
-        Ready -> [*] : if [active("/Root.Motor.Idle")];
+        Ready -> [*] : if [active("Root.Motor.Idle")];
     }
 }

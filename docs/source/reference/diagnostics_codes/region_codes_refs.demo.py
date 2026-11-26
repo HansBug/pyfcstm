@@ -9,13 +9,13 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 
 FILES = [
-    "region_diag_empty_region.fcstm",
-    "region_diag_history_boundary.fcstm",
-    "region_diag_duplicate.fcstm",
-    "region_diag_active_not_found.fcstm",
-    "region_diag_active_invalid_path.fcstm",
-    "region_diag_active_region.fcstm",
-    "region_diag_active_pseudo.fcstm",
+    "region_diag_empty_region.fcstm.txt",
+    "region_diag_history_boundary.fcstm.txt",
+    "region_diag_duplicate.fcstm.txt",
+    "region_diag_active_not_found.fcstm.txt",
+    "region_diag_active_invalid_path.fcstm.txt",
+    "region_diag_active_region.fcstm.txt",
+    "region_diag_active_pseudo.fcstm.txt",
 ]
 
 for name in FILES:

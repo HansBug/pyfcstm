@@ -1,4 +1,4 @@
-$ pyfcstm plantuml -i region_case_alias.fcstm
+$ pyfcstm plantuml -i region_case_alias.fcstm.txt
 state "P" as p <<composite>> {
     note as p__alpha
         **region 1: Alpha**

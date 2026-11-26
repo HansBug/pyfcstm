@@ -26,23 +26,23 @@ print("accepted: %d states, %d regions" % (len(report["states"]), len(report.get
 }
 
 echo "=== E_REGION_STRUCTURE ==="
-run region_diag_empty_region.fcstm
+run region_diag_empty_region.fcstm.txt
 run region_diag_empty_region_fixed.fcstm
-run region_diag_history_boundary.fcstm
+run region_diag_history_boundary.fcstm.txt
 run region_diag_history_outside.fcstm
 echo "=== mixed_children and owner_statements: syntax errors in text ==="
-run region_diag_mixed_children.fcstm
-run region_diag_owner_transition.fcstm
+run region_diag_mixed_children.fcstm.txt
+run region_diag_owner_transition.fcstm.txt
 
 echo "=== E_DUPLICATE_REGION ==="
-run region_diag_duplicate.fcstm
+run region_diag_duplicate.fcstm.txt
 run region_diag_same_name_two_owners.fcstm
 
 echo "=== E_ACTIVE_QUERY_TARGET ==="
-run region_diag_active_not_found.fcstm
-run region_diag_active_invalid_path.fcstm
-run region_diag_active_region.fcstm
-run region_diag_active_pseudo.fcstm
+run region_diag_active_not_found.fcstm.txt
+run region_diag_active_invalid_path.fcstm.txt
+run region_diag_active_region.fcstm.txt
+run region_diag_active_pseudo.fcstm.txt
 run region_diag_active_ok.fcstm
 echo "=== active() in a persistent initializer is a syntax error ==="
-run region_diag_active_initializer.fcstm
+run region_diag_active_initializer.fcstm.txt

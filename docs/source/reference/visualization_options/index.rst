@@ -1050,7 +1050,7 @@ regions, an aspect on the owner and on a region, a guard that calls
 ``active(...)``), ``region_nested.fcstm`` (nested owners, an event declared by
 use inside a region), ``region_single.fcstm`` (one region),
 ``region_controller.fcstm`` (a forced transition on the owner) and
-``region_case_alias.fcstm`` (a counterexample).
+``region_case_alias.fcstm.txt`` (a counterexample).
 
 PlantUML export
 ~~~~~~~~~~~~~~~

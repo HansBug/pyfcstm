@@ -563,14 +563,14 @@ E_ACTIVE_QUERY_TARGET
 
 路径指向不存在的子节点时，以原因 ``not_found`` 被拒绝。表达式的 span 指向这次查询本身。
 
-.. literalinclude:: region_diag_active_not_found.fcstm
+.. literalinclude:: region_diag_active_not_found.fcstm.txt
    :language: fcstm
-   :caption: region_diag_active_not_found.fcstm（负例，请勿复制）
+   :caption: region_diag_active_not_found.fcstm.txt（负例，请勿复制）
 
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_active_not_found.fcstm
+   :start-at: --- region_diag_active_not_found.fcstm.txt
 
 ``span`` 为 ``[2, 28, 2, 50]``\ ，即第 2 行的 ``active("Root.Unknown")`` 调用；\ ``refs.state_path`` 是导入改写之后、按书写形式给出的路径。
 
@@ -587,16 +587,16 @@ E_ACTIVE_QUERY_TARGET
      - 模型文件与修复
    * - ``not_found``
      - 某一段路径不是任何子节点的名字。
-     - ``region_diag_active_not_found.fcstm``\ ：\ ``Root.Unknown``\ 。改查一个存在的状态，例如 ``Root`` 或 ``Root.A``\ 。
+     - ``region_diag_active_not_found.fcstm.txt``\ ：\ ``Root.Unknown``\ 。改查一个存在的状态，例如 ``Root`` 或 ``Root.A``\ 。
    * - ``invalid_path``
      - 某一段不是标识符，或者第一段不是根状态的名字。
-     - ``region_diag_active_invalid_path.fcstm``\ ：根是 ``Root`` 却写了 ``Other.A``\ 。相对根的路径以 ``/`` 开头并省略根名：\ ``region_diag_active_ok.fcstm`` 里的 ``active("/B")`` 被接受。
+     - ``region_diag_active_invalid_path.fcstm.txt``\ ：根是 ``Root`` 却写了 ``Other.A``\ 。相对根的路径以 ``/`` 开头并省略根名：\ ``region_diag_active_ok.fcstm`` 里的 ``active("/B")`` 被接受。
    * - ``region``
      - 路径指向一个区域。
-     - ``region_diag_active_region.fcstm``\ ：\ ``Root.P.R``\ 。改查区域里的状态，例如 ``Root.P.R.X``\ 。
+     - ``region_diag_active_region.fcstm.txt``\ ：\ ``Root.P.R``\ 。改查区域里的状态，例如 ``Root.P.R.X``\ 。
    * - ``pseudo``
      - 路径指向一个伪状态。
-     - ``region_diag_active_pseudo.fcstm``\ ：\ ``Root.G``\ 。伪状态不能作为稳定的活动标志。
+     - ``region_diag_active_pseudo.fcstm.txt``\ ：\ ``Root.G``\ 。伪状态不能作为稳定的活动标志。
    * - ``initializer``
      - 查询出现在持久变量的初始化表达式里。
      - 文本里无法触发，见下一个示例。
@@ -613,9 +613,9 @@ E_ACTIVE_QUERY_TARGET
 
 持久变量的初始化表达式没有活动配置可查，所以 ``initializer`` 在模型构建时被拒绝。文本里语法本身就不接受这里的 ``active(...)``\ ，用户看到的是语法错误而不是这个诊断码；只有通过公开的语法树类才能触发它。
 
-.. literalinclude:: region_diag_active_initializer.fcstm
+.. literalinclude:: region_diag_active_initializer.fcstm.txt
    :language: fcstm
-   :caption: region_diag_active_initializer.fcstm（负例，请勿复制）
+   :caption: region_diag_active_initializer.fcstm.txt（负例，请勿复制）
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -661,9 +661,9 @@ region 为空、混合直接 state/region 子级、owner 包含非法直接声�
 
 没有任何状态的区域会以原因 ``empty_region`` 被拒绝。演示脚本先对出错的模型、修复后的模型以及该诊断码的其他情形运行命令行，再用 Python 演示输出模型构建收集到的结构化诊断（span 写作 ``[line, column, end_line, end_column]``\ ）。
 
-.. literalinclude:: region_diag_empty_region.fcstm
+.. literalinclude:: region_diag_empty_region.fcstm.txt
    :language: fcstm
-   :caption: region_diag_empty_region.fcstm（负例，请勿复制）
+   :caption: region_diag_empty_region.fcstm.txt（负例，请勿复制）
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -678,7 +678,7 @@ region 为空、混合直接 state/region 子级、owner 包含非法直接声�
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :end-before: --- region_diag_duplicate.fcstm
+   :end-before: --- region_diag_duplicate.fcstm.txt
 
 命令行输出一行信息，带有出问题的构造所在的行号，退出状态为 1，不产生报告。结构化形式带有 ``namespace_path``\ （无效命名空间的完整路径）、\ ``reason`` 和 ``source_path``\ 。
 
@@ -698,13 +698,13 @@ region 为空、混合直接 state/region 子级、owner 包含非法直接声�
      - 文本里写 ``region Empty {}``\ ；即上面的第一个示例。
    * - ``mixed_children``
      - 一个状态既有直接子状态，又有区域。
-     - 文本里写不出来：\ ``region_diag_mixed_children.fcstm`` 在解析阶段就失败，演示输出可证。只能用公开的节点类构造语法树才能触发。
+     - 文本里写不出来：\ ``region_diag_mixed_children.fcstm.txt`` 在解析阶段就失败，演示输出可证。只能用公开的节点类构造语法树才能触发。
    * - ``owner_statements``
      - 拥有区域的状态自己还带有转换、强制转换、导入或历史。
-     - 文本里写不出来：\ ``region_diag_owner_transition.fcstm`` 在解析阶段失败。只能通过公开的语法树类触发。
+     - 文本里写不出来：\ ``region_diag_owner_transition.fcstm.txt`` 在解析阶段失败。只能通过公开的语法树类触发。
    * - ``history_boundary``
      - 带历史入口的状态，其子树里任何位置有区域。
-     - 演示输出里的 ``region_diag_history_boundary.fcstm``\ ：\ ``Root.P`` 上有 ``[H]``\ ，而 ``Root.P.B`` 拥有区域。
+     - 演示输出里的 ``region_diag_history_boundary.fcstm.txt``\ ：\ ``Root.P`` 上有 ``[H]``\ ，而 ``Root.P.B`` 拥有区域。
 
 第一个示例的合法替代写法，是给区域写上状态和初始转换（\ ``region_diag_empty_region_fixed.fcstm``\ ，演示里被接受）。只有一个直接区域是允许的，也不会产生警告。
 
@@ -758,9 +758,9 @@ E_DUPLICATE_REGION
 
 同一个拥有者的两个直接区域重名会被拒绝。命令行信息带有重复声明所在的行号；结构化诊断还多一个 ``previous_span``\ ，指向第一次声明。
 
-.. literalinclude:: region_diag_duplicate.fcstm
+.. literalinclude:: region_diag_duplicate.fcstm.txt
    :language: fcstm
-   :caption: region_diag_duplicate.fcstm（负例，请勿复制）
+   :caption: region_diag_duplicate.fcstm.txt（负例，请勿复制）
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -771,8 +771,8 @@ E_DUPLICATE_REGION
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_duplicate.fcstm
-   :end-before: --- region_diag_active_not_found.fcstm
+   :start-at: --- region_diag_duplicate.fcstm.txt
+   :end-before: --- region_diag_active_not_found.fcstm.txt
 
 ``span`` 为 ``[3, 5, 3, 42]``\ ，表示第 3 行的第二个 ``region A``\ ；\ ``previous_span`` 为 ``[2, 5, 2, 42]``\ ，表示第 2 行的第一个。
 

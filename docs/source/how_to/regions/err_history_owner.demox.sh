@@ -1,2 +1,2 @@
 #!/bin/bash
-pyfcstm inspect -i err_history_owner.fcstm --color never
+pyfcstm inspect -i err_history_owner.fcstm.txt --color never

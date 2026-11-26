@@ -1,2 +1,2 @@
-Invalid state machine model in err_cross_region.fcstm: Unknown to state 'Y' of transition:
+Invalid state machine model in err_cross_region.fcstm.txt: Unknown to state 'Y' of transition:
 X -> Y; (line 5)

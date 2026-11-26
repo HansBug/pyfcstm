@@ -565,14 +565,14 @@ An active query must resolve to a non-pseudo State in the same model. Region tar
 
 A path that names no child is rejected with reason ``not_found``. The expression span identifies the query itself.
 
-.. literalinclude:: region_diag_active_not_found.fcstm
+.. literalinclude:: region_diag_active_not_found.fcstm.txt
    :language: fcstm
-   :caption: region_diag_active_not_found.fcstm (negative example, do not copy)
+   :caption: region_diag_active_not_found.fcstm.txt (negative example, do not copy)
 
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_active_not_found.fcstm
+   :start-at: --- region_diag_active_not_found.fcstm.txt
 
 ``span`` ``[2, 28, 2, 50]`` is the ``active("Root.Unknown")`` call on line 2, and ``refs.state_path`` is the path as written after import rebasing.
 
@@ -589,16 +589,16 @@ The five reasons, with the CLI result of each (the same demo output as above):
      - Model file and repair
    * - ``not_found``
      - A path segment names no child.
-     - ``region_diag_active_not_found.fcstm``: ``Root.Unknown``. Query an existing state, for example ``Root`` or ``Root.A``.
+     - ``region_diag_active_not_found.fcstm.txt``: ``Root.Unknown``. Query an existing state, for example ``Root`` or ``Root.A``.
    * - ``invalid_path``
      - A segment is not an identifier, or the first segment is not the root state's name.
-     - ``region_diag_active_invalid_path.fcstm``: ``Other.A`` while the root is ``Root``. A root-relative path starts with ``/`` and omits the root name: ``active("/B")`` in ``region_diag_active_ok.fcstm`` is accepted.
+     - ``region_diag_active_invalid_path.fcstm.txt``: ``Other.A`` while the root is ``Root``. A root-relative path starts with ``/`` and omits the root name: ``active("/B")`` in ``region_diag_active_ok.fcstm`` is accepted.
    * - ``region``
      - The path names a region.
-     - ``region_diag_active_region.fcstm``: ``Root.P.R``. Query a state inside the region, for example ``Root.P.R.X``.
+     - ``region_diag_active_region.fcstm.txt``: ``Root.P.R``. Query a state inside the region, for example ``Root.P.R.X``.
    * - ``pseudo``
      - The path names a pseudo state.
-     - ``region_diag_active_pseudo.fcstm``: ``Root.G``. A pseudo state is never a stable activity flag.
+     - ``region_diag_active_pseudo.fcstm.txt``: ``Root.G``. A pseudo state is never a stable activity flag.
    * - ``initializer``
      - The query sits in a persistent variable initializer.
      - Not reachable from text; see the next example.
@@ -615,9 +615,9 @@ Every rejection exits with status 1 and prints no report.
 
 A persistent initializer has no active configuration to query, so ``initializer`` is rejected at model construction. In text the grammar already refuses ``active(...)`` there, so the user sees a syntax error rather than this code; the code is reachable only through the public AST classes.
 
-.. literalinclude:: region_diag_active_initializer.fcstm
+.. literalinclude:: region_diag_active_initializer.fcstm.txt
    :language: fcstm
-   :caption: region_diag_active_initializer.fcstm (negative example, do not copy)
+   :caption: region_diag_active_initializer.fcstm.txt (negative example, do not copy)
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -664,9 +664,9 @@ A region is empty, a state mixes direct states and regions, a parallel owner con
 
 A region without any state is rejected with reason ``empty_region``. The demo runs the CLI on the broken model, on the repaired one, and on the other cases of this code. Then a Python demo prints the structured diagnostic that model construction collects (a span is ``[line, column, end_line, end_column]``).
 
-.. literalinclude:: region_diag_empty_region.fcstm
+.. literalinclude:: region_diag_empty_region.fcstm.txt
    :language: fcstm
-   :caption: region_diag_empty_region.fcstm (negative example, do not copy)
+   :caption: region_diag_empty_region.fcstm.txt (negative example, do not copy)
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -681,7 +681,7 @@ A region without any state is rejected with reason ``empty_region``. The demo ru
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :end-before: --- region_diag_duplicate.fcstm
+   :end-before: --- region_diag_duplicate.fcstm.txt
 
 The CLI prints one line, the message with the line number of the offending construct, and exits with status 1 without a report. The structured form carries ``namespace_path`` (the full path of the invalid namespace), ``reason`` and ``source_path``.
 
@@ -701,13 +701,13 @@ The four reasons, in the priority order in which they are checked on each node (
      - ``region Empty {}`` in text; the first example above.
    * - ``mixed_children``
      - A state has both direct child states and regions.
-     - Not expressible in text: ``region_diag_mixed_children.fcstm`` fails in the parser, as the demo output shows. Reachable only by building the AST with the public node classes.
+     - Not expressible in text: ``region_diag_mixed_children.fcstm.txt`` fails in the parser, as the demo output shows. Reachable only by building the AST with the public node classes.
    * - ``owner_statements``
      - A state that owns regions also has its own transitions, forced transitions, imports or histories.
-     - Not expressible in text: ``region_diag_owner_transition.fcstm`` fails in the parser. Reachable only through the public AST classes.
+     - Not expressible in text: ``region_diag_owner_transition.fcstm.txt`` fails in the parser. Reachable only through the public AST classes.
    * - ``history_boundary``
      - A state with a history entry has a region anywhere in its subtree.
-     - ``region_diag_history_boundary.fcstm`` in the demo output: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
+     - ``region_diag_history_boundary.fcstm.txt`` in the demo output: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
 
 A valid replacement of the first example is a region with a state and an initial transition (``region_diag_empty_region_fixed.fcstm``, accepted in the demo). One direct region is allowed and does not produce a warning.
 
@@ -762,9 +762,9 @@ Two direct regions within the same state have the same name, so their namespace 
 
 Two direct regions of one owner with the same name are rejected. The CLI line carries the line of the repeated declaration; the structured diagnostic adds ``previous_span`` for the first declaration.
 
-.. literalinclude:: region_diag_duplicate.fcstm
+.. literalinclude:: region_diag_duplicate.fcstm.txt
    :language: fcstm
-   :caption: region_diag_duplicate.fcstm (negative example, do not copy)
+   :caption: region_diag_duplicate.fcstm.txt (negative example, do not copy)
 
 .. literalinclude:: region_codes.demo.sh.txt
    :language: text
@@ -775,8 +775,8 @@ Two direct regions of one owner with the same name are rejected. The CLI line ca
 .. literalinclude:: region_codes_refs.demo.py.txt
    :language: text
    :caption: region_codes_refs.demo.py.txt
-   :start-at: --- region_diag_duplicate.fcstm
-   :end-before: --- region_diag_active_not_found.fcstm
+   :start-at: --- region_diag_duplicate.fcstm.txt
+   :end-before: --- region_diag_active_not_found.fcstm.txt
 
 Read ``span`` ``[3, 5, 3, 42]`` as the second ``region A`` on line 3 and ``previous_span`` ``[2, 5, 2, 42]`` as the first on line 2.
 

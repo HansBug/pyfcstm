@@ -996,7 +996,7 @@ scale、边长与像素三条限额，不衡量自身输出。
 有序区域的画法
 --------------
 
-含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm``\ （反例）。
+含有 ``region`` 块的状态按并发状态绘制，而不是画成一组普通子状态：区域没有自己的边框，也不会成为箭头的起点或终点。同一批模型在四处按同一约定绘制：``pyfcstm plantuml`` / ``pyfcstm visualize``\ （PlantUML 文本）、``StateMachine.diagram()``\ （可移植快照）、``pyfcstm diagram``\ （JSON、HTML 查看器或 SVG/PNG/PDF 导出）和 VS Code 预览。示例模型放在本页同目录：``region_pipeline.fcstm``\ （两个区域、拥有者与区域上各一个切面、调用 ``active(...)`` 的条件）、``region_nested.fcstm``\ （嵌套拥有者、在区域内使用而声明的事件）、``region_single.fcstm``\ （单个区域）、``region_controller.fcstm``\ （拥有者上的强制转换）和 ``region_case_alias.fcstm.txt``\ （反例）。
 
 PlantUML 导出
 ~~~~~~~~~~~~~

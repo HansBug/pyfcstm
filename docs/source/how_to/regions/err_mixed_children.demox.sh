@@ -1,2 +1,2 @@
 #!/bin/bash
-pyfcstm inspect -i err_mixed_children.fcstm --color never
+pyfcstm inspect -i err_mixed_children.fcstm.txt --color never

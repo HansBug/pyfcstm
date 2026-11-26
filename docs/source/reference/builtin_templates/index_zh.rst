@@ -110,15 +110,15 @@
 
 五套内置模板的 ``config.yaml`` 都声明了 ``features: [region]``\ （见 :ref:`sec-reference-template-config-features-zh`），所以 ``pyfcstm generate --template <name>`` 能渲染声明了 ``region`` 块的模型，嵌套的区域（region）也不例外。自定义模板目录遇到这样的模型会被拒绝，除非它自己声明了这个特性。拒绝的文字见 :doc:`/reference/template_config/index_zh`。生成的运行时遵循模拟器对区域的规则：区域的拥有者（owner）按书写顺序推进各个区域，靠后的区域能读到靠前区域在同一周期写入的值，机器的位置是一棵树而不是一条路径，由配置（configuration）值表示。这些规则见 :doc:`/explanations/region_semantics/index_zh`。
 
-下面的事实取自 ``pyfcstm generate --template X`` 为 ``controller.fcstm``\ （``Running`` 里有两个区域）和 ``region_plain.fcstm``\ （没有区域）写出的文件，以及各自生成的 ``README.md``。仓库的模板测试把 118 个共享区域用例（``test/fixtures/simulate_semantics/cases`` 下的 ``region_*.yaml``）对每个内置模板运行一遍：Python 模板与 ``SimulationRuntime`` 对比，四套 C 家族模板则编译后运行并与它对比。本页没有重跑这些测试套件。
+下面的事实取自 ``pyfcstm generate --template X`` 为 ``controller.fcstm``\ （``Running`` 里有两个区域）和 ``plain_no_region.fcstm``\ （没有区域）写出的文件，以及各自生成的 ``README.md``。仓库的模板测试把 118 个共享区域用例（``test/fixtures/simulate_semantics/cases`` 下的 ``region_*.yaml``）对每个内置模板运行一遍：Python 模板与 ``SimulationRuntime`` 对比，四套 C 家族模板则编译后运行并与它对比。本页没有重跑这些测试套件。
 
 .. literalinclude:: /_models/controller.fcstm
    :language: fcstm
    :caption: controller.fcstm
 
-.. literalinclude:: region_plain.fcstm
+.. literalinclude:: /_models/plain_no_region.fcstm
    :language: fcstm
-   :caption: region_plain.fcstm
+   :caption: plain_no_region.fcstm
 
 位置与查询
 ~~~~~~~~~~
@@ -193,7 +193,7 @@ Python 运行时
 
    $ pyfcstm generate -i controller.fcstm --template python -o controller_py
    $ pyfcstm generate -i region_probe.fcstm --template python -o probe_py
-   $ pyfcstm generate -i region_plain.fcstm --template python -o plain_py
+   $ pyfcstm generate -i plain_no_region.fcstm --template python -o plain_py
 
 第一个脚本冷启动控制器，读取 ``/Start`` 事件前后的位置文本、四种区域状态，以及 ``/Stop`` 之后的隐藏变量：
 
@@ -425,7 +425,7 @@ C 家族运行时
 
    * - 宏
      - ``controller.fcstm``
-     - ``region_plain.fcstm``
+     - ``plain_no_region.fcstm``
      - 含义
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
@@ -467,18 +467,32 @@ C 家族运行时
 .. code-block:: console
 
    $ pyfcstm generate -i controller.fcstm --template c -o out_c
-   $ pyfcstm generate -i region_plain.fcstm --template c -o out_plain_c
-   $ grep -E "^#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) " out_c/machine.h out_plain_c/machine.h
+   $ pyfcstm generate -i plain_no_region.fcstm --template c -o out_plain_c
+
+.. testcode::
+
+   import re
+
+   macro = re.compile(r"#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) ")
+   for path in ("out_c/machine.h", "out_plain_c/machine.h"):
+       text = open(path).read()
+       for line in text.splitlines():
+           if macro.match(line):
+               print(path + ":" + line)
+       print(path, "declares current_state_ functions:", "current_state_" in text)
+
+.. testoutput::
+
    out_c/machine.h:#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
    out_c/machine.h:#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
    out_c/machine.h:#define CONTROLLER_MACHINE_STORAGE_BYTES (944 + (CONTROLLER_MACHINE_ARENA_CAPACITY) * 108 + (CONTROLLER_MACHINE_TRAIL_CAPACITY) * 32)
    out_c/machine.h:#define CONTROLLER_MACHINE_REGION_COUNT 2
+   out_c/machine.h declares current_state_ functions: False
    out_plain_c/machine.h:#define PLAIN_MACHINE_ARENA_CAPACITY 8
    out_plain_c/machine.h:#define PLAIN_MACHINE_TRAIL_CAPACITY 4
    out_plain_c/machine.h:#define PLAIN_MACHINE_STORAGE_BYTES (848 + (PLAIN_MACHINE_ARENA_CAPACITY) * 68 + (PLAIN_MACHINE_TRAIL_CAPACITY) * 32)
    out_plain_c/machine.h:#define PLAIN_MACHINE_REGION_COUNT 0
-   $ grep -l current_state_ out_c/machine.h out_plain_c/machine.h
-   out_plain_c/machine.h
+   out_plain_c/machine.h declares current_state_ functions: True
 
 编译并运行驱动程序需要 C 和 C++ 编译器，所以下面的命令不在文档检查里运行。它们生成每个模板、编译上面为它列出的驱动程序并运行；命令之后的输出是这个版本的一次真实运行记录，而 C 家族运行时与仿真器是否一致，由模板测试检查。
 
@@ -487,28 +501,33 @@ C 家族运行时
    # c: generate, compile as C99 and run the driver
    pyfcstm generate -i controller.fcstm --template c -o out_c
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c out_c/machine.c region_c_runtime.c -lm -o c_driver
+   echo "== c: model with regions (controller.fcstm)"
    ./c_driver
 
    # c: the hook context driver, on the model of region_probe.fcstm
    pyfcstm generate -i region_probe.fcstm --template c -o out_hooks
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_hooks out_hooks/machine.c region_c_hooks.c -lm -o hooks_driver
+   echo "== c: hook context (region_probe.fcstm)"
    ./hooks_driver
 
    # cpp: the C++98 wrapper over the same C core
    pyfcstm generate -i controller.fcstm --template cpp -o out_cpp
    cc -std=c99 -O1 -c out_cpp/machine.c -o out_cpp/machine_c.o
    c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp out_cpp/machine.cpp region_cpp_runtime.cpp out_cpp/machine_c.o -lm -o cpp_driver
+   echo "== cpp: wrapper over the same core"
    ./cpp_driver
 
    # c_poll: event checks are queried during the cycle
    pyfcstm generate -i controller.fcstm --template c_poll -o out_c_poll
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c_poll out_c_poll/machine.c region_c_poll_runtime.c -lm -o c_poll_driver
+   echo "== c_poll: event checks are queried during the cycle"
    ./c_poll_driver
 
    # cpp_poll: the C++98 wrapper over the polling core
    pyfcstm generate -i controller.fcstm --template cpp_poll -o out_cpp_poll
    cc -std=c99 -O1 -c out_cpp_poll/machine.c -o out_cpp_poll/machine_c.o
    c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp_poll out_cpp_poll/machine.cpp region_cpp_poll_runtime.cpp out_cpp_poll/machine_c.o -lm -o cpp_poll_driver
+   echo "== cpp_poll: wrapper over the polling core"
    ./cpp_poll_driver
 
 下面是同一顺序的输出记录（以 ``==`` 开头的行标明各次运行）：
@@ -781,5 +800,5 @@ C++ 模板按设计复用 C 核心。``cpp`` 复用 C99 核心；``cpp_poll`` �
 * 事件输入模型：生成 README、运行时模板和模板测试；
 * C 家族辅助和固定宽度代码体事实：``pyfcstm/render/c_runtime.py``；
 * 包装层事实：``templates/cpp``、``templates/cpp_poll`` 源模板和包装层冒烟测试；
-* 区域支持：每个 ``templates/<name>/config.yaml`` 里的 ``features``、C 内核发射器 ``pyfcstm/render/c_kernel.py``、``pyfcstm/render/c_kernel_engine.py`` 与 ``pyfcstm/render/c_configuration.py``，以及 ``pyfcstm generate --template <name>`` 为 ``controller.fcstm`` 和 ``region_plain.fcstm`` 写出的文件；
+* 区域支持：每个 ``templates/<name>/config.yaml`` 里的 ``features``、C 内核发射器 ``pyfcstm/render/c_kernel.py``、``pyfcstm/render/c_kernel_engine.py`` 与 ``pyfcstm/render/c_configuration.py``，以及 ``pyfcstm generate --template <name>`` 为 ``controller.fcstm`` 和 ``plain_no_region.fcstm`` 写出的文件；
 * 当前证据边界：模板单元测试、语义对齐测试、格式化检查，以及主机工具链可用时的本机冒烟检查。

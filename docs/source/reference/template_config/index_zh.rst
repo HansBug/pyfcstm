@@ -339,15 +339,15 @@
    features: [1] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got int.
    features: [null] -> ValueError: Renderer config .../config.yaml features[0] must be a string, got NoneType.
 
-``pyfcstm generate`` 也会检查这个键。下面的命令建立四个模板目录，并把 ``controller.fcstm``\ （两个区域）或 ``region_plain.fcstm``\ （没有区域）渲染到每个目录里。被拒绝的运行以状态 1 退出、不写任何文件，并打印模型的区域个数、第一个区域的位置、模板作者应当声明什么、可以改用哪些内置模板，以及一条可以复制的命令。建议的模板是所打印列表里的第一个名字。\ ``(line 12)`` 是 ``controller.fcstm`` 中第一个区域所在的行。
+``pyfcstm generate`` 也会检查这个键。下面的命令建立四个模板目录，并把 ``controller.fcstm``\ （两个区域）或 ``plain_no_region.fcstm``\ （没有区域）渲染到每个目录里。被拒绝的运行以状态 1 退出、不写任何文件，并打印模型的区域个数、第一个区域的位置、模板作者应当声明什么、可以改用哪些内置模板，以及一条可以复制的命令。建议的模板是所打印列表里的第一个名字。\ ``(line 12)`` 是 ``controller.fcstm`` 中第一个区域所在的行。
 
 .. literalinclude:: /_models/controller.fcstm
    :language: fcstm
    :caption: controller.fcstm
 
-.. literalinclude:: region_plain.fcstm
+.. literalinclude:: /_models/plain_no_region.fcstm
    :language: fcstm
-   :caption: region_plain.fcstm
+   :caption: plain_no_region.fcstm
 
 .. code-block:: console
 
@@ -379,12 +379,16 @@
    ...
    $ echo $?
    1
+   $ test -e out_empty_list || echo "nothing was written"
+   nothing was written
    $ pyfcstm generate -i controller.fcstm -t null_value -o out_null_value
    generate with template directory '...null_value' does not support region models yet. (line 12)
    ...
    $ echo $?
    1
-   $ pyfcstm generate -i region_plain.fcstm -t undeclared -o out_plain
+   $ test -e out_null_value || echo "nothing was written"
+   nothing was written
+   $ pyfcstm generate -i plain_no_region.fcstm -t undeclared -o out_plain
    $ cat out_plain/names.txt
    name: Plain
 

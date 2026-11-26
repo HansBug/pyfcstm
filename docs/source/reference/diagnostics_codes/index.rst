@@ -118,9 +118,17 @@ distinct; reviewer sampling remains part of the PR acceptance gate.
 Region diagnostics in a terminal
 --------------------------------
 
-The catalog below describes each code. This section runs the region-related codes on the models next to this page, so every message and exit status is the real one. The models that are rejected on purpose use the extension ``.fcstm.txt`` and are shown in the catalog entries of their codes; they are negative examples, do not copy them as starting points.
+The catalog below describes each code. This section runs the region-related codes on the models next to this page, so every message and exit status is the real one. The models that are rejected on purpose use the extension ``.fcstm.txt`` and are shown either in the catalog entries of their codes or just above the commands that run them; they are negative examples, do not copy them as starting points.
 
 ``E_REGION_STRUCTURE`` is reported by ``pyfcstm inspect`` as one line that carries the line number of the offending construct. The repaired model and the model with history outside the region subtree are accepted; the full report is long, so only the ``regions:`` line of its summary is kept here.
+
+.. literalinclude:: region_diag_history_boundary.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_history_boundary.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_empty_region_fixed.fcstm
+   :language: fcstm
+   :caption: region_diag_empty_region_fixed.fcstm
 
 .. code-block:: console
 
@@ -142,6 +150,14 @@ The catalog below describes each code. This section runs the region-related code
    ...
 
 The reasons ``mixed_children`` and ``owner_statements`` cannot be written in text: the parser refuses the text before the model is built, so the user sees a syntax error. They are reachable only by building the syntax tree with the public node classes.
+
+.. literalinclude:: region_diag_mixed_children.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_mixed_children.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_owner_transition.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_owner_transition.fcstm.txt (negative example, do not copy)
 
 .. code-block:: console
 
@@ -171,6 +187,22 @@ The reasons ``mixed_children`` and ``owner_statements`` cannot be written in tex
    ...
 
 ``E_ACTIVE_QUERY_TARGET`` has one reason per rejected shape of query. ``region_diag_active_ok.fcstm`` shows the accepted root-relative form ``active("/B")``.
+
+.. literalinclude:: region_diag_active_invalid_path.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_invalid_path.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_region.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_region.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_pseudo.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_pseudo.fcstm.txt (negative example, do not copy)
+
+.. literalinclude:: region_diag_active_ok.fcstm
+   :language: fcstm
+   :caption: region_diag_active_ok.fcstm
 
 .. code-block:: console
 

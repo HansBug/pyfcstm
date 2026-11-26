@@ -135,7 +135,7 @@ instead of one path. For those rules, see
 
 The facts below were read from the files that ``pyfcstm generate --template X``
 writes for ``controller.fcstm`` (two regions inside ``Running``) and for
-``region_plain.fcstm`` (no region), and from the generated ``README.md`` of
+``plain_no_region.fcstm`` (no region), and from the generated ``README.md`` of
 each. The repository's template tests run the 118 shared region cases
 (``region_*.yaml`` under ``test/fixtures/simulate_semantics/cases``) against
 every built-in template: the Python template is compared with
@@ -146,9 +146,9 @@ against it. This page did not re-run those suites.
    :language: fcstm
    :caption: controller.fcstm
 
-.. literalinclude:: region_plain.fcstm
+.. literalinclude:: /_models/plain_no_region.fcstm
    :language: fcstm
-   :caption: region_plain.fcstm
+   :caption: plain_no_region.fcstm
 
 Position and queries
 ~~~~~~~~~~~~~~~~~~~~
@@ -230,7 +230,7 @@ scripts after them drive the generated ``machine.py`` files.
 
    $ pyfcstm generate -i controller.fcstm --template python -o controller_py
    $ pyfcstm generate -i region_probe.fcstm --template python -o probe_py
-   $ pyfcstm generate -i region_plain.fcstm --template python -o plain_py
+   $ pyfcstm generate -i plain_no_region.fcstm --template python -o plain_py
 
 The first script cold-starts the controller and reads the position text before and after a ``/Start`` event, the four region statuses and the hidden variable after ``/Stop``:
 
@@ -487,7 +487,7 @@ Two rules differ between ``c`` / ``cpp`` and ``c_poll`` / ``cpp_poll``:
 
    * - Macro
      - ``controller.fcstm``
-     - ``region_plain.fcstm``
+     - ``plain_no_region.fcstm``
      - Meaning
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
@@ -539,18 +539,32 @@ The header facts need no compiler. The next commands generate the ``c`` runtime 
 .. code-block:: console
 
    $ pyfcstm generate -i controller.fcstm --template c -o out_c
-   $ pyfcstm generate -i region_plain.fcstm --template c -o out_plain_c
-   $ grep -E "^#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) " out_c/machine.h out_plain_c/machine.h
+   $ pyfcstm generate -i plain_no_region.fcstm --template c -o out_plain_c
+
+.. testcode::
+
+   import re
+
+   macro = re.compile(r"#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) ")
+   for path in ("out_c/machine.h", "out_plain_c/machine.h"):
+       text = open(path).read()
+       for line in text.splitlines():
+           if macro.match(line):
+               print(path + ":" + line)
+       print(path, "declares current_state_ functions:", "current_state_" in text)
+
+.. testoutput::
+
    out_c/machine.h:#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
    out_c/machine.h:#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
    out_c/machine.h:#define CONTROLLER_MACHINE_STORAGE_BYTES (944 + (CONTROLLER_MACHINE_ARENA_CAPACITY) * 108 + (CONTROLLER_MACHINE_TRAIL_CAPACITY) * 32)
    out_c/machine.h:#define CONTROLLER_MACHINE_REGION_COUNT 2
+   out_c/machine.h declares current_state_ functions: False
    out_plain_c/machine.h:#define PLAIN_MACHINE_ARENA_CAPACITY 8
    out_plain_c/machine.h:#define PLAIN_MACHINE_TRAIL_CAPACITY 4
    out_plain_c/machine.h:#define PLAIN_MACHINE_STORAGE_BYTES (848 + (PLAIN_MACHINE_ARENA_CAPACITY) * 68 + (PLAIN_MACHINE_TRAIL_CAPACITY) * 32)
    out_plain_c/machine.h:#define PLAIN_MACHINE_REGION_COUNT 0
-   $ grep -l current_state_ out_c/machine.h out_plain_c/machine.h
-   out_plain_c/machine.h
+   out_plain_c/machine.h declares current_state_ functions: True
 
 Compiling and running the drivers needs a C and a C++ compiler, so the commands
 below are not run by the documentation check. They generate each template, compile
@@ -563,28 +577,33 @@ check the C-family runtimes against the simulator.
    # c: generate, compile as C99 and run the driver
    pyfcstm generate -i controller.fcstm --template c -o out_c
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c out_c/machine.c region_c_runtime.c -lm -o c_driver
+   echo "== c: model with regions (controller.fcstm)"
    ./c_driver
 
    # c: the hook context driver, on the model of region_probe.fcstm
    pyfcstm generate -i region_probe.fcstm --template c -o out_hooks
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_hooks out_hooks/machine.c region_c_hooks.c -lm -o hooks_driver
+   echo "== c: hook context (region_probe.fcstm)"
    ./hooks_driver
 
    # cpp: the C++98 wrapper over the same C core
    pyfcstm generate -i controller.fcstm --template cpp -o out_cpp
    cc -std=c99 -O1 -c out_cpp/machine.c -o out_cpp/machine_c.o
    c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp out_cpp/machine.cpp region_cpp_runtime.cpp out_cpp/machine_c.o -lm -o cpp_driver
+   echo "== cpp: wrapper over the same core"
    ./cpp_driver
 
    # c_poll: event checks are queried during the cycle
    pyfcstm generate -i controller.fcstm --template c_poll -o out_c_poll
    cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c_poll out_c_poll/machine.c region_c_poll_runtime.c -lm -o c_poll_driver
+   echo "== c_poll: event checks are queried during the cycle"
    ./c_poll_driver
 
    # cpp_poll: the C++98 wrapper over the polling core
    pyfcstm generate -i controller.fcstm --template cpp_poll -o out_cpp_poll
    cc -std=c99 -O1 -c out_cpp_poll/machine.c -o out_cpp_poll/machine_c.o
    c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp_poll out_cpp_poll/machine.cpp region_cpp_poll_runtime.cpp out_cpp_poll/machine_c.o -lm -o cpp_poll_driver
+   echo "== cpp_poll: wrapper over the polling core"
    ./cpp_poll_driver
 
 The recorded output, in the same order (the lines starting with ``==`` label the
@@ -940,6 +959,6 @@ A reviewer can audit this page without guessing by checking these sources:
   C kernel emitters ``pyfcstm/render/c_kernel.py``,
   ``pyfcstm/render/c_kernel_engine.py`` and ``pyfcstm/render/c_configuration.py``,
   and the files that ``pyfcstm generate --template <name>`` writes for
-  ``controller.fcstm`` and ``region_plain.fcstm``;
+  ``controller.fcstm`` and ``plain_no_region.fcstm``;
 * current evidence boundary: template unit tests, semantic-alignment tests,
   formatter checks and native smoke checks when the host toolchain is available.

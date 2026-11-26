@@ -214,7 +214,7 @@ N 个步。混合角色的假设读取源帧的持久状态和当前步的输入
 仍使用完整的 ``0..N`` 帧范围。例如，模型为
 ``input int sensor; param int gain = 2; state Root;`` 时：
 
-.. code-block:: text
+::
 
     assume at 0: sensor == 1;
     assume at 1: var("sensor") == 3;
@@ -742,7 +742,7 @@ BMC 原子及上下文合法性
    :language: fcstm
    :caption: region_calls.fcstm：拥有者、两个区域上的抽象动作，以及整组的 ``>> during after``
 
-``controller.fcstm`` 是区域教程里共用的控制联锁模型，``region_plain.fcstm`` 是没有区域的两状态机；两者各只用于一个示例。下面每个脚本把一条查询写进文件，运行 ``pyfcstm bmc -i <模型> -q <查询>``\ ，并打印退出状态和命令打印内容的第一行。
+``controller.fcstm`` 是区域教程里共用的控制联锁模型，``region_plain.fcstm`` 是没有区域的两状态机；两者各只用于一个示例。下面每条记录用 ``echo`` 把一条查询写进文件，再运行 ``pyfcstm bmc -i <模型> -q <查询>``\ ；它展示命令打印内容的第一行，``...`` 代表报告的其余部分。退出状态不为 0 时用 ``echo $?`` 展示。编译失败的命令把消息打印在标准错误，终端记录把它并入输出。
 
 配置文本
 ~~~~~~~~
@@ -796,21 +796,30 @@ BMC 原子及上下文合法性
    * - ``Job.Next``\ （不是拥有者）
      - 普通状态：第 0 帧是 ``Job.Next``。
 
-下面的脚本运行起点的五种写法，并打印每个见证的前三帧：
+下面的命令写出起点五种写法的 JSON 结果，脚本打印每个见证的前三帧：
+
+.. code-block:: console
+
+   $ echo 'init state("Job.Run{Prep: Ready, Work: Busy}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq --json -o start1.json
+   $ echo 'init state("Job.Run.Work.Busy"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq --json -o start2.json
+   $ echo 'init state("Job.Run{Work: Busy}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq --json -o start3.json
+   $ echo 'init state("Job.Run"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq --json -o start4.json
+   $ echo 'init state("Job.Run{Prep: [done], Work: Busy}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq --json -o start5.json
 
 .. testcode::
 
    import json
-   import subprocess
-   from pathlib import Path
 
-   for text in ("Job.Run{Prep: Ready, Work: Busy}", "Job.Run.Work.Busy", "Job.Run{Work: Busy}",
-                "Job.Run", "Job.Run{Prep: [done], Work: Busy}"):
-       query = 'init state("%s"); check reach <= 2: true;' % text
-       Path("query.fbmcq").write_text(query + "\n")
-       subprocess.run(["pyfcstm", "bmc", "-i", "region_job.fcstm", "-q", "query.fbmcq", "--json", "-o", "result.json"], check=True)
+   starts = ("Job.Run{Prep: Ready, Work: Busy}", "Job.Run.Work.Busy", "Job.Run{Work: Busy}",
+             "Job.Run", "Job.Run{Prep: [done], Work: Busy}")
+   for number, text in enumerate(starts, 1):
        print(text)
-       for frame in json.loads(Path("result.json").read_text())["witness"]["frames"]:
+       for frame in json.load(open("start%d.json" % number))["witness"]["frames"]:
            print("  frame %d: %s" % (frame["index"], frame["configuration"]))
 
 .. testoutput::
@@ -838,7 +847,7 @@ BMC 原子及上下文合法性
 
 第二种写法要看的是：第 0 帧打印出起点构造的 ``[init]``，第 1 帧显示 ``Prep`` 初始化到了 ``Wait``。它不能说明 ``Work`` 没有运行：``Busy`` 是起点，它的 ``during`` 在第 0 步照常执行。
 
-.. list-table:: 非法起点位置（除特别说明外，诊断码为 ``invalid_start_position``；退出状态 1，标准输出为空）
+.. list-table:: 非法起点位置（除特别说明外，诊断码为 ``invalid_start_position``；退出状态 1）
    :header-rows: 1
    :widths: 38 62
 
@@ -855,37 +864,35 @@ BMC 原子及上下文合法性
    * - ``Job.Run.Prep.Busy``
      - 诊断码 ``unknown_state``：``Unknown state path: 'Job.Run.Prep.Busy'.`` 普通路径先按状态绑定，再按位置读取。
 
-每条消息的前缀都是 ``Failed to compile BMC query: <诊断码> at initial.state_path:``\ ，表中每个文本在下面的脚本里都是这样：
+每条消息的前缀都是 ``Failed to compile BMC query: <诊断码> at initial.state_path:``\ ，表中每个文本在下面的记录里都是这样：
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for text in ("Job.Run{Prep: [done], Work: [done]}", "Job.Run{Nope: Wait}", "Job.Run{Prep: Busy}",
-                "Job.Run{Prep: Wait, Prep: Ready}", "Job.Run.Prep.Busy"):
-       print(text)
-       print("  " + verdict("region_job.fcstm", 'init state("%s"); check reach <= 2: true;' % text))
-
-.. testoutput::
-
-   Job.Run{Prep: [done], Work: [done]}
-     1 Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.
-   Job.Run{Nope: Wait}
-     1 Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown region in configuration for 'Job.Run'.
-   Job.Run{Prep: Busy}
-     1 Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown configuration path: 'Job.Run.Prep.Busy'.
-   Job.Run{Prep: Wait, Prep: Ready}
-     1 Failed to compile BMC query: invalid_start_position at initial.state_path: Duplicate region in configuration for 'Job.Run'.
-   Job.Run.Prep.Busy
-     1 Failed to compile BMC query: unknown_state at initial.state_path: Unknown state path: 'Job.Run.Prep.Busy'.
+   $ echo 'init state("Job.Run{Prep: [done], Work: [done]}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
+   $ echo 'init state("Job.Run{Nope: Wait}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown region in configuration for 'Job.Run'.
+   $ echo $?
+   1
+   $ echo 'init state("Job.Run{Prep: Busy}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: Unknown configuration path: 'Job.Run.Prep.Busy'.
+   $ echo $?
+   1
+   $ echo 'init state("Job.Run{Prep: Wait, Prep: Ready}"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: Duplicate region in configuration for 'Job.Run'.
+   $ echo $?
+   1
+   $ echo 'init state("Job.Run.Prep.Busy"); check reach <= 2: true;' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: unknown_state at initial.state_path: Unknown state path: 'Job.Run.Prep.Busy'.
+   $ echo $?
+   1
 
 “全部完成”规则在每一层嵌套都适用：它与仿真器里“每个区域都是 ``[done]`` 不是合法热启动位置”是同一条规则。
 
@@ -940,70 +947,63 @@ BMC 原子及上下文合法性
    * - ``Job.Run{Work: [done]}``\ （``region_job.fcstm``，上界 6）
      - 成立：``Work`` 在 ``Prep`` 之前完成（``n >= 3``）。
 
-下面的脚本运行表里的模式；退出状态 0 带有见证，1 表示上界内没有任何执行能达到该模式：
+下面的记录运行表里的模式；退出状态 0 带有见证，1 表示上界内没有任何执行能达到该模式：
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for text in ("Root.Run{Work: Inner{X: x2}}", "Root.Run{Work: Inner{X: x2, Y: y1}}", "Root.Run{Aux: a1}",
-                "Root.Run.Work.Inner.X.x2", "Root.Run{Work: [done]}", "Root.Run{Work: Inner{X: x2}, Aux: [init]}"):
-       print(text)
-       print("  " + verdict("region_nested.fcstm", 'check reach <= 2: active("%s");' % text))
-   for text in ("Job.Run{Prep: [done], Work: Busy}", "Job.Run{Work: [done]}"):
-       print(text)
-       print("  " + verdict("region_job.fcstm", 'check reach <= 6: active("%s");' % text))
-
-.. testoutput::
-
-   Root.Run{Work: Inner{X: x2}}
-     0 BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Root.Run{Work: Inner{X: x2, Y: y1}}
-     0 BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Root.Run{Aux: a1}
-     0 BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Root.Run.Work.Inner.X.x2
-     0 BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Root.Run{Work: [done]}
-     1 BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   Root.Run{Work: Inner{X: x2}, Aux: [init]}
-     1 BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   Job.Run{Prep: [done], Work: Busy}
-     0 BMC reach <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Job.Run{Work: [done]}
-     0 BMC reach <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2}}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2, Y: y1}}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 2: active("Root.Run{Aux: a1}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 2: active("Root.Run.Work.Inner.X.x2");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 2: active("Root.Run{Work: [done]}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2}, Aux: [init]}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 6: active("Job.Run{Prep: [done], Work: Busy}");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC reach <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 6: active("Job.Run{Work: [done]}");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC reach <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
 
 这只能读成“没有任何不超过两个宏步的执行能让 ``Work`` 处于已完成”，不能多读：这是可达目标在上界内的回答。
 
 ``[init]`` 只在区域尚未启动时成立：起点没写出该区域的第 0 帧上，以及拥有者正在被进入时发出的调用的 ``where`` 里（见下一部分）。冷启动或稳定宏步产生的任何帧上它都不成立，因为宏步只会结束在每个区域都有位置的配置上：
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   print(verdict("region_job.fcstm", 'init state("Job.Run"); check reach <= 1: active("Job.Run{Prep: [init]}");'))
-   print(verdict("controller.fcstm", 'check reach <= 3: active("Controller.Running{Motion: [init]}");'))
-
-.. testoutput::
-
-   0 BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   $ echo 'init state("Job.Run"); check reach <= 1: active("Job.Run{Prep: [init]}");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: active("Controller.Running{Motion: [init]}");' > query.fbmcq
+   $ pyfcstm bmc -i controller.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
 
 .. list-table:: 非法模式
    :header-rows: 1
@@ -1034,44 +1034,45 @@ BMC 原子及上下文合法性
      - ``unknown_state``
      - ``Unknown state path: 'Root.Nope'.``\ （不带花括号的普通路径按状态绑定）
 
-每条非法查询的退出状态都是 1，消息打印在标准错误；脚本把标准错误并入它打印的那一行：
+每条非法查询的退出状态都是 1，消息打印在标准错误，记录把它并入输出：
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for text in ("Root.Run{Work: Nope}", "Root.Run{Zed: a1}", "Root.Run{Aux: a1, Aux: a1}",
-                "Root.Run{Work: Inner{X: x2}", "Root.Run{Work: x1}", "Root.Nope"):
-       print(text)
-       print("  " + verdict("region_nested.fcstm", 'check reach <= 2: active("%s");' % text))
-   print("Root.Idle{A: x} on region_plain.fcstm")
-   print("  " + verdict("region_plain.fcstm", 'check reach <= 2: active("Root.Idle{A: x}");'))
-
-.. testoutput::
-
-   Root.Run{Work: Nope}
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Root.Run.Work.Nope'.
-   Root.Run{Zed: a1}
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Root.Run' has no region 'Zed'.
-   Root.Run{Aux: a1, Aux: a1}
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: region 'Aux' of 'Root.Run' is written twice.
-   Root.Run{Work: Inner{X: x2}
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: Expected '}' at line 1, column 28, got end of input.
-   Root.Run{Work: x1}
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Root.Run.Work.x1'.
-   Root.Nope
-     1 Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Nope'.
-   Root.Idle{A: x} on region_plain.fcstm
-     1 Failed to compile BMC query: invalid_active_pattern at property.predicate: the model declares no regions, so a configuration pattern with region blocks matches nothing.
-
+   $ echo 'check reach <= 2: active("Root.Run{Work: Nope}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Root.Run.Work.Nope'.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Run{Zed: a1}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Root.Run' has no region 'Zed'.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Run{Aux: a1, Aux: a1}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: region 'Aux' of 'Root.Run' is written twice.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Run{Work: Inner{X: x2}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: Expected '}' at line 1, column 28, got end of input.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Run{Work: x1}");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: Unknown state path: 'Root.Run.Work.x1'.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Nope");' > query.fbmcq
+   $ pyfcstm bmc -i region_nested.fcstm -q query.fbmcq
+   Failed to compile BMC query: unknown_state at property.predicate: Unknown state path: 'Root.Nope'.
+   $ echo $?
+   1
+   $ echo 'check reach <= 2: active("Root.Idle{A: x}");' > query.fbmcq
+   $ pyfcstm bmc -i region_plain.fcstm -q query.fbmcq
+   Failed to compile BMC query: invalid_active_pattern at property.predicate: the model declares no regions, so a configuration pattern with region blocks matches nothing.
+   $ echo $?
+   1
 
 含区域的模型里的调用过滤器
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1101,52 +1102,52 @@ BMC 原子及上下文合法性
      - 离开之前的位置，这里两个区域都已完成
      - 成立：``Root.Run{A: [done], B: [done]}``；永不：``Root.Run{A: [init]}``
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for text in (
-       'called("Root.Run.RunEnter", step=0, where active("Root.Run{A: [init], B: [init]}"))',
-       'called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [init], B: [init]}"))',
-       'called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [done]}"))',
-       'called("Root.Run.RunExit", step=1, where active("Root.Run{A: [done], B: [done]}"))',
-       'called("Root.Run.RunExit", where active("Root.Run{A: [init]}"))',
-       'called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{A: A1, B: [init]}"))',
-       'called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{B: B1}"))',
-       'called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{A: A1, B: B1}"))',
-       'called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{B: [init]}"))',
-   ):
-       print(text)
-       print("  " + verdict("region_calls.fcstm", "check reach <= 3: %s;" % text))
-
-.. testoutput::
-
-   called("Root.Run.RunEnter", step=0, where active("Root.Run{A: [init], B: [init]}"))
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [init], B: [init]}"))
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [done]}"))
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   called("Root.Run.RunExit", step=1, where active("Root.Run{A: [done], B: [done]}"))
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.RunExit", where active("Root.Run{A: [init]}"))
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{A: A1, B: [init]}"))
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{B: B1}"))
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{A: A1, B: B1}"))
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{B: [init]}"))
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   $ echo 'check reach <= 3: called("Root.Run.RunEnter", step=0, where active("Root.Run{A: [init], B: [init]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [init], B: [init]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.RunEnter", step=1, where active("Root.Run{A: [done]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: called("Root.Run.RunExit", step=1, where active("Root.Run{A: [done], B: [done]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.RunExit", where active("Root.Run{A: [init]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{A: A1, B: [init]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.A.A1.AEnter", step=0, where active("Root.Run{B: B1}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{A: A1, B: B1}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.B.B1.BEnter", step=0, where active("Root.Run{B: [init]}"));' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
 
 同一周期里先走的区域，会把新位置显示给之后发出的调用；排在后面的区域在启动之前显示 ``[init]``。被重新进入的拥有者，它自己的 ``enter`` 看到 ``[init]``，而在它之前的 ``exit`` 与切面仍看到原位置。永不成立的模式和其他够不到的 ``reach`` 一样，只是上界内的回答。
 
@@ -1175,51 +1176,48 @@ BMC 原子及上下文合法性
    * - ``call_count("Root.Run.A.A1.AWork", step=*, active_leaf="Root.Run.A.A1") >= 1``
      - 成立：叶子的 ``during`` 报告叶子
 
-下面的脚本运行表里的查询：
+下面的记录运行表里的查询：
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for text in (
-       'called("Root.Run.GroupTail", state="Root.Run", active_leaf="Root.Run")',
-       'called("Root.Run.GroupTail", state="Root.Run.A.A1")',
-       'called("Root.Run.GroupTail", active_leaf="Root.Run.B.B1")',
-       'call_count("Root.Run.GroupTail", step=*) == 2',
-       'call_count("Root.Run.GroupTail", step=*) == 3',
-       'call_count(step=*, active_leaf="Root.Run") == 6',
-       'call_count(step=*, state="Root.Run") == 6',
-       'call_count("Root.Run.A.A1.AWork", step=*, active_leaf="Root.Run.A.A1") >= 1',
-   ):
-       print(text)
-       print("  " + verdict("region_calls.fcstm", "check reach <= 3: %s;" % text))
-
-.. testoutput::
-
-   called("Root.Run.GroupTail", state="Root.Run", active_leaf="Root.Run")
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   called("Root.Run.GroupTail", state="Root.Run.A.A1")
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   called("Root.Run.GroupTail", active_leaf="Root.Run.B.B1")
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   call_count("Root.Run.GroupTail", step=*) == 2
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   call_count("Root.Run.GroupTail", step=*) == 3
-     1 BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
-   call_count(step=*, active_leaf="Root.Run") == 6
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   call_count(step=*, state="Root.Run") == 6
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   call_count("Root.Run.A.A1.AWork", step=*, active_leaf="Root.Run.A.A1") >= 1
-     0 BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   $ echo 'check reach <= 3: called("Root.Run.GroupTail", state="Root.Run", active_leaf="Root.Run");' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: called("Root.Run.GroupTail", state="Root.Run.A.A1");' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: called("Root.Run.GroupTail", active_leaf="Root.Run.B.B1");' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: call_count("Root.Run.GroupTail", step=*) == 2;' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: call_count("Root.Run.GroupTail", step=*) == 3;' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ echo 'check reach <= 3: call_count(step=*, active_leaf="Root.Run") == 6;' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: call_count(step=*, state="Root.Run") == 6;' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check reach <= 3: call_count("Root.Run.A.A1.AWork", step=*, active_leaf="Root.Run.A.A1") >= 1;' > query.fbmcq
+   $ pyfcstm bmc -i region_calls.fcstm -q query.fbmcq
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
 
 计数的单位是调用，不是活动叶子：整组的 ``>> during after`` 每个周期只调用一次，不论它包住多少个区域（不含区域的状态上的切面则按活动叶子周期各执行一次）。
 
@@ -1228,40 +1226,30 @@ BMC 原子及上下文合法性
 
 含区域的模型里，一个宏步由一串有序的\ *局部情形*\ 组成：被进入的每个拥有者的初始转换、每个有工作的区域的一个分支（转换或回退），以及所有区域完成之后继续前行的拥有者的分支。``case("标签")`` 与 ``cover`` 性质指明其中一个局部情形；标签仍是四段式 ``source::kind::target::ordinal``，其中的状态路径会经过区域。作为 ``cover`` 的目标，``kind`` 必须是 ``transition`` 或 ``fallback``；``initial`` 标签是已知的，但不可覆盖。
 
-.. testcode::
+.. code-block:: console
 
-   import subprocess
-   from pathlib import Path
-
-
-   def verdict(model, query):
-       Path("query.fbmcq").write_text(query + "\n")
-       command = ["pyfcstm", "bmc", "-i", model, "-q", "query.fbmcq"]
-       done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-       return "%d %s" % (done.returncode, done.stdout.splitlines()[0])
-
-   for label in (
-       "Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0",
-       "Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0",
-       "Job.Run::transition::Job.Next::0",
-       "Job.Run::initial::Job.Run.Prep.Wait::0",
-       "Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0",
-   ):
-       print(label)
-       print("  " + verdict("region_job.fcstm", 'check cover <= 6: case("%s");' % label))
-
-.. testoutput::
-
-   Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0
-     0 BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0
-     0 BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Job.Run::transition::Job.Next::0
-     0 BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
-   Job.Run::initial::Job.Run.Prep.Wait::0
-     1 Failed to compile BMC query: cover case label is not coverable: 'Job.Run::initial::Job.Run.Prep.Wait::0' has kind initial.
-   Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0
-     1 Failed to compile BMC query: cover case label is unknown: 'Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0'.
+   $ echo 'check cover <= 6: case("Job.Run.Prep.Wait::transition::Job.Run.Prep.Ready::0");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check cover <= 6: case("Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check cover <= 6: case("Job.Run::transition::Job.Next::0");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   BMC cover <= 6: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ echo 'check cover <= 6: case("Job.Run::initial::Job.Run.Prep.Wait::0");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: cover case label is not coverable: 'Job.Run::initial::Job.Run.Prep.Wait::0' has kind initial.
+   $ echo $?
+   1
+   $ echo 'check cover <= 6: case("Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0");' > query.fbmcq
+   $ pyfcstm bmc -i region_job.fcstm -q query.fbmcq
+   Failed to compile BMC query: cover case label is unknown: 'Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0'.
+   $ echo $?
+   1
 
 三种可覆盖的合法写法是：区域内的转换（第一条查询）、区域内的回退（``Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0``）以及拥有者自己的继续（``Job.Run::transition::Job.Next::0``）。最后一个的轨迹展示了一步里局部情形的顺序（摘录；``Prep`` 与 ``Work`` 是区域名，每个情形前面的作用域写成相对于最外层拥有者的路径，见 :doc:`../bmc_results/index_zh`\ ）：
 

@@ -203,12 +203,63 @@
 .. literalinclude:: event_names.fcstm
    :language: fcstm
 
-.. literalinclude:: region_event_names.demo.py.txt
-   :language: text
+.. testcode::
 
-``Configuration.resolve_event`` 一块展示了依赖位置的名字的三种结果：``Trip`` 与 ``Go`` 只有一个叶子找到；``Ping`` 有歧义，因为两个叶子各有一个 ``Ping``；
-``Nope`` 与 ``Reset`` 没有叶子找到，尽管 ``Reset`` 存在于根上，因为裸名字从不向上查找。``..Stop``、``/Running.Stop`` 和完整路径都能到达拥有者的事件。
-``cycle`` 一块显示被拒绝的调用不改变位置（每行都从全新的运行时开始），并显示已完成的区域让 ``Ping`` 不再有歧义。这些输出确定了解析规则，不能说明解析一个名字要花多久。
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('event_names.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+
+   position = 'Controller.Running{Safety: Watching, Motion: Off}'
+   config = SimulationRuntime(model, initial_state=position, initial_vars={'trail': 0}).configuration
+   for name in ['Trip', 'Ping', 'Nope', 'Reset', '..Stop', '/Running.Stop']:
+       try:
+           print(name, '->', config.resolve_event(name).path_name)
+       except (ValueError, LookupError) as error:
+           print(name, '!!', type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   Trip -> Controller.Running.Safety.Watching.Trip
+   Ping !! ModelValueError: Position-dependent event name 'Ping' is ambiguous: ...
+   Nope !! ModelLookupError: Position-dependent event name 'Nope' matches no event from any active leaf ...
+   Reset !! ModelLookupError: Position-dependent event name 'Reset' matches no event from any active leaf ...
+   ..Stop -> Controller.Running.Stop
+   /Running.Stop -> Controller.Running.Stop
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeEventError
+
+   with open('event_names.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+
+   for position, name in [('Controller.Running{Safety: Watching, Motion: Off}', 'Trip'),
+                          ('Controller.Running{Safety: Watching, Motion: Off}', 'Ping'),
+                          ('Controller.Running{Safety: [done], Motion: Off}', 'Ping'),
+                          ('Controller.Idle', 'Reset')]:
+       runtime = SimulationRuntime(model, initial_state=position, initial_vars={'trail': 0})
+       try:
+           result = runtime.cycle([name])
+           print(name, 'ok', runtime.configuration, list(result.consumed_events))
+       except SimulationRuntimeEventError as error:
+           print(name, '!!', error)
+           print('   ', runtime.configuration)
+
+.. testoutput::
+
+   Trip ok Controller.Running{Safety: Tripped, Motion: Off} ['Controller.Running.Safety.Watching.Trip']
+   Ping !! Position-dependent event name 'Ping' is ambiguous: ...
+       Controller.Running{Safety: Watching, Motion: Off}
+   Ping ok Controller.Running{Safety: [done], Motion: Off} ['Controller.Running.Motion.Off.Ping']
+   Reset !! Cannot resolve event path 'Reset': failed with both ...
+       Controller.Idle
+
+第一个脚本展示依赖位置的名字的结果：``Trip`` 只有一个叶子找到；``Ping`` 有歧义，因为两个叶子各有一个 ``Ping``；
+``Nope`` 与 ``Reset`` 没有叶子找到，尽管 ``Reset`` 存在于根上，因为裸名字从不向上查找。``..Stop`` 和 ``/Running.Stop`` 都能到达拥有者的事件。
+第二个脚本对每一行都用全新的运行时执行 ``cycle``：被拒绝的调用不改变位置，已完成的区域让 ``Ping`` 不再有歧义，只有一个活动叶子时被拒绝的报错以 ``Cannot resolve event path`` 开头。这些输出确定了解析规则，不能说明解析一个名字要花多久。
 
 .. _sim-region-hot-start-zh:
 
@@ -264,10 +315,64 @@
    * - ``Root.Idle``
      - 普通叶子；与不含区域的模型相同。
 
-下面的输出列出被接受的写法。第一块用每种写法启动教程里的控制器并显示得到的配置，最后一块显示第一个周期会初始化被省略的区域。
+第一个脚本用上表中的每种写法，再用三个有所省略的位置，启动教程里的控制器
+（:download:`controller.fcstm </_models/controller.fcstm>`），并打印得到的配置。第二个脚本显示第一个周期会初始化被省略的区域。
 
-.. literalinclude:: region_hot_start.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   motion_on = next(s for s in model.walk_states() if s.path == ('Controller', 'Running', 'Motion', 'On'))
+   positions = [
+       'Controller.Running{Safety: Watching, Motion: On}',
+       Configuration.parse(model, 'Controller.Running{Safety: Watching, Motion: On}'),
+       'Controller.Running.Motion.On',
+       ('Controller', 'Running', 'Motion', 'On'),
+       motion_on,
+       'Controller.Running',
+       'Controller.Running{Safety: [done], Motion: On}',
+       'Controller',
+   ]
+   for position in positions:
+       runtime = SimulationRuntime(
+           model, initial_state=position,
+           initial_vars={'permit': 1, 'motor': 1, '__forced_0': 0},
+           input_source={'fault': 0, 'requested': 1})
+       print(runtime.configuration)
+
+.. testoutput::
+
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: [init], Motion: [init]}
+   Controller.Running{Safety: [done], Motion: On}
+   Controller
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(
+       model, initial_state='Controller.Running.Motion.On',
+       initial_vars={'permit': 1, 'motor': 1, '__forced_0': 0},
+       input_source={'fault': 0, 'requested': 1})
+   print(runtime.configuration)
+   result = runtime.cycle()
+   print(runtime.configuration, result.delta)
+
+.. testoutput::
+
+   Controller.Running{Safety: [init], Motion: On}
+   Controller.Running{Safety: Watching, Motion: On} False
 
 规则与拒绝：
 
@@ -277,25 +382,91 @@
 * 任一层拥有者的区域全体已完成，会被拒绝。
 * 等待初始化的拥有者在第一个周期里到不了可停驻的位置时，这一整个周期是 Delta：位置与变量保持写出来的样子，``cycle_count`` 仍然前进。
 
-.. literalinclude:: region_hot_start_rejections.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   variables = {'permit': 1, 'motor': 1, '__forced_0': 0}
+   cases = [
+       ('Controller.Running{Safety: [done], Motion: [done]}', variables),
+       ('Controller.Running{Safety: Nowhere, Motion: On}', variables),
+       ('Controller.Running.Motion', variables),
+       ('Controller.Running{Safety: [*], Motion: On}', variables),
+       (5, variables),
+       ('Controller.Running.Motion.On', {'permit': 1, 'motor': 1}),
+   ]
+   for position, given in cases:
+       try:
+           SimulationRuntime(model, initial_state=position, initial_vars=given,
+                             input_source={'fault': 0, 'requested': 1})
+       except (ValueError, TypeError) as error:
+           print(type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   ValueError: Unknown configuration path: 'Controller.Running.Safety.Nowhere'.
+   ValueError: 'Controller.Running.Motion' names a region, not a state
+   ValueError: Expected a configuration identifier at line 1, column 28, got '['.
+   TypeError: initial_state must be str, tuple, State or Configuration, got int
+   ValueError: initial_vars must provide all variables. Missing: ['__forced_0']
 
 .. literalinclude:: pending_delta.fcstm
    :language: fcstm
 
-.. literalinclude:: region_pending_delta.demo.py.txt
-   :language: text
+.. testcode::
 
-前三行显示 ``Count`` 没有做 ``during`` 工作（``ticks`` 仍是 ``0``），因为 ``Gate`` 无法启动：该周期被回滚，``delta`` 为 ``True``，位置是写出来的那个。
-最后一行是同一个位置在 ``ready=1`` 时的结果：两个区域在该周期里都工作。Delta 的信息也以 ``warning`` 级别记录在 stderr 上；输出记录里已隐去。
+   import logging
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   logging.disable(logging.CRITICAL)  # keep the Delta warning off the output
+   with open('pending_delta.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   for ready in (0, 1):
+       runtime = SimulationRuntime(model, initial_state='Plant.Job{Count: Counting}',
+                                   initial_vars={'ready': ready, 'ticks': 0})
+       result = runtime.cycle()
+       print('ready=%d' % ready, result.delta, runtime.configuration, runtime.vars['ticks'])
+
+.. testoutput::
+
+   ready=0 True Plant.Job{Count: Counting, Gate: [init]} 0
+   ready=1 False Plant.Job{Count: Counting, Gate: Open} 1
+
+脚本对同一个位置运行两次。``ready=0`` 时该周期是 Delta：``Count`` 没有做 ``during`` 工作（最后打印的 ``ticks`` 仍是 ``0``），因为 ``Gate`` 无法启动，该周期被回滚，``delta`` 为 ``True``，位置是写出来的那个。
+``ready=1`` 时两个区域在该周期里都工作。Delta 的信息也以 ``warning`` 级别记录在 stderr 上；脚本把日志关掉了。
 
 .. literalinclude:: active_flags.fcstm
    :language: fcstm
 
-.. literalinclude:: region_active_variables.demo.py.txt
-   :language: text
+.. testcode::
 
-隐藏标志必须和其他变量一起给出；给成 ``0`` 就按 ``0`` 运行，即使位置说明该状态是活动的。标志与位置是否一致，由调用方负责。
+   from pyfcstm.model import Configuration, load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('active_flags.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   position = 'Root.Job{Feed: Busy, Check: Watch}'
+   flags = model.active_variables(Configuration.parse(model, position))
+   print(flags)
+   for given in (flags, {name: 0 for name in flags}):
+       runtime = SimulationRuntime(model, initial_state=position,
+                                   initial_vars=dict(given, alarm=0, ticks=0))
+       runtime.cycle()
+       print(runtime.configuration, runtime.vars['alarm'])
+
+.. testoutput::
+
+   {'__active_Root_Job_Feed_Busy': 1}
+   Root.Job{Feed: Busy, Check: Watch} 1
+   Root.Job{Feed: Busy, Check: Watch} 0
+
+脚本先打印与该位置一致的标志，再分别用它和给成 ``0`` 的标志运行一个周期；最后打印的是 ``alarm``。隐藏标志必须和其他变量一起给出；给成 ``0`` 就按 ``0`` 运行，即使位置说明该状态是活动的。标志与位置是否一致，由调用方负责。
 
 .. _sim-region-position-api-zh:
 
@@ -321,8 +492,48 @@
    * - Delta
      - 是整个周期的概念：没有区域保留本周期的写入，位置与变量保持原样，``cycle_count`` 前进。
 
-.. literalinclude:: region_position_api.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeRegionQueryError
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(model, input_source={'fault': 0, 'requested': 1})
+   runtime.cycle()
+   runtime.cycle('/Start')
+   print(repr(runtime.configuration))
+   print(type(runtime.current_state).__name__, runtime.current_state)
+   print([state.path for state in runtime.configuration.leaves])
+   try:
+       runtime.brief_stack
+   except SimulationRuntimeRegionQueryError as error:
+       print(type(error).__name__ + ':', error)
+
+.. testoutput::
+
+   Configuration(mode='stable', position='Controller.Running{Safety: Watching, Motion: Off}')
+   Configuration Controller.Running{Safety: Watching, Motion: Off}
+   [('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'Off')]
+   SimulationRuntimeRegionQueryError: brief_stack describes a single active path, but this model has regions; use configuration, which shows every branch.
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   plain = load_state_machine_from_text('state Root { [*] -> A; state A; state B; A -> B :: Go; }')
+   runtime = SimulationRuntime(plain)
+   runtime.cycle()
+   print(repr(runtime.configuration))
+   print(type(runtime.current_state).__name__, runtime.current_state.path)
+   print(runtime.brief_stack)
+
+.. testoutput::
+
+   Configuration(mode='stable', position='Root.A')
+   State ('Root', 'A')
+   [(('Root',), 'active'), (('Root', 'A'), 'active')]
 
 抽象处理器接收一个 ``ReadOnlyExecutionContext``。
 
@@ -344,10 +555,41 @@
 .. literalinclude:: handler_hooks.fcstm
    :language: fcstm
 
-.. literalinclude:: region_handler_context.demo.py.txt
-   :language: text
+.. testcode::
 
-周期 2 里，``Tick``\ （根上的切面）和 ``GroupPre``\ （拥有者上的切面）包住整组区域，所以它们的 ``state_path`` 是 ``Controller.Running``；``SafetyPre`` 与 ``Watch`` 只包住一条分支，报告的是该分支的叶子。
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('handler_hooks.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   runtime = SimulationRuntime(model, input_source={'fault': 0, 'requested': 1})
+
+
+   def reporter(name):
+       def show(ctx):
+           print(name, '|', '.'.join(ctx.state_path), '|', ctx.configuration)
+       return show
+
+
+   for path in ['Controller.Tick', 'Controller.Running.GroupPre',
+                'Controller.Running.Safety.Normal.Watch', 'Controller.Running.Motion.On.Drive']:
+       runtime.register_abstract_handler(path, reporter(path.split('.')[-1]))
+   runtime.cycle()
+   runtime.cycle('/Start')
+   runtime.cycle()
+
+.. testoutput::
+
+   Tick | Controller.Idle | Controller.Idle
+   Tick | Controller.Running | Controller.Running{Safety: Normal, Motion: [init]}
+   GroupPre | Controller.Running | Controller.Running{Safety: Normal, Motion: [init]}
+   Watch | Controller.Running.Safety.Normal | Controller.Running{Safety: Normal, Motion: [init]}
+   Tick | Controller.Running | Controller.Running{Safety: Normal, Motion: Off}
+   GroupPre | Controller.Running | Controller.Running{Safety: Normal, Motion: Off}
+   Watch | Controller.Running.Safety.Normal | Controller.Running{Safety: Normal, Motion: Off}
+   Drive | Controller.Running.Motion.On | Controller.Running{Safety: Normal, Motion: On}
+
+周期 2 里，``Tick``\ （根上的切面）和 ``GroupPre``\ （拥有者上的切面）包住整组区域，所以它们的 ``state_path`` 是 ``Controller.Running``；``Watch`` 只包住一条分支，报告的是该分支的叶子。
 ``Motion`` 在该周期的每次调用里都是 ``[init]``，因为它还没有启动；周期 3 里它先是 ``Off``，到 ``Drive`` 调用时是 ``On``。
 
 .. _sim-region-cli-zh:
@@ -376,14 +618,89 @@
    * - 补全
      - ``init`` 会补全区域里的状态；``cycle`` 只补全照原样输入就能解析的名字。
 
-.. literalinclude:: region_simulate_cli.demo.sh.txt
-   :language: text
+.. code-block:: console
 
-第一块对控制器做热启动，显示该位置下 ``events`` 只列出 ``Controller.Stop``，以及故障使电机在看到它的那个周期关断。第二块展示点路径写法：``Safety`` 以 ``[init]`` 等待，在第一个周期启动。
-第三块展示导出文件里的位置。这三块的退出状态都是 0。随后是被拒绝的命令及其退出状态：每条被拒绝的命令都会停止批处理并返回状态 1。
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; \
+   events; \
+   cycle --input fault=1 --input requested=1; \
+   history"
+   ...
+   >>> events
+   ...
+   Available Events:
+     • Controller.Stop
+   ...
+   >>> cycle --input fault=1 --input requested=1
+   ...
+   Cycle: 1
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   Variables:
+     __forced_0 = 0
+     motor = 0
+     permit = 0
+   ...
+   >>> history
+   ...
+      1    Controller.Running{Safety: Watching, Motion: Off}  False      0         0      0
 
-.. literalinclude:: region_simulate_cli.demox.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   init Controller.Running.Motion.On permit=1 motor=1 __forced_0=0; \
+   cycle --input fault=0 --input requested=1"
+   ...
+   Initialized from state: Controller.Running.Motion.On
+   Cycle: 0
+   Current State: Controller.Running{Safety: [init], Motion: On}
+   ...
+   Cycle: 1
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   export history.json"
+   ...
+   $ cat history.json
+   ...
+       "state": "Controller.Running{Safety: Watching, Motion: Off}",
+   ...
+
+第一段记录对控制器\ （\ :download:`controller.fcstm </_models/controller.fcstm>`\ ）做热启动，显示该位置下 ``events`` 只列出 ``Controller.Stop``，以及故障使电机在看到它的那个周期关断。第二段记录展示点路径写法：``Safety`` 以 ``[init]`` 等待，在第一个周期启动。
+第三段记录展示导出文件里的位置。这三条命令的退出状态都是 0。随后是被拒绝的命令及其退出状态：每条被拒绝的命令都会停止批处理并返回状态 1。
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0"
+   ...
+   Error: the braces of the configuration text 'Controller.Running{Safety: Watching, Motion: On permit=1 motor=1 __forced_0=0' are not balanced. ...
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running permit=1 permit=0 motor=1 __forced_0=0"
+   ...
+   Error: variable 'permit' is assigned more than once.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=1 __forced_0=0"
+   ...
+   Initialization failed: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running permit=1 motor=1"
+   ...
+   Error: All variables must be provided. Missing: ['__forced_0']
+   Available variables: ['__forced_0', 'motor', 'permit']
+   $ echo $?
+   1
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "init Controller.Running{Safety: Watching, Motion: On} permit=1 motor=1 __forced_0=0; cycle Stop2 --input fault=0 --input requested=1"
+   ...
+   Cycle execution failed: Position-dependent event name 'Stop2' matches no event ...
+   $ echo $?
+   1
 
 Python 运行时应用程序接口
 ------------------------------
@@ -485,59 +802,86 @@ Python 运行时应用程序接口
 下面的完整示例区分迁移效果和目标进入动作：迁移记录看到 ``x == 1``，
 随后的动作记录看到 ``x == 2``：
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> import json
-    >>> from pyfcstm.model import load_state_machine_from_text
-    >>> from pyfcstm.simulate import SimulationRuntime
-    >>> model = load_state_machine_from_text('''
-    ... def int x = 0;
-    ... state Root {
-    ...     state Idle;
-    ...     state Done { enter { x = x + 1; } }
-    ...     [*] -> Idle;
-    ...     Idle -> Done :: Go effect { x = x + 1; };
-    ... }
-    ... ''')
-    >>> runtime = SimulationRuntime(model, history_size=0)
-    >>> _ = runtime.cycle()
-    >>> result = runtime.cycle('Root.Idle.Go', trace=True)
-    >>> [(entry.kind, entry.vars['x']) for entry in result.trace]
-    [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
-    >>> payload = json.dumps([entry.to_dict() for entry in result.trace])
-    >>> json.loads(payload)[1]['transition_label']
-    'Root.Idle::0::Idle->Done'
-    >>> runtime.history
-    []
-    >>> for entry in result.trace:
-    ...     print(entry)
-    State exit Root.Idle | vars={x=0}
-    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
-    State enter Root.Done | vars={x=1}
-    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
+   import json
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_text('''
+   def int x = 0;
+   state Root {
+       state Idle;
+       state Done { enter { x = x + 1; } }
+       [*] -> Idle;
+       Idle -> Done :: Go effect { x = x + 1; };
+   }
+   ''')
+   runtime = SimulationRuntime(model, history_size=0)
+   runtime.cycle()
+   result = runtime.cycle('Root.Idle.Go', trace=True)
+   print([(entry.kind, entry.vars['x']) for entry in result.trace])
+   payload = json.dumps([entry.to_dict() for entry in result.trace])
+   print(json.loads(payload)[1]['transition_label'])
+   print(runtime.history)
+   for entry in result.trace:
+       print(entry)
+
+.. testoutput::
+
+   [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
+   Root.Idle::0::Idle->Done
+   []
+   State exit Root.Idle | vars={x=0}
+   Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+   State enter Root.Done | vars={x=1}
+   Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
 
 空执行迹本身不代表 Delta 或终止。稳定状态没有周期动作，也没有可执行迁移时，
 这一拍不执行需要记录的操作：
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> idle = runtime.cycle(trace=True)
-    >>> (idle.delta, idle.trace, runtime.is_ended)
-    (False, (), False)
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   runtime = SimulationRuntime(load_state_machine_from_text('state Root { [*] -> Idle; state Idle; }'))
+   runtime.cycle()
+   idle = runtime.cycle(trace=True)
+   print(idle.delta, idle.trace, runtime.is_ended)
+
+.. testoutput::
+
+   False () False
 
 快照不能原地修改；需要编辑数据时先调用 ``to_dict()``。
 ``trace`` 必须按名称传入，不能作为第二个位置参数：
 
-.. code-block:: pycon
+.. testcode::
 
-    >>> result.trace[-1].vars['x'] = 9
-    Traceback (most recent call last):
-        ...
-    TypeError: 'mappingproxy' object does not support item assignment
-    >>> runtime.cycle(None, True)
-    Traceback (most recent call last):
-        ...
-    TypeError: ...
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_text(
+       'def int x = 0; state Root { state Idle; state Done; [*] -> Idle; '
+       'Idle -> Done :: Go effect { x = x + 1; }; }')
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   result = runtime.cycle('Root.Idle.Go', trace=True)
+   try:
+       result.trace[-1].vars['x'] = 9
+   except TypeError as error:
+       print(error)
+   try:
+       runtime.cycle(None, True)
+   except TypeError as error:
+       print(error)
+
+.. testoutput::
+
+   'mappingproxy' object does not support item assignment
+   ... takes from 1 to 2 positional arguments but 3 were given
 
 该接口序列化的是条目，不是自包含的回放文件。保存记录时，调用者还需保留模型、
 周期编号、输入事件和观察约定；命令行 ``export`` 仍然导出宏步历史。
@@ -603,7 +947,7 @@ Delta、异常、中断、热启动，以及伪状态、强制转换和组合转
 * ``pyfcstm/entry/simulate/batch.py`` 与 ``commands.py``：批处理和交互命令行为。
 * ``pyfcstm/simulate/runtime.py``、``context.py`` 和 ``decorators.py``：Python 应用程序接口表面。
 * ``test/fixtures/simulate_semantics/cases/`` 与 ``test/testings/simulate_semantics.py``：执行顺序场景。
-* ``docs/source/tutorials/simulation/*.demo.*``：文档中已检查的命令转录。
+* ``docs/source/tutorials/simulation/``：模拟教程中的例子。
 
 .. toctree::
    :maxdepth: 1

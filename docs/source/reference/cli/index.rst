@@ -818,6 +818,15 @@ and ``Motion``.
      - Each region is a child of its owner with ``region: true`` and an
        ``ordinal`` counted from 1 in written order.
      - ``0``.
+   * - ``visualize``
+     - Builds the same PlantUML source as ``plantuml`` and hands it to the
+       renderer, so a model with regions is drawn like any other model.
+     - The partitions and ``region N: Name`` notes of the ``plantuml`` output
+       appear in the rendered image. This page does not run it: it needs Java
+       and a PlantUML jar or a reachable server.
+     - ``0``; non-zero when no renderer is available.
+
+``expand-svg`` has no row because it reads an SVG file, not a model.
 
 The refusal of ``generate``:
 

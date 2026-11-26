@@ -24,5 +24,5 @@ reloaded  [('Root.Run{A: A1, B: B1}', 0), ('Root.Idle', 12)]
 unreachable: 0 leaf states / 0 transitions
 after /Go the machine is in Root.P.B
 == generated C: default capacities
-controller (6 states, 2 regions): ARENA_CAPACITY 108; TRAIL_CAPACITY 52
+controller (7 states after lowering, 2 regions): ARENA_CAPACITY 108; TRAIL_CAPACITY 52
 flat machine (3 states): ARENA_CAPACITY 8; TRAIL_CAPACITY 4

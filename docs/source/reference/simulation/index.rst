@@ -378,7 +378,9 @@ Positions, results and handler context
    * - ``runtime.configuration``
      - The immutable :class:`pyfcstm.model.Configuration` of the resting
        position, for every model, with or without regions. ``str()`` gives the
-       position text, ``repr()`` also shows the validation mode.
+       position text, ``repr()`` also shows the validation mode. After the
+       runtime has ended (``is_ended``) it raises
+       ``SimulationRuntimeTerminalStateError``.
    * - ``runtime.current_state``
      - For a model **with** regions it returns the same ``Configuration``; for a
        model without regions it still returns a ``State``. Check ``is_ended``

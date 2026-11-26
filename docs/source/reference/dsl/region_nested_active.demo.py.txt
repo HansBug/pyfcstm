@@ -10,3 +10,4 @@ cycle 2  /Go      Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Quie
 cycle 3  /Trip    Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
 cycle 4  /Stop    Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: Off}
 cycle 5  /Resume  Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
+model loaded from its to_ast_node() text gives the same configurations and variables over 8 cycles: True

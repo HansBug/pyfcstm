@@ -587,7 +587,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. literalinclude:: region_diagnostics.demo.py.txt
    :language: text
 
-命令行打印同样的消息但不带诊断码：对无效模型运行 ``pyfcstm inspect -i`` 以状态 1 退出，输出一行 ``Invalid state machine model in <file>: <message>``；
+命令行打印同样的消息但不带诊断码：对无效模型运行 ``pyfcstm inspect -i`` 以状态 1 退出，输出一条以 ``Invalid state machine model in <file>:`` 开头、可能占多行的消息；
 加 ``--collect-errors`` 会报告全部模型错误而不是在第一个处停止。各诊断码在注册表里的条目见 :doc:`../diagnostics_codes/index_zh`。
 
 
@@ -904,8 +904,8 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
 第一块展开教程里的控制器，两个区域是 ``Safety`` 与 ``Motion``：两个区域都得到跟随与起始转换，运行的最后一个周期显示 ``/Stop`` 在一个周期内结束两个区域并离开 ``Running``，
 ``__forced_0`` 回到 ``0``。第二块是上面的 ``!*`` 模型，``!*`` 展开成三条转换（``expansion_count`` 为 3）。最后一块展开写在区域里的声明。输出能确定展开的形式，
 不能说明退出的运行顺序，那部分由共享语义用例
-``forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
-与 ``group_preemption_skips_exit_of_finished_region`` 固定。
+``region_forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
+与 ``region_group_preemption_skips_exit_of_finished_region`` 固定。
 
 PlantUML、图形查看器与 ``pyfcstm inspect`` 仍按书写的模型，把一条强制声明画成、报成“每个适用的状态一条转换”。
 

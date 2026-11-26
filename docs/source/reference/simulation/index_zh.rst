@@ -309,7 +309,7 @@
    * - 成员
      - 含区域的模型上的行为
    * - ``runtime.configuration``
-     - 停驻位置的不可变 :class:`pyfcstm.model.Configuration`，所有模型都可用，含区域与否均可。``str()`` 给出位置文本，``repr()`` 还会显示校验模式。
+     - 停驻位置的不可变 :class:`pyfcstm.model.Configuration`，所有模型都可用，含区域与否均可。``str()`` 给出位置文本，``repr()`` 还会显示校验模式。运行时结束（``is_ended``）之后访问会抛出 ``SimulationRuntimeTerminalStateError``。
    * - ``runtime.current_state``
      - 含区域的模型返回同一个 ``Configuration``；不含区域的模型仍然返回 ``State``。先检查 ``is_ended``：终止后访问会抛出 ``SimulationRuntimeTerminalStateError``。
    * - ``runtime.brief_stack``

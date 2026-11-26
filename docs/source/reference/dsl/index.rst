@@ -688,8 +688,8 @@ and ends with the line that begins with ``->``.
    :language: text
 
 The command line prints the same message without the code: ``pyfcstm inspect
--i`` with an invalid model exits with status 1 and one ``Invalid state machine
-model in <file>: <message>`` line; add ``--collect-errors`` to report every model error instead of stopping at
+-i`` with an invalid model exits with status 1 and a message that starts with
+``Invalid state machine model in <file>:`` and can span several lines; add ``--collect-errors`` to report every model error instead of stopping at
 the first one.
 Use :doc:`../diagnostics_codes/index` for the registry entry of each code.
 
@@ -1010,8 +1010,8 @@ the ``!*`` model above, in which ``!*`` expands to three transitions
 (``expansion_count`` is 3). The last block expands a declaration written inside a
 region. The output establishes the expansion; it does not show the order in
 which exits run, which the semantic fixtures
-``forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
-and ``group_preemption_skips_exit_of_finished_region`` pin.
+``region_forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
+and ``region_group_preemption_skips_exit_of_finished_region`` pin.
 
 PlantUML, the diagram viewer and ``pyfcstm inspect`` keep drawing and reporting
 a forced declaration as one transition per state it applies to, from the model as

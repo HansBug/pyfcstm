@@ -255,7 +255,7 @@ C 家族运行时
    * - ``<PREFIX>_ARENA_CAPACITY``
      - 108
      - 8
-     - 一个周期的一次判定最多能检查多少个配置和待办项。默认值取决于模型。
+     - 一个周期的一次判定最多能检查多少个配置和待办项。默认值取决于模型：``region_controller.fcstm`` 是 ``max(24, 12 * scopes)``，降级后有 7 个状态和 2 个区域，共 9。
    * - ``<PREFIX>_TRAIL_CAPACITY``
      - 52
      - 4

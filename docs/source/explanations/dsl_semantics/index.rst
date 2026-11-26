@@ -95,8 +95,37 @@ same state name, because the region keeps them apart:
    :language: fcstm
    :caption: ``region_namespace.fcstm``
 
-.. literalinclude:: region_ownership.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("region_namespace.fcstm").read())
+   print("states:")
+   for state in model.walk_states():
+       print("  " + ".".join(state.path))
+   print("events:")
+   for state in model.walk_states():
+       for event in state.events.values():
+           print("  " + event.path_name)
+   for owner in model.walk_states():
+       for name, region in owner.regions.items():
+           print("region %s of %s has %d transitions" % (name, ".".join(owner.path), len(region.transitions)))
+
+.. testoutput::
+
+   states:
+     Plant
+     Plant.Running
+     Plant.Running.Left.Idle
+     Plant.Running.Left.Busy
+     Plant.Running.Right.Idle
+     Plant.Running.Right.Busy
+   events:
+     Plant.Running.Stop
+     Plant.Running.Left.Idle.Ping
+     Plant.Running.Right.Idle.Ping
+   region Left of Plant.Running has 3 transitions
+   region Right of Plant.Running has 3 transitions
 
 * ``Plant.Running.Left.Idle`` and ``Plant.Running.Right.Idle`` are two states;
   neither name is ambiguous because the region is part of the path.
@@ -434,9 +463,70 @@ again. The model that runs records that decision in a hidden ``int`` variable,
    :language: fcstm
    :caption: ``forced_regions.fcstm``
 
-.. literalinclude:: forced_expansion.demo.py.txt
-   :language: text
-   :caption: ``to_ast_node()`` of both models
+The script below prints ``to_ast_node()`` of both models:
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   for path in ("forced_composite.fcstm", "forced_regions.fcstm"):
+       model = load_state_machine_from_text(open(path).read())
+       print("==", path, "as the machine that runs")
+       print(model.to_ast_node())
+
+.. testoutput::
+
+   == forced_composite.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           state a;
+           state b;
+           a -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           b -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           [*] -> a;
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
+   == forced_regions.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           region L {
+               state a;
+               a -> [*] : if [__forced_0 == 1];
+               a -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> a;
+           }
+           region R {
+               state b;
+               b -> [*] : if [__forced_0 == 1];
+               b -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> b;
+           }
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
 
 * In the plain composite ``P`` every resting child (``a``, ``b``) gets a
   transition to ``[*]`` that carries the declared condition and raises the
@@ -713,8 +803,25 @@ Boundaries and counterexamples
   region only.
 
   The rejection is real: a state that declares ``[H]`` while a state below it
-  owns regions fails when the model is built, as the last block of the demo in
-  :ref:`dsl-region-ownership` shows (``Invalid region structure ... (history_boundary)``).
+  owns regions fails when the model is built, as the script below shows (``Invalid region structure ... (history_boundary)``).
+
+  .. testcode::
+
+     from pyfcstm.model import load_state_machine_from_text
+     from pyfcstm.utils.validate import ModelValidationError
+
+     try:
+         load_state_machine_from_text(
+             "state Root { [*] -> H; state H { [*] -> A; [H] -> A; state A { region R { [*] -> X; state X; } } state B; A -> B :: Go; }"
+             " state Out; H -> Out :: Leave; Out -> H.[H] :: Back; }"
+         )
+     except ModelValidationError as error:
+         print("ModelValidationError:", str(error).splitlines()[0])
+
+  .. testoutput::
+
+     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 1)
+
   An owner that has regions cannot declare history itself either. What works is a
   composite state that lives inside one region and declares its own history: the
   record then belongs to that region's branch and a restore leaves the other

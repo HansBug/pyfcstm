@@ -89,8 +89,37 @@ DSL 语义解释
    :language: fcstm
    :caption: ``region_namespace.fcstm``
 
-.. literalinclude:: region_ownership.demo.py.txt
-   :language: text
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("region_namespace.fcstm").read())
+   print("states:")
+   for state in model.walk_states():
+       print("  " + ".".join(state.path))
+   print("events:")
+   for state in model.walk_states():
+       for event in state.events.values():
+           print("  " + event.path_name)
+   for owner in model.walk_states():
+       for name, region in owner.regions.items():
+           print("region %s of %s has %d transitions" % (name, ".".join(owner.path), len(region.transitions)))
+
+.. testoutput::
+
+   states:
+     Plant
+     Plant.Running
+     Plant.Running.Left.Idle
+     Plant.Running.Left.Busy
+     Plant.Running.Right.Idle
+     Plant.Running.Right.Busy
+   events:
+     Plant.Running.Stop
+     Plant.Running.Left.Idle.Ping
+     Plant.Running.Right.Idle.Ping
+   region Left of Plant.Running has 3 transitions
+   region Right of Plant.Running has 3 transitions
 
 * ``Plant.Running.Left.Idle`` 与 ``Plant.Running.Right.Idle`` 是两个状态；因为区域是路径的一部分，两个名字都没有歧义。
 * 两个 ``Ping`` 是两个事件，每个区域一个，因为 ``:: Ping`` 让源状态拥有这个事件。没有东西把一个 ``Ping`` 广播给两个区域。``Stop`` 属于拥有者 ``Running``\ ，两个区域都通过从根开始的路径（``/Running.Stop``\ ）使用它。
@@ -365,9 +394,70 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
    :language: fcstm
    :caption: ``forced_regions.fcstm``
 
-.. literalinclude:: forced_expansion.demo.py.txt
-   :language: text
-   :caption: 两个模型的 ``to_ast_node()``
+下面的脚本打印两个模型的 ``to_ast_node()``\ ：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   for path in ("forced_composite.fcstm", "forced_regions.fcstm"):
+       model = load_state_machine_from_text(open(path).read())
+       print("==", path, "as the machine that runs")
+       print(model.to_ast_node())
+
+.. testoutput::
+
+   == forced_composite.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           state a;
+           state b;
+           a -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           b -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           [*] -> a;
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
+   == forced_regions.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           region L {
+               state a;
+               a -> [*] : if [__forced_0 == 1];
+               a -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> a;
+           }
+           region R {
+               state b;
+               b -> [*] : if [__forced_0 == 1];
+               b -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> b;
+           }
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
 
 * 在普通复合状态 ``P`` 里，每个停驻的子状态（``a``\ 、``b``\ ）得到一条通往 ``[*]`` 的转换，带声明的条件并置起变量。随后 ``P -> Q`` 在变量被置起时执行并清除它；第二条 ``P -> Q`` 就是声明的那条转换本身，留给控制权回到 ``P`` 而变量并未置起的情形。
 * 在拥有者 ``P`` 里，每个区域得到两条通往 ``[*]`` 的转换：等待变量的\ **跟随者**\ ，以及写在它之后、带声明条件的\ **发起者**\ 。各区域按书写顺序离开，最后一个已完成时拥有者经自己的转换续接。语言里没有一次把整组带走的东西；整组由语言已有的转换结束。
@@ -555,7 +645,26 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
 
 * **不是并发。**\ 区域在一个周期内按书写顺序依次执行，不是并行执行。子树里含区域的历史拥有者会被拒绝，因为一个保存下来的叶子描述不了有多条活动分支的位置；区域内部的历史只记录该区域自己的位置。
 
-  这个拒绝是真实存在的：声明了 ``[H]`` 的状态，其下面某个状态拥有区域，构建模型时就会失败，\ :ref:`dsl-region-ownership-zh`\ 里演示的最后一块输出就是（``Invalid region structure ... (history_boundary)``\ ）。含区域的拥有者自己也不能声明历史。可行的是：处在某个区域内部、自己声明历史的复合状态；这时记录属于该区域的分支，恢复时其他区域留在原处。
+  这个拒绝是真实存在的：声明了 ``[H]`` 的状态，其下面某个状态拥有区域，构建模型时就会失败，下面的脚本输出的就是（``Invalid region structure ... (history_boundary)``\ ）。
+
+  .. testcode::
+
+     from pyfcstm.model import load_state_machine_from_text
+     from pyfcstm.utils.validate import ModelValidationError
+
+     try:
+         load_state_machine_from_text(
+             "state Root { [*] -> H; state H { [*] -> A; [H] -> A; state A { region R { [*] -> X; state X; } } state B; A -> B :: Go; }"
+             " state Out; H -> Out :: Leave; Out -> H.[H] :: Back; }"
+         )
+     except ModelValidationError as error:
+         print("ModelValidationError:", str(error).splitlines()[0])
+
+  .. testoutput::
+
+     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 1)
+
+  含区域的拥有者自己也不能声明历史。可行的是：处在某个区域内部、自己声明历史的复合状态；这时记录属于该区域的分支，恢复时其他区域留在原处。
 * **不是持久化。**\ 记录就在状态机的变量里，与其他状态一样；跨进程保存由宿主负责（热启动通过 :meth:`pyfcstm.model.model.StateMachine.history_variables` 恢复它们）。
 * **不恢复业务数据。**\ 恢复不会回滚变量；洗衣机的计数变量每次恢复都会继续累加。
 * **不支持多层目标。**\ ``X -> P.O.[H]``\ 会被拒绝；请进入 ``P``\ ，由 ``P`` 在自己的作用域里进入 ``O.[H]``\ ，或者把历史声明在 ``P`` 上。

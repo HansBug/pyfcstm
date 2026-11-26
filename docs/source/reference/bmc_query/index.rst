@@ -1166,7 +1166,7 @@ The same three coverable forms are legal for a transition inside a region
 continuation (``Job.Run::transition::Job.Next::0``).  The trace of the last one
 is the order of local cases in a step (excerpt, ``Prep`` and ``Work`` are
 region names; the scope in front of each case is written relative to the
-machine's root state):
+outermost owner, see :doc:`../bmc_results/index`):
 
 .. code-block:: text
 

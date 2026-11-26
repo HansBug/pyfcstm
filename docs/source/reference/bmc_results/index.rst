@@ -1459,6 +1459,10 @@ below.
      - array of strings
      - Decode diagnostics.
 
+For models with regions the frame, step, initial and call records also carry the
+optional fields described in :ref:`the part on models with regions
+<bmc-results-region-fields>`; they never appear for models without regions.
+
 Each event object has ``path`` (qualified event path), ``reason`` (decode
 provenance), and boolean ``model_value``.  Replay ``input_events`` contain only
 true events with reason ``case_positive``, ``explicit_true_assumption``, or
@@ -1520,6 +1524,328 @@ abstract-handler implementations because the CLI uses ``abstract_handlers=None``
 Only a returned ``BmcReplayResult`` with mismatches produces exit ``4``.  An
 exception before such a result exists is an internal failure, has exit ``1``,
 prints a traceback, and emits no partial JSON/human report.
+
+.. _bmc-results-region-fields:
+
+Models with regions
+-------------------
+
+A model with ``region`` blocks has no single current state, and one macro-step
+runs several branches in writing order.  The result protocol describes this
+with a small set of *optional* fields.  Every one of them is absent for a model
+without regions, so a consumer written for the earlier shape keeps working; the
+schema marks none of them required.  The examples use the models next to this
+page (``region_job.fcstm``, ``region_controller.fcstm``, ``region_calls.fcstm``,
+``region_nested.fcstm``, ``region_safety.fcstm``, ``region_reentry.fcstm`` and
+``region_plain.fcstm``) and the unabridged output is
+:ref:`included at the end of this part <bmc-results-region-evidence>`.
+
+.. literalinclude:: region_job.fcstm
+   :language: fcstm
+   :caption: region_job.fcstm, the model behind the witness excerpts
+
+.. list-table:: Fields that exist only for models with regions
+   :header-rows: 1
+   :widths: 30 17 53
+
+   * - Path
+     - Type (schema)
+     - Presence and meaning
+   * - ``witness.frames[].configuration``
+     - string, ``minLength`` 1
+     - The text of the whole configuration at that frame, for example
+       ``Job.Run{Prep: Wait, Work: Busy}``.  Absent on the sentinel frame 0 of a
+       cold start (it has no configuration yet) and in every model without
+       regions.
+   * - ``witness.initial.configuration``
+     - string, ``minLength`` 1
+     - The configuration a hot start began with, ``[init]`` for a region that
+       waits.  Absent for cold and terminated starts.
+   * - ``witness.steps[].local_cases``
+     - array of ``localCase``
+     - The cases the step ran, in execution order.  Absent without regions.
+   * - ``local_cases[].scope``
+     - string or ``null``
+     - Path of the owner or region the case ran in; ``null`` for a case that ran
+       outside every region.
+   * - ``local_cases[].kind``
+     - ``initial``, ``transition`` or ``fallback``
+     - Closed set.  ``fallback`` is "the state kept its place" (a ``during`` in
+       a region that did not move).
+   * - ``local_cases[].label``
+     - string, pattern ``^[^:]+::[^:]+::[^:]+::[0-9]+$``
+     - ``source::kind::target::ordinal``.  A region that finishes has the target
+       ``__region_done__``; a cold start has the source ``__init__``.
+   * - ``witness.steps[].abstract_calls[].configuration``
+     - string, ``minLength`` 1
+     - The whole machine at the moment of the call (the position a handler
+       receives as ``ctx.configuration``).
+   * - ``replay.runtime_trace.frames[].configuration``
+     - string, ``minLength`` 1
+     - The configuration the simulator was in after replaying the step.  Frame 0
+       of a cold start is the root state, for example ``Job``.
+
+``case_label`` and ``witness.property.case_label`` are not new fields, but they
+change meaning slightly: for a model with regions, ``case_label`` is the label
+of the case that ran *outside every region* (the case whose ``scope`` is
+``null``), or ``null`` when the step ran none.  Excerpt (``region_controller.fcstm``,
+property ``cover`` of ``Controller.Idle::transition::Controller.Running::0``):
+
+.. code-block:: text
+
+   step 0: case_label=__init__::initial::Controller.Idle::0
+       None initial __init__::initial::Controller.Idle::0
+   step 1: case_label=Controller.Idle::transition::Controller.Running::0
+       None transition Controller.Idle::transition::Controller.Running::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Safety.Watching::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Motion.Off::0
+   step 2: case_label=None
+       Controller.Running.Safety transition Controller.Running.Safety.Watching::transition::__region_done__::1
+       Controller.Running.Motion transition Controller.Running.Motion.Off::transition::__region_done__::0
+       Controller.Running transition Controller.Running::transition::Controller.Idle::0
+
+Step 1 is the case that left ``Idle`` (scope ``null``), so ``case_label`` names it
+and the two ``initial`` cases of the owner follow in writing order.  Step 2 ran
+only inside the owner and its regions, so ``case_label`` is ``null``.  A
+consumer that looked up ``case_label`` on every step must handle ``null`` for
+these steps.
+
+The ``local_cases`` of ``region_job.fcstm`` over six steps show the writing
+order and the three kinds (excerpt):
+
+.. code-block:: text
+
+   step 1: case_label=None case_kind=transition
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work transition Job.Run.Work.Idle::transition::Job.Run.Work.Busy::0
+   step 5: case_label=None case_kind=transition
+       Job.Run.Prep transition Job.Run.Prep.Ready::transition::__region_done__::0
+       Job.Run transition Job.Run::transition::Job.Next::0
+
+Step 5 reads: ``Prep`` finished first (it is written first), then the owner
+``Job.Run`` continued to ``Job.Next``.  ``case_kind`` belongs to the step: step 1
+(one region fell back, one moved) has ``transition`` and step 2 (every region
+fell back) has ``fallback``.
+
+.. code-block:: text
+
+   frame 0: None
+   frame 1: Job.Run{Prep: Wait, Work: Idle}
+   frame 4: Job.Run{Prep: Wait, Work: [done]}
+   frame 6: Job.Next
+
+``frame 0: None`` is the cold-start sentinel with no ``configuration`` key (the
+excerpt prints ``None`` for the missing key).  The same query on a model
+without regions has frame keys ``index, sentinel, state, state_id, terminated,
+vars`` and step keys without ``local_cases``, with ``case_label`` still set
+(``__init__::initial::Root.Idle::0`` on step 0): nothing is added and nothing
+is renamed.
+
+A hot start records the position that was constructed:
+
+.. code-block:: text
+
+   query:  init state("Job.Run{Work: Busy}"); check reach <= 1: true;
+   witness.initial.configuration: Job.Run{Prep: [init], Work: Busy}
+   witness.initial.state:         Job.Run
+
+``initial.state`` is the owner path and ``initial.configuration`` carries what
+the state path cannot: the position of every region.
+
+Calls in a witness
+~~~~~~~~~~~~~~~~~~
+
+Each call record of ``region_calls.fcstm`` (``check reach <= 2: called("Root.Run.B.B1.BEnter");``,
+step 0) names the configuration the handler would have seen:
+
+.. code-block:: text
+
+   0 Root.Run.RunEnter | stage=enter role=state_enter | state=Root.Run active_leaf=Root.Run | Root.Run{A: [init], B: [init]}
+   1 Root.Run.A.A1.AEnter | stage=enter role=state_enter | state=Root.Run.A.A1 active_leaf=Root.Run.A.A1 | Root.Run{A: A1, B: [init]}
+   3 Root.Run.B.B1.BEnter | stage=enter role=state_enter | state=Root.Run.B.B1 active_leaf=Root.Run.B.B1 | Root.Run{A: A1, B: B1}
+   5 Root.Run.GroupTail | stage=during role=aspect_during_after | state=Root.Run active_leaf=Root.Run | Root.Run{A: A1, B: B1}
+
+The first call sees both regions waiting; ``AEnter`` sees ``A`` placed and ``B``
+waiting; ``BEnter`` sees ``B1`` already in the configuration; the group's
+``>> during after`` (``aspect_during_after``) reports the owner as both
+``state`` and ``active_leaf`` because it wraps both regions.  The rules behind
+the configuration text are in :doc:`../bmc_query/index`.
+
+What replay compares
+~~~~~~~~~~~~~~~~~~~~
+
+Replay runs the decoded steps in ``SimulationRuntime`` and compares, per frame
+and per step, these items; any difference is one entry of ``replay.mismatches``
+and the process exits ``4``:
+
+.. list-table:: Replay comparisons for a model with regions
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - Item
+     - Compared with
+     - Remark
+   * - Configuration of each frame
+     - ``witness.frames[].configuration`` against the simulator's configuration
+     - Recorded on both sides as text, so a difference is a textual difference.
+   * - Variables
+     - frame ``vars`` against the simulator's variables
+     - Hidden variables of ``active()`` and history are ordinary variables.
+   * - Events and inputs
+     - consumed and unconsumed events, complete numeric inputs
+     - As for models without regions.
+   * - Abstract calls
+     - action, state, ``active_leaf``, stage, role, pre-call variables and
+       ``configuration``
+     - The simulator hands the same state to the handler; see the counting
+       rule for the group's ``>> during after`` in :doc:`../bmc_query/index`.
+   * - Committed transitions
+     - the transition each step committed against the transitions the simulator
+       committed
+     - This is what checks the labels in ``local_cases``.
+
+A mismatch is a defect of the tool, not a finding about the model; the excerpt
+for a passing run is ``replay ok: True, mismatches: []`` with frame
+configurations identical on both sides.
+
+Human report
+~~~~~~~~~~~~
+
+The human report prints one line per local case of a region step, below the
+line that gives the step's source and target configuration.  The scope of a
+local case is written relative to the outermost owner: the owner itself by its
+last name (``Run:``), anything deeper by the path below it (``Prep:``,
+``Work.Inner.X:``).  A case outside every region has no scope prefix.
+
+.. code-block:: text
+
+   5: Job.Run{Prep: Ready, Work: [done]}
+        -> Job.Next [transition]
+        Prep: Ready -> [done] [transition]
+        Run: [start] -> Job.Next [transition]
+
+   1: Root.Run{Work: Inner{X: x1, Y: y1}, Aux: a1}
+        -> Root.Run{Work: Inner{X: x2, Y: y1}, Aux: a1} [transition]
+        Work.Inner.X: x1 -> x2 [transition]
+        Work.Inner.Y: y1 -> y1 [fallback]
+        Aux: a1 -> a1 [fallback]
+
+``[start]`` on the left is the owner's initial transition or its continuation
+point, ``[done]`` on the right is the region finishing.  The ``Solver:`` timing
+line of the report is not deterministic and is not part of the recorded
+output.
+
+Diagnostics and build limits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Failures that belong to models with regions
+   :header-rows: 1
+   :widths: 24 28 48
+
+   * - Failure
+     - Trigger
+     - Observed text (stderr; exit ``1``; stdout empty)
+   * - ``invalid_start_position``
+     - An ``init state(...)`` text that is not a position of the model
+     - ``Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.``
+   * - ``invalid_active_pattern``
+     - An ``active(...)`` text that is not a pattern of the model
+     - ``Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Job.Run' has no region 'Zed'.``
+   * - ``expression_too_deep``
+     - One expression nests deeper than 100 levels; 100 terms joined by ``&&``
+       are accepted, 101 are refused
+     - ``Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.``
+   * - Group re-entry limit
+     - One owner re-enters its own group more than ``max_group_reentries``
+       times inside one cycle on changing values (default 16)
+     - ``BmcBuildError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.``
+
+The group re-entry limit has no command-line option.  ``pyfcstm bmc`` takes the
+default of 16, and a model that exceeds it ends in the unexpected-error banner
+with exit ``1`` (the excerpt below shows the first and last line of stderr; the
+traceback between them contains local paths):
+
+.. code-block:: text
+
+   query:  check reach <= 1: terminated();
+   exit:   1
+   stdout: (empty)
+   stderr, first line: Unexpected error found when running pyfcstm!
+   stderr, last line:  _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+The model is ``region_reentry.fcstm``: the group of ``Owner`` finishes in the
+cycle it starts and ``Owner -> Owner`` re-enters it while ``n`` grows, up to 20
+times.  The limit is exact: a loop that returns to the same values is rejected
+as a loop instead of being counted, and a loop on changing values is unrolled
+and never approximated.  Through the Python API
+:class:`pyfcstm.bmc.BmcOptions` takes ``max_group_reentries`` (a positive
+``int``; ``bool``, ``0``, negative numbers and strings are refused):
+
+.. code-block:: text
+
+   max_group_reentries=3 with a group that passes 3 times:
+     BmcBuildError: state 'Root.Owner' re-enters its own group more than 3 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   max_group_reentries=4 with a group that passes 3 times:
+     built
+   max_group_reentries=0: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries=True: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries='16': BmcBuildError: max_group_reentries must be a positive integer.
+
+A group that passes ``k`` times needs a limit of at least ``k + 1``.  The default
+value is not part of the canonical options; a non-default value is.  Raising
+the limit unrolls the group deeper and makes the formula larger, so raise it only
+as far as the model needs.
+
+Runtime safety and known limits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The runtime-safety check covers every operation that any region can run in a
+cycle, including the probes of candidates that are not chosen: a
+transition effect on a path that dead-ends, a guard of a continuation that a
+higher-priority candidate shadows, and the enter action of a continuation
+target.  ``region_safety.fcstm`` divides by the input only in a candidate that
+dead-ends; the default run reports it:
+
+.. code-block:: text
+
+   query:  check reach <= 2: active("Root.Run{R: A}");
+   exit:   5
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+     Runtime error: modulo_by_zero at step 1
+     Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
+     Model role: RUNTIME ERROR PREFIX
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+   json runtime_safety.status: violated
+
+Known limit.  The core relation of such a model is satisfiable in the cycle
+where the simulator raises: an evaluation error on a path that dead-ends, or in
+a continuation candidate that a higher-priority candidate blocks, is not an
+error of the relation, while the simulator evaluates it and fails.  The
+runtime-safety check is what reports these cases, so keep it on.  With
+``--no-runtime-safety`` the same query finds a witness and replay raises inside
+the simulator; the command then ends in the unexpected-error banner with exit
+``1`` (excerpt):
+
+.. code-block:: text
+
+   query:  check reach <= 2: active("Root.Run{R: A}");   (with --no-runtime-safety)
+   exit:   1
+   stdout: (empty)
+   stderr, first line: Unexpected error found when running pyfcstm!
+   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+
+Do not read ``exit 1`` there as a property verdict: no result was produced.
+The same two shapes exist in models without regions, where the runtime-safety
+check also reports them.
+
+.. _bmc-results-region-evidence:
+
+Full recorded output
+~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: region_bmc_results.demo.py.txt
+   :language: text
+   :caption: region_bmc_results.demo.py.txt
 
 Dual checks and the response cause boundary
 -------------------------------------------

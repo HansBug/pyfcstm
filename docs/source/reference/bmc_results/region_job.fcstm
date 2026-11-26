@@ -1,0 +1,24 @@
+input int go;
+def int n = 0;
+
+state Job {
+    [*] -> Run;
+    state Run {
+        region Prep {
+            [*] -> Wait;
+            state Wait;
+            state Ready;
+            Wait -> Ready : if [go != 0];
+            Ready -> [*];
+        }
+        region Work {
+            [*] -> Idle;
+            state Idle { during { n = n + 1; } }
+            state Busy { during { n = n + 1; } }
+            Idle -> Busy : if [n >= 1];
+            Busy -> [*] : if [n >= 3];
+        }
+    }
+    state Next;
+    Run -> Next;
+}

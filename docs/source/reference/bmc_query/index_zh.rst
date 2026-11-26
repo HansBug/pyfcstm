@@ -1027,7 +1027,7 @@ BMC 原子及上下文合法性
    result: Failed to compile BMC query: cover case label is unknown: 'Job.Run.Prep.Wait::transition::Job.Run.Prep.Nope::0'.
    exit:   1
 
-三种可覆盖的合法写法是：区域内的转换（第一条查询）、区域内的回退（``Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0``）以及拥有者自己的继续（``Job.Run::transition::Job.Next::0``）。最后一个的轨迹展示了一步里局部情形的顺序（摘录；``Prep`` 与 ``Work`` 是区域名，每个情形前面的作用域写成相对于机器根状态的路径）：
+三种可覆盖的合法写法是：区域内的转换（第一条查询）、区域内的回退（``Job.Run.Work.Busy::fallback::Job.Run.Work.Busy::0``）以及拥有者自己的继续（``Job.Run::transition::Job.Next::0``）。最后一个的轨迹展示了一步里局部情形的顺序（摘录；``Prep`` 与 ``Work`` 是区域名，每个情形前面的作用域写成相对于最外层拥有者的路径，见 :doc:`../bmc_results/index_zh`\ ）：
 
 .. code-block:: text
 

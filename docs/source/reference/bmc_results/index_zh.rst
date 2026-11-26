@@ -1265,6 +1265,8 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - 字符串数组
      - 解码诊断。
 
+含区域的模型里，帧、步、起点与调用记录还带有可选字段，见\ :ref:`含区域的模型一节 <bmc-results-region-fields-zh>`\ ；不含区域的模型里它们从不出现。
+
 每个事件对象有 ``path``\ （全限定事件路径）、``reason``\ （解码来源）和布尔值
 ``model_value``。重放的 ``input_events`` 只包含值为真且原因为
 ``case_positive``、``explicit_true_assumption`` 或 ``property_support`` 的事件。
@@ -1317,6 +1319,246 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 ``abstract_handlers=None``，成功也不验证任意用户抽象处理器实现。只有重放
 返回带不匹配项的 ``BmcReplayResult`` 才产生退出状态 ``4``。若在结果形成前抛异常，则属于
 内部失败：退出状态 ``1``、打印回溯、无半成品 JSON/人类可读报告。
+
+.. _bmc-results-region-fields-zh:
+
+含区域的模型
+------------
+
+含 ``region`` 块的模型没有唯一的当前状态，一个宏步会按书写顺序运行多个分支。结果协议用一小组\ *可选*\ 字段描述这件事。这些字段在不含区域的模型里全部不出现，所以按旧形状写的消费方照常工作；模式文件里没有一个字段被标为必需。示例使用本页旁边的模型（``region_job.fcstm``、``region_controller.fcstm``、``region_calls.fcstm``、``region_nested.fcstm``、``region_safety.fcstm``、``region_reentry.fcstm`` 与 ``region_plain.fcstm``），完整输出见\ :ref:`本部分末尾 <bmc-results-region-evidence-zh>`\ 。
+
+.. literalinclude:: region_job.fcstm
+   :language: fcstm
+   :caption: region_job.fcstm，下面见证摘录所用的模型
+
+.. list-table:: 只在含区域的模型里出现的字段
+   :header-rows: 1
+   :widths: 30 17 53
+
+   * - 路径
+     - 类型（模式）
+     - 出现条件与含义
+   * - ``witness.frames[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 该帧整台机器配置的文本，例如 ``Job.Run{Prep: Wait, Work: Busy}``。冷启动的哨兵第 0 帧上没有（那时还没有配置），不含区域的模型里一律没有。
+   * - ``witness.initial.configuration``
+     - 字符串，``minLength`` 为 1
+     - 热启动起步时的配置，等待中的区域写成 ``[init]``。冷启动与终止起点没有。
+   * - ``witness.steps[].local_cases``
+     - ``localCase`` 数组
+     - 该步运行的情形，按执行顺序排列。不含区域的模型里没有。
+   * - ``local_cases[].scope``
+     - 字符串或 ``null``
+     - 该情形所在的拥有者或区域的路径；在所有区域之外运行的情形为 ``null``。
+   * - ``local_cases[].kind``
+     - ``initial``、``transition`` 或 ``fallback``
+     - 封闭集合。``fallback`` 表示状态留在原地（区域里没有移动、只执行 ``during``）。
+   * - ``local_cases[].label``
+     - 字符串，模式 ``^[^:]+::[^:]+::[^:]+::[0-9]+$``
+     - ``source::kind::target::ordinal``。区域结束时目标是 ``__region_done__``；冷启动的源是 ``__init__``。
+   * - ``witness.steps[].abstract_calls[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 调用那一刻的整台机器（处理器作为 ``ctx.configuration`` 拿到的位置）。
+   * - ``replay.runtime_trace.frames[].configuration``
+     - 字符串，``minLength`` 为 1
+     - 回放该步之后仿真器所在的配置。冷启动的第 0 帧是根状态，例如 ``Job``。
+
+``case_label`` 与 ``witness.property.case_label`` 不是新字段，但含义略有变化：对含区域的模型，``case_label`` 是\ *在所有区域之外*\ 运行的那个情形（``scope`` 为 ``null`` 的情形）的标签，该步没有这样的情形时为 ``null``。摘录（``region_controller.fcstm``，``cover`` 目标为 ``Controller.Idle::transition::Controller.Running::0``）：
+
+.. code-block:: text
+
+   step 0: case_label=__init__::initial::Controller.Idle::0
+       None initial __init__::initial::Controller.Idle::0
+   step 1: case_label=Controller.Idle::transition::Controller.Running::0
+       None transition Controller.Idle::transition::Controller.Running::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Safety.Watching::0
+       Controller.Running initial Controller.Running::initial::Controller.Running.Motion.Off::0
+   step 2: case_label=None
+       Controller.Running.Safety transition Controller.Running.Safety.Watching::transition::__region_done__::1
+       Controller.Running.Motion transition Controller.Running.Motion.Off::transition::__region_done__::0
+       Controller.Running transition Controller.Running::transition::Controller.Idle::0
+
+第 1 步里有离开 ``Idle`` 的情形（作用域为 ``null``），所以 ``case_label`` 指向它，后面按书写顺序跟着拥有者的两个 ``initial`` 情形。第 2 步只在拥有者及其区域内运行，所以 ``case_label`` 为 ``null``。对每一步都按 ``case_label`` 查找的消费方，必须处理这类步骤上的 ``null``。
+
+``region_job.fcstm`` 六步里的 ``local_cases`` 展示书写顺序和三种类别（摘录）：
+
+.. code-block:: text
+
+   step 1: case_label=None case_kind=transition
+       Job.Run.Prep fallback Job.Run.Prep.Wait::fallback::Job.Run.Prep.Wait::0
+       Job.Run.Work transition Job.Run.Work.Idle::transition::Job.Run.Work.Busy::0
+   step 5: case_label=None case_kind=transition
+       Job.Run.Prep transition Job.Run.Prep.Ready::transition::__region_done__::0
+       Job.Run transition Job.Run::transition::Job.Next::0
+
+第 5 步的读法：``Prep`` 先完成（它写在前面），然后拥有者 ``Job.Run`` 继续前往 ``Job.Next``。``case_kind`` 属于整步：第 1 步（一个区域回退、一个区域移动）是 ``transition``，第 2 步（每个区域都回退）是 ``fallback``。
+
+.. code-block:: text
+
+   frame 0: None
+   frame 1: Job.Run{Prep: Wait, Work: Idle}
+   frame 4: Job.Run{Prep: Wait, Work: [done]}
+   frame 6: Job.Next
+
+``frame 0: None`` 是没有 ``configuration`` 键的冷启动哨兵（摘录对缺失的键打印 ``None``）。同一个查询在不含区域的模型上，帧的键是 ``index, sentinel, state, state_id, terminated, vars``，步的键里没有 ``local_cases``，``case_label`` 照常存在（第 0 步是 ``__init__::initial::Root.Idle::0``）：没有新增，也没有改名。
+
+热启动会记录构造出的位置：
+
+.. code-block:: text
+
+   query:  init state("Job.Run{Work: Busy}"); check reach <= 1: true;
+   witness.initial.configuration: Job.Run{Prep: [init], Work: Busy}
+   witness.initial.state:         Job.Run
+
+``initial.state`` 是拥有者的路径，``initial.configuration`` 带有状态路径给不出的信息：每个区域的位置。
+
+见证里的调用
+~~~~~~~~~~~~
+
+``region_calls.fcstm``\ （``check reach <= 2: called("Root.Run.B.B1.BEnter");``，第 0 步）里的每条调用记录都带有处理器本会看到的配置：
+
+.. code-block:: text
+
+   0 Root.Run.RunEnter | stage=enter role=state_enter | state=Root.Run active_leaf=Root.Run | Root.Run{A: [init], B: [init]}
+   1 Root.Run.A.A1.AEnter | stage=enter role=state_enter | state=Root.Run.A.A1 active_leaf=Root.Run.A.A1 | Root.Run{A: A1, B: [init]}
+   3 Root.Run.B.B1.BEnter | stage=enter role=state_enter | state=Root.Run.B.B1 active_leaf=Root.Run.B.B1 | Root.Run{A: A1, B: B1}
+   5 Root.Run.GroupTail | stage=during role=aspect_during_after | state=Root.Run active_leaf=Root.Run | Root.Run{A: A1, B: B1}
+
+第一次调用看到两个区域都在等待；``AEnter`` 看到 ``A`` 已就位、``B`` 在等待；``BEnter`` 看到 ``B1`` 已经在配置里；整组的 ``>> during after``\ （``aspect_during_after``）把拥有者同时报告为 ``state`` 与 ``active_leaf``，因为它包住两个区域。配置文本背后的规则见 :doc:`../bmc_query/index_zh`\ 。
+
+回放比较什么
+~~~~~~~~~~~~
+
+回放在 ``SimulationRuntime`` 里运行解码出的各步，并按帧、按步比较下列项目；任何差异都是 ``replay.mismatches`` 的一项，进程以 ``4`` 退出：
+
+.. list-table:: 含区域的模型的回放比较
+   :header-rows: 1
+   :widths: 24 36 40
+
+   * - 项目
+     - 比较对象
+     - 说明
+   * - 每一帧的配置
+     - ``witness.frames[].configuration`` 与仿真器的配置
+     - 两边都按文本记录，所以差异就是文本差异。
+   * - 变量
+     - 帧的 ``vars`` 与仿真器的变量
+     - ``active()`` 与历史的隐藏变量都是普通变量。
+   * - 事件与输入
+     - 已消费与未消费的事件、完整的数值输入
+     - 与不含区域的模型相同。
+   * - 抽象调用
+     - 动作、状态、``active_leaf``、阶段、角色、调用前的变量与 ``configuration``
+     - 仿真器交给处理器的是同一个状态；整组 ``>> during after`` 的统计规则见 :doc:`../bmc_query/index_zh`\ 。
+   * - 提交的转换
+     - 每一步提交的转换与仿真器提交的转换
+     - ``local_cases`` 里的标签就靠它检查。
+
+不一致是工具自身的缺陷，不是关于模型的结论；通过的运行在摘录里是 ``replay ok: True, mismatches: []``，两边各帧的配置完全相同。
+
+人读报告
+~~~~~~~~
+
+人读报告在给出该步源配置与目标配置的那一行下面，为区域步的每个局部情形打印一行。局部情形的作用域写成相对于最外层拥有者的路径：拥有者自己写它的最后一个名字（``Run:``），更深的写它之下的路径（``Prep:``、``Work.Inner.X:``）。在所有区域之外运行的情形没有作用域前缀。
+
+.. code-block:: text
+
+   5: Job.Run{Prep: Ready, Work: [done]}
+        -> Job.Next [transition]
+        Prep: Ready -> [done] [transition]
+        Run: [start] -> Job.Next [transition]
+
+   1: Root.Run{Work: Inner{X: x1, Y: y1}, Aux: a1}
+        -> Root.Run{Work: Inner{X: x2, Y: y1}, Aux: a1} [transition]
+        Work.Inner.X: x1 -> x2 [transition]
+        Work.Inner.Y: y1 -> y1 [fallback]
+        Aux: a1 -> a1 [fallback]
+
+左侧的 ``[start]`` 是拥有者的初始转换或它继续前行的起点，右侧的 ``[done]`` 是区域结束。报告里的 ``Solver:`` 耗时行不是确定的，不在记录的输出里。
+
+诊断与构建上限
+~~~~~~~~~~~~~~
+
+.. list-table:: 属于含区域模型的失败
+   :header-rows: 1
+   :widths: 24 28 48
+
+   * - 失败
+     - 触发条件
+     - 观察到的文本（标准错误；退出状态 ``1``；标准输出为空）
+   * - ``invalid_start_position``
+     - ``init state(...)`` 的文本不是模型的一个位置
+     - ``Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Job.Run'; a finished owner cannot be hot-started.``
+   * - ``invalid_active_pattern``
+     - ``active(...)`` 的文本不是模型的模式
+     - ``Failed to compile BMC query: invalid_active_pattern at property.predicate: state 'Job.Run' has no region 'Zed'.``
+   * - ``expression_too_deep``
+     - 一个表达式嵌套超过 100 层；用 ``&&`` 连接 100 项可以接受，101 项被拒绝
+     - ``Failed to compile BMC query: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.``
+   * - 组重入上限
+     - 同一个拥有者在一个周期内、在变化的取值上重入自己的组超过 ``max_group_reentries`` 次（默认 16）
+     - ``BmcBuildError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.``
+
+组重入上限没有命令行选项。``pyfcstm bmc`` 使用默认的 16，超过时以意外错误横幅结束，退出状态 ``1``\ （下面的摘录给出标准错误的第一行和最后一行；中间的回溯含有本地路径）：
+
+.. code-block:: text
+
+   query:  check reach <= 1: terminated();
+   exit:   1
+   stdout: (empty)
+   stderr, first line: Unexpected error found when running pyfcstm!
+   stderr, last line:  _BmcCliInternalError: state 'Root.Owner' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+模型是 ``region_reentry.fcstm``：``Owner`` 的组在启动的那个周期就结束，``Owner -> Owner`` 在 ``n`` 增长的同时重新进入它，最多 20 次。这个上限是精确的：回到相同取值的循环被当作循环拒绝，而不是计数；取值在变的循环被逐次展开，从不近似。通过 Python 接口，:class:`pyfcstm.bmc.BmcOptions` 接受 ``max_group_reentries``\ （正整数；``bool``、``0``、负数和字符串都被拒绝）：
+
+.. code-block:: text
+
+   max_group_reentries=3 with a group that passes 3 times:
+     BmcBuildError: state 'Root.Owner' re-enters its own group more than 3 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   max_group_reentries=4 with a group that passes 3 times:
+     built
+   max_group_reentries=0: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries=True: BmcBuildError: max_group_reentries must be a positive integer.
+   max_group_reentries='16': BmcBuildError: max_group_reentries must be a positive integer.
+
+经过 ``k`` 次的组需要至少 ``k + 1`` 的上限。默认值不属于规范化后的选项，非默认值属于。调高上限会把组展开得更深、公式更大，所以只调到模型需要的程度。
+
+运行时安全与已知限制
+~~~~~~~~~~~~~~~~~~~~
+
+运行时安全检查覆盖任何区域在一个周期里可能运行的每个运算，包括没有被选中的候选的探测：走到死路的路径上的转换效果、被更高优先级候选挡住的续接的条件，以及续接目标的进入动作。``region_safety.fcstm`` 只在一条会走到死路的候选里除以输入；默认运行会报告它：
+
+.. code-block:: text
+
+   query:  check reach <= 2: active("Root.Run{R: A}");
+   exit:   5
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+     Runtime error: modulo_by_zero at step 1
+     Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
+     Model role: RUNTIME ERROR PREFIX
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+   json runtime_safety.status: violated
+
+已知限制。这类模型的核心关系在仿真器报错的那个周期里是可满足的：走到死路的路径上的求值错误，或者被更高优先级候选挡住的续接候选里的求值错误，不是关系的错误，而仿真器会求值并失败。报告这些情形的是运行时安全检查，所以请保持它开启。使用 ``--no-runtime-safety`` 时，同一个查询会找到见证，回放在仿真器里抛出异常；命令随后以意外错误横幅结束，退出状态 ``1``\ （摘录）：
+
+.. code-block:: text
+
+   query:  check reach <= 2: active("Root.Run{R: A}");   (with --no-runtime-safety)
+   exit:   1
+   stdout: (empty)
+   stderr, first line: Unexpected error found when running pyfcstm!
+   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+
+不要把那里的退出状态 ``1`` 读成性质结论：没有产生任何结果。不含区域的模型也有同样的两种情形，运行时安全检查同样会报告它们。
+
+.. _bmc-results-region-evidence-zh:
+
+完整的记录输出
+~~~~~~~~~~~~~~
+
+.. literalinclude:: region_bmc_results.demo.py.txt
+   :language: text
+   :caption: region_bmc_results.demo.py.txt
 
 双检查与 ``response`` 原因边界
 -----------------------------------

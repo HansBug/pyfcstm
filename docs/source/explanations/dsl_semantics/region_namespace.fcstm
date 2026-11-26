@@ -1,0 +1,20 @@
+state Plant {
+    [*] -> Running;
+    state Running {
+        event Stop;
+        region Left {
+            [*] -> Idle;
+            state Idle { event Ping; }
+            state Busy;
+            Idle -> Busy :: Ping;
+            Busy -> Idle : /Running.Stop;
+        }
+        region Right {
+            [*] -> Idle;
+            state Idle { event Ping; }
+            state Busy;
+            Idle -> Busy :: Ping;
+            Busy -> Idle : /Running.Stop;
+        }
+    }
+}

@@ -78,6 +78,63 @@ Inspect exposes the resolved paths in ``transitions[].from_path`` and
 ``transitions[].to_path``. That is the evidence to use when checking whether a
 transition landed on the boundary or an internal child.
 
+.. _dsl-region-ownership:
+
+Regions: ownership, ordering and namespaces
+-------------------------------------------
+
+A state that writes ``region`` blocks instead of ordinary child states is an
+*owner*. The language adds three rules to the ownership tree above, and each one
+exists to keep a model with regions readable from its text alone.
+
+**A region is a named container, not a state.** The path of every state and
+every event below a region goes through the region name. Two regions may use the
+same state name, because the region keeps them apart:
+
+.. literalinclude:: region_namespace.fcstm
+   :language: fcstm
+   :caption: ``region_namespace.fcstm``
+
+.. literalinclude:: region_ownership.demo.py.txt
+   :language: text
+
+* ``Plant.Running.Left.Idle`` and ``Plant.Running.Right.Idle`` are two states;
+  neither name is ambiguous because the region is part of the path.
+* The two ``Ping`` events are two events, one per region, because ``:: Ping``
+  makes the source state the owner of the event. Nothing broadcasts one ``Ping``
+  to both regions. ``Stop`` belongs to the owner ``Running`` and both regions use
+  it through its path from the root (``/Running.Stop``).
+* The owner keeps no transitions for the regions. Each region has its own three
+  (the initial transition and two ordinary ones). A region is not a transition
+  source or target, and transitions cannot cross from one region to another; a
+  transition that enters the group ends at the owner, and the owner starts every
+  region.
+
+Why a container and not a state: a region has no ``enter``, ``during`` or
+``exit``, cannot hold variables and is never "entered" by itself. Treating it as
+a state would invite those, and would make "which state is active" ambiguous. As a
+container it only gives a name to a part of the owner, so the owner stays the one
+place where the group starts, works and ends.
+
+**Order is part of the model.** The ``region`` blocks run in the order they are
+written. The order belongs to the language in the same way that the order of
+ordinary transitions out of one state does: reformatting, exporting and
+re-loading keep it, and a model with two blocks swapped is a different model.
+The cycle-level meaning, with traces, is in
+:doc:`/explanations/region_semantics/index`; the reason for choosing it is in
+:doc:`/explanations/region_design/index`.
+
+**What belongs to the owner.** The owner may write ``enter``, ``during before``,
+``during after``, ``exit``, events and ``>> during`` aspects around its regions
+and in between them (their relative order to the regions does not matter; the
+order of the regions among themselves does). It may not write child states, an
+``import`` or local transitions next to the regions. A region may write initial
+transitions, states, ordinary and forced transitions, events and its own
+``>> during before`` / ``>> during after`` aspects; it may not write ``enter``,
+``during``, ``exit`` or variables. A state holds either ordinary child states or
+regions, never both. The grammar enforces most of this and the model checks the
+rest (names, initial transitions, empty regions, path resolution).
+
 .. _dsl-composite-entry-semantics:
 
 Composite entry and initial transitions
@@ -359,6 +416,45 @@ expanded model inspectable.
      - Event and guard terms must be satisfied in sequence.
      - Many states respond to one emergency event or guard.
 
+.. _dsl-forced-with-states-inside:
+
+When the source has states inside it
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If the source of ``!S -> T`` contains states, the event and the condition are
+decided once, at the state the machine rests in, and nothing on the way up asks
+again. The model that runs records that decision in a hidden ``int`` variable,
+``__forced_<n>``. Printing the machine that runs makes the difference visible:
+
+.. literalinclude:: forced_composite.fcstm
+   :language: fcstm
+   :caption: ``forced_composite.fcstm``
+
+.. literalinclude:: forced_regions.fcstm
+   :language: fcstm
+   :caption: ``forced_regions.fcstm``
+
+.. literalinclude:: forced_expansion.demo.py.txt
+   :language: text
+   :caption: ``to_ast_node()`` of both models
+
+* In the plain composite ``P`` every resting child (``a``, ``b``) gets a
+  transition to ``[*]`` that carries the declared condition and raises the
+  variable. ``P -> Q`` then follows on the raised variable and clears it; the
+  second ``P -> Q`` covers the case that ``P`` has nothing to leave.
+* In the owner ``P`` every region gets two transitions to ``[*]`` instead: a
+  *follower* that waits for the variable and, written after it, a *starter*
+  with the declared condition. The regions leave in written order and the owner
+  continues through its own transition when the last one is Done. Nothing in the
+  language takes a whole group away at once; the group is finished by
+  transitions the language already has.
+
+Forced declarations remain shorthand, so the exported text of the model loads to
+the same machine. The cycle-level behaviour (leaving order, a condition that
+becomes true while regions work, a target that cannot be entered) is traced in
+:ref:`region-semantics-forced`. Drawings and inspect reports show the forced
+transition as written.
+
 .. _dsl-history-semantics:
 
 History semantics and lowering
@@ -614,6 +710,14 @@ Boundaries and counterexamples
   is rejected, because one saved leaf cannot describe a position with several
   active branches; a history inside one region keeps the position of that
   region only.
+
+  The rejection is real: a state that declares ``[H]`` while a state below it
+  owns regions fails when the model is built, as the last block of the demo in
+  :ref:`dsl-region-ownership` shows (``Invalid region structure ... (history_boundary)``).
+  An owner that has regions cannot declare history itself either. What works is a
+  composite state that lives inside one region and declares its own history: the
+  record then belongs to that region's branch and a restore leaves the other
+  regions where they are.
 * **Not persistence.** Records live in the machine's variables, like any other
   state; saving them across processes is the host's job (a hot start restores
   them through :meth:`pyfcstm.model.model.StateMachine.history_variables`).
@@ -688,7 +792,10 @@ The DSL is intentionally narrower than a general programming language:
   transition;
 * forced transitions have no effects and no combo chains;
 * combo relay pseudo states are pure routing helpers;
-* target-risk diagnostics must name their target profile.
+* target-risk diagnostics must name their target profile;
+* regions are logical concurrency: no threads, no events raised inside a
+  cycle, no queue, no transition from one region into another, and no history
+  declared on an owner (see :ref:`dsl-region-ownership`).
 
 The event-plus-guard boundary is intentionally visible. This ordinary transition
 shape is invalid:

@@ -363,6 +363,196 @@ syntax, and block syntax. A string echo cannot safely replace that context.
 This is why ``operation_stmt_render`` remains useful for DSL echo text but is not
 a runtime-code shortcut.
 
+Declaring what a template can render
+------------------------------------
+
+A template is written for one execution model. The models it was written for
+have one active path of states at any time. A model with regions has several
+active leaves at once, and its position is a tree, so a template that walks
+``state.transitions`` and tracks a single current state would produce code that
+looks plausible and behaves wrongly. The renderer does not guess. A template
+says what it can render in the ``features`` list of its ``config.yaml``, and
+``region`` is the one feature that exists today. The renderer refuses a model
+with regions before it renders or writes anything when the template does not
+declare it:
+
+.. literalinclude:: region_plain_template/config.yaml
+   :language: yaml
+   :caption: region_plain_template/config.yaml
+
+.. literalinclude:: region_declared_template/config.yaml
+   :language: yaml
+   :caption: region_declared_template/config.yaml
+
+.. literalinclude:: region_template_refusal.demox.sh
+   :language: bash
+   :caption: region_template_refusal.demox.sh
+
+.. literalinclude:: region_template_refusal.demox.sh.txt
+   :language: text
+   :caption: region_template_refusal.demox.sh.txt (exit code 1, see region_template_refusal.demox.sh.exitcode)
+
+Read the output from the top:
+
+1. The refused template differs from the accepted one by one line, ``features:
+   [region]``. Nothing else about the template changes the verdict.
+2. The command exits with ``1`` and writes the structured ``E_UNSUPPORTED_FEATURE``
+   diagnostic. Its first line names the template directory, so a template author
+   can tell a template without the feature from a model written wrongly. The
+   directory shown here is shortened by the script; the real message carries the
+   path you passed. The ``(line 12)`` in the first line is the line of the model that
+   declares the first region.
+3. The message has two readers. The template author is told what to declare and
+   when: only once the template really renders regions. The model author gets a
+   list of built-in templates that support regions and a command that can be
+   copied.
+4. ``output directory: not created`` is the point of refusing early. A refusal
+   after rendering had started could leave a half-written tree that looks like
+   a result.
+5. The second run declares ``region`` and succeeds. The template sees the machine
+   that runs: its state list ends with the generated pseudo state
+   ``__forced_gate_0``, which the forced declaration ``!Running -> Idle : /Stop``
+   was expanded into. A template that declares ``region`` is expected to treat
+   that machine as an ordinary one.
+
+A model without regions never needs a feature, so a template that does not
+declare ``region`` keeps rendering such models exactly as before. Declaring the
+feature is a promise, not a switch: a template that declares ``region`` takes
+over the whole region semantics of its target language and is expected to align
+with ``SimulationRuntime`` on every shared region fixture. The built-in
+``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` templates declare it.
+Why the simulator is the reference is explained in
+:doc:`How a cycle runs a model with regions </explanations/region_semantics/index>`.
+
+The shape of a generated runtime for a model with regions
+---------------------------------------------------------
+
+A runtime that handles regions cannot be one fixed engine with a table of the
+model next to it, because the work of a cycle (trying each region's candidates in
+order, rolling the whole cycle back when no legal position exists) depends on how
+many regions a model has and how they nest. The built-in templates therefore
+generate the kernel for the model.
+
+**Python.** ``machine.py`` is generated for the model: it embeds the machine
+that runs (including the expansion of forced declarations), the region and state
+tables, and the kernel that executes them. It needs no installed ``pyfcstm``
+package, and its size grows with the model.
+
+**C family.** ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` generate a kernel that
+reserves its memory statically. The memory is part of the machine structure
+(``_private[...STORAGE_BYTES]``), so nothing is allocated while a cycle runs.
+Two capacities size it, and they are derived from the model:
+
+.. literalinclude:: region_capacity.demo.sh
+   :language: bash
+   :caption: region_capacity.demo.sh
+
+.. literalinclude:: region_capacity.demo.sh.txt
+   :language: text
+   :caption: region_capacity.demo.sh.txt
+
+``ARENA_CAPACITY`` bounds how many configurations and pending work items one
+decision of a cycle may examine, and ``TRAIL_CAPACITY`` bounds how many checks may
+be nested; ``STORAGE_BYTES`` is computed from both. The plain model with one composite state needs
+8 and 4. The two-region model needs 60 and 36, and the controller, which has
+more states and transitions, needs 108 and 52. The numbers come from the model,
+not from a fixed engine limit. They are the measured defaults for these four
+models, not a formula you can rely on across template versions.
+
+A cycle that needs more than the capacity fails with a message that names the
+macro. It does not misbehave silently. To raise a capacity, define the same value
+for ``machine.c`` and every file that includes ``machine.h``, because the size of
+a machine depends on it. Two consequences to plan around, both stated in the
+generated README: the size of one machine grows with the number of states and
+regions, so a machine of a large model belongs in static storage and not on the
+stack; and entering a chain of nested owners at once costs time that doubles with
+every nested level on the first cycle that enters the chain.
+
+"No heap" needs one qualification. The kernel itself needs none. The convenience
+functions ``create`` and ``destroy`` use ``calloc`` and ``free`` unless
+``PYFCSTM_GENERATED_NO_HEAP`` is defined, which removes them; a program that owns
+its machine object, as the run below does, never needs them. The ``cpp`` and
+``cpp_poll`` templates wrap the C kernel, and this page ran only ``c`` for the
+evidence below.
+
+One position vocabulary across the simulator and the generated runtimes
+-----------------------------------------------------------------------
+
+The position of a machine with regions is a tree, written as one line of text:
+``Controller.Running{Safety: Watching, Motion: Off}``. Generated runtimes write
+that text exactly as the simulator does and offer the same queries under
+language-appropriate names:
+
+.. list-table:: The position interface in three places
+   :header-rows: 1
+   :widths: 22 26 26 26
+
+   * - Question
+     - Simulator
+     - Python runtime
+     - C runtime
+   * - Where is the machine?
+     - ``runtime.configuration`` (text through ``str``)
+     - ``machine.configuration``
+     - ``ControllerMachine_get_configuration`` and ``..._configuration_format``
+   * - Which leaves are active?
+     - ``configuration.leaves``
+     - ``machine.leaves``
+     - ``..._configuration_leaves``
+   * - Is a state in the position?
+     - ``configuration.is_active(path)``
+     - ``machine.is_active(path)``
+     - ``..._configuration_is_active``
+   * - What is a region doing?
+     - ``configuration.region_status(path)``
+     - ``machine.region_status(path)``
+     - ``..._configuration_region_status``
+   * - Start from a saved position
+     - hot start with a configuration
+     - ``initial_state=`` with the text
+     - ``..._hot_start_at``
+
+The status of a region is one of four words in every place: ``live`` (it holds an
+active state), ``done`` (it finished), ``pending`` (its owner is active and it
+has not been initialized, text ``[init]``) and ``inactive`` (its owner is not in
+the position). The C runtime spells them as constants such as
+``CONTROLLER_MACHINE_REGION_STATUS_LIVE``.
+
+The two runs below drive the same six cycles of the controller (start it, run
+calmly, raise a fault for two cycles, stop it) through a generated runtime and
+through ``pyfcstm simulate``, and compare the text after each cycle:
+
+.. literalinclude:: region_generated_runtime.demo.sh
+   :language: bash
+   :caption: region_generated_runtime.demo.sh
+
+.. literalinclude:: region_generated_runtime.demo.sh.txt
+   :language: text
+   :caption: region_generated_runtime.demo.sh.txt
+
+.. literalinclude:: region_generated_c_runtime.demo.sh
+   :language: bash
+   :caption: region_generated_c_runtime.demo.sh
+
+.. literalinclude:: region_generated_c_runtime.demo.sh.txt
+   :language: text
+   :caption: region_generated_c_runtime.demo.sh.txt
+
+In both runs ``diff`` finds no difference. The sequence shows the cycle-by-cycle
+behavior of the controller: the fault in cycle 4 turns the motor region ``Off``
+in the same cycle because ``Safety`` runs first. After ``/Stop`` the machine is
+``Controller.Idle``, and the generated Python runtime reports ``is_active``
+``False`` for ``Controller.Running`` and ``(('Controller', 'Idle'),)`` as its
+leaves.
+
+What this proves and what it does not. It proves that, for this model and these
+six cycles, the generated Python and C runtimes and the simulator agree on the
+text of the position, which is what a caller reads. It does not prove agreement
+on every model. That claim rests on the shared ``regions`` fixtures that every
+region-capable template must pass against ``SimulationRuntime``, and on the
+random-model differential checks kept outside the unit tests; this page does
+not rerun them.
+
 Generated README as machine-specific evidence
 ---------------------------------------------
 

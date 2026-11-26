@@ -1,0 +1,20 @@
+$ pyfcstm diagram -i controller.fcstm -o controller.json
+Controller
+  Controller.Idle
+  Controller.Running
+    Controller.Running.Safety  region=true ordinal=1
+      Controller.Running.Safety.Watching
+    Controller.Running.Motion  region=true ordinal=2
+      Controller.Running.Motion.Off
+      Controller.Running.Motion.On
+
+$ pyfcstm diagram -i controller_swapped.fcstm -o controller_swapped.json
+Controller
+  Controller.Idle
+  Controller.Running
+    Controller.Running.Motion  region=true ordinal=1
+      Controller.Running.Motion.Off
+      Controller.Running.Motion.On
+    Controller.Running.Safety  region=true ordinal=2
+      Controller.Running.Safety.Watching
+

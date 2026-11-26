@@ -1,0 +1,17 @@
+input int fault;
+output int speed = 0;
+
+state Drive {
+    region Planner {
+        [*] -> Plan;
+        state Plan {
+            during { speed = 5; }
+        }
+    }
+    region Limiter {
+        [*] -> Clamp;
+        state Clamp {
+            during { speed = 0; }
+        }
+    }
+}

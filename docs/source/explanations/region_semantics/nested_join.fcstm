@@ -1,0 +1,29 @@
+def int n = 0;
+state Root {
+    event D1;
+    event D2;
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> Q;
+            state Q {
+                region A1 {
+                    [*] -> W1;
+                    state W1;
+                    W1 -> [*] : /D1;
+                }
+                region A2 {
+                    [*] -> W2;
+                    state W2;
+                    W2 -> [*] : /D2;
+                }
+            }
+            state R;
+            Q -> R;
+        }
+        region B {
+            [*] -> N;
+            state N { during { n = n + 1; } }
+        }
+    }
+}

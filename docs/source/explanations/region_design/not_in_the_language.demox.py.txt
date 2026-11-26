@@ -1,0 +1,12 @@
+== history written on an owner
+GrammarParseError: Found 3 errors during parsing:
+GrammarParseError: Error 1: Syntax error at line 1, column 43, near 'region': Unexpected token 'region'
+== child states mixed with a region
+GrammarParseError: Found 3 errors during parsing:
+GrammarParseError: Error 1: Syntax error at line 1, column 42, near 'region': Unexpected token 'region'
+== enter block inside a region
+GrammarParseError: Found 3 errors during parsing:
+GrammarParseError: Error 1: Syntax error at line 1, column 44, near 'enter': Unexpected token 'enter'
+== a variable declared in a region
+GrammarParseError: Found 2 errors during parsing:
+GrammarParseError: Error 1: Syntax error at line 1, column 44, near 'def': Unexpected token 'def'

@@ -1,0 +1,123 @@
+forced_condition.fcstm as written
+def int x = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region A { [*] -> A1; state A1 { during { x = x + 1; } } }
+        region B { [*] -> B1; state B1; }
+    }
+    state Off;
+    !P -> Off : if [x >= 2];
+}
+
+the machine that runs: to_ast_node() of the same model
+def int x = 0;
+def int __forced_0 = 0;
+state Root {
+    state P {
+        region A {
+            state A1 {
+                during {
+                    x = x + 1;
+                }
+            }
+            A1 -> [*] : if [__forced_0 == 1];
+            A1 -> [*] : if [x >= 2] effect {
+                __forced_0 = 1;
+            }
+            [*] -> A1;
+        }
+        region B {
+            state B1;
+            B1 -> [*] : if [__forced_0 == 1];
+            B1 -> [*] : if [x >= 2] effect {
+                __forced_0 = 1;
+            }
+            [*] -> B1;
+        }
+    }
+    state Off;
+    P -> Off : if [__forced_0 == 1] effect {
+        __forced_0 = 0;
+    }
+    P -> Off : if [x >= 2 && __forced_0 == 0];
+    [*] -> P;
+}
+
+forced_condition.fcstm: the guard becomes true while the regions work
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->P
+  enter  P
+  take   P.A  [*]->A1
+  enter  P.A.A1
+  do     P.A.A1  during   [x 0->1]
+  take   P.B  [*]->B1
+  enter  P.B.B1
+  => Root.P{A: A1, B: B1}   x=1 __forced_0=0
+cycle 2  events: -  inputs: -
+  do     P.A.A1  during   [x 1->2]
+  exit   P.B.B1
+  take   P.B.B1  B1->[*]   [__forced_0 0->1]
+  => Root.P{A: A1, B: [done]}   x=2 __forced_0=1
+cycle 3  events: -  inputs: -
+  exit   P.A.A1
+  take   P.A.A1  A1->[*]
+  exit   P
+  take   P  P->Off   [__forced_0 1->0]
+  enter  Off
+  => Root.Off   x=2 __forced_0=0
+cycle 4  events: -  inputs: -
+  => Root.Off   x=2 __forced_0=0
+
+controller.fcstm: !Running -> Idle : /Stop takes both regions away
+cycle 1  events: -  inputs: fault=0 requested=1
+  => Controller.Idle   permit=0 motor=0 __forced_0=0
+cycle 2  events: Controller.Start  inputs: fault=0 requested=1
+  => Controller.Running{Safety: Watching, Motion: Off}   permit=1 motor=0 __forced_0=0
+cycle 3  events: -  inputs: fault=0 requested=1
+  => Controller.Running{Safety: Watching, Motion: On}   permit=1 motor=1 __forced_0=0
+cycle 4  events: Controller.Stop  inputs: fault=0 requested=1
+  exit   Running.Safety.Watching
+  take   Running.Safety.Watching  Watching->[*]   [__forced_0 0->1]
+  exit   Running.Motion.On
+  take   Running.Motion.On  On->[*]
+  exit   Running
+  take   Running  Running->Idle   [__forced_0 1->0]
+  enter  Idle
+  do     Idle  during   [motor 1->0]
+  => Controller.Idle   permit=1 motor=0 __forced_0=0
+
+forced_nested.fcstm: nested owners leave in declaration order
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->Outer
+  enter  Outer
+  take   Outer.R1  [*]->Inner
+  enter  Outer.R1.Inner
+  take   Outer.R1.Inner.X  [*]->X1
+  enter  Outer.R1.Inner.X.X1
+  take   Outer.R1.Inner.Y  [*]->Y1
+  enter  Outer.R1.Inner.Y.Y1
+  take   Outer.R2  [*]->Z1
+  enter  Outer.R2.Z1
+  => Root.Outer{R1: Inner{X: X1, Y: Y1}, R2: Z1}   __forced_0=0 seq=0
+cycle 2  events: Root.Halt  inputs: -
+  do     Outer.R1.Inner.X.X1  exit action   [seq 0->1]
+  exit   Outer.R1.Inner.X.X1
+  take   Outer.R1.Inner.X.X1  X1->[*]   [__forced_0 0->1]
+  do     Outer.R1.Inner.Y.Y1  exit action   [seq 1->12]
+  exit   Outer.R1.Inner.Y.Y1
+  take   Outer.R1.Inner.Y.Y1  Y1->[*]
+  do     Outer.R1.Inner  exit action   [seq 12->124]
+  exit   Outer.R1.Inner
+  take   Outer.R1.Inner  Inner->[*]
+  do     Outer.R2.Z1  exit action   [seq 124->1243]
+  exit   Outer.R2.Z1
+  take   Outer.R2.Z1  Z1->[*]
+  do     Outer  exit action   [seq 1243->12435]
+  exit   Outer
+  take   Outer  Outer->Off   [__forced_0 1->0]
+  enter  Off
+  do     Off  enter action   [seq 12435->124359]
+  => Root.Off   __forced_0=0 seq=124359

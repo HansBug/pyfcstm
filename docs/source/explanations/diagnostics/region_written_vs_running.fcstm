@@ -1,0 +1,23 @@
+input int go;
+output int lamp = 0;
+
+state Panel {
+    region Lamp {
+        [*] -> Dark;
+        state Dark {
+            during { lamp = 0; }
+        }
+        state Lit {
+            during { lamp = 1; }
+        }
+        Dark -> Lit : if [active("Panel.Switch.Pressed")];
+        Dark -> Lit : if [active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")];
+    }
+    region Switch {
+        [*] -> Released;
+        state Released;
+        state Pressed;
+        Released -> Pressed : if [go != 0];
+        Pressed -> Released : if [go == 0];
+    }
+}

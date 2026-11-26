@@ -1,0 +1,3 @@
+regions of Running in the model: ['Motion', 'Safety']
+regions in the exported text:    ['Motion', 'Safety']
+regions after loading it again:  ['Motion', 'Safety']

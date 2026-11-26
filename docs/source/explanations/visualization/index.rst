@@ -341,6 +341,205 @@ The advice that follows is the same one the sharing section reaches: pass an exp
 output path for a document that must not be somewhere shared, or that only you may
 remove.
 
+How regions are drawn
+---------------------
+
+A state that owns regions runs them one after another in declaration order, as
+:doc:`How a cycle runs a model with regions </explanations/region_semantics/index>`
+explains. A region is therefore not a state: it is never the target of a
+transition, it has no entry or exit of its own, and it is not "active" the way a
+state is. It is a named, ordered part of its owner. Every output draws it that
+way, as a divided area of the owner, and not as a box of its own:
+
+.. list-table:: How each output carries a region
+   :header-rows: 1
+   :widths: 26 74
+
+   * - Output
+     - Region form
+   * - PlantUML (``pyfcstm plantuml``)
+     - A concurrent-state partition: the regions of one owner are separated by
+       ``--`` and each begins with a note that reads ``region N: Name``.
+   * - Diagram snapshot (``to_dict`` / ``to_json``, ``pyfcstm diagram``)
+     - A child node of the owner with ``region: true`` and an ``ordinal``.
+   * - HTML viewer and VS Code preview
+     - The regions side by side inside the owner's frame, separated by dashed
+       dividers, with no border of their own and the same ``region N: Name``
+       title.
+
+.. literalinclude:: region_plantuml.demo.sh
+   :language: bash
+   :caption: region_plantuml.demo.sh
+
+.. literalinclude:: region_plantuml.demo.sh.txt
+   :language: text
+   :caption: region_plantuml.demo.sh.txt
+
+Read the three parts of the output in turn:
+
+1. In the first block ``--`` separates ``Safety`` from ``Motion``. Each region
+   keeps its own ``[*]`` initial arrow and its own transitions, and there is no
+   arrow between the two regions, because none can exist.
+2. In the second block the same two regions are written in the other order. Only
+   the numbers and the order of the partitions change: ``N`` is the position in
+   the source, which is also the order in which the regions run. A reader of the
+   picture can therefore read the execution order straight off it.
+3. In the third block ``max_depth=2`` collapses what is inside the regions but
+   keeps the regions. A region counts as one layer of depth, like a state would.
+
+The snapshot carries the same facts as data:
+
+.. literalinclude:: region_snapshot.demo.sh
+   :language: bash
+   :caption: region_snapshot.demo.sh
+
+.. literalinclude:: region_snapshot.demo.sh.txt
+   :language: text
+   :caption: region_snapshot.demo.sh.txt
+
+The children of ``Controller.Running`` come out in writing order, and
+``ordinal`` is one-based. The layout step below depends on exactly this field.
+
+The viewer draws the same structure. This sketch is hand-drawn to show the
+form; it is not output of the viewer:
+
+.. code-block:: text
+
+   Schematic, a top-to-bottom diagram:
+
+   +-- Running ----------------------------------------------+
+   |  region 1: Safety       :  region 2: Motion               |
+   |                         :                                 |
+   |  [*] -> (Watching)      :  [*] -> (Off) <-> (On)          |
+   +----------------------------------------------------------+
+                             ^ dashed divider
+
+Why divided areas and not states: a state-shaped box would invite the reading that
+an arrow can end on it, or that the owner "is in" the region the way it is in a
+state. A divider says the opposite: the areas are parts of one thing, there is
+no way from one to the other, and the left-to-right or top-to-bottom order is the
+only relation between them. An earlier form drew a dashed frame around every
+region; the divider form replaced it so that the regions read as parts of one
+owner.
+
+What is deliberately **not** drawn is everything that exists only because of
+lowering. A guard written with ``active("...")`` keeps its full path, and the
+hidden flag variables and the automatic writes to them do not appear:
+
+.. literalinclude:: region_active_display.demo.sh
+   :language: bash
+   :caption: region_active_display.demo.sh
+
+.. literalinclude:: region_active_display.demo.sh.txt
+   :language: text
+   :caption: region_active_display.demo.sh.txt
+
+The model is the one from :doc:`Diagnostics explanation </explanations/diagnostics/index>`.
+Neither the legend nor the snapshot's variable list shows an ``__active_*``
+variable, while a finding of ``--enable-verify`` does name one. The picture
+shows the model as written; the machine that runs is not what a reader needs to
+see. No output marks the current configuration of a run: a runtime overlay is not
+part of what these outputs do.
+
+How the order is guaranteed
+---------------------------
+
+The regions of one owner have no transitions between them, so a layout engine
+has nothing to keep them in order. ELK, which lays out the viewer and the
+preview, is free to move them to reduce edge crossings, and it does: a model
+with regions A, B and C came back as C, A, B. Its own ordering options either
+do nothing for the nested layout the renderer uses or crash it, so the order is
+not requested from the engine. It is restored afterwards.
+
+.. list-table:: The layout steps for regions
+   :header-rows: 1
+   :widths: 6 40 54
+
+   * - Step
+     - What happens
+     - Why it is safe
+   * - 1
+     - ELK lays out the whole graph.
+     - Positions come from the engine; the order of regions is whatever it chose.
+   * - 2
+     - The regions of each owner are sorted by ``ordinal`` and put back, one
+       after another, into the slots the engine produced, keeping each region's
+       size and the gaps between them.
+     - A region is connected to nothing outside itself, so moving it sideways
+       cannot disturb an edge, and the owner keeps its size.
+   * - 3
+     - If the regions of an owner do not sit on one row (one column in a
+       left-to-right diagram), the graph is laid out again with a chain of
+       invisible edges between consecutive regions, which pins the order.
+     - It costs a longer diagram, and only in that case. The renderer skips
+       those edges (``kind`` ``regionOrder``).
+   * - 4
+     - The regions are tiled over the owner's body, with a dashed divider
+       between neighbours.
+     - Same last step on both paths, so the picture looks the same whether or
+       not step 3 ran.
+
+The order runs along the diagram's direction: left to right within one row in a
+top-to-bottom diagram, and top to bottom within one column in a left-to-right
+diagram. The HTML viewer and the VS Code preview call the same layout function,
+so they cannot disagree about it. PlantUML does not use this code at all: pyfcstm
+hands it the partitions in writing order, as the output above shows, and PlantUML
+lays out the rest.
+
+Four surfaces, one set of conventions
+-------------------------------------
+
+The four ways of looking at a model share conventions and nothing else.
+
+.. list-table:: The surfaces and what each one limits
+   :header-rows: 1
+   :widths: 22 26 52
+
+   * - Surface
+     - Entry point
+     - What is specific to it
+   * - PlantUML text
+     - ``pyfcstm plantuml``
+     - Text that goes under version control. Layout is done by PlantUML, not by
+       pyfcstm. PlantUML's built-in Smetana layout does not support concurrent
+       partitions and drops every region after the first one; pyfcstm emits no
+       layout directive, so you meet this only when you force that layout. Use the
+       default Graphviz layout.
+   * - Diagram snapshot
+     - ``StateMachine.diagram()``, ``pyfcstm diagram``
+     - Portable data with no layout. It is detached from the model, so editing
+       the model afterwards does not change it.
+   * - HTML viewer
+     - ``Diagram.to_html`` / ``save`` / ``show``, ``pyfcstm diagram -o x.html`` /
+       ``--open``
+     - One self-contained file that lays out with ELK and the reordering above;
+       ``--open`` needs a Chromium-family browser and blocks.
+   * - VS Code preview
+     - The editor extension
+     - The same layout function, driven by the editor's own model of the open
+       document instead of a snapshot from Python.
+
+The shared conventions are the ones above: ``region N: Name`` with ``N`` the
+writing order, ``active("...")`` shown as written, no hidden variables, and a
+region counting as one layer for ``max_depth``. They are shared because a reader
+moves between these surfaces for one model; a difference in convention would
+look like a difference in the model.
+
+Known gaps in what regions look like, none of which changes what the model does:
+
+* A collapsed region keeps the size it had when expanded; the owner does not
+  shrink around it.
+* The editor has no region-specific support beyond the preview: the outline and
+  the breadcrumbs treat a region like a state, its details are labelled
+  ``composite``, renaming a state does not update ``active("...")`` strings that
+  name it, and hovering shows nothing.
+* A model that uses history is drawn as written by PlantUML and by the Python
+  snapshot, and the editor preview still draws the expanded machine; see
+  `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_.
+* The title width is estimated, not measured, so a region name of about fifty
+  characters can push the end of its title onto the collapse button by a pixel
+  or two.
+
 Next steps
 ----------
 

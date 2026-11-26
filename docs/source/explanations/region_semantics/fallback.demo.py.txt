@@ -1,0 +1,39 @@
+candidate_fallback.fcstm: a candidate that cannot be entered gives way to the next one
+cycle 1  events: -  inputs: -
+  enter  Root
+  take   Root  [*]->P
+  enter  P
+  take   P.R1  [*]->A
+  enter  P.R1.A
+  do     P.R1.A  during   [x 0->1]
+  take   P.R2  [*]->B
+  enter  P.R2.B
+  => Root.P{R1: A, R2: B}   t=0 x=1
+cycle 2  events: -  inputs: -
+  do     P.R1.A  during   [x 1->2]
+  exit   P.R2.B
+  take   P.R2.B  B->D   [t 0->1]
+  enter  P.R2.D
+  => Root.P{R1: A, R2: D}   t=1 x=2
+cycle 3  events: -  inputs: -
+  do     P.R1.A  during   [x 2->3]
+  => Root.P{R1: A, R2: D}   t=1 x=3
+
+initial_fallback.fcstm: an initial candidate that fails inside a region leaves nothing behind
+cycle  events  inputs  configuration     variables
+1      -       -       Root.P{R: Plain}  g=0 leak=0 picked=1
+2      -       -       Root.P{R: Plain}  g=0 leak=0 picked=1
+
+group_delta.fcstm, cold start: the second region cannot start
+cycle  events  inputs  configuration         variables
+1      -       g=0     Root                  n=0   (Delta)
+2      -       g=0     Root                  n=0   (Delta)
+3      -       g=1     Root.P{R1: A, R2: X}  n=1
+4      -       g=1     Root.P{R1: A, R2: X}  n=2
+
+group_delta.fcstm, hot start with the second region waiting
+cycle  events  inputs  configuration              variables
+1      -       g=0     Root.P{R1: A, R2: [init]}  n=0   (Delta)
+2      -       g=0     Root.P{R1: A, R2: [init]}  n=0   (Delta)
+3      -       g=1     Root.P{R1: A, R2: X}       n=1
+4      -       g=1     Root.P{R1: A, R2: X}       n=2

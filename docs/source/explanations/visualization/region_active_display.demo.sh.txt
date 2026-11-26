@@ -1,0 +1,12 @@
+$ pyfcstm plantuml -i region_written_vs_running.fcstm   (guards and legend)
+| go | int | N/A | input |
+| lamp | int | 0 | output |
+    panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed")
+    panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")
+
+$ pyfcstm diagram -i region_written_vs_running.fcstm   (variables and guards)
+  variables: go, lamp
+  guard: active("Panel.Switch.Pressed")
+  guard: active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")
+  guard: go != 0
+  guard: go == 0

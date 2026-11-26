@@ -1,0 +1,15 @@
+input int g;
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region R1 {
+            [*] -> A;
+            state A { during { n = n + 1; } }
+        }
+        region R2 {
+            [*] -> X : if [g != 0];
+            state X;
+        }
+    }
+}

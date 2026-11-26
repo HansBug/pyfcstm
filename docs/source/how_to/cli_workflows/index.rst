@@ -508,8 +508,8 @@ and a first repair path.
 Accept a model with regions end to end
 --------------------------------------
 
-**Input.** ``region_controller.fcstm`` (a copy of the interlock controller
-from :doc:`/tutorials/regions/index`) and ``region_motion.fbmcq``.  The task is
+**Input.** :download:`controller.fcstm </_models/controller.fcstm>` (the interlock
+controller from :doc:`/tutorials/regions/index`) and ``region_motion.fbmcq``.  The task is
 to take one model with regions through every command of the package and to
 know what each step must show before you accept the model.
 
@@ -517,14 +517,94 @@ know what each step must show before you accept the model.
    :language: text
    :caption: region_motion.fbmcq
 
-**Command or code.** One script runs the six steps in order; each step prints
-only the lines that carry the acceptance signal:
+**Command or code.** The six steps run in order; each step shows only the lines that carry the
+acceptance signal, and ``...`` leaves out the rest:
 
-.. literalinclude:: region_acceptance.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_acceptance.demo.sh.txt
-   :language: text
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 1
+   Current State: Controller.Idle
+   ...
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   $ pyfcstm inspect -i controller.fcstm --color never
+   [WARN] FCSTM Inspect Report: controller.fcstm
+
+   Summary
+     status: warning
+     root: Controller
+     states: 6 total / 4 leaf
+     transitions: 7
+     regions: 2
+       Controller.Running.Safety: order 0 in Controller.Running; 1 states
+       Controller.Running.Motion: order 1 in Controller.Running; 2 states
+     variables: 4
+       fault: input; external supply: cycle
+       requested: input; external supply: cycle
+       permit: control; external supply: none
+       motor: output; external supply: none
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_motion.fbmcq --json -o bmc.json
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("bmc.json", encoding="utf-8"))
+   print(payload["result"]["status"], payload["result"]["outcome"], "replay ok:", payload["replay"]["ok"])
+   for frame in payload["witness"]["frames"]:
+       print("frame %d: %s" % (frame["index"], frame["configuration"]))
+
+.. testoutput::
+
+   sat witness_found replay ok: True
+   frame 0: Controller.Idle
+   frame 1: Controller.Running{Safety: Watching, Motion: Off}
+   frame 2: Controller.Running{Safety: Watching, Motion: On}
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o generated/python --clear
+   $ LC_ALL=C ls generated/python
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm plantuml -i controller.fcstm -o machine.puml
+   $ cat machine.puml
+   @startuml
+   ...
+           note as controller__running__safety
+               **region 1: Safety**
+   ...
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+   ...
+   $ pyfcstm diagram -i controller.fcstm -o machine.json
+   machine.json
+
+.. testcode::
+
+   import json
+
+   print(json.load(open("machine.json"))["summary"])
+
+.. testoutput::
+
+   {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
 
 **Expected signal.** Accept the model when each step shows what follows.
 
@@ -543,8 +623,8 @@ only the lines that carry the acceptance signal:
 6. *diagram.* The JSON summary counts the same states and transitions as
    ``inspect`` (6 states, 7 transitions).
 
-**File side effect.** The script writes everything into a scratch directory
-and removes it.  In a project, ``generate`` writes the runtime into the output
+**File side effect.** These commands write ``bmc.json``, ``generated/python``, ``machine.puml`` and
+``machine.json`` into the current directory.  In a project, ``generate`` writes the runtime into the output
 directory, and the ``-o`` options write the named files.
 
 **First failure check.** Run the steps one at a time and stop at the first one

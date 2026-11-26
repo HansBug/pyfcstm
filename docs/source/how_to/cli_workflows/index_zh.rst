@@ -477,20 +477,100 @@ PlantUML 源码是文本，不是图片：
 对含区域的模型做端到端验收
 --------------------------
 
-**起点。** ``region_controller.fcstm``\ （:doc:`/tutorials/regions/index_zh` 里联锁控制器的副本）和 ``region_motion.fbmcq``。任务是让一个含区域（region）的模型走完软件包的每一条命令，
+**起点。** :download:`controller.fcstm </_models/controller.fcstm>`\ （:doc:`/tutorials/regions/index_zh` 里的联锁控制器）和 ``region_motion.fbmcq``\ 。任务是让一个含区域（region）的模型走完软件包的每一条命令，
 并在接受模型之前知道每一步必须显示什么。
 
 .. literalinclude:: region_motion.fbmcq
    :language: text
    :caption: region_motion.fbmcq
 
-**命令或代码。** 一个脚本按顺序运行六步；每一步只打印携带验收信号的行：
+**命令或代码。** 六步按顺序运行；每一步只展示携带验收信号的行，``...`` 省掉其余内容：
 
-.. literalinclude:: region_acceptance.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_acceptance.demo.sh.txt
-   :language: text
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 1
+   Current State: Controller.Idle
+   ...
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   $ pyfcstm inspect -i controller.fcstm --color never
+   [WARN] FCSTM Inspect Report: controller.fcstm
+
+   Summary
+     status: warning
+     root: Controller
+     states: 6 total / 4 leaf
+     transitions: 7
+     regions: 2
+       Controller.Running.Safety: order 0 in Controller.Running; 1 states
+       Controller.Running.Motion: order 1 in Controller.Running; 2 states
+     variables: 4
+       fault: input; external supply: cycle
+       requested: input; external supply: cycle
+       permit: control; external supply: none
+       motor: output; external supply: none
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q region_motion.fbmcq --json -o bmc.json
+
+.. testcode::
+
+   import json
+
+   payload = json.load(open("bmc.json", encoding="utf-8"))
+   print(payload["result"]["status"], payload["result"]["outcome"], "replay ok:", payload["replay"]["ok"])
+   for frame in payload["witness"]["frames"]:
+       print("frame %d: %s" % (frame["index"], frame["configuration"]))
+
+.. testoutput::
+
+   sat witness_found replay ok: True
+   frame 0: Controller.Idle
+   frame 1: Controller.Running{Safety: Watching, Motion: Off}
+   frame 2: Controller.Running{Safety: Watching, Motion: On}
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o generated/python --clear
+   $ LC_ALL=C ls generated/python
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm plantuml -i controller.fcstm -o machine.puml
+   $ cat machine.puml
+   @startuml
+   ...
+           note as controller__running__safety
+               **region 1: Safety**
+   ...
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+   ...
+   $ pyfcstm diagram -i controller.fcstm -o machine.json
+   machine.json
+
+.. testcode::
+
+   import json
+
+   print(json.load(open("machine.json"))["summary"])
+
+.. testoutput::
+
+   {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
 
 **预期信号。** 每一步显示下面的内容时才接受这个模型。
 
@@ -502,7 +582,7 @@ PlantUML 源码是文本，不是图片：
 5. *plantuml。* 一个 ``--`` 和两条 ``region N:`` 注释，按书写顺序排列。
 6. *diagram。* JSON 摘要统计出与 ``inspect`` 相同的状态数与转换数（6 个状态，7 条转换）。
 
-**文件副作用。** 脚本把所有东西写入临时目录，结束后删除。在项目里，``generate`` 把运行时写入输出目录，各个 ``-o`` 选项写入指定的文件。
+**文件副作用。** 这些命令把 ``bmc.json``\ 、\ ``generated/python``\ 、\ ``machine.puml`` 和 ``machine.json`` 写入当前目录。在项目里，``generate`` 把运行时写入输出目录，各个 ``-o`` 选项写入指定的文件。
 
 **失败时先查什么。** 逐步运行，在第一个不一致的步骤停下。第 1 步与第 3 步对某个位置的结论不同，说明两次运行之间模型变了，或者查询从另一个位置起步；
 第 2 步失败时，先读它的第一条错误，因为其他命令读取的是同一个模型。

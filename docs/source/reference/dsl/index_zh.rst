@@ -369,7 +369,6 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. testcode::
 
    from pyfcstm.model import load_state_machine_from_text
-   from pyfcstm.simulate import SimulationRuntime
 
    with open('region_nested_active.fcstm') as stream:
        model = load_state_machine_from_text(stream.read())
@@ -377,7 +376,18 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
    for query in model.active_queries:
        print('.'.join(query.state_path), '->', query.variable_name)
 
-   runtime = SimulationRuntime(model)
+.. testoutput::
+
+   ['__hist_goto', '__hist_Job_Panel_On', '__active_Plant_Job_Line_Cell_Feed_Busy', '__forced_0']
+   Plant.Job.Line.Cell.Feed.Busy -> __active_Plant_Job_Line_Cell_Feed_Busy
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_nested_active.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
    runtime.cycle()
    print(runtime.cycle_count, runtime.configuration)
    for event in ['/Go', '/Trip', '/Stop', '/Resume']:
@@ -386,8 +396,6 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
 .. testoutput::
 
-   ['__hist_goto', '__hist_Job_Panel_On', '__active_Plant_Job_Line_Cell_Feed_Busy', '__forced_0']
-   Plant.Job.Line.Cell.Feed.Busy -> __active_Plant_Job_Line_Cell_Feed_Busy
    1 Plant.Job{Line: Cell{Feed: Idle, Check: Watch}, Panel: On.Quiet}
    2 /Go Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Quiet}
    3 /Trip Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
@@ -516,7 +524,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 .. testcode::
 
    from pyfcstm.model import load_state_machine_from_text
-   from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeEventError
+   from pyfcstm.simulate import SimulationRuntime
 
    with open('region_events.fcstm') as stream:
        runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
@@ -614,17 +622,17 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
 .. testcode::
 
+   import textwrap
+
    from pyfcstm.model import load_state_machine_from_text
    from pyfcstm.simulate import SimulationRuntime
 
    with open('region_owner_actions.fcstm') as stream:
        runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
-   seen = ''
    for event in [None, None, '/Fin']:
+       runtime.vars['seq'] = 0
        runtime.cycle(event)
-       total = str(runtime.vars['seq'])
-       print(runtime.configuration, ' '.join(total[i:i + 2] for i in range(len(seen), len(total), 2)))
-       seen = total
+       print(runtime.configuration, ' '.join(textwrap.wrap(str(runtime.vars['seq']), 2)))
 
 .. testoutput::
 
@@ -709,8 +717,8 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
      - error
      - 区域缺少初始转换。
 
-下面的脚本为上表的每个诊断码各加载一个用例，另加一个语法错误，用 ``load_state_machine_from_text`` 加载并打印它报告的内容。语法错误单独报告，并掩盖同一文本里的全部模型错误。每个块以用例名和加载的文本开头，
-以 ``->`` 开头的一行结束。把这些用例下载到一个空目录：:download:`region_bad_empty_region.fcstm.txt <region_bad_empty_region.fcstm.txt>`, :download:`region_bad_duplicate_region.fcstm.txt <region_bad_duplicate_region.fcstm.txt>`, :download:`region_bad_active_region.fcstm.txt <region_bad_active_region.fcstm.txt>`, :download:`region_bad_across_regions.fcstm.txt <region_bad_across_regions.fcstm.txt>`, :download:`region_bad_event_of_owner_by_bare_name.fcstm.txt <region_bad_event_of_owner_by_bare_name.fcstm.txt>`, :download:`region_bad_region_without_initial.fcstm.txt <region_bad_region_without_initial.fcstm.txt>`, :download:`region_bad_direct_nesting.fcstm.txt <region_bad_direct_nesting.fcstm.txt>`。
+下面的脚本加载上表的每个诊断码各一个用例，再加上上一节讲到的区域边界的几个用例，用 ``load_state_machine_from_text`` 加载并打印它报告的内容。
+语法错误单独报告，并掩盖同一文本里的全部模型错误。每个用例都是一段完整的模型文本，每个结果占一行：诊断码及其 ``reason`` 引用，或第一条语法错误。
 
 .. testcode::
 
@@ -718,72 +726,40 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
    from pyfcstm.model import load_state_machine_from_text
    from pyfcstm.utils.validate import ModelValidationError
 
-   for name in ['empty_region', 'duplicate_region', 'active_region', 'across_regions',
-                'event_of_owner_by_bare_name', 'region_without_initial', 'direct_nesting']:
-       with open('region_bad_%s.fcstm.txt' % name) as stream:
-           text = stream.read()
-       print('==', name)
-       print(text.rstrip())
+   outside = 'state Root { [*] -> Idle; state Idle; state Run { region A { state Leaf; [*] -> Leaf; } } %s }'
+   cases = {
+       'empty_region': 'state Root { region Empty { } }',
+       'duplicate_region': 'state Root { region A { state Leaf; [*] -> Leaf; } region A { state Leaf; [*] -> Leaf; } }',
+       'active_region': 'state Root { during before { if [active("Root.A")] { } } region A { state Leaf; [*] -> Leaf; } }',
+       'across_regions': 'state Root { region A { state L; [*] -> L; L -> M; } region B { state M; [*] -> M; } }',
+       'plain_name_from_outside': outside % 'Idle -> Leaf;',
+       'event_of_owner_by_bare_name': 'state Root { [*] -> Job; state Job { event Abort; region A { [*] -> L1; state L1; state L2; L1 -> L2 : Job.Abort; } } }',
+       'region_without_initial': 'state Root { region A { state Leaf; } }',
+       'region_inside_region': 'state Root { region A { region B { state Leaf; [*] -> Leaf; } } }',
+       'dotted_into_region': outside % 'Idle -> Run.A.Leaf;',
+       'dotted_out_of_region': outside % 'Run.A -> Idle;',
+   }
+   for name, text in cases.items():
        try:
            load_state_machine_from_text(text)
        except GrammarParseError as error:
-           print('-> GrammarParseError:', str(error).splitlines()[1])
+           print(name, '-> GrammarParseError:', error.errors[0])
        except ModelValidationError as error:
            for item in error.diagnostics:
-               print('->', item.code, item.refs.get('reason'))
+               print(name, '->', item.code, item.refs.get('reason'))
 
 .. testoutput::
 
-   == empty_region
-   state Root {
-       region Empty {
-       }
-   }
-   -> E_REGION_STRUCTURE empty_region
-   == duplicate_region
-   state Root {
-       region A { state Leaf; [*] -> Leaf; }
-       region A { state Leaf; [*] -> Leaf; }
-   }
-   -> E_DUPLICATE_REGION None
-   == active_region
-   state Root {
-       during before { if [active("Root.A")] { } }
-       region A { state Leaf; [*] -> Leaf; }
-   }
-   -> E_ACTIVE_QUERY_TARGET region
-   == across_regions
-   state Root {
-       region A { state L; [*] -> L; L -> M; }
-       region B { state M; [*] -> M; }
-   }
-   -> E_DANGLING_TRANSITION tgt_not_found
-   == event_of_owner_by_bare_name
-   state Root {
-       [*] -> Job;
-       state Job {
-           event Abort;
-           region A {
-               [*] -> L1;
-               state L1;
-               state L2;
-               L1 -> L2 : Job.Abort;
-           }
-       }
-   }
-   -> E_MISSING_STATE event_path_not_found
-   == region_without_initial
-   state Root {
-       region A { state Leaf; }
-   }
-   -> E_INITIAL_TRANSITION_INVALID missing_entry
-   == direct_nesting
-   state Root {
-       region A {
-           region B { state Leaf; [*] -> Leaf; }
-       }
-   }
-   -> GrammarParseError: Error 1: Syntax error at line 3, column 8, near 'region': Unexpected token 'region'
+   empty_region -> E_REGION_STRUCTURE empty_region
+   duplicate_region -> E_DUPLICATE_REGION None
+   active_region -> E_ACTIVE_QUERY_TARGET region
+   across_regions -> E_DANGLING_TRANSITION tgt_not_found
+   plain_name_from_outside -> E_DANGLING_TRANSITION tgt_not_found
+   event_of_owner_by_bare_name -> E_MISSING_STATE event_path_not_found
+   region_without_initial -> E_INITIAL_TRANSITION_INVALID missing_entry
+   region_inside_region -> GrammarParseError: Syntax error at line 1, column 24, near 'region': Unexpected token 'region'
+   dotted_into_region -> GrammarParseError: Syntax error at line 1, column 102, near 'A': Unexpected token 'A'
+   dotted_out_of_region -> GrammarParseError: Syntax error at line 1, column 93, near '.': Invalid syntax - check for missing semicolons, braces, or operators
 
 命令行打印同样的消息但不带诊断码：对无效模型运行 ``pyfcstm inspect -i`` 以状态 1 退出，输出一条以 ``Invalid state machine model in <file>:`` 开头、可能占多行的消息；
 加 ``--collect-errors`` 会报告全部模型错误而不是在第一个处停止。各诊断码在注册表里的条目见 :doc:`../diagnostics_codes/index_zh`。
@@ -2324,7 +2300,7 @@ DSL 覆盖矩阵
      - :doc:`/how_to/regions/index_zh`
      - :ref:`dsl-region-forms-zh`
      - :doc:`/explanations/region_semantics/index_zh`
-     - ``region_bad_*.fcstm.txt`` 加载报告
+     - 区域诊断脚本的输出
      - 已同步
    * - ``dsl-region-events``
      - 区域

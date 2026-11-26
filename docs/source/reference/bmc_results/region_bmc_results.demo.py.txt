@@ -198,7 +198,7 @@ BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
   Runtime error: modulo_by_zero at step 1
   Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
   Model role: RUNTIME ERROR PREFIX
-  Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+  Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer modulo by zero
 Trace
   1: Root.Run{R: A} -> RUNTIME ERROR modulo_by_zero
 json runtime_safety.status: violated
@@ -210,7 +210,7 @@ query:  check reach <= 2: active("Root.Run{R: A}");
 exit:   1
 stdout: (empty)
 stderr, first line: Unexpected error found when running pyfcstm!
-stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
 
 == BmcOptions.max_group_reentries from the Python API
 

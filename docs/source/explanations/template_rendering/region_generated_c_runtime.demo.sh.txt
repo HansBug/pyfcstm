@@ -1,8 +1,8 @@
 $ pyfcstm generate -i controller.fcstm --template c -o out
-machine.c
-machine.h
 README.md
 README_zh.md
+machine.c
+machine.h
 
 $ capacity macros chosen for this model
 #define CONTROLLER_MACHINE_ARENA_CAPACITY 108

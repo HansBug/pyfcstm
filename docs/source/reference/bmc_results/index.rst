@@ -1814,7 +1814,7 @@ dead-ends; the default run reports it:
      Runtime error: modulo_by_zero at step 1
      Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
      Model role: RUNTIME ERROR PREFIX
-     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer modulo by zero
    json runtime_safety.status: violated
 
 Known limit.  The core relation of such a model is satisfiable in the cycle
@@ -1832,7 +1832,9 @@ the simulator; the command then ends in the unexpected-error banner with exit
    exit:   1
    stdout: (empty)
    stderr, first line: Unexpected error found when running pyfcstm!
-   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
+
+The wording of the Python exception at the end follows the interpreter (Python 3.11 and later print ``integer modulo by zero``; earlier versions print ``integer division or modulo by zero``).
 
 Do not read ``exit 1`` there as a property verdict: no result was produced.
 The same two shapes exist in models without regions, where the runtime-safety

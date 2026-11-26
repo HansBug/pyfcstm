@@ -1536,7 +1536,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      Runtime error: modulo_by_zero at step 1
      Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
      Model role: RUNTIME ERROR PREFIX
-     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer modulo by zero
    json runtime_safety.status: violated
 
 已知限制。这类模型的核心关系在仿真器报错的那个周期里是可满足的：走到死路的路径上的求值错误，或者被更高优先级候选挡住的续接候选里的求值错误，不是关系的错误，而仿真器会求值并失败。报告这些情形的是运行时安全检查，所以请保持它开启。使用 ``--no-runtime-safety`` 时，同一个查询会找到见证，回放在仿真器里抛出异常；命令随后以意外错误横幅结束，退出状态 ``1``\ （摘录）：
@@ -1547,7 +1547,9 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
    exit:   1
    stdout: (empty)
    stderr, first line: Unexpected error found when running pyfcstm!
-   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer division or modulo by zero
+   stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
+
+末尾那条 Python 异常的措辞随解释器版本而变（Python 3.11 及以后输出 ``integer modulo by zero``\ ，更早的版本输出 ``integer division or modulo by zero``\ ）。
 
 不要把那里的退出状态 ``1`` 读成性质结论：没有产生任何结果。不含区域的模型也有同样的两种情形，运行时安全检查同样会报告它们。
 

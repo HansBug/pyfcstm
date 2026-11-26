@@ -1,7 +1,7 @@
 $ pyfcstm generate -i controller.fcstm --template python -o out
-machine.py
 README.md
 README_zh.md
+machine.py
 
 $ python drive.py out   (generated runtime, configuration after each cycle)
 Controller.Idle

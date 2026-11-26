@@ -43,9 +43,9 @@ BMC forbid <= 4: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
 Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
 
 $ pyfcstm generate -i controller.fcstm --template python -o out
-machine.py
 README.md
 README_zh.md
+machine.py
 
 $ pyfcstm generate -i controller.fcstm -t listed_template -o listed_out
 states: 7

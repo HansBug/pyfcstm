@@ -185,8 +185,7 @@ input vectors.
    :caption: size_and_equivalence.demo.py.txt
 
 The two counts are 6 and 9 leaf states and 6 and 27 transitions, which equals
-the formulas: :math:`2 \cdot 3 = 6`, :math:`3^2 = 9`, :math:`2 \cdot 3 \cdot 1 =
-6` and :math:`3^2 (2^2 - 1) = 27`.  The variables ``c0``, ``u0``, ``c1`` and
+the formulas: :math:`2 \cdot 3 = 6`, :math:`3^2 = 9`, :math:`2 \cdot 3 \cdot 1 = 6` and :math:`3^2 (2^2 - 1) = 27`.  The variables ``c0``, ``u0``, ``c1`` and
 ``u1`` agree after every one of the 200 cycles.  This shows agreement on one
 random sequence for one model; the full grid is in the next listing.
 

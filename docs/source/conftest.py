@@ -21,7 +21,10 @@ checkout.
 Models that several pages use live in ``docs/source/_models``. Their files are
 copied into the throwaway directory before the page's own files, so a page can
 run ``pyfcstm simulate -i controller.fcstm`` whether the model is in its own
-directory or in ``_models``. Commands find the ``pyfcstm`` of this checkout
+directory or in ``_models``. The throwaway directory also holds ``docs/source``, a
+link to the real one, so a page written for the repository root can read
+``docs/source/...`` paths as the reader of a checkout does; such a command must
+not write there. Commands find the ``pyfcstm`` of this checkout
 through ``docs/source/_shims``, so nothing has to be installed first.
 
 Run it with ``make docs_doctest``, or with ``pytest`` and the path of one page
@@ -186,8 +189,8 @@ def page_directory(request, tmp_path_factory):
     """
     Run all examples of one page inside a throwaway copy of its directory.
 
-    The copy holds the shared models of ``_models`` and then the files of the
-    page directory itself. While the page runs, the ``pyfcstm`` command and the
+    The copy holds the shared models of ``_models``, the files of the page
+    directory itself, and ``docs/source`` as a link to the real directory. While the page runs, the ``pyfcstm`` command and the
     ``pyfcstm`` package of this checkout are the ones that commands find.
 
     :param request: The pytest request; its path is the page being checked.
@@ -200,6 +203,8 @@ def page_directory(request, tmp_path_factory):
     work = tmp_path_factory.mktemp("page") / "work"
     shutil.copytree(str(_SOURCE / "_models"), str(work))
     shutil.copytree(str(request.path.parent), str(work), dirs_exist_ok=True)
+    (work / "docs").mkdir(exist_ok=True)
+    (work / "docs" / "source").symlink_to(_SOURCE, target_is_directory=True)
     patch = pytest.MonkeyPatch()
     patch.setenv("PATH", str(_SOURCE / "_shims") + os.pathsep + os.environ.get("PATH", ""))
     patch.setenv("PYTHONPATH", str(_SOURCE.parent.parent) + os.pathsep + os.environ.get("PYTHONPATH", ""))

@@ -1931,6 +1931,9 @@ a page: an example that needs one is not simple enough, so shorten the example i
   a failing command as if it had succeeded.
 - Use only what a reader can call from the public documentation: the `pyfcstm` command and the public Python API. Do
   not import a module that sits next to the page and do not reach into private names.
+- A page written for the repository root may read `docs/source/...` paths: the throwaway directory holds `docs/source`
+  as a link to the real directory. A command must not write there. A lone `...` at the end of an output must stand for
+  at least one line.
 - A model that several pages use lives in [docs/source/_models/](docs/source/_models/), is shown with
   `.. literalinclude:: /_models/name.fcstm`, and is copied into the throwaway directory next to the page's own files. A
   model that only one page uses stays in that page's directory. Add a model only when the page shows it or a command

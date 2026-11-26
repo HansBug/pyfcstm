@@ -1549,7 +1549,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
    stderr, first line: Unexpected error found when running pyfcstm!
    stderr, last line:  SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer modulo by zero
 
-末尾那条 Python 异常的措辞随解释器版本而变（措辞随解释器版本（含补丁版本）而变，``integer modulo by zero`` 与 ``integer division or modulo by zero`` 都会出现）。
+末尾那条 Python 异常的措辞随解释器版本（含补丁版本）而变：\ ``integer modulo by zero`` 与 ``integer division or modulo by zero`` 都会出现。
 
 不要把那里的退出状态 ``1`` 读成性质结论：没有产生任何结果。不含区域的模型也有同样的两种情形，运行时安全检查同样会报告它们。
 

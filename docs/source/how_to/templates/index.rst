@@ -362,3 +362,75 @@ A template-authoring change should report these records when they apply:
 * simulator-alignment command when parity is claimed;
 * a short statement that ``operation_stmt_render`` was not used for executable
   runtime bodies.
+
+Declare that a custom template supports regions
+-----------------------------------------------
+
+**Input.** A custom template directory and a model with regions
+(``region_controller.fcstm``, the interlock controller of
+:doc:`/tutorials/regions/index`).  A template is written for one execution
+model.  ``features: [region]`` in ``config.yaml`` states that the template
+renders models that declare regions.  Without the declaration, ``pyfcstm
+generate`` refuses such a model before it writes anything; a model without
+regions renders whatever the declaration says, so an existing template keeps
+its output.  ``region_listing_template/`` is a minimal template that
+declares the feature and lists every owner with its regions in writing order:
+
+.. literalinclude:: region_listing_template/config.yaml
+   :language: yaml
+   :caption: region_listing_template/config.yaml
+
+.. literalinclude:: region_listing_template/regions.txt.j2
+   :language: jinja
+   :caption: region_listing_template/regions.txt.j2
+
+**Command or code.**
+
+.. literalinclude:: region_declared.demo.sh
+   :language: bash
+
+.. literalinclude:: region_declared.demo.sh.txt
+   :language: text
+
+Without the declaration the same template is refused.  This is a negative
+example:
+
+.. literalinclude:: region_undeclared.demox.sh
+   :language: bash
+
+.. literalinclude:: region_undeclared.demox.sh.err
+   :language: text
+
+The exit code is 1 (``region_undeclared.demox.sh.exitcode``); the script
+shortens the paths in the message.
+
+**Expected signal.** With the declaration, the output lists the owner and its
+two regions in writing order, and ``StateMachineCodeRenderer.features`` is
+``['region']``.  Without it, the message names the number of regions and the
+first one, tells a template author what to declare and when, and lists the
+built-in templates that support regions.
+
+**What the template must satisfy once it declares ``region``.** The
+declaration is a promise, not a switch.  The template takes over the region
+semantics of its target language: an owner starts every region in writing
+order, regions advance one after another within a cycle and see the writes of
+the earlier ones, a region ends with ``-> [*]`` and then stays done, and the
+last completion continues the owner in the same cycle or is refused.  A
+template that claims this is expected to match
+:class:`pyfcstm.simulate.SimulationRuntime` on every shared region scenario;
+the built-in templates are the reference (see
+:doc:`/reference/builtin_templates/index`).  Render regions through
+``owner.regions`` and ``model.walk_regions()``, which keep writing order, and
+do not declare ``region`` for a template that only walks a single path.
+The listing template above is honest about this only because it does not
+generate behavior.
+
+**File side effect.** ``pyfcstm generate`` writes ``regions.txt`` into the
+output directory; the scripts use scratch directories and remove them.
+
+**First failure check.** If a template you changed is still refused, read
+``StateMachineCodeRenderer(path).features``: an unknown or duplicated member of
+``features`` fails when the renderer is constructed, and a template without the
+key has an empty set.
+
+**Reference link.** :doc:`/reference/template_config/index`.

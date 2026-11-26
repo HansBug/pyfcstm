@@ -333,3 +333,50 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 * 运行时冒烟命令和观测输出片段；
 * 声称语义等价时的模拟器对齐命令；
 * 简短说明 ``operation_stmt_render`` 没有用于可执行运行时代码体。
+
+声明自定义模板支持区域
+----------------------
+
+**起点。** 一个自定义模板目录和一个含区域（region）的模型（``region_controller.fcstm``，即 :doc:`/tutorials/regions/index_zh` 里的联锁控制器）。模板是为某一种执行模型写的。
+``config.yaml`` 里的 ``features: [region]`` 声明该模板能渲染含区域的模型。没有这个声明，``pyfcstm generate`` 在写任何文件之前就拒绝这样的模型；
+不含区域的模型无论声明如何都能渲染，所以现有模板的输出保持不变。``region_listing_template/`` 是一个最小模板，它声明了这个特性，并按书写顺序列出每个拥有者及其区域：
+
+.. literalinclude:: region_listing_template/config.yaml
+   :language: yaml
+   :caption: region_listing_template/config.yaml
+
+.. literalinclude:: region_listing_template/regions.txt.j2
+   :language: jinja
+   :caption: region_listing_template/regions.txt.j2
+
+**命令或代码。**
+
+.. literalinclude:: region_declared.demo.sh
+   :language: bash
+
+.. literalinclude:: region_declared.demo.sh.txt
+   :language: text
+
+没有这个声明时，同一个模板会被拒绝。这是负例：
+
+.. literalinclude:: region_undeclared.demox.sh
+   :language: bash
+
+.. literalinclude:: region_undeclared.demox.sh.err
+   :language: text
+
+退出码是 1（``region_undeclared.demox.sh.exitcode``）；脚本缩短了消息里的路径。
+
+**预期信号。** 有声明时，输出按书写顺序列出拥有者和它的两个区域，``StateMachineCodeRenderer.features`` 是 ``['region']``。没有声明时，消息指出区域的个数和第一个区域，
+告诉模板作者该声明什么、何时声明，并列出支持区域的内置模板。
+
+**声明 ``region`` 之后，模板自己要满足什么。** 这个声明是一个承诺，不是开关。模板要接管目标语言里区域的全部语义：拥有者按书写顺序启动每个区域，
+区域在一个周期内依次推进并能看到靠前区域的写入，区域以 ``-> [*]`` 结束后保持已完成，最后一个完成要么在同一周期里让拥有者续接，要么被拒绝。
+声明了这些的模板应当在每个共享的区域场景上与 :class:`pyfcstm.simulate.SimulationRuntime` 一致；内置模板就是参照（见 :doc:`/reference/builtin_templates/index_zh`）。
+通过 ``owner.regions`` 与 ``model.walk_regions()`` 渲染区域，它们保持书写顺序；只沿单一路径遍历的模板不要声明 ``region``。上面的列表模板之所以可以声明，只是因为它不生成任何行为。
+
+**文件副作用。** ``pyfcstm generate`` 把 ``regions.txt`` 写入输出目录；脚本使用临时目录并在结束后删除。
+
+**失败时先查什么。** 改过的模板仍被拒绝时，读 ``StateMachineCodeRenderer(path).features``：``features`` 里出现未知成员或重复成员，会在构造渲染器时失败；没有这个键的模板集合为空。
+
+**参考链接。** :doc:`/reference/template_config/index_zh`。

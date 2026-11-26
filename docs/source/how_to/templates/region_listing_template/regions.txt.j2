@@ -1,0 +1,6 @@
+{% for owner in model.walk_states() if owner.regions -%}
+owner {{ owner.path | join('.') }}
+{% for region in owner.regions.values() -%}
+{{ '  ' }}region {{ loop.index }}: {{ region.name }} ({{ region.substates | length }} states)
+{% endfor -%}
+{% endfor -%}

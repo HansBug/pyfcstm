@@ -1,0 +1,2 @@
+init state("Controller.Idle");
+check invariant <= 8: motor == 0 || permit != 0;

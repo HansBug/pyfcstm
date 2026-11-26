@@ -1,0 +1,7 @@
+cycle simulator                                                                      generated Python                                                               same
+1     Controller.Idle {'permit': 0, 'motor': 0}                                      Controller.Idle {'permit': 0, 'motor': 0}                                      True
+2     Controller.Running{Motion: Off, Safety: Watching} {'permit': 1, 'motor': 0}    Controller.Running{Motion: Off, Safety: Watching} {'permit': 1, 'motor': 0}    True
+3     Controller.Running{Motion: On, Safety: Watching} {'permit': 1, 'motor': 1}     Controller.Running{Motion: On, Safety: Watching} {'permit': 1, 'motor': 1}     True
+4     Controller.Running{Motion: On, Safety: Watching} {'permit': 0, 'motor': 1}     Controller.Running{Motion: On, Safety: Watching} {'permit': 0, 'motor': 1}     True
+5     Controller.Running{Motion: Off, Safety: Watching} {'permit': 0, 'motor': 0}    Controller.Running{Motion: Off, Safety: Watching} {'permit': 0, 'motor': 0}    True
+6     Controller.Running{Motion: Off, Safety: Watching} {'permit': 1, 'motor': 0}    Controller.Running{Motion: Off, Safety: Watching} {'permit': 1, 'motor': 0}    True

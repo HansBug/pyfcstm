@@ -1,0 +1,31 @@
+input int d;
+state Root {
+    [*] -> Run;
+    state Run {
+        region R0 {
+            [*] -> P0;
+            state P0;
+            state P1;
+            state P2;
+            P0 -> P1 : if [d == 0];
+            P0 -> P0 : if [d == 1];
+            P1 -> P2 : if [d == 0];
+            P1 -> P0 : if [d == 1];
+            P2 -> P1 : if [d == 1];
+        }
+        region R1 {
+            [*] -> P0;
+            state P0;
+            state P1;
+            state P2;
+            P0 -> P1 : if [d == 0];
+            P0 -> P0 : if [d == 1];
+            P1 -> P2 : if [d == 0];
+            P1 -> P1 : if [d == 1];
+            P2 -> P1 : if [d == 1];
+        }
+    }
+}
+
+// query
+check reach <= 2: active("Root.Run{R0: P2, R1: P2}");

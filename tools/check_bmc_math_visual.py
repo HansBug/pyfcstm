@@ -22,6 +22,7 @@ _PAGE_DIRECTORIES = (
     "explanations/bmc_properties",
     "explanations/bmc_solving",
     "explanations/bmc_regions",
+    "explanations/bmc_scaling",
 )
 _VIEWPORTS = {
     "desktop": {"width": 1440, "height": 1000},
@@ -77,16 +78,20 @@ def _expected_anchor_count() -> int:
         raise VisualCheckFailure(
             "cannot read the equation label list from %s: %s" % (source.name, err)
         )
+    counts = {}
     for node in module.body:
         if not isinstance(node, ast.Assign):
             continue
-        if not any(
-            isinstance(target, ast.Name) and target.id == "_EQUATION_LABELS"
-            for target in node.targets
-        ):
-            continue
-        if isinstance(node.value, ast.Tuple):
-            return len(node.value.elts)
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Name)
+                and target.id in ("_EQUATION_LABELS", "_SCALING_EQUATION_LABELS")
+                and isinstance(node.value, ast.Tuple)
+            ):
+                counts[target.id] = len(node.value.elts)
+    # The scaling page's labels are a second frozen tuple in the same file.
+    if len(counts) == 2:
+        return sum(counts.values())
     raise VisualCheckFailure(
         "%s no longer defines _EQUATION_LABELS as a tuple literal." % source.name
     )

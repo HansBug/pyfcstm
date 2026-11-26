@@ -135,6 +135,23 @@ def _require_directory(path: Path, label: str) -> Path:
 
 
 def _check_page(page, url: str) -> Dict[str, object]:
+    """Load one rendered page and measure its displayed equations in the browser.
+
+    Waits for MathJax to produce display containers, then reports how many
+    exist, the ids of the equation anchors (``equation-bmc-*`` for the BMC
+    ledger, which includes the scaling page, and ``equation-eq-region-*`` for
+    the region encoding page), the nodes the reST build marked ``problematic``,
+    equations that are blank or leave the viewport, and whether the page as a
+    whole scrolls sideways.
+
+    :param page: The browser page to drive.
+    :type page: playwright.sync_api.Page
+    :param url: ``file://`` URL of the rendered HTML page.
+    :type url: str
+    :return: A mapping with ``equation_count``, ``equation_anchors``,
+        ``problematic``, ``invalid`` and ``document_overflow``.
+    :rtype: Dict[str, object]
+    """
     page.goto(url, wait_until="networkidle")
     page.wait_for_selector("mjx-container[display='true']", state="attached")
     page.wait_for_function(

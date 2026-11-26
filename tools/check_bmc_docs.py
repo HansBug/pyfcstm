@@ -623,6 +623,18 @@ def _check_equations(errors: List[str]) -> None:
 
 
 def _check_pages(errors: List[str]) -> None:
+    """Check that every BMC page pair is reachable and owns no sibling pages.
+
+    Each English page and its Chinese counterpart must exist, must not hold a
+    ``toctree`` of its own, and must be listed directly by the matching root
+    index. The tutorial, how-to, explanation and reference roadmaps must link
+    to the BMC pages they route to.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
     source = _REPO_ROOT / "docs/source"
     root_en = _read(source / "index_en.rst")
     root_zh = _read(source / "index_zh.rst")
@@ -1758,7 +1770,22 @@ def _check_page_resources(errors: List[str]) -> None:
 
 
 def check() -> None:
-    """Run every deterministic BMC documentation contract check."""
+    """Run every deterministic BMC documentation contract check.
+
+    The checks cover the equation ledger, the page pairs and their navigation,
+    the localized diagrams, the committed resources of the pages that carry
+    them, the result schema, and the vocabulary and counts the prose states.
+    Problems are collected before anything is raised, so one run lists them all.
+
+    :return: ``None``.
+    :rtype: None
+    :raises CheckFailure: If any contract check reports a problem.
+
+    Example::
+
+        $ python tools/check_bmc_docs.py --check
+        BMC documentation structure, diagrams, and equation ledger are up to date.
+    """
     errors: List[str] = []
     _check_equations(errors)
     _check_equation_references(errors)

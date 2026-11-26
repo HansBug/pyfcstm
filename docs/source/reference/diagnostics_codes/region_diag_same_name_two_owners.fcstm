@@ -1,0 +1,10 @@
+state Root {
+    state P {
+        region A { state Idle; [*] -> Idle; }
+        region B { state Idle; [*] -> Idle; }
+    }
+    state Q {
+        region A { state Idle; [*] -> Idle; }
+    }
+    [*] -> P;
+}

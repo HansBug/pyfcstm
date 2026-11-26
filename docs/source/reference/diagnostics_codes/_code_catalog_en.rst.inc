@@ -503,19 +503,29 @@ The chosen consumer cannot preserve a region model. Every consumer in the Python
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
 
-Construct this source with load_state_machine_from_text, then pass it to SimulationRuntime: construction succeeds, while the consumer raises ModelValidationError.
+A custom template directory whose ``config.yaml`` has no ``features`` key is refused for a model with regions. The demo prints the template config, the refusal on stderr with its exit status, whether the output directory was created, and the same model generated with the built-in ``python`` template. The paths in the message are shortened to relative form in the recorded output.
 
-.. code-block:: fcstm
+.. literalinclude:: region_two_regions.fcstm
+   :language: fcstm
+   :caption: region_two_regions.fcstm
 
-   state Root { region Motor { state Idle; [*] -> Idle; } }
+.. literalinclude:: region_unsupported.demo.sh
+   :language: bash
+   :caption: region_unsupported.demo.sh
+
+.. literalinclude:: region_unsupported.demo.sh.txt
+   :language: text
+   :caption: region_unsupported.demo.sh.txt
+
+Read the refusal in this order: the first line names the template directory; the second line states how many regions the model declares and where the first one is; ``If you write this template`` says what to declare; ``If you write the model`` lists the built-in templates that declare ``region`` and gives a command that can be copied. No file is written, and an existing output directory is not cleared.
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 2 boundary_only
 
-Inspect Configuration values or model namespaces through supported model APIs. To execute a model now, use syntax supported by that backend; do not silently flatten concurrent regions.
+Declare ``features: [region]`` in the ``config.yaml`` of a custom template only once the template renders regions. A template written for a single active path would generate wrong code for a model with regions, which is why the declaration is opt-in and the default is "not supported". The five built-in templates ``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` all declare it. See :doc:`/reference/template_config/index` for the key.
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
 
-Generation refuses the model before clearing or replacing existing output. An ordinary model without regions is unaffected.
+Generation refuses the model before clearing or replacing existing output, so a failed run leaves the previous output intact (the demo above shows that the output directory is not created). An ordinary model without regions is unaffected by the missing declaration.
 
 .. _diag-code-e-active-query-target:
 
@@ -553,19 +563,68 @@ An active query must resolve to a non-pseudo State in the same model. Region tar
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 1 cli_error
 
-Loading this source raises ModelValidationError with reason not_found. The expression span identifies the query.
+A path that names no child is rejected with reason ``not_found``. The expression span identifies the query itself.
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_active_not_found.fcstm
+   :language: fcstm
+   :caption: region_diag_active_not_found.fcstm (negative example, do not copy)
 
-   state Root { during { if [active("Root.Unknown")] {} } }
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :start-at: --- region_diag_active_not_found.fcstm
+
+``span`` ``[2, 28, 2, 50]`` is the ``active("Root.Unknown")`` call on line 2, and ``refs.state_path`` is the path as written after import rebasing.
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
 
-Replace Root.Unknown with Root to query the existing root. A root-relative path starts with / and excludes the root name.
+The five reasons, with the CLI result of each (the same demo output as above):
+
+.. list-table:: ``refs.reason`` values of ``E_ACTIVE_QUERY_TARGET``
+   :header-rows: 1
+   :widths: 18 34 48
+
+   * - ``reason``
+     - Cause
+     - Model file and repair
+   * - ``not_found``
+     - A path segment names no child.
+     - ``region_diag_active_not_found.fcstm``: ``Root.Unknown``. Query an existing state, for example ``Root`` or ``Root.A``.
+   * - ``invalid_path``
+     - A segment is not an identifier, or the first segment is not the root state's name.
+     - ``region_diag_active_invalid_path.fcstm``: ``Other.A`` while the root is ``Root``. A root-relative path starts with ``/`` and omits the root name: ``active("/B")`` in ``region_diag_active_ok.fcstm`` is accepted.
+   * - ``region``
+     - The path names a region.
+     - ``region_diag_active_region.fcstm``: ``Root.P.R``. Query a state inside the region, for example ``Root.P.R.X``.
+   * - ``pseudo``
+     - The path names a pseudo state.
+     - ``region_diag_active_pseudo.fcstm``: ``Root.G``. A pseudo state is never a stable activity flag.
+   * - ``initializer``
+     - The query sits in a persistent variable initializer.
+     - Not reachable from text; see the next example.
+
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_ACTIVE_QUERY_TARGET ===
+   :end-before: === active() in a persistent
+
+Every rejection exits with status 1 and prints no report.
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
 
-Do not turn a Region into a query target or use a pseudo state as a stable activity flag. Persistent initialization has no active configuration to query.
+A persistent initializer has no active configuration to query, so ``initializer`` is rejected at model construction. In text the grammar already refuses ``active(...)`` there, so the user sees a syntax error rather than this code; the code is reachable only through the public AST classes.
+
+.. literalinclude:: region_diag_active_initializer.fcstm
+   :language: fcstm
+   :caption: region_diag_active_initializer.fcstm (negative example, do not copy)
+
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === active() in a persistent initializer is a syntax error ===
+
+Do not turn a region into a query target either; query a state inside it.
 
 .. _diag-code-e-region-structure:
 
@@ -603,19 +662,62 @@ A region is empty, a state mixes direct states and regions, a parallel owner con
 
 .. diagnostics-example E_REGION_STRUCTURE 1 cli_error
 
-Loading this source fails with reason empty_region. The region must own child states and an initial transition.
+A region without any state is rejected with reason ``empty_region``. The demo runs the CLI on the broken model, on the repaired one, and on the other cases of this code. Then a Python demo prints the structured diagnostic that model construction collects (a span is ``[line, column, end_line, end_column]``).
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_empty_region.fcstm
+   :language: fcstm
+   :caption: region_diag_empty_region.fcstm (negative example, do not copy)
 
-   state Root { region Empty {} }
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_REGION_STRUCTURE ===
+   :end-before: === E_DUPLICATE_REGION ===
+
+.. literalinclude:: region_codes_refs.demo.py
+   :language: python
+   :caption: region_codes_refs.demo.py
+
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :end-before: --- region_diag_duplicate.fcstm
+
+The CLI prints one line, the message with the line number of the offending construct, and exits with status 1 without a report. The structured form carries ``namespace_path`` (the full path of the invalid namespace), ``reason`` and ``source_path``.
 
 .. diagnostics-example E_REGION_STRUCTURE 2 boundary_only
 
-A valid replacement is region Empty { state Idle; [*] -> Idle; }. One direct region is allowed and does not itself produce a warning.
+The four reasons, in the priority order in which they are checked on each node (a node reports at most one reason, and the check always continues into every child):
+
+.. list-table:: ``refs.reason`` values of ``E_REGION_STRUCTURE``
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - ``reason``
+     - Cause
+     - How to reach it
+   * - ``empty_region``
+     - A region declares no state.
+     - ``region Empty {}`` in text; the first example above.
+   * - ``mixed_children``
+     - A state has both direct child states and regions.
+     - Not expressible in text: ``region_diag_mixed_children.fcstm`` fails in the parser, as the demo output shows. Reachable only by building the AST with the public node classes.
+   * - ``owner_statements``
+     - A state that owns regions also has its own transitions, forced transitions, imports or histories.
+     - Not expressible in text: ``region_diag_owner_transition.fcstm`` fails in the parser. Reachable only through the public AST classes.
+   * - ``history_boundary``
+     - A state with a history entry has a region anywhere in its subtree.
+     - ``region_diag_history_boundary.fcstm`` in the demo output: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
+
+A valid replacement of the first example is a region with a state and an initial transition (``region_diag_empty_region_fixed.fcstm``, accepted in the demo). One direct region is allowed and does not produce a warning.
 
 .. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
 
-Move local transitions inside regions and imports inside ordinary child states. A region cannot directly contain an import. History inside an ordinary subtree is permitted; a history owner containing parallel descendants is not.
+History inside an ordinary subtree is permitted, and so are regions elsewhere in the machine: ``region_diag_history_outside.fcstm`` puts ``[H]`` on ``Root.P`` and the regions under the sibling ``Root.Q``, and the demo output shows it accepted with two regions. A history owner whose subtree contains regions is the only forbidden combination. A region cannot directly contain an import, and a transition declared on the owner is not allowed; move local transitions inside the regions and imports inside ordinary child states.
+
+.. literalinclude:: region_diag_history_outside.fcstm
+   :language: fcstm
+   :caption: region_diag_history_outside.fcstm
 
 .. _diag-code-e-duplicate-region:
 
@@ -658,19 +760,37 @@ Two direct regions within the same state have the same name, so their namespace 
 
 .. diagnostics-example E_DUPLICATE_REGION 1 cli_error
 
-Loading this source raises ModelValidationError. The primary span points to the repeated declaration; previous_span points to the first when available.
+Two direct regions of one owner with the same name are rejected. The CLI line carries the line of the repeated declaration; the structured diagnostic adds ``previous_span`` for the first declaration.
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_duplicate.fcstm
+   :language: fcstm
+   :caption: region_diag_duplicate.fcstm (negative example, do not copy)
 
-   state Root { region A { state Idle; [*] -> Idle; } region A { state Idle; [*] -> Idle; } }
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_DUPLICATE_REGION ===
+   :end-before: === E_ACTIVE_QUERY_TARGET ===
+
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :start-at: --- region_diag_duplicate.fcstm
+   :end-before: --- region_diag_active_not_found.fcstm
+
+Read ``span`` ``[3, 5, 3, 42]`` as the second ``region A`` on line 3 and ``previous_span`` ``[2, 5, 2, 42]`` as the first on line 2.
 
 .. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
 
-Rename the second region to B and update paths referring to that region. Child states may share names when their region namespaces differ.
+Rename the second region (for example to ``B``) and update every path that names it; a path such as ``Root.A.Busy`` and an event path through the region follow the region name.
 
 .. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
 
-The same region name under different owner states is valid. Validation must not impose global uniqueness on region identifiers.
+Uniqueness is per owner, not global. ``region_diag_same_name_two_owners.fcstm`` declares ``A`` under both ``Root.P`` and ``Root.Q``, and the child state ``Idle`` in both ``Root.P.A`` and ``Root.P.B``; the demo output above shows it accepted with three regions.
+
+.. literalinclude:: region_diag_same_name_two_owners.fcstm
+   :language: fcstm
+   :caption: region_diag_same_name_two_owners.fcstm
 
 .. _diag-code-e-undefined-var:
 
@@ -1973,7 +2093,17 @@ This diagnostic appears in a successful inspect report. Reproduce it with ``pyfc
 .. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
-A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration.
+A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration. With ``owner_never_completes`` the repair is on the regions, not the transition: give every region of the owner a ``[*]`` exit, or leave the owner with a forced transition. In the output below, ``Monitor`` has no exit, so ``Job -> Next`` is reported and ``Root.Next`` is unreachable; ``region_owner_completes.fcstm`` fixes it.
+
+.. literalinclude:: /reference/inspect_report/region_owner_never_completes.fcstm
+   :language: fcstm
+   :caption: region_owner_never_completes.fcstm (in the inspect report reference directory)
+
+.. literalinclude:: /reference/inspect_report/region_reachability.demo.sh.txt
+   :language: text
+   :caption: region_reachability.demo.sh.txt
+   :start-after: === owner of regions ===
+   :end-before: === plain composite state, no regions ===
 
 .. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
 
@@ -6663,6 +6793,8 @@ This diagnostic appears in a successful inspect report. Reproduce it with ``pyfc
        }
    }
 
+Real inspect output for this model and for its variants that report or stay quiet is in :ref:`inspect-report-region-order`.
+
 .. diagnostics-example I_REGION_BACKWARD_READ 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``I_REGION_BACKWARD_READ``.
@@ -6742,6 +6874,8 @@ This diagnostic appears in a successful inspect report. Reproduce it with ``pyfc
            [*] -> B;
        }
    }
+
+Real inspect output for this model and for its variants that report or stay quiet is in :ref:`inspect-report-region-order`.
 
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 2 boundary_only
 

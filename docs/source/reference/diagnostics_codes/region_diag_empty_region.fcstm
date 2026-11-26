@@ -1,0 +1,3 @@
+state Root {
+    region Empty {}
+}

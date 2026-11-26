@@ -502,19 +502,29 @@ E_UNSUPPORTED_FEATURE
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
 
-下列源可以通过 load_state_machine_from_text 构建，但交给 SimulationRuntime 会抛出 ModelValidationError。CLI 对应入口非零退出，不产生成功报告。
+自定义模板目录的 ``config.yaml`` 没有 ``features`` 键时，含区域的模型会被拒绝。演示脚本依次输出模板配置、stderr 上的拒绝信息及其退出状态、输出目录是否被创建，以及同一个模型用内置 ``python`` 模板生成的结果。记录下来的输出里，信息中的路径已缩短为相对形式。
 
-.. code-block:: fcstm
+.. literalinclude:: region_two_regions.fcstm
+   :language: fcstm
+   :caption: region_two_regions.fcstm
 
-   state Root { region Motor { state Idle; [*] -> Idle; } }
+.. literalinclude:: region_unsupported.demo.sh
+   :language: bash
+   :caption: region_unsupported.demo.sh
+
+.. literalinclude:: region_unsupported.demo.sh.txt
+   :language: text
+   :caption: region_unsupported.demo.sh.txt
+
+拒绝信息按这个顺序读：第一行点名模板目录；第二行说明模型声明了几个区域、第一个在哪里；\ ``If you write this template`` 一段说明模板作者该声明什么；\ ``If you write the model`` 一段列出声明了 ``region`` 的内置模板，并给出一条可以复制的命令。没有任何文件被写出，已有的输出目录也不会被清空。
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 2 boundary_only
 
-可以通过模型 API 查看命名空间和 Configuration；需要立即执行时，使用后端已支持的语言子集。不能默默把多个活动 region 压成单分支。
+只有当自定义模板确实能渲染区域时，才在它的 ``config.yaml`` 里声明 ``features: [region]``\ 。按单一活动路径写的模板会为含区域的模型生成错误的代码，所以这个声明是主动选择，缺省为“不支持”。五套内置模板 ``python``、\ ``c``、\ ``c_poll``、\ ``cpp`` 和 ``cpp_poll`` 都已声明。该键的说明见 :doc:`/reference/template_config/index_zh`\ 。
 
 .. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
 
-生成器在清空或替换已有输出之前拒绝模型；普通、不含 region 的模型不受影响。
+生成命令在清空或替换已有输出之前就拒绝模型，所以失败的运行不会破坏之前的输出（上面的演示显示输出目录没有被创建）。不含区域的普通模型不受缺少这个声明的影响。
 
 .. _diag-code-e-active-query-target-zh:
 
@@ -551,19 +561,68 @@ E_ACTIVE_QUERY_TARGET
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 1 cli_error
 
-加载下列源抛出 ModelValidationError，reason 为 not_found；主位置指向查询表达式。
+路径指向不存在的子节点时，以原因 ``not_found`` 被拒绝。表达式的 span 指向这次查询本身。
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_active_not_found.fcstm
+   :language: fcstm
+   :caption: region_diag_active_not_found.fcstm（负例，请勿复制）
 
-   state Root { during { if [active("Root.Unknown")] {} } }
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :start-at: --- region_diag_active_not_found.fcstm
+
+``span`` 为 ``[2, 28, 2, 50]``\ ，即第 2 行的 ``active("Root.Unknown")`` 调用；\ ``refs.state_path`` 是导入改写之后、按书写形式给出的路径。
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
 
-把 Root.Unknown 改为 Root 即可查询实际存在的根。以 / 开始的根相对路径不重复写根名称。
+五种原因，以及各自的命令行结果（与上面是同一份演示输出）：
+
+.. list-table:: ``E_ACTIVE_QUERY_TARGET`` 的 ``refs.reason`` 取值
+   :header-rows: 1
+   :widths: 18 34 48
+
+   * - ``reason``
+     - 成因
+     - 模型文件与修复
+   * - ``not_found``
+     - 某一段路径不是任何子节点的名字。
+     - ``region_diag_active_not_found.fcstm``\ ：\ ``Root.Unknown``\ 。改查一个存在的状态，例如 ``Root`` 或 ``Root.A``\ 。
+   * - ``invalid_path``
+     - 某一段不是标识符，或者第一段不是根状态的名字。
+     - ``region_diag_active_invalid_path.fcstm``\ ：根是 ``Root`` 却写了 ``Other.A``\ 。相对根的路径以 ``/`` 开头并省略根名：\ ``region_diag_active_ok.fcstm`` 里的 ``active("/B")`` 被接受。
+   * - ``region``
+     - 路径指向一个区域。
+     - ``region_diag_active_region.fcstm``\ ：\ ``Root.P.R``\ 。改查区域里的状态，例如 ``Root.P.R.X``\ 。
+   * - ``pseudo``
+     - 路径指向一个伪状态。
+     - ``region_diag_active_pseudo.fcstm``\ ：\ ``Root.G``\ 。伪状态不能作为稳定的活动标志。
+   * - ``initializer``
+     - 查询出现在持久变量的初始化表达式里。
+     - 文本里无法触发，见下一个示例。
+
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_ACTIVE_QUERY_TARGET ===
+   :end-before: === active() in a persistent
+
+每次拒绝的退出状态都是 1，不输出报告。
 
 .. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
 
-不要把 Region 或 pseudo 当作稳定活动状态；持久变量初始化时不存在可以查询的活动配置。
+持久变量的初始化表达式没有活动配置可查，所以 ``initializer`` 在模型构建时被拒绝。文本里语法本身就不接受这里的 ``active(...)``\ ，用户看到的是语法错误而不是这个诊断码；只有通过公开的语法树类才能触发它。
+
+.. literalinclude:: region_diag_active_initializer.fcstm
+   :language: fcstm
+   :caption: region_diag_active_initializer.fcstm（负例，请勿复制）
+
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === active() in a persistent initializer is a syntax error ===
+
+也不要把区域当作查询目标；查区域里的状态。
 
 .. _diag-code-e-region-structure-zh:
 
@@ -600,19 +659,62 @@ region 为空、混合直接 state/region 子级、owner 包含非法直接声�
 
 .. diagnostics-example E_REGION_STRUCTURE 1 cli_error
 
-下列空 region 产生 empty_region。每个 region 必须拥有子 state 和合法初始转换。
+没有任何状态的区域会以原因 ``empty_region`` 被拒绝。演示脚本先对出错的模型、修复后的模型以及该诊断码的其他情形运行命令行，再用 Python 演示输出模型构建收集到的结构化诊断（span 写作 ``[line, column, end_line, end_column]``\ ）。
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_empty_region.fcstm
+   :language: fcstm
+   :caption: region_diag_empty_region.fcstm（负例，请勿复制）
 
-   state Root { region Empty {} }
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_REGION_STRUCTURE ===
+   :end-before: === E_DUPLICATE_REGION ===
+
+.. literalinclude:: region_codes_refs.demo.py
+   :language: python
+   :caption: region_codes_refs.demo.py
+
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :end-before: --- region_diag_duplicate.fcstm
+
+命令行输出一行信息，带有出问题的构造所在的行号，退出状态为 1，不产生报告。结构化形式带有 ``namespace_path``\ （无效命名空间的完整路径）、\ ``reason`` 和 ``source_path``\ 。
 
 .. diagnostics-example E_REGION_STRUCTURE 2 boundary_only
 
-可改为 region Empty { state Idle; [*] -> Idle; }。只有一个直接 region 合法，本身不产生警告。
+四种原因，按每个节点上检查的优先级排列（一个节点至多报告一种原因，检查总会继续深入每个子节点）：
+
+.. list-table:: ``E_REGION_STRUCTURE`` 的 ``refs.reason`` 取值
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - ``reason``
+     - 成因
+     - 怎样触发
+   * - ``empty_region``
+     - 区域里没有声明任何状态。
+     - 文本里写 ``region Empty {}``\ ；即上面的第一个示例。
+   * - ``mixed_children``
+     - 一个状态既有直接子状态，又有区域。
+     - 文本里写不出来：\ ``region_diag_mixed_children.fcstm`` 在解析阶段就失败，演示输出可证。只能用公开的节点类构造语法树才能触发。
+   * - ``owner_statements``
+     - 拥有区域的状态自己还带有转换、强制转换、导入或历史。
+     - 文本里写不出来：\ ``region_diag_owner_transition.fcstm`` 在解析阶段失败。只能通过公开的语法树类触发。
+   * - ``history_boundary``
+     - 带历史入口的状态，其子树里任何位置有区域。
+     - 演示输出里的 ``region_diag_history_boundary.fcstm``\ ：\ ``Root.P`` 上有 ``[H]``\ ，而 ``Root.P.B`` 拥有区域。
+
+第一个示例的合法替代写法，是给区域写上状态和初始转换（\ ``region_diag_empty_region_fixed.fcstm``\ ，演示里被接受）。只有一个直接区域是允许的，也不会产生警告。
 
 .. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
 
-局部转换应放在 region 内，导入应放在普通子 state 内；region 不能直接包含导入。普通子树内仍允许 history；包含并行后代的 history owner 不受支持。
+普通子树里可以用历史，机器的其他位置也可以有区域：\ ``region_diag_history_outside.fcstm`` 把 ``[H]`` 放在 ``Root.P`` 上，区域放在同级的 ``Root.Q`` 下，演示输出显示它被接受，含两个区域。只有“历史拥有者的子树里含区域”这一种组合被禁止。区域不能直接包含导入，拥有者上也不能声明转换；把局部转换写进区域内部，把导入写进普通子状态里。
+
+.. literalinclude:: region_diag_history_outside.fcstm
+   :language: fcstm
+   :caption: region_diag_history_outside.fcstm
 
 .. _diag-code-e-duplicate-region-zh:
 
@@ -654,19 +756,37 @@ E_DUPLICATE_REGION
 
 .. diagnostics-example E_DUPLICATE_REGION 1 cli_error
 
-下列源产生 E_DUPLICATE_REGION。主位置指向重复声明；previous_span 在已知时指向第一次声明。
+同一个拥有者的两个直接区域重名会被拒绝。命令行信息带有重复声明所在的行号；结构化诊断还多一个 ``previous_span``\ ，指向第一次声明。
 
-.. code-block:: fcstm
+.. literalinclude:: region_diag_duplicate.fcstm
+   :language: fcstm
+   :caption: region_diag_duplicate.fcstm（负例，请勿复制）
 
-   state Root { region A { state Idle; [*] -> Idle; } region A { state Idle; [*] -> Idle; } }
+.. literalinclude:: region_codes.demo.sh.txt
+   :language: text
+   :caption: region_codes.demo.sh.txt
+   :start-after: === E_DUPLICATE_REGION ===
+   :end-before: === E_ACTIVE_QUERY_TARGET ===
+
+.. literalinclude:: region_codes_refs.demo.py.txt
+   :language: text
+   :caption: region_codes_refs.demo.py.txt
+   :start-at: --- region_diag_duplicate.fcstm
+   :end-before: --- region_diag_active_not_found.fcstm
+
+``span`` 为 ``[3, 5, 3, 42]``\ ，表示第 3 行的第二个 ``region A``\ ；\ ``previous_span`` 为 ``[2, 5, 2, 42]``\ ，表示第 2 行的第一个。
 
 .. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
 
-把第二个 region 改为 B，并更新对应引用路径。不同 region 中的子 state 可以同名。
+给第二个区域改名（例如改成 ``B``\ ），并更新所有指向它的路径；\ ``Root.A.Busy`` 这样的状态路径和经过区域的事件路径都跟着区域名走。
 
 .. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
 
-不同 owner state 下允许相同 region 名称；唯一性限制不能扩大到整个模型。
+唯一性按拥有者计算，不是全局的。\ ``region_diag_same_name_two_owners.fcstm`` 在 ``Root.P`` 和 ``Root.Q`` 下都声明了 ``A``\ ，并且子状态 ``Idle`` 同时出现在 ``Root.P.A`` 和 ``Root.P.B`` 里；上面的演示输出显示它被接受，含三个区域。
+
+.. literalinclude:: region_diag_same_name_two_owners.fcstm
+   :language: fcstm
+   :caption: region_diag_same_name_two_owners.fcstm
 
 .. _diag-code-e-undefined-var-zh:
 
@@ -1969,7 +2089,17 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
 
 **示例 2** （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的修复方向。
-典型修复是执行 ``inspect_transition``：先确认报告原因和预期运行路径，再决定是否调整守卫、可达路径或声明位置。
+典型修复是执行 ``inspect_transition``\ ：先确认报告原因和预期运行路径，再决定是否调整守卫、可达路径或声明位置。原因为 ``owner_never_completes`` 时，要修的是区域而不是这条转换：给拥有者的每个区域写上 ``[*]`` 出口，或者改用强制转换离开拥有者。下面的输出里 ``Monitor`` 没有出口，所以 ``Job -> Next`` 被报告，\ ``Root.Next`` 不可达；\ ``region_owner_completes.fcstm`` 修好了它。
+
+.. literalinclude:: /reference/inspect_report/region_owner_never_completes.fcstm
+   :language: fcstm
+   :caption: region_owner_never_completes.fcstm（位于 inspect 报告参考页所在目录）
+
+.. literalinclude:: /reference/inspect_report/region_reachability.demo.sh.txt
+   :language: text
+   :caption: region_reachability.demo.sh.txt
+   :start-after: === owner of regions ===
+   :end-before: === plain composite state, no regions ===
 
 .. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
 
@@ -6639,6 +6769,8 @@ I_REGION_BACKWARD_READ
        }
    }
 
+这个模型的真实 inspect 输出，以及会报告或保持安静的各个变体，见 :ref:`inspect-report-region-order-zh`\ 。
+
 .. diagnostics-example I_REGION_BACKWARD_READ 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``I_REGION_BACKWARD_READ`` 的修复方向。
@@ -6718,6 +6850,8 @@ W_REGION_BLIND_OVERWRITE
            [*] -> B;
        }
    }
+
+这个模型的真实 inspect 输出，以及会报告或保持安静的各个变体，见 :ref:`inspect-report-region-order-zh`\ 。
 
 .. diagnostics-example W_REGION_BLIND_OVERWRITE 2 boundary_only
 

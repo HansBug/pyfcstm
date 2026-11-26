@@ -90,7 +90,8 @@ step:
    runtime.cycle([])
    result = runtime.cycle(["/Start"], trace=True)
    for entry in result.trace:
-       print(entry.kind, entry.transition_label or entry.action_path or ".".join(entry.state_path), "permit =", entry.vars["permit"])
+       where = entry.transition_label or entry.action_path or ".".join(entry.state_path)
+       print(entry.kind, where, "permit =", entry.vars["permit"])
    print(runtime.configuration)
 
 .. testoutput::
@@ -167,7 +168,8 @@ in which ``fault`` is raised:
        result = runtime.cycle([], inputs={"fault": fault}, trace=True)
        print("cycle", runtime.cycle_count, "fault", fault)
        for entry in result.trace:
-           print(" ", entry.kind, entry.transition_label or entry.action_path or ".".join(entry.state_path), "permit =", entry.vars["permit"], "motor =", entry.vars["motor"])
+           where = entry.transition_label or entry.action_path or ".".join(entry.state_path)
+           print(" ", entry.kind, where, "permit =", entry.vars["permit"], "motor =", entry.vars["motor"])
 
 .. testoutput::
 
@@ -187,7 +189,8 @@ in which ``fault`` is raised:
 
 Read the four cycles from the top:
 
-* **Cycle 1** enters the root and ``Idle``. No region exists yet.
+* **Cycle 1** is the first ``runtime.cycle([])`` of the script and is not
+  printed. That ``Idle`` is active afterwards shows in cycle 2, which leaves it.
 * **Cycle 2** carries ``/Start``. ``Idle`` is left, ``Running`` is entered, and
   then the regions start one after another: ``Safety`` takes its initial
   transition and runs its first ``during`` (``permit`` becomes 1) before
@@ -242,11 +245,20 @@ in an output on this page.
        resulting configuration.
      - The ``Cycle:`` line of the command line output above.
 
+Here is ``controller_swapped.fcstm``, used from here on. It is the controller of
+the previous sections with the two regions written in the other order: ``Motion``
+(line 12) now comes before ``Safety`` (line 19), and nothing else differs.
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: ``controller_swapped.fcstm``
+   :emphasize-lines: 12,19
+
 **What the order is made of.** Regions run in written order because the order
 of the ``region`` blocks is part of the model: ``to_ast_node()``, formatting and
 re-loading keep it. The script loads ``controller_swapped.fcstm``, the
 controller with the two regions written in the other order
-(:download:`download </_models/controller_swapped.fcstm>`), exports it with
+(shown above), exports it with
 ``to_ast_node()`` and loads the exported text again. Both models list the
 regions of ``Running`` in the order they were written:
 
@@ -375,7 +387,8 @@ with ``Safety`` first and against the swapped model with ``Motion`` first
            runtime.cycle(events)
        for fault in (1, 1, 0, 0):
            runtime.cycle([], inputs={"fault": fault})
-           print(name, runtime.cycle_count, "fault", fault, "permit", runtime.vars["permit"], "motor", runtime.vars["motor"])
+           print(name, runtime.cycle_count, "fault", fault, end=" ")
+           print("permit", runtime.vars["permit"], "motor", runtime.vars["motor"])
 
 .. testoutput::
 
@@ -730,7 +743,9 @@ not 0:
 
 The script runs the model twice: ``cold`` starts from the beginning, ``hot``
 starts with ``R1`` in ``A`` and ``R2`` still waiting for initialization. The
-lines that begin with ``Cycle`` are the simulator's own notice of a Delta:
+lines that begin with ``Cycle`` are the simulator's own notice of a Delta. The
+notice goes to standard error, so the script prints with ``flush=True`` to keep
+each notice next to the line it belongs to:
 
 .. testcode::
 
@@ -739,11 +754,17 @@ lines that begin with ``Cycle`` are the simulator's own notice of a Delta:
 
    model = load_state_machine_from_text(open("group_delta.fcstm").read())
    cold = SimulationRuntime(model, input_source={"g": 0})
-   hot = SimulationRuntime(model, input_source={"g": 0}, initial_state="Root.P{R1: A, R2: [init]}", initial_vars={"n": 0})
+   hot = SimulationRuntime(
+       model,
+       input_source={"g": 0},
+       initial_state="Root.P{R1: A, R2: [init]}",
+       initial_vars={"n": 0},
+   )
    for g in (0, 0, 1):
        for name, runtime in (("cold", cold), ("hot", hot)):
            result = runtime.cycle([], inputs={"g": g})
-           print(name, runtime.cycle_count, "g =", g, runtime.configuration, "n =", runtime.vars["n"], "delta =", result.delta, flush=True)
+           print(name, runtime.cycle_count, "g =", g, runtime.configuration, end=" ", flush=True)
+           print("n =", runtime.vars["n"], "delta =", result.delta, flush=True)
 
 .. testoutput::
 
@@ -773,29 +794,48 @@ inside it are tried on a copy; the first one that reaches a legal position wins.
 
 **The limit.** Groups can re-enter each other inside one cycle. The simulator
 stops a chain that nests or repeats more than 64 groups in one cycle with a
-documented error. The script builds a chain of 64 groups inside one another, which
-starts, and then one of 65:
+documented error. The script prints the model for two groups inside one another;
+``nested_model`` repeats the same ``region R { ... state O { ... } }``
+wrapper once more for each further group. It then starts a chain of 64 groups,
+which works, and one of 65:
 
 .. testcode::
 
    from pyfcstm.model import load_state_machine_from_text
    from pyfcstm.simulate import SimulationRuntime, SimulationRuntimeDfsError
 
-   def start(owners):
-       inner = "region R { [*] -> O; state O { " * (owners - 1) + "region R { [*] -> L; state L; }" + " } }" * (owners - 1)
-       SimulationRuntime(load_state_machine_from_text("state Root { [*] -> P; state P { %s } }" % inner)).cycle([])
 
-   start(64)
-   print("64 groups inside one another start")
-   try:
-       start(65)
-   except SimulationRuntimeDfsError as error:
-       print(error)
+   def nested_model(groups):
+       body = "region R { [*] -> L; state L; }"
+       for _ in range(groups - 1):
+           body = "region R {\n[*] -> O;\nstate O {\n%s\n}\n}" % body
+       return "state Root {\n[*] -> P;\nstate P {\n%s\n}\n}" % body
+
+
+   print(nested_model(2))
+   for groups in (64, 65):
+       machine = load_state_machine_from_text(nested_model(groups))
+       try:
+           SimulationRuntime(machine).cycle([])
+           print(groups, "groups inside one another start")
+       except SimulationRuntimeDfsError as error:
+           print(groups, "groups:", error)
 
 .. testoutput::
 
+   state Root {
+   [*] -> P;
+   state P {
+   region R {
+   [*] -> O;
+   state O {
+   region R { [*] -> L; state L; }
+   }
+   }
+   }
+   }
    64 groups inside one another start
-   Group initialization nested deeper than the structural safety limit (64) within one cycle; the state machine either enters more than 64 groups inside one another or one after another in the same cycle, or re-enters a group without bound.
+   65 groups: Group initialization nested deeper than the structural safety limit (64) within one cycle; the state machine either enters more than 64 groups inside one another or one after another in the same cycle, or re-enters a group without bound.
 
 
 .. _region-semantics-aspects:
@@ -1006,7 +1046,8 @@ In cycle 2 ``A``'s ``during`` makes ``x`` 2 *after* ``A`` had its turn, so ``A``
 carries on. ``B``, which comes later, sees ``x >= 2`` at its turn and finishes at
 once (``B: [done]``, ``__forced_0`` is 1). ``A`` finishes in cycle 3, when it sees
 the raised variable, and the owner leaves in the same cycle. The condition is
-judged once per region turn at the state that rests, not again after exits.
+judged by each region at its own turn, which is why ``A`` and ``B`` come out
+differently in the same cycle.
 
 **Regions leave in written order.** This script runs the controller until
 both regions work, sends ``/Stop`` and prints the states that are exited:
@@ -1135,14 +1176,19 @@ and whether all five cycles are identical in both:
    written = load_state_machine_from_text(open("controller.fcstm").read())
    reloaded = load_state_machine_from_text(str(written.to_ast_node()))
    print(written.forced_variables, reloaded.forced_variables)
-   rows = []
-   for model in (written, reloaded):
+
+
+   def run(model):
        runtime = SimulationRuntime(model, input_source={"fault": 0, "requested": 1})
-       rows.append([])
+       history = []
        for events in (None, ["/Start"], None, None, ["/Stop"]):
            runtime.cycle(events)
-           rows[-1].append((str(runtime.configuration), dict(runtime.vars)))
-   print(rows[0][-1], rows[0] == rows[1])
+           history.append((str(runtime.configuration), dict(runtime.vars)))
+       return history
+
+
+   first, second = run(written), run(reloaded)
+   print(first[-1], first == second)
 
 .. testoutput::
 
@@ -1158,7 +1204,7 @@ take the machine that runs. Drawings and the report of ``pyfcstm inspect`` show
 the model as written, because they describe what you wrote.
 
 **What this does not say.** The expansion does not reproduce every detail of other
-tools, and the two gaps above are deliberate. See
+tools, and the one known gap above (issue #591) is still open. See
 :doc:`/explanations/region_design/index` for the comparison, and
 :ref:`region-semantics-limits` for what remains.
 
@@ -1392,10 +1438,21 @@ prints the configuration afterwards and the states that the cycle entered:
 
    model = load_state_machine_from_text(open("controller.fcstm").read())
    variables = {"permit": 1, "motor": 0, "__forced_0": 0}
-   for text in ("Controller.Running{Safety: Watching, Motion: Off}", "Controller.Running{Safety: [done], Motion: On}", "Controller.Running.Motion.On", "Controller.Running"):
-       runtime = SimulationRuntime(model, initial_state=text, initial_vars=variables, input_source={"fault": 0, "requested": 1})
+   for text in (
+       "Controller.Running{Safety: Watching, Motion: Off}",
+       "Controller.Running{Safety: [done], Motion: On}",
+       "Controller.Running.Motion.On",
+       "Controller.Running",
+   ):
+       runtime = SimulationRuntime(
+           model,
+           initial_state=text,
+           initial_vars=variables,
+           input_source={"fault": 0, "requested": 1},
+       )
        result = runtime.cycle([], trace=True)
-       print(text, "->", runtime.configuration, [".".join(e.state_path) for e in result.trace if e.kind == "state_enter"])
+       entered = [".".join(e.state_path) for e in result.trace if e.kind == "state_enter"]
+       print(text, "->", runtime.configuration, entered)
 
 .. testoutput::
 
@@ -1725,8 +1782,9 @@ Boundaries
   at the owner, which starts every region.
 * **History of an owner.** An owner that has regions cannot declare history.
   History of a composite state inside a region works (see the history family).
-* **Forced transitions.** The two differences from models without regions are
-  listed in :ref:`region-semantics-forced`. The expansion adds a hidden variable
+* **Forced transitions.** The difference from models without regions (the
+  next declaration when a target cannot be entered) is described in
+  :ref:`region-semantics-forced`. The expansion adds a hidden variable
   to the model.
 * **Comparison with other tools** (what a Stateflow user will notice, and the
   measured gaps) is on :doc:`the design page </explanations/region_design/index>`.

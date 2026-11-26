@@ -83,6 +83,8 @@ raise the fault in two consecutive cycles:
    :language: bash
    :caption: ``simulate_swapped.demo.sh``
 
+:download:`Download simulate_swapped.demo.sh <simulate_swapped.demo.sh>` and run it with ``sh simulate_swapped.demo.sh`` in the directory that holds the models.
+
 .. literalinclude:: simulate_swapped.demo.sh.txt
    :language: text
    :caption: ``simulate_swapped.demo.sh.txt``
@@ -107,6 +109,8 @@ order.
 .. literalinclude:: inspect_regions.demo.sh
    :language: bash
    :caption: ``inspect_regions.demo.sh``
+
+:download:`Download inspect_regions.demo.sh <inspect_regions.demo.sh>` and run it with ``sh inspect_regions.demo.sh`` in the directory that holds the models.
 
 .. literalinclude:: inspect_regions.demo.sh.txt
    :language: text
@@ -149,6 +153,8 @@ Run it on the interlock model:
    :language: bash
    :caption: ``bmc_interlock.demo.sh``
 
+:download:`Download bmc_interlock.demo.sh <bmc_interlock.demo.sh>` and run it with ``sh bmc_interlock.demo.sh`` in the directory that holds the models.
+
 .. literalinclude:: bmc_interlock.demo.sh.txt
    :language: text
    :caption: ``bmc_interlock.demo.sh.txt``
@@ -165,6 +171,8 @@ fail with exit status ``1``, because the property does not hold:
 .. literalinclude:: bmc_swapped.demox.sh
    :language: bash
    :caption: ``bmc_swapped.demox.sh``
+
+:download:`Download bmc_swapped.demox.sh <bmc_swapped.demox.sh>` and run it with ``sh bmc_swapped.demox.sh``. This script ends with exit status ``1`` by design. Do not paste its lines into an interactive shell: ``set -e`` closes the shell when the check fails.
 
 .. literalinclude:: bmc_swapped.demox.sh.txt
    :language: text
@@ -188,6 +196,8 @@ the scenario of step 2:
 .. literalinclude:: generate_runtime.demo.sh
    :language: bash
    :caption: ``generate_runtime.demo.sh``
+
+:download:`Download generate_runtime.demo.sh <generate_runtime.demo.sh>` and run it with ``sh generate_runtime.demo.sh`` in the directory that holds the models.
 
 The driver ``run_scenario.py`` supplies the inputs of each cycle in the
 ``inputs`` argument and prints the cycle count, ``configuration`` and the two
@@ -220,8 +230,8 @@ position with ``configuration``.
    :caption: ``pyfcstm plantuml -i controller.fcstm``
 
 Find the two region notes ``region 1: Safety`` and ``region 2: Motion`` inside
-``Running``. A line with ``--`` separates the regions, which are drawn side by
-side in the rendered picture.
+``Running``. A line with ``--`` separates the regions, which are drawn stacked
+one above the other in the rendered picture.
 
 ``pyfcstm diagram`` writes the interactive viewer, a single self-contained HTML
 file that needs no network access:
@@ -238,6 +248,8 @@ portable JSON of the diagram, where each region is a node marked as a region:
 .. literalinclude:: diagram_regions.demo.sh
    :language: bash
    :caption: ``diagram_regions.demo.sh``
+
+:download:`Download diagram_regions.demo.sh <diagram_regions.demo.sh>` and run it with ``sh diagram_regions.demo.sh`` in the directory that holds the models.
 
 .. literalinclude:: diagram_regions.demo.sh.txt
    :language: text

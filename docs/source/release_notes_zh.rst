@@ -28,7 +28,7 @@
 - ``pyfcstm.verify`` 与 inspect 的可达性分析按分支判断拥有区域的状态（见下文\ *检查与验证*）。
 - ``pyfcstm bmc`` 与 ``pyfcstm.bmc`` 接受含区域的模型，包括见证、回放和运行时安全检查（见下文\ *区域的有界模型检查*）。
 - 内置模板 ``python``、``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 生成的运行时按模拟器的方式运行含区域的模型，见下文\ *模板与能力声明*。
-- PlantUML 与图形查看器把区域画成并发分区（见下文\ *区域的画法*）。
+- PlantUML 与图形查看器把区域画成并发区域（PlantUML 里称为分区；见下文\ *区域的画法*）。
 - VS Code 扩展可以预览含区域的模型，折叠 ``region`` 块，并在编辑时报告 ``E_REGION_STRUCTURE``、``E_DUPLICATE_REGION`` 和 ``E_ACTIVE_QUERY_TARGET``。
 - 随包发布的两份大语言模型指南，即 FCSTM 语法指南与 FBMCQ 语言指南，都介绍了区域。
 
@@ -62,12 +62,12 @@ C 系运行时（``c``、``c_poll``、``cpp``、``cpp_poll``）现在运行在�
 - 新增 ``hot_start_at``、``hot_start_at_with_parameters`` 和 ``get_configuration``，配置值可以查询、校验，并格式化成与模拟器相同的文本；文本解析可以用 ``PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT`` 关掉。C++ 包装增加了对应成员以及 ``operator==`` / ``operator!=``。
 - 含区域的模型没有 ``current_state_id``、``current_state_path`` 和 ``current_state_name``，使用它们是编译错误。
 - 不含区域的模型，生成文本会变，行为不变。
-- 不含区域的模型，每台机器的代码体积与内存会增大：在测量过的不含区域的模型上，中位数分别是原来的 2.84 倍（代码）和 3.05 倍（内存），16 个以上伪状态的链也比旧模板慢。见 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
+- 不含区域的模型也运行在同一个内核上，所以生成机器的代码体积、内存与第一个周期的耗时同样会变化。相对旧模板的体积与速度比值及其测量方法，见 :doc:`/explanations/region_performance/index_zh` 的“生成的 C 运行时”一节；剩余的代价记录在 `issue #598 <https://github.com/HansBug/pyfcstm/issues/598>`_。
 
 区域的画法
 ~~~~~~~~~~
 
-``pyfcstm plantuml`` 把一个状态的区域画成用 ``--`` 隔开的并发分区。每个分区以一条 ``region N: Name`` 注释开头，\ ``N`` 按书写顺序从 1 数起，因为 PlantUML 的分区本身没有名字。\ ``active("Path")`` 按书写原样显示，隐藏标志与自动写入不画出来。
+``pyfcstm plantuml`` 把一个状态的区域画成用 ``--`` 隔开的并发区域。每个区域以一条 ``region N: Name`` 注释开头，\ ``N`` 按书写顺序从 1 数起，因为 PlantUML 的分区本身没有名字（这里的并发区域在 PlantUML 里就是这种分区）。\ ``active("Path")`` 按书写原样显示，隐藏标志与自动写入不画出来。
 
 ``StateMachine.diagram()``、``pyfcstm diagram`` 与 HTML 查看器把同一拥有者的区域在它的外框内并排放置，用虚线隔开，区域没有自己的边框，标题同样是 ``region N: Name``。顺序沿布局方向排开：自上而下的图里从左到右，自左向右的图里从上到下。折叠、详情与导出对区域和对状态一样可用，区域对 ``max_depth`` 算一层。查看器不高亮当前配置。图的 JSON 用 ``"region": true`` 标记每个区域节点。
 

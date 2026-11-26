@@ -18,7 +18,7 @@
 
 * ``Running`` 拥有两个 ``region`` 块。\ ``Running`` 活动时两者同时活动，各自有自己的初始转换（``[*] -> Watching`` 和 ``[*] -> Off``）。
 * 同一个拥有者（owner）的区域在每个周期里\ **按书写顺序依次执行**。\ ``Safety`` 写在前面，所以它在同一周期里先写 ``permit``，\ ``Motion`` 后读。
-* ``!Running -> Idle : /Stop;`` 是写在拥有者上的强制转换。它从两个区域所处的任何位置离开 ``Running``，所以 ``/Stop`` 一次停下整组。强制转换会引入隐藏变量 ``__forced_0``，你会在输出里看到它。
+* ``!Running -> Idle : /Stop;`` 是写在拥有者上的强制转换（forced transition）。它从两个区域所处的任何位置离开 ``Running``，所以 ``/Stop`` 一次停下整组。强制转换会引入隐藏变量 ``__forced_0``，你会在输出里看到它。
 
 2. 模拟一段场景
 ---------------
@@ -35,7 +35,7 @@
    :language: text
    :caption: ``simulate_interlock.demo.sh.txt``
 
-逐周期看 ``Current State`` 一行。含区域的模型会打印完整的\ **配置**\ ：拥有者后面的花括号里是每个区域的位置，例如 ``Controller.Running{Safety: Watching, Motion: Off}``。
+逐周期看 ``Current State`` 一行。含区域的模型会打印完整的\ **配置（configuration）**\ ：拥有者后面的花括号里是每个区域的位置，例如 ``Controller.Running{Safety: Watching, Motion: Off}``。
 
 * 周期 1 进入 ``Controller.Idle``。
 * 周期 2 处理 ``/Start``。两个区域都执行初始转换，\ ``permit`` 已经是 ``1``，因为 ``Safety`` 在同一周期里执行了它的 ``during``。
@@ -51,6 +51,8 @@
 .. literalinclude:: simulate_swapped.demo.sh
    :language: bash
    :caption: ``simulate_swapped.demo.sh``
+
+:download:`下载 simulate_swapped.demo.sh <simulate_swapped.demo.sh>`，在放着模型的目录里用 ``sh simulate_swapped.demo.sh`` 运行。
 
 .. literalinclude:: simulate_swapped.demo.sh.txt
    :language: text
@@ -68,6 +70,8 @@
 .. literalinclude:: inspect_regions.demo.sh
    :language: bash
    :caption: ``inspect_regions.demo.sh``
+
+:download:`下载 inspect_regions.demo.sh <inspect_regions.demo.sh>`，在放着模型的目录里用 ``sh inspect_regions.demo.sh`` 运行。
 
 .. literalinclude:: inspect_regions.demo.sh.txt
    :language: text
@@ -96,6 +100,8 @@
    :language: bash
    :caption: ``bmc_interlock.demo.sh``
 
+:download:`下载 bmc_interlock.demo.sh <bmc_interlock.demo.sh>`，在放着模型的目录里用 ``sh bmc_interlock.demo.sh`` 运行。
+
 .. literalinclude:: bmc_interlock.demo.sh.txt
    :language: text
    :caption: ``bmc_interlock.demo.sh.txt``
@@ -107,6 +113,8 @@
 .. literalinclude:: bmc_swapped.demox.sh
    :language: bash
    :caption: ``bmc_swapped.demox.sh``
+
+:download:`下载 bmc_swapped.demox.sh <bmc_swapped.demox.sh>`，用 ``sh bmc_swapped.demox.sh`` 运行。这个脚本按设计以退出状态 ``1`` 结束。不要把它的几行贴进交互式终端：检查失败时 ``set -e`` 会关掉终端。
 
 .. literalinclude:: bmc_swapped.demox.sh.txt
    :language: text
@@ -122,6 +130,8 @@
 .. literalinclude:: generate_runtime.demo.sh
    :language: bash
    :caption: ``generate_runtime.demo.sh``
+
+:download:`下载 generate_runtime.demo.sh <generate_runtime.demo.sh>`，在放着模型的目录里用 ``sh generate_runtime.demo.sh`` 运行。
 
 驱动脚本 ``run_scenario.py`` 在 ``inputs`` 参数里给出每个周期的输入，并打印周期数、\ ``configuration`` 和两个变量：
 
@@ -146,7 +156,7 @@
    :language: text
    :caption: ``pyfcstm plantuml -i controller.fcstm``
 
-在 ``Running`` 里找到两条区域注释 ``region 1: Safety`` 和 ``region 2: Motion``。一行 ``--`` 把区域隔开，渲染出的图里它们并排绘制。
+在 ``Running`` 里找到两条区域注释 ``region 1: Safety`` 和 ``region 2: Motion``。一行 ``--`` 把区域隔开，渲染出的图里它们上下堆叠。
 
 ``pyfcstm diagram`` 写出交互式查看器，它是一个不需要网络的自包含 HTML 文件：
 
@@ -160,6 +170,8 @@
    :language: bash
    :caption: ``diagram_regions.demo.sh``
 
+:download:`下载 diagram_regions.demo.sh <diagram_regions.demo.sh>`，在放着模型的目录里用 ``sh diagram_regions.demo.sh`` 运行。
+
 .. literalinclude:: diagram_regions.demo.sh.txt
    :language: text
    :caption: ``diagram_regions.demo.sh.txt``
@@ -171,7 +183,7 @@
 
 现在你有了一个区域按书写顺序执行的模型，并在模拟器、检查报告、检查器、生成的运行时和图里都见过这个顺序。按你想做的事继续：
 
-* :doc:`/how_to/regions/index_zh` 是任务做法：添加区域、选择顺序、读取配置、对含区域的模型热启动。
+* :doc:`/how_to/regions/index_zh` 是任务做法：添加区域、选择顺序、读取配置、对含区域的模型热启动（hot start）。
 * :doc:`/explanations/region_semantics/index_zh` 用轨迹解释一个周期怎样执行含区域的模型。
 * :doc:`/explanations/region_design/index_zh` 解释区域为什么按顺序执行。
 * :doc:`/reference/region_model/index_zh` 列出语言与模型的确切规则。

@@ -1068,7 +1068,7 @@ PlantUML export
    * - ``>> during before`` / ``>> during after`` written inside a region
      - Extra rows inside that region's note, only when aspect actions are visible: ``-l full``, or ``-c show_lifecycle_actions=True`` (aspects follow it); ``-c show_lifecycle_actions=True -c show_aspect_actions=False`` hides them again, and ``-c show_aspect_actions=True`` alone changes nothing while lifecycle actions are hidden. With ``normal`` the note has the title row only.
    * - ``>> during before`` / ``>> during after`` written on the owner or an ancestor
-     - A description line of the owner state (``line__work : >> during before {...}``), as for any composite state. It is not copied into the regions.
+     - A description line of the owner state (``line__work : >> during before {...}``), as for any composite state, only when aspect actions are visible (``-l full``, or ``-c show_lifecycle_actions=True`` without ``-c show_aspect_actions=False``). It is not copied into the regions.
    * - Transitions and states written inside a region
      - Drawn between the region's note and the next ``--``; the region's ``[*] -->`` initial arrow is part of its section.
    * - Event written inside a region

@@ -30,6 +30,7 @@ from test.testings.simulate_semantics import (
 
 pytestmark = pytest.mark.unittest
 
+
 @pytest.fixture(params=MODEL_CASES)
 def case(request):
     """One shared semantic fixture: the model text and its expected scenario."""
@@ -116,14 +117,16 @@ def test_plantuml_draws_every_region_at_its_written_position(case, model_path):
     ]
     assert sorted(notes) == sorted(expected)
     separators = [line for line in result.output.splitlines() if line.strip() == "--"]
-    assert len(separators) == sum(len(names) - 1 for names in _regions_by_owner(case).values())
+    assert len(separators) == sum(
+        len(names) - 1 for names in _regions_by_owner(case).values()
+    )
     # The drawing shows the model as written, not the hidden variables of its expansion.
     assert "__forced_" not in result.output
     assert "__active_" not in result.output
 
 
 def test_diagram_snapshot_and_command_give_the_same_regions(case, model_path):
-    """``StateMachine.diagram()`` and ``pyfcstm diagram`` agree on the regions."""
+    """``StateMachine.diagram()`` and ``pyfcstm diagram`` give one snapshot, with a node for every region."""
     result = _invoke("diagram", "-i", model_path)
     assert result.exit_code == 0, result.output
     from_command = json.loads(result.output)
@@ -207,7 +210,9 @@ def test_bmc_reaches_what_only_the_model_can_do_and_the_simulator_replays_it(
     assert report["replay"]["mismatches"] == []
     frames = report["replay"]["runtime_trace"]["frames"]
     target = re.search(r'active\("([^"]+)"\)', goal).group(1)
-    reached = [index for index, frame in enumerate(frames) if frame["configuration"] == target]
+    reached = [
+        index for index, frame in enumerate(frames) if frame["configuration"] == target
+    ]
     assert reached and reached[0] >= earliest, (reached, earliest)
 
 
@@ -227,7 +232,10 @@ def test_bmc_guarantees_that_the_interlock_never_runs_the_motor_without_permissi
     path = tmp_path / "model.fcstm"
     path.write_text(case.dsl_code, encoding="utf-8")
     query = tmp_path / "query.fbmcq"
-    query.write_text('check forbid <= 6: var("motor") == 1 && var("permit") == 0;\n', encoding="utf-8")
+    query.write_text(
+        'check forbid <= 6: var("motor") == 1 && var("permit") == 0;\n',
+        encoding="utf-8",
+    )
     result = _invoke("bmc", "-i", path, "-q", query, "--json")
     assert result.exit_code == 0, result.output
     report = json.loads(result.output)["result"]
@@ -244,20 +252,32 @@ def test_simulate_command_follows_the_scenario(case, model_path):
         events = [events] if isinstance(events, str) else events
         inputs = step.get("inputs") or {}
         commands.append(
-            " ".join(["cycle"] + list(events) + ["--input %s=%s" % item for item in inputs.items()])
+            " ".join(
+                ["cycle"]
+                + list(events)
+                + ["--input %s=%s" % item for item in inputs.items()]
+            )
         )
         expected.append(step.get("expect", {}).get("configuration"))
-    result = _invoke("simulate", "-i", model_path, "-e", "; ".join(commands), "--no-color")
+    result = _invoke(
+        "simulate", "-i", model_path, "-e", "; ".join(commands), "--no-color"
+    )
     assert result.exit_code == 0, result.output
     printed = re.findall(r"^Current State: (.+)$", result.output, re.M)
     assert printed == [item for item in expected if item is not None]
 
 
 @pytest.mark.parametrize("template", ["python", "c", "c_poll", "cpp", "cpp_poll"])
-def test_generate_command_writes_every_built_in_runtime(case, model_path, tmp_path, template):
+def test_generate_command_writes_every_built_in_runtime(
+    case, model_path, tmp_path, template
+):
     """``pyfcstm generate`` renders the model with every built-in template."""
     output = tmp_path / ("out_" + template)
     result = _invoke("generate", "-i", model_path, "--template", template, "-o", output)
     assert result.exit_code == 0, result.output
-    sources = [path.name for path in output.rglob("*") if path.is_file() and path.name.startswith("machine.")]
+    sources = [
+        path.name
+        for path in output.rglob("*")
+        if path.is_file() and path.name.startswith("machine.")
+    ]
     assert sources, [path.name for path in output.rglob("*")]

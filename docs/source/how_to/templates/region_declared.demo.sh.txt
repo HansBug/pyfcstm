@@ -1,5 +1,0 @@
-features: [region]
-owner Controller.Running
-  region 1: Safety (1 states)
-  region 2: Motion (2 states)
-['region']

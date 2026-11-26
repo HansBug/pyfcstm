@@ -337,7 +337,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 声明自定义模板支持区域
 ----------------------
 
-**起点。** 一个自定义模板目录和一个含区域（region）的模型（``region_controller.fcstm``，即 :doc:`/tutorials/regions/index_zh` 里的联锁控制器）。模板是为某一种执行模型写的。
+**起点。** 一个自定义模板目录和一个含区域（region）的模型（:download:`controller.fcstm </_models/controller.fcstm>`，即 :doc:`/tutorials/regions/index_zh` 里的联锁控制器）。请把它和 ``region_listing_template/`` 里的两个文件下载到一个空目录，并在其中运行命令。模板是为某一种执行模型写的。
 ``config.yaml`` 里的 ``features: [region]`` 声明该模板能渲染含区域的模型。没有这个声明，``pyfcstm generate`` 在写任何文件之前就拒绝这样的模型；
 不含区域的模型无论声明如何都能渲染，所以现有模板的输出保持不变。``region_listing_template/`` 是一个最小模板，它声明了这个特性，并按书写顺序列出每个拥有者（owner）及其区域：
 
@@ -351,21 +351,34 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 
 **命令或代码。**
 
-.. literalinclude:: region_declared.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_declared.demo.sh.txt
-   :language: text
+   $ pyfcstm generate -i controller.fcstm -t region_listing_template -o out --clear
+   $ cat out/regions.txt
+   owner Controller.Running
+     region 1: Safety (1 states)
+     region 2: Motion (2 states)
+   $ python -c 'from pyfcstm.render import StateMachineCodeRenderer; print(sorted(StateMachineCodeRenderer("region_listing_template").features))'
+   ['region']
 
 没有这个声明时，同一个模板会被拒绝。这是负例：
 
-.. literalinclude:: region_undeclared.demox.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_undeclared.demox.sh.err
-   :language: text
+   $ mkdir undeclared
+   $ cp region_listing_template/regions.txt.j2 undeclared/
+   $ printf 'expr_styles: {}\n' > undeclared/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o undeclared_out --clear
+   generate with template directory '.../undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o undeclared_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
 
-退出码是 1（``region_undeclared.demox.sh.exitcode``）；脚本缩短了消息里的路径。
+退出状态是 1。工具打印的是模板目录的绝对路径，这里用 ``...`` 省略。
 
 **预期信号。** 有声明时，输出按书写顺序列出拥有者和它的两个区域，``StateMachineCodeRenderer.features`` 是 ``['region']``。没有声明时，消息指出区域的个数和第一个区域，
 告诉模板作者该声明什么、何时声明，并列出支持区域的内置模板。
@@ -375,7 +388,7 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 声明了这些的模板应当在每个共享的区域场景上与 :class:`pyfcstm.simulate.SimulationRuntime` 一致；内置模板就是参照（见 :doc:`/reference/builtin_templates/index_zh`）。
 通过 ``owner.regions`` 与 ``model.walk_regions()`` 渲染区域，它们保持书写顺序；只沿单一路径遍历的模板不要声明 ``region``。上面的列表模板之所以可以声明，只是因为它不生成任何行为。
 
-**文件副作用。** ``pyfcstm generate`` 把 ``regions.txt`` 写入输出目录；脚本使用临时目录并在结束后删除。
+**文件副作用。** ``pyfcstm generate`` 把 ``regions.txt`` 写入输出目录；这些命令写入你运行命令的目录下的 ``out/``、``undeclared/`` 和 ``undeclared_out/``。
 
 **失败时先查什么。** 改过的模板仍被拒绝时，读 ``StateMachineCodeRenderer(path).features``：``features`` 里出现未知成员或重复成员，会在构造渲染器时失败；没有这个键的模板集合为空。
 

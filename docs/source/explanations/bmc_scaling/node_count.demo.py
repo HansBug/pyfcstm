@@ -1,5 +1,3 @@
-import z3
-
 from pyfcstm.bmc import compile_bmc_query
 from pyfcstm.model import load_state_machine_from_text
 

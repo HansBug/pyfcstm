@@ -1,0 +1,25 @@
+flat nodes, grid: 16 points, all equal to the closed form
+flat nodes, out of sample: 60 points up to N=6400, k=128, 0 differ
+flat nodes with written variables, grid: 24 points, all equal
+z3 boolean variables, grid: 48 points (T in 1,2,4), all equal
+power-law fit of the 60 out-of-sample flat points: nodes = 14.6 * N^0.98 * k^1.14
+region nodes, grid: 48 points, max |residual| = 11.2 nodes
+region nodes, out of sample: 95 points up to R=768, S=1024, k=48; median error 0.12%, max 0.92%
+contexts 2*W*V*(k-1), W=N-1: 34 points, all equal
+flat z3 calls, grid: 16 points, max relative error 0.24%
+region z3 calls, grid: 48 points, max relative error 0.28%
+z3 calls {'R': 96, 'S': 4} k=3: measured 5212124, closed form 5097658 (-2.2%)
+z3 calls {'R': 256, 'S': 4} k=3: measured 29080930, closed form 28202938 (-3.0%)
+z3 calls {'N': 1600, 'T': 2} k=5: measured 10933762, closed form 10924139 (-0.1%)
+solve time vs propagations (>2e4): 37 checks, exponent 0.92, R^2 0.98, ns per propagation p10 176 median 222 p90 365
+pigeonhole conflict ratio per added region: 5: x2.4, 6: x3.4, 7: x4.1, 8: x6.5, 9: x5.2, 10: x6.1, 11: x9.4
+pigeonhole conflict ratio from 7 regions on: geometric mean x6.0
+context cost N=100 V=4 k=5: 3168 contexts, build 4.9 s (0.5 s without variables), 1.37 ms per context
+context cost N=100 V=16 k=5: 12672 contexts, build 16.7 s (0.5 s without variables), 1.27 ms per context
+context cost N=100 V=64 k=5: 50688 contexts, build 65.6 s (0.5 s without variables), 1.28 ms per context
+build seconds per z3 call {'R': 96, 'S': 4} k=3: 2.72 s for 5212124 calls, 0.52 microseconds per call
+build seconds per z3 call {'R': 256, 'S': 4} k=3: 14.84 s for 29080930 calls, 0.51 microseconds per call
+build seconds per z3 call {'N': 1600, 'T': 2} k=5: 17.88 s for 10933762 calls, 1.63 microseconds per call
+share of build time, original points above 1 s, flat: 134 points, median 96%, range 32% to 100%
+share of build time, original points above 1 s, regions: 113 points, median 49%, range 17% to 95%
+closed forms agree with the data in data

@@ -1,8 +1,0 @@
-$ pyfcstm inspect -i region_written_vs_running.fcstm
-  line 13  I_REGION_BACKWARD_READ
-    target = Panel.Switch.Pressed (active)
-$ pyfcstm inspect -i region_written_vs_running.fcstm --enable-verify --max-complexity-tier smt_linear
-  line 13  I_REGION_BACKWARD_READ
-    target = Panel.Switch.Pressed (active)
-  line 14  W_DEAD_GUARD
-    guard  = __active_Panel_Switch_Pressed != 0 && !(__active_Panel_Switch_Pressed != 0)

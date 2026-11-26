@@ -51,21 +51,61 @@ in the simulator and in the generated Python runtime, and then checked by
 bounded model checking against the property "the motor is on only while
 ``permit`` is not 0":
 
-.. literalinclude:: same_order_everywhere.demo.py
-   :language: python
-   :caption: ``same_order_everywhere.demo.py``
+.. code-block:: console
 
-.. literalinclude:: same_order_everywhere.demo.py.txt
-   :language: text
-   :caption: ``same_order_everywhere.demo.py.txt``: configuration texts and variables of both runtimes, cycle by cycle
+   $ pyfcstm generate -i controller_swapped.fcstm --template python -o out
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "out")
+   from machine import ControllerMachine
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   ready = {"fault": 0, "requested": 1}
+   fault = {"fault": 1, "requested": 1}
+   steps = [(None, ready), (["/Start"], ready), (None, ready), (None, fault), (None, fault), (None, ready)]
+   model = load_state_machine_from_text(open("controller_swapped.fcstm").read())
+   simulator = SimulationRuntime(model, input_source=ready)
+   generated = ControllerMachine()
+   for number, (events, inputs) in enumerate(steps, start=1):
+       simulator.cycle(events, inputs=inputs)
+       generated.cycle(events, inputs=inputs)
+       same = str(simulator.configuration) == generated.configuration and all(
+           simulator.vars[name] == generated.vars[name] for name in ("permit", "motor")
+       )
+       print(number, generated.configuration, generated.vars["permit"], generated.vars["motor"], same)
+
+.. testoutput::
+
+   1 Controller.Idle 0 0 True
+   2 Controller.Running{Motion: Off, Safety: Watching} 1 0 True
+   3 Controller.Running{Motion: On, Safety: Watching} 1 1 True
+   4 Controller.Running{Motion: On, Safety: Watching} 0 1 True
+   5 Controller.Running{Motion: Off, Safety: Watching} 0 0 True
+   6 Controller.Running{Motion: Off, Safety: Watching} 1 0 True
 
 .. literalinclude:: interlock.fbmcq
    :language: text
    :caption: ``interlock.fbmcq``
 
-.. literalinclude:: interlock_bmc.demo.sh.txt
-   :language: text
-   :caption: ``interlock_bmc.demo.sh.txt``: the property against both orders
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q interlock.fbmcq
+   BMC invariant <= 8: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   ...
+   $ pyfcstm bmc -i controller_swapped.fcstm -q interlock.fbmcq
+   BMC invariant <= 8: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   Scenario: FEASIBLE
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   ...
+   $ echo $?
+   1
 
 * The two runtimes agree in every cycle, including the cycle in which the
   swapped controller has ``permit=0`` and ``motor=1`` at the same time.
@@ -163,13 +203,50 @@ Each item below is a deliberate boundary of the language. The grammar rejects
 four of the five examples and the model builder rejects the jump between regions;
 the output is real:
 
-.. literalinclude:: not_in_the_language.demox.py
-   :language: python
-   :caption: ``not_in_the_language.demox.py``
+.. testcode::
 
-.. literalinclude:: not_in_the_language.demox.py.txt
-   :language: text
-   :caption: standard output; the script exits with status ``1`` (``not_in_the_language.demox.py.exitcode``)
+   from pyfcstm.dsl.error import GrammarParseError
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   cases = [
+       ("history written on an owner", "state Root { [*] -> P; state P { region R { [*] -> A; state A; } [H] -> A; } }"),
+       ("child states mixed with a region", "state Root { [*] -> P; state P { state X; region R { [*] -> A; state A; } } }"),
+       ("enter block inside a region", "state Root { [*] -> P; state P { region R { enter { } [*] -> A; state A; } } }"),
+       ("jump from one region to another", "state Root { [*] -> P; state P { region R1 { [*] -> A; state A; } region R2 { [*] -> B; state B; B -> A; } } }"),
+       ("variable declared in a region", "state Root { [*] -> P; state P { region R { def int x = 0; [*] -> A; state A; } } }"),
+   ]
+   for title, text in cases:
+       try:
+           load_state_machine_from_text(text)
+       except (GrammarParseError, ModelValidationError) as error:
+           # GrammarParseError: the grammar refuses the text; ModelValidationError: the model builder refuses it.
+           print("==", title)
+           print(type(error).__name__)
+           print("\n".join(str(error).splitlines()[:2]))
+
+.. testoutput::
+
+   == history written on an owner
+   GrammarParseError
+   Found 2 errors during parsing:
+   Error 1: Syntax error at line 1, column 65, near '[H]': Unexpected token '[H]'
+   == child states mixed with a region
+   GrammarParseError
+   Found 3 errors during parsing:
+   Error 1: Syntax error at line 1, column 42, near 'region': Unexpected token 'region'
+   == enter block inside a region
+   GrammarParseError
+   Found 3 errors during parsing:
+   Error 1: Syntax error at line 1, column 44, near 'enter': Unexpected token 'enter'
+   == jump from one region to another
+   ModelValidationError
+   Unknown to state 'A' of transition:
+   B -> A; (line 1)
+   == variable declared in a region
+   GrammarParseError
+   Found 2 errors during parsing:
+   Error 1: Syntax error at line 1, column 44, near 'def': Unexpected token 'def'
 
 * **History on an owner.** An owner cannot declare ``[H]`` or ``[H*]`` next to
   its regions (the first example writes ``[H] -> A`` after the region). History

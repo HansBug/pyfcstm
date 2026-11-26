@@ -1,8 +1,0 @@
-blind              Limiter: during { speed = 0; }
-                   reported: W_REGION_BLIND_OVERWRITE
-uses_old           Limiter: during { speed = speed - 1; }
-                   reported: none
-conditional        Limiter: during { if [fault != 0] { speed = 0; } }
-                   reported: none
-reads_first        Limiter: during { if [speed > 3] { speed = 0; } else { speed = 1; } }
-                   reported: none

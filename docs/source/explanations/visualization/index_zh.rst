@@ -301,13 +301,49 @@ Windows 上只是只读标志。
    * - HTML 查看器与 VS Code 预览
      - 各区域在拥有者外框内并排，以虚线分割线分隔，没有自己的边框，标题同样是 ``region N: Name``\ 。
 
-.. literalinclude:: region_plantuml.demo.sh
-   :language: bash
-   :caption: region_plantuml.demo.sh
+.. code-block:: console
 
-.. literalinclude:: region_plantuml.demo.sh.txt
-   :language: text
-   :caption: region_plantuml.demo.sh.txt
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "Off" as controller__running__motion__off
+           state "On" as controller__running__motion__on
+           [*] --> controller__running__motion__off
+           controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+           controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+       }
+   ...
+   $ pyfcstm plantuml -i controller_swapped.fcstm
+   ...
+               **region 1: Motion**
+   ...
+           --
+           note as controller__running__safety
+               **region 2: Safety**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "..." as controller__running__safety___collapsed_
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "..." as controller__running__motion___collapsed_
+       }
+   ...
 
 依次读这段输出的三个部分：
 
@@ -317,13 +353,43 @@ Windows 上只是只读标志。
 
 快照把同样的事实表示成数据：
 
-.. literalinclude:: region_snapshot.demo.sh
-   :language: bash
-   :caption: region_snapshot.demo.sh
+.. testcode::
 
-.. literalinclude:: region_snapshot.demo.sh.txt
-   :language: text
-   :caption: region_snapshot.demo.sh.txt
+   from pyfcstm.model import load_state_machine_from_text
+
+
+   def outline(node, depth=0):
+       mark = "  region ordinal=%d" % node["ordinal"] if node.get("region") else ""
+       print("  " * depth + node["id"] + mark)
+       for child in node["children"]:
+           outline(child, depth + 1)
+
+
+   for name in ("controller", "controller_swapped"):
+       machine = load_state_machine_from_text(open(name + ".fcstm").read())
+       print("==", name)
+       outline(machine.diagram().to_dict()["rootState"])
+
+.. testoutput::
+
+   == controller
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Safety  region ordinal=1
+         Controller.Running.Safety.Watching
+       Controller.Running.Motion  region ordinal=2
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+   == controller_swapped
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Motion  region ordinal=1
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+       Controller.Running.Safety  region ordinal=2
+         Controller.Running.Safety.Watching
 
 ``Controller.Running`` 的子节点按书写顺序出现，\ ``ordinal`` 从一开始。下面的布局步骤依赖的正是这个字段。
 
@@ -342,15 +408,24 @@ Windows 上只是只读标志。
 
 为什么画成分割的区域而不是状态：状态形状的方框会让人以为箭头可以指向它，或者拥有者像“处于某个状态”那样“处于”这个区域。分割线表达的恰恰相反：这些区域是同一个整体的部分，从一块到另一块没有路径，从左到右或从上到下的顺序是它们之间唯一的关系。早先的形式给每个区域画一个虚线框，分割线的形式取代了它，让各区域读起来是同一个拥有者的部分。
 
-**不**\ 画的，是只因降级才存在的一切。用 ``active("...")`` 写的条件保留完整路径，隐藏的标志变量和对它们的自动写入不会出现：
+**不**\ 画的，是只因降级才存在的一切。用 ``active("...")`` 写的条件保留完整路径，隐藏的标志变量和对它们的自动写入不会出现。
 
-.. literalinclude:: region_active_display.demo.sh
-   :language: bash
-   :caption: region_active_display.demo.sh
+这些命令不在文档检查里运行，因为模型文件属于诊断页，不属于本页。下面的文字是它们记录下来的输出的摘选：PlantUML 文本里的图例和条件行，以及快照里的变量名和条件标签。
 
-.. literalinclude:: region_active_display.demo.sh.txt
-   :language: text
-   :caption: region_active_display.demo.sh.txt
+.. code-block:: bash
+
+   pyfcstm plantuml -i region_written_vs_running.fcstm
+   pyfcstm diagram -i region_written_vs_running.fcstm
+
+.. code-block:: text
+
+   | go | int | N/A | input |
+   | lamp | int | 0 | output |
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed")
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")
+
+   variables: go, lamp
+   guards: active("Panel.Switch.Pressed"), active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed"), go != 0, go == 0
 
 这个模型取自\ :doc:`诊断解释 </explanations/diagnostics/index_zh>`\ 。图例和快照的变量列表里都没有 ``__active_*`` 变量，而 ``--enable-verify`` 的一条发现会点出其中一个。图展示的是书写的模型；运行的机器不是读者需要看到的东西。没有任何输出标出一次运行的当前配置：运行态叠加不在这些输出的能力之内。
 

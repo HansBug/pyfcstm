@@ -113,13 +113,45 @@ BMC 的代价怎样随状态、区域与上界增长
 
 查询要求一件在 :math:`k` 步内不会发生的事，所以求解器必须证明“不可达”。这是代价最高、也最诚实的情形：可满足的查询在求解器找到一条见证（witness）时就结束了。
 
-.. literalinclude:: generate_regions.demo.sh
-   :language: bash
-   :caption: ``generate_regions.demo.sh``
+生成器是维护工具的 ``generate`` 命令，它是仓库里的一个脚本而不是 ``pyfcstm`` 命令，所以文档检查不会运行它。下面是两个区域、每个三个状态时的命令和输出，前一部分是模型，\ ``// query`` 之后是目标不可达的查询。
 
-.. literalinclude:: generate_regions.demo.sh.txt
-   :language: text
-   :caption: 输出：两个区域、每个三个状态，以及目标不可达的查询
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py generate regions --R 2 --S 3 --k 2
+
+.. code-block:: text
+
+   input int d;
+   state Root {
+       [*] -> Run;
+       state Run {
+           region R0 {
+               [*] -> P0;
+               state P0;
+               state P1;
+               state P2;
+               P0 -> P1 : if [d == 0];
+               P0 -> P0 : if [d == 1];
+               P1 -> P2 : if [d == 0];
+               P1 -> P0 : if [d == 1];
+               P2 -> P1 : if [d == 1];
+           }
+           region R1 {
+               [*] -> P0;
+               state P0;
+               state P1;
+               state P2;
+               P0 -> P1 : if [d == 0];
+               P0 -> P0 : if [d == 1];
+               P1 -> P2 : if [d == 0];
+               P1 -> P1 : if [d == 1];
+               P2 -> P1 : if [d == 1];
+           }
+       }
+   }
+
+   // query
+   check reach <= 2: active("Root.Run{R0: P2, R1: P2}");
 
 **它展示了什么。** 每个区域都有 ``d == 0`` 上的链 ``P0 -> P1 -> P2``\ ，以及 ``d == 1`` 上每个状态一条回边。查询要求两个区域都到达 ``P2``\ ，这需要多于 ``k = 2`` 步。\ **可以得出的结论。** 生成器很小且是确定的：相同参数得到相同模型。\ **不能得出的结论。** 这些模型无法说明你自己模型里的条件会怎样相互作用。
 
@@ -140,17 +172,47 @@ Z3 公式的规模只取决于结构和 :math:`k`\ ，所以可以精确计数�
 
    \mathrm{nodes}_{\mathrm{flat},V}(N,k) = 23\,N k - 20\,N + 4\,V k + 35\,k + 9
 
-你可以用公开接口自己核对第一个闭式。下面的脚本对三种规模建环，对四个上界编译查询，通过 Z3 自带的 Python 接口数节点，并与 :eq:`bmc-scaling-nodes-flat` 比较。
+你可以用公开接口自己核对第一个闭式。下面的脚本对三种规模建环，对四个上界编译查询，通过 Z3 自带的 Python 接口数节点，并把节点数与 :eq:`bmc-scaling-nodes-flat` 的值并排打印。
 
-.. literalinclude:: node_count.demo.py
-   :language: python
-   :caption: ``node_count.demo.py``
+.. testcode::
 
-.. literalinclude:: node_count.demo.py.txt
-   :language: text
-   :caption: ``node_count.demo.py`` 的输出
+   from pyfcstm.bmc import compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_text
 
-**每一部分做什么。** ``chain_machine`` 写出环；\ ``count_nodes`` 遍历一次表达式有向无环图，按 Z3 的 id 给每个节点计数；\ ``compile_bmc_query(...).solve_formula`` 是求解器收到的公式。\ **你看到什么。** 12 行都是 ``True``\ ：实测节点数与 :math:`21Nk-18N+33k+6` 完全相等。\ **可以得出的结论。** 对这一族模型，不必运行求解器就知道公式规模。\ **不能得出的结论。** 闭式对其他模型没有任何说明。节点计数用的是维护工具里同样的做法，它不是 pyfcstm 的公开函数。
+   print("N k nodes closed-form")
+   for n in (8, 12, 16):
+       ring = "".join(
+           "state S%d; S%d -> S%d : if [d == 0]; S%d -> S0 : if [d == 1];" % (i, i, (i + 1) % n, i)
+           for i in range(n)
+       )
+       model = load_state_machine_from_text("input int d; state Root { [*] -> S0; %s }" % ring)
+       for k in (2, 3, 4, 5):
+           query = 'check reach <= %d: active("Root.S%d");' % (k, k + 2)
+           seen, todo = set(), [compile_bmc_query(model, query).solve_formula]
+           while todo:
+               node = todo.pop()
+               if node.get_id() not in seen:
+                   seen.add(node.get_id())
+                   todo.extend(node.children())
+           print(n, k, len(seen), 21 * n * k - 18 * n + 33 * k + 6)
+
+.. testoutput::
+
+   N k nodes closed-form
+   8 2 264 264
+   8 3 465 465
+   8 4 666 666
+   8 5 867 867
+   12 2 360 360
+   12 3 645 645
+   12 4 930 930
+   12 5 1215 1215
+   16 2 456 456
+   16 3 825 825
+   16 4 1194 1194
+   16 5 1563 1563
+
+**每一部分做什么。** ``ring`` 一行写出各个状态及其两条转换；\ ``while`` 循环遍历一次表达式有向无环图，按 Z3 的 id 给每个节点计数；\ ``compile_bmc_query(...).solve_formula`` 是求解器收到的公式。\ **你看到什么。** 12 行的最后两列都相等：实测节点数与 :math:`21Nk-18N+33k+6` 完全相等。\ **可以得出的结论。** 对这一族模型，不必运行求解器就知道公式规模。\ **不能得出的结论。** 闭式对其他模型没有任何说明。节点计数用的是维护工具里同样的做法，它不是 pyfcstm 的公开函数。
 
 含区域的状态机，节点数的拟合系数不是整数：
 
@@ -235,7 +297,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
      - 1,152,649
      - 3.71
 
-这些行就是下文 ``check_formulas.demo.sh.txt`` 里 ``nodes against T`` 开头的各行；倍数是与上一行的比值。
+这些行就是下文 ``check-formulas`` 输出里 ``nodes against T`` 开头的各行；倍数是与上一行的比值。
 
 .. list-table:: 哪些系数是精确的，在哪里核对过
    :header-rows: 1
@@ -243,7 +305,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
    * - 闭式
      - 系数
-     - 核对（见下文 ``check_formulas.demo.sh.txt``\ ）
+     - 核对（见下文 ``check-formulas`` 输出）
    * - :eq:`bmc-scaling-nodes-flat`
      - 整数，精确
      - 16 个网格点全部相等；另有 60 个点（最大到 :math:`N=6400`\ 、\ :math:`k=128`\ ）全部相等
@@ -290,9 +352,47 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 调用次数在网格和三个大点上核对过。
 
-.. literalinclude:: check_formulas.demo.sh.txt
-   :language: text
-   :caption: ``check_formulas.demo.sh`` 的输出：每个闭式对照已提交的数据
+下面的命令把每个闭式与已提交的数据文件比较。它是只读取 ``data/*.jsonl`` 的维护命令，所以每次运行的输出相同；但它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。输出是从仓库里的一次运行复制来的。每一行是一次比较，数字来自 ``data/`` 里的点，这些点按上面两次测量的对照表所述的方式测得。
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py check-formulas --data data
+
+.. code-block:: text
+
+   flat nodes, grid: 16 points, all equal to the closed form
+   flat nodes, out of sample: 60 points up to N=6400, k=128, 0 differ
+   flat nodes with written variables, grid: 24 points, all equal
+   z3 boolean variables, grid: 48 points (T in 1,2,4), all equal
+   power-law fit of the 60 out-of-sample flat points: nodes = 14.6 * N^0.98 * k^1.14
+   region nodes, grid: 48 points, max |residual| = 11.5 nodes
+   region nodes, out of sample: 95 points up to R=768, S=1024, k=48; median error 0.12%, max 0.94%
+   contexts 2*W*V*(k-1), W=N-1: 34 points, all equal
+   flat z3 calls, grid: 16 points, max relative error 0.24%
+   region z3 calls, grid: 48 points, max relative error 0.28%
+   z3 calls {'R': 96, 'S': 4} k=3: measured 5212124, closed form 5097658 (-2.2%)
+   z3 calls {'R': 256, 'S': 4} k=3: measured 29080930, closed form 28202938 (-3.0%)
+   z3 calls {'N': 1600, 'T': 2} k=5: measured 10933762, closed form 10924139 (-0.1%)
+   solve time vs propagations (>2e4): 37 checks, exponent 0.92, R^2 0.98, ns per propagation p10 176 median 222 p90 365
+   pigeonhole conflict ratio per added region: 5: x2.4, 6: x3.4, 7: x4.1, 8: x6.5, 9: x5.2, 10: x6.1, 11: x9.4
+   pigeonhole conflict ratio from 7 regions on: geometric mean x6.0
+   context cost N=100 V=4 k=5: 3168 contexts, build 4.9 s (0.5 s without variables), 1.37 ms per context
+   context cost N=100 V=16 k=5: 12672 contexts, build 16.7 s (0.5 s without variables), 1.27 ms per context
+   context cost N=100 V=64 k=5: 50688 contexts, build 65.6 s (0.5 s without variables), 1.28 ms per context
+   nodes against T, flat {'N': 100} k=5: T=1: 5263, T=2: 8871 (x1.69), T=4: 16503 (x1.86), T=8: 33999 (x2.06), T=16: 78835 (x2.32), T=32: 205167 (x2.60), T=64: 608655 (x2.97), T=128: 2030730 (x3.34)
+   nodes against T, regions {'R': 4, 'S': 8} k=3: T=1: 1523, T=2: 2069 (x1.36), T=4: 3275 (x1.58), T=8: 5907 (x1.80), T=16: 13079 (x2.21), T=32: 32277 (x2.47), T=64: 85157 (x2.64), T=128: 310939 (x3.65), T=256: 1152649 (x3.71)
+   build seconds per z3 call {'R': 96, 'S': 4} k=3: 2.72 s for 5212124 calls, 0.52 microseconds per call
+   build seconds per z3 call {'R': 256, 'S': 4} k=3: 14.84 s for 29080930 calls, 0.51 microseconds per call
+   build seconds per z3 call {'N': 1600, 'T': 2} k=5: 17.88 s for 10933762 calls, 1.63 microseconds per call
+   share of build time, original points above 1 s, flat: 134 points, median 96%, range 32% to 100%
+   share of build time, original points above 1 s, regions: 113 points, median 49%, range 17% to 95%
+   context cost, original campaign, N=100 V=4 k=5: build 19.3 s, 3168 contexts, 6.09 ms per context
+   context cost, original campaign, N=100 V=4 k=5: build 19.6 s, 3168 contexts, 6.19 ms per context
+   context cost, original campaign, N=100 V=16 k=5: build 76.4 s, 12672 contexts, 6.03 ms per context
+   context cost, original campaign, N=100 V=16 k=5: build 78.1 s, 12672 contexts, 6.16 ms per context
+   context cost, original campaign, N=100 V=64 k=5: build 87.9 s, 50688 contexts, 1.73 ms per context
+   context cost, original campaign, N=100 V=64 k=5: build 88.8 s, 50688 contexts, 1.75 ms per context
+   closed forms agree with the data in data
 
 **它展示了什么。** 每一行写出一个闭式、与它比较的点数以及结果。写着“all equal”的行是精确的；给出误差的行是拟合的。\ **可以得出的结论。** 拟合的调用次数在网格上误差在 0.3% 以内，在大点上误差在 3.1% 以内。\ **不能得出的结论。** 区域调用次数的网格只到 :math:`R=8`\ 、\ :math:`S=24`\ 、\ :math:`k=8`\ ；超出以后误差缓慢增大，\ :math:`R=96` 与 :math:`R=256` 的 :math:`-2.2\%` 和 :math:`-3.0\%` 两行就是例子。
 
@@ -376,13 +476,46 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 求解的代价取决于区域之间互相约束的强弱，而不是区域的个数。互不相干的区域很便宜：原始测量里，768 个各有四个状态的区域在 280 秒内算完。反面是鸽巢结构：取 :math:`m` 个区域，每个区域由自己的输入进入 :math:`m-1` 个状态中的一个，问所有区域能否落在互不相同的状态里。这不可能，求解器必须证明这一点。
 
-.. literalinclude:: pigeonhole.demo.sh
-   :language: bash
-   :caption: ``pigeonhole.demo.sh``
+模型和查询来自维护工具的 ``generate`` 命令，它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。下面是三个区域、两个状态时的命令和输出，\ ``// query`` 之后是要求互不相同的查询。
 
-.. literalinclude:: pigeonhole.demo.sh.txt
-   :language: text
-   :caption: 输出：三个区域、各两个状态，以及要求互不相同的查询
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py generate pigeonhole --holes 2 --pigeons 3
+
+.. code-block:: text
+
+   input int d0;
+   input int d1;
+   input int d2;
+   state Root {
+       region P0 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d0 == 0];
+           W -> H1 : if [d0 == 1];
+       }
+       region P1 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d1 == 0];
+           W -> H1 : if [d1 == 1];
+       }
+       region P2 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d2 == 0];
+           W -> H1 : if [d2 == 1];
+       }
+   }
+
+   // query
+   check reach <= 2: (((((active("Root.P0.H0") || active("Root.P0.H1")) && (active("Root.P1.H0") || active("Root.P1.H1"))) && ((active("Root.P2.H0") || active("Root.P2.H1")) && !(active("Root.P0.H0") && active("Root.P1.H0")))) && ((!(active("Root.P0.H0") && active("Root.P2.H0")) && !(active("Root.P1.H0") && active("Root.P2.H0"))) && (!(active("Root.P0.H1") && active("Root.P1.H1")) && !(active("Root.P0.H1") && active("Root.P2.H1"))))) && !(active("Root.P1.H1") && active("Root.P2.H1")));
 
 **它展示了什么。** 每个区域 ``P0``\ 、\ ``P1``\ 、\ ``P2`` 从 ``W`` 进入 ``H0`` 或 ``H1``\ ；查询要求每个区域都处于某个 ``H`` 状态，且任意两个区域不处于同一个。三个区域、两个状态时这不可能。\ **可以得出的结论。** 这一族对每个 :math:`m` 都不可满足。\ **不能得出的结论。** 只测了一种互斥结构，别的结构可能表现不同。
 
@@ -504,11 +637,11 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
      - 512 (126 s)
      - 1024
 
-这些行由 ``range_table.demo.sh`` 打印：
+这些行是维护工具的 ``range-table`` 命令的输出，该命令读取已提交的 ``data/*.jsonl`` 文件；它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。上面的表就是它的输出，经过转录。
 
-.. literalinclude:: range_table.demo.sh.txt
-   :language: text
-   :caption: ``range_table.demo.sh`` 的输出
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py range-table --data data
 
 .. figure:: time_flat_zh.plot.py.svg
    :alt: 不含区域的状态机，构造、求解与总计秒数对状态数、上界与每个状态的转换数的曲线。
@@ -524,9 +657,28 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
 
 **重测抽查。** 有原始对应点的 13 个重测点，列出重测与原始的比值：
 
-.. literalinclude:: compare_retest.demo.sh.txt
-   :language: text
-   :caption: ``compare_retest.demo.sh`` 的输出
+下表是维护工具的 ``compare-retest`` 命令的输出，该命令读取已提交的 ``data/*.jsonl`` 文件；它是仓库里的脚本而不是 ``pyfcstm`` 命令，文档检查不会运行它。输出是从仓库里的一次运行复制来的。\ ``original`` 与 ``retest`` 是上面所述两次测量的总耗时，单位为秒。
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py compare-retest --data data
+
+.. code-block:: text
+
+   configuration                       original    retest  ratio
+   {"N": 100, "T": 2} k=5                  0.7s      0.6s   0.79
+   {"N": 200, "T": 2} k=5                  1.5s      1.2s   0.79
+   {"N": 400, "T": 2} k=5                  3.3s      2.6s   0.78
+   {"N": 800, "T": 2} k=5                  7.7s      6.4s   0.82
+   {"N": 1600, "T": 2} k=5                21.7s     20.4s   0.94
+   {"N": 3200, "T": 2} k=5                62.1s     55.6s   0.90
+   {"N": 6400, "T": 2} k=5               216.4s    180.6s   0.83
+   {"N": 400, "T": 2} k=2                  1.1s      0.8s   0.75
+   {"N": 400, "T": 2} k=4                  2.5s      2.0s   0.79
+   {"N": 400, "T": 2} k=8                  5.6s      4.8s   0.85
+   {"N": 400, "T": 2} k=16                11.5s     10.7s   0.93
+   {"N": 400, "T": 2} k=32                30.1s     25.8s   0.86
+   {"N": 400, "T": 2} k=64               117.8s     94.0s   0.80
 
 重测的每个点都更快，比值在 0.75 到 0.94 之间，中位数 0.82。原始测量同时运行 56 个进程，每个点都与其他进程共用内存带宽和缓存；重测只有自己一个进程，但机器仍与其他作业共用。另有两个重测点没有跑完：\ :math:`N=12800` 超过了进程的 420 秒限制，\ :math:`N=400`\ 、\ :math:`k=128` 在 250 秒求解限制后以 ``unknown`` 结束。两者都与原始测量的超时不矛盾。每个点都只跑一次，所以比值只是粗略的核对，不是修正系数。
 
@@ -573,7 +725,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
    * - ``bmc-scaling-nodes-flat``
      - 环的节点数，无变量
      - ``compile_bmc_query``\ 、\ ``BmcPropertyFormula.solve_formula``
-     - ``check-formulas``\ ；\ ``node_count.demo.py``
+     - ``check-formulas``\ ；\ 公式规模一节的节点计数脚本
      - ``formula_grid.jsonl``\ 、\ ``timing.jsonl``
    * - ``bmc-scaling-nodes-flat-vars``
      - 带被写入变量的节点数
@@ -628,7 +780,7 @@ Z3 求解器在第一次检查时分配的布尔变量数，对任意 :math:`T` 
    * - ``bmc-scaling-conflict-growth``
      - 每多一个互斥区域的冲突数倍数
      - ``solve_bmc_property``
-     - ``check-formulas``\ ；\ ``pigeonhole.demo.sh``
+     - ``check-formulas``\ ；\ 最坏情形一节的鸽巢模型
      - ``pigeonhole.jsonl``
 
 接下来读什么

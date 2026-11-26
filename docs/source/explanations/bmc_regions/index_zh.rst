@@ -26,7 +26,7 @@
 
 下面每一节都使用\ :doc:`区域教程 </tutorials/regions/index_zh>`\ 里的联锁控制器。\ ``Safety`` 写在 ``Motion`` 之前，所以每个周期里 ``Safety`` 先更新 ``permit``\ ，\ ``Motion`` 再读取它。
 
-.. literalinclude:: ../../tutorials/regions/controller.fcstm
+.. literalinclude:: /_models/controller.fcstm
    :language: fcstm
    :linenos:
 
@@ -35,10 +35,41 @@
 .. literalinclude:: interlock.fbmcq
    :language: fbmcq
 
-``forbid`` 搜索 ``motor`` 为 1 且 ``permit`` 为 0 的帧。下面的命令在按原样书写的模型和 ``controller_swapped.fcstm`` 上各运行一次，后者只是把 ``Motion`` 写在 ``Safety`` 之前。脚本删掉了打印求解耗时的那一行，因此每次运行的输出相同。
+``forbid`` 搜索 ``motor`` 为 1 且 ``permit`` 为 0 的帧。下面的命令在按原样书写的模型和 :download:`controller_swapped.fcstm </_models/controller_swapped.fcstm>` 上各运行一次，后者只是把 ``Motion`` 写在 ``Safety`` 之前。把 :download:`controller.fcstm </_models/controller.fcstm>`\ 、\ :download:`controller_swapped.fcstm </_models/controller_swapped.fcstm>` 和 :download:`interlock.fbmcq <interlock.fbmcq>` 放进同一个目录就可以运行它们。单独一行 ``...`` 代表页面不讨论的报告行，其中包括打印求解耗时的那一行。
 
-.. literalinclude:: interlock.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q interlock.fbmcq --color never
+   BMC forbid <= 4: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   Conclusion: Every admissible execution within 4 macro-steps satisfies the forbid property.
+   ...
+   $ echo $?
+   0
+   $ pyfcstm bmc -i controller_swapped.fcstm -q interlock.fbmcq --color never
+   BMC forbid <= 4: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   Trace
+     0: init
+          -> Controller.Idle [initial]
+          [start] -> Controller.Idle [initial]
+     1: Controller.Idle
+          -> Controller.Idle [fallback]
+          Controller.Idle -> Controller.Idle [fallback]
+     2: Controller.Idle
+          -> Controller.Running{Motion: Off, Safety: Watching} [transition; events=Controller.Start]
+          Controller.Idle -> Controller.Running [transition]
+          Running: [start] -> Motion.Off [initial]
+          Running: [start] -> Safety.Watching [initial]
+     3: Controller.Running{Motion: Off, Safety: Watching}
+          -> Controller.Running{Motion: On, Safety: Watching} [transition]
+          Motion: Off -> On [transition]
+          Safety: Watching -> Watching [fallback]
+   ...
+   $ echo $?
+   1
 
 先看两条标题行。\ ``Safety`` 在前时结论是 ``PROPERTY GUARANTEED WITHIN BOUND``\ ，退出码为 0：至多四个宏步的任何执行都不会在许可关闭时让电机开着。\ ``Motion`` 在前时结论是 ``PROPERTY DOES NOT HOLD WITHIN BOUND``\ ，退出码为 1，报告打印出一条已由仿真器回放的反例。两个模型只差书写顺序，所以顺序是公式的一部分。本页其余部分推导它怎样进入公式。
 
@@ -87,12 +118,40 @@
 
 第一行让停驻拥有者的区域留在自己的命名空间里。第二行让区域恰好在拥有者没有停驻时处于不活动。第三行禁止区域全部已完成的停驻拥有者：区域全部结束的一组会在同一周期里把控制交还（第 4 节），所以没有任何帧可以停在那里。\ ``region_frame_constraints`` 构造这些约束，\ ``test_the_frame_constraints_are_part_of_the_core_and_can_be_read_back`` 把它们从核心公式中读回。
 
-下面的脚本固定工作查询的四个周期（输入与 ``Start`` 事件），求解核心公式，并为每一帧打印每个区域的位置和两个变量。它是可选的验证基础设施，完整源码是 :download:`positions.demo.py <positions.demo.py>`\ 。读取符号的行是：位置用 ``symbols.region_position(frame, path)``\ ，变量用 ``symbols.frame_var(frame, name)``\ 。
+位置符号是求解器内部的东西，但 ``pyfcstm bmc`` 解码出的见证能显示它们的效果。下面的命令把工作查询里对调顺序的模型求解成 JSON 结果，并为每一帧打印配置和两个变量。配置只在拥有者停驻时才写出它的各个区域。
 
-.. literalinclude:: positions.demo.py.txt
-   :language: text
+.. code-block:: console
 
-看 ``controller`` 块。第 0 帧和第 1 帧里机器在初始哨兵和 ``Idle``\ ，拥有者没有停驻，两个位置都是 ``INACTIVE``\ 。第 2 帧里拥有者停驻，\ ``Safety`` 和 ``Motion`` 分别持有 ``Watching`` 和 ``Off``\ 。没有任何一帧的位置不是自己区域的状态标识、\ ``DONE`` 或 ``INACTIVE``\ ，这就是 :eq:`eq-region-position-domain` 前两行在起作用。这个块只展示一次执行，不能证明约束；证明由测试完成。
+   $ pyfcstm bmc -i controller_swapped.fcstm -q interlock.fbmcq --json -o result.json
+   $ echo $?
+   1
+
+.. testcode::
+
+   import json
+
+   with open("result.json", encoding="utf-8") as stream:
+       result = json.load(stream)
+   for frame in result["witness"]["frames"]:
+       print(
+           "frame %d: %s | permit=%d motor=%d"
+           % (
+               frame["index"],
+               frame.get("configuration") or frame["sentinel"],
+               frame["vars"]["permit"],
+               frame["vars"]["motor"],
+           )
+       )
+
+.. testoutput::
+
+   frame 0: init | permit=0 motor=0
+   frame 1: Controller.Idle | permit=0 motor=0
+   frame 2: Controller.Idle | permit=0 motor=0
+   frame 3: Controller.Running{Motion: Off, Safety: Watching} | permit=1 motor=0
+   frame 4: Controller.Running{Motion: On, Safety: Watching} | permit=0 motor=1
+
+第 0 帧到第 2 帧里机器在初始哨兵或 ``Idle``\ ，拥有者 ``Running`` 没有停驻，所以没有列出任何区域；在编码里这几帧中两个位置都是 ``INACTIVE``\ ，这是 :eq:`eq-region-position-domain` 的第二行。第 3 帧里拥有者停驻，列出的区域是处于 ``Off`` 的 ``Motion`` 和处于 ``Watching`` 的 ``Safety``\ ，都是自己区域的状态。这段输出只展示一次执行，不能证明约束；证明由测试完成。
 
 2. 区域按书写顺序串联
 ---------------------
@@ -110,23 +169,39 @@
 
 :math:`\mathrm{Run}_{t,i}` 是区域 :math:`R_i` 这一轮的降低结果。它对区域可能所处的每个位置各有一条蕴含：\ ``p == leaf`` 蕴含该叶子的各条路径；另外还有区域已完成或不活动的情形，那种情形只把位置和值带过去。后面的区域从 :math:`\xi_t^{(i-1)}` 读入，所以它看到前面区域的新值，反过来则不会。没有任何东西让前面的区域在后面区域写入的值上再跑一遍，这就是前面的区域不重跑的设计规则。
 
-第 1 节的脚本还打印了故障周期里交接的值，它们是从求解出的模型的中间符号里读出来的。符号名是实现细节，脚本只是为了展示交接才读取它们。
-
-.. literalinclude:: positions.demo.py.txt
-   :language: text
-   :lines: 1,7-9,10,16-18
-
-节选保留了每个模型的故障周期。\ ``Safety`` 在前时，区域 1 之后的向量是 ``permit=0``\ 、\ ``motor=1``\ ：\ ``Safety`` 收回了许可，而 ``Motion`` 还没有行动。随后 ``Motion`` 读到 ``permit=0``\ ，把 ``motor`` 置为 0。\ ``Motion`` 在前时，它读到 ``permit=1``\ ，保持开启，\ ``Safety`` 之后才清除许可，所以第二个块的第 4 帧是 ``motor=1`` 且 ``permit=0``\ 。这就是 ``forbid`` 查询找到的反例。节选只说明串联是有序的，不说明 Z3 怎样找到它。
+第 1 节的各帧显示了故障周期里的交接，也就是从第 3 帧到第 4 帧的那一步。\ ``Motion`` 在前时，它读到 ``permit=1``\ ，把电机打开，\ ``Safety`` 之后才清除许可，所以第 4 帧是 ``motor=1`` 且 ``permit=0``\ 。这就是 ``forbid`` 查询找到的反例。按模型文本推演，\ ``Safety`` 在前时区域 2 收到的向量 :math:`\xi_t^{(1)}` 里 ``permit=0``\ ：\ ``Motion`` 随后读到 ``permit=0``\ ，把 ``motor`` 置为 0，所以没有任何一帧能出现被禁止的组合，这正是上面第一条命令的结论。\ :math:`\xi_t^{(1)}` 里的值是任何报告都不打印的中间符号，所以后半句是对模型的推读，而不是本页的输出。
 
 为什么公式是求和
 ~~~~~~~~~~~~~~~~
 
-每个 :math:`\mathrm{Run}_{t,i}` 只由区域 :math:`R_i` 自己的单元降低而来，各单元只通过 :math:`\xi_t^{(i)}` 相连。平铺展开则需要为各区域路径的每一种组合各写一条路径。下一个脚本统计一个工作周期降低出的路径数，区域数从一到八，每个区域在各自的事件上于两个状态之间切换。
+每个 :math:`\mathrm{Run}_{t,i}` 只由区域 :math:`R_i` 自己的单元降低而来，各单元只通过 :math:`\xi_t^{(i)}` 相连。平铺展开则需要为各区域路径的每一种组合各写一条路径。下一个脚本统计一个工作周期降低出的路径数，区域数从一到八，每个区域在一个事件上于两个状态之间切换。输出的三列依次是区域数、降低出的路径数，以及 :math:`n` 个区域的 :math:`4^{n}`\ 。
 
-.. literalinclude:: lowered_paths.demo.py.txt
-   :language: text
+.. testcode::
 
-每多一个区域增加四条降低出的路径：两个停驻位置乘以两种结果（转换或回退）。无论区域数是多少，还有两条始终存在：从初始帧出发的冷启动路径，以及所有区域结束后根状态的续接。第三列是按同一描述平铺展开所需的组合路径数。计数说明降低出的路径数随区域数相加增长。它统计的是路径而不是公式节点；精确闭式以及代价仍然陡增的地方见 :doc:`/explanations/bmc_scaling/index_zh`\ 。
+   from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+   from pyfcstm.model import load_state_machine_from_text
+
+   for regions in range(1, 9):
+       text = "state Root { %s }" % "".join(
+           "region R%d { [*] -> Off; state Off; state On; Off -> On :: Go; On -> Off :: Go; }" % i
+           for i in range(regions)
+       )
+       query = "check reach <= 2: terminated();"
+       core = build_bmc_core_formula(BmcEngine(load_state_machine_from_text(text)).prepare(query))
+       print(regions, len(core.region_steps[1].cases), 4**regions)
+
+.. testoutput::
+
+   1 6 4
+   2 10 16
+   3 14 64
+   4 18 256
+   5 22 1024
+   6 26 4096
+   7 30 16384
+   8 34 65536
+
+每多一个区域增加四条降低出的路径：两个停驻位置乘以两种结果（转换或回退）。无论区域数是多少，还有两条始终存在：从初始帧出发的冷启动路径，以及所有区域结束后根状态的续接。查询的第 0 步是冷启动，所以 ``region_steps[1]`` 是区域开始工作的第一个周期。第三列是按同一描述平铺展开所需的组合路径数。计数说明降低出的路径数随区域数相加增长。它统计的是路径而不是公式节点；精确闭式以及代价仍然陡增的地方见 :doc:`/explanations/bmc_scaling/index_zh`\ 。
 
 3. 进入拥有者会启动每个区域
 ---------------------------
@@ -155,8 +230,30 @@
 
 三条查询：一条没有假设，一条固定 ``g == 0`` 并要求到达拥有者，一条固定 ``g == 0`` 且只要求看到任意轨迹。
 
-.. literalinclude:: owner_start.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ cat blocked_free.fbmcq blocked_stuck.fbmcq blocked_zero.fbmcq
+   check reach <= 1: active("Root.Run");
+   assume always: g == 0;
+   check reach <= 2: active("Root.Run");
+   assume always: g == 0;
+   check reach <= 2: true;
+   $ pyfcstm bmc -i blocked.fcstm -q blocked_free.fbmcq --color never
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i blocked.fcstm -q blocked_stuck.fbmcq --color never
+   BMC reach <= 2: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i blocked.fcstm -q blocked_zero.fbmcq --color never
+   ...
+   Trace
+     0: init
+          -> init [delta]
+     1: init
+          -> init [delta]
+   ...
 
 ``g`` 自由时一步内就能到达 ``Root.Run``\ ：两个区域都启动。\ ``g == 0`` 时，尽管 ``A`` 自己可以启动，\ ``Root.Run`` 这个目标在两步内也不可实现。只要求轨迹的那条查询打印出两个 ``[delta]`` 步：机器停在初始帧，因为整个进入被拒绝，下一个周期再试一次。这是仿真器规则的编码：无法进入的冷启动让一切保持原样。输出没有展示拒绝的代价，也不声称仿真器会选择另一个入口；按同一条规则它不会。
 
@@ -189,10 +286,39 @@
    :language: fcstm
    :linenos:
 
-脚本提出五个问题，并打印每条查询及其报告的标题行。
+五条查询提出五个问题。第一条命令显示查询文件，之后每条命令只保留报告里正文讨论的标题行。
 
-.. literalinclude:: joint_completion.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ cat joint_a_done.fbmcq joint_all_done.fbmcq joint_next.fbmcq joint_blocked_b_done.fbmcq joint_blocked_next.fbmcq
+   check reach <= 3: active("Root.Job{A: [done]}");
+   check reach <= 3: active("Root.Job{A: [done], B: [done]}");
+   check reach <= 3: active("Root.Next");
+   assume always: ok == 0;
+   check reach <= 3: active("Root.Job{B: [done]}");
+   assume always: ok == 0;
+   check reach <= 3: active("Root.Next");
+   $ pyfcstm bmc -i joint.fcstm -q joint_a_done.fbmcq --color never
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i joint.fcstm -q joint_all_done.fbmcq --color never
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i joint.fcstm -q joint_next.fbmcq --color never
+   BMC reach <= 3: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   $ pyfcstm bmc -i joint.fcstm -q joint_blocked_b_done.fbmcq --color never
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
+   $ pyfcstm bmc -i joint.fcstm -q joint_blocked_next.fbmcq --color never
+   BMC reach <= 3: GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS
+   ...
+   $ echo $?
+   1
 
 ``A`` 可以单独结束（第一条）：\ ``B`` 仍在工作，所以 :eq:`eq-region-joint-completion` 的第一行不需要续接就成立。两个区域都已完成的状态不可达（第二条），这是 :eq:`eq-region-position-domain` 第三行的要求。\ ``Next`` 可达（第三条），这需要最后一次结束与交还在同一步里完成。\ ``ok`` 固定为 0 时，\ ``B`` 永远不能结束（第四条），\ ``Next`` 也不可达（第五条）：最后一个区域被拒绝，而不是停在 ``[done]``\ 。这些运行不能证明其他形状也成立；\ ``test_the_last_region_may_finish_only_if_the_owner_can_continue`` 及其相邻测试才能证明。
 
@@ -201,12 +327,30 @@
 
 切面给 :math:`\xi` 再加两类值：对每个声明了 ``>> during`` 动作的作用域，一个表示它的 ``before`` 动作在本周期已经运行的标志，和一个表示它欠着 ``after`` 动作的标志。标志随串联一起传递。因此 ``before`` 动作每个作用域每个周期运行一次，由外向内。欠着的 ``after`` 动作在它所属作用域的分支结束时结算，最内层的作用域先结算，所以下一个区域已经能看到它。不在区域内的作用域在周期末结算。公式随切面作用域的个数增长，而不随它们子集的个数增长。
 
-拥有者上不带 ``>>`` 的普通 ``during before`` 属于整组的初始化：它在进入第一个非伪状态的子状态之前运行一次。普通 ``during after`` 在把控制交还的已提交路径上运行一次。下一个脚本按调用顺序列出两个模型每一步的抽象动作。
+拥有者上不带 ``>>`` 的普通 ``during before`` 属于整组的初始化：它在进入第一个非伪状态的子状态之前运行一次。普通 ``during after`` 在把控制交还的已提交路径上运行一次。下一个脚本按调用顺序列出两个模型每一步的抽象动作，数据取自 ``pyfcstm bmc --json`` 写出的 JSON 结果。
 
-.. literalinclude:: aspect_order.demo.sh.txt
-   :language: text
+.. code-block:: console
 
-第一个模型里，\ ``Pre`` 与 ``Post`` 是根的切面，\ ``PostA`` 声明在区域 ``A`` 内。每一步先调用 ``Pre``\ ，最后调用 ``Post``\ ，而 ``PostA`` 紧跟在 ``WorkA`` 之后、\ ``WorkB`` 开始之前运行：\ ``A`` 的分支结束了，所以它的 ``after`` 动作在 ``B`` 的轮次之前结算。第二个模型里 ``Prep`` 是拥有者的普通 ``during before``\ ，它先于两个区域的 ``enter`` 动作。两个模型在 :download:`aspects.fcstm <aspects.fcstm>` 与 :download:`plain_before.fcstm <plain_before.fcstm>` 中。输出只显示调用顺序，不显示抽象调用的快照，快照在第 6 节讲。
+   $ pyfcstm bmc -i aspects.fcstm -q aspects.fbmcq --json -o aspects.json
+   $ pyfcstm bmc -i plain_before.fcstm -q plain_before.fbmcq --json -o plain_before.json
+
+.. testcode::
+
+   import json
+
+   for name in ("aspects", "plain_before"):
+       with open(name + ".json", encoding="utf-8") as stream:
+           steps = json.load(stream)["witness"]["steps"]
+       for step in steps:
+           print(name, step["index"], " ".join(call["action_name"] for call in step["abstract_calls"]))
+
+.. testoutput::
+
+   aspects 0 Root.Pre Root.A.P.WorkA Root.A.PostA Root.B.Q.WorkB Root.Post
+   aspects 1 Root.Pre Root.A.P.WorkA Root.A.PostA Root.B.Q.WorkB Root.Post
+   plain_before 0 Root.Job.Prep Root.Job.A.P.OnP Root.Job.B.Q.OnQ
+
+第一个模型里，\ ``Pre`` 与 ``Post`` 是根的切面，\ ``PostA`` 声明在区域 ``A`` 内。每一步先调用 ``Pre``\ ，最后调用 ``Post``\ ，而 ``PostA`` 紧跟在 ``WorkA`` 之后、\ ``WorkB`` 开始之前运行：\ ``A`` 的分支结束了，所以它的 ``after`` 动作在 ``B`` 的轮次之前结算。第二个模型里 ``Prep`` 是拥有者的普通 ``during before``\ ，它先于两个区域的 ``enter`` 动作。两个模型及其查询在 :download:`aspects.fcstm <aspects.fcstm>`\ 、\ :download:`aspects.fbmcq <aspects.fbmcq>`\ 、\ :download:`plain_before.fcstm <plain_before.fcstm>` 与 :download:`plain_before.fbmcq <plain_before.fbmcq>` 中。输出只显示调用顺序，不显示抽象调用的快照，快照在第 6 节讲。
 
 5. 热启动构造第一帧
 -------------------
@@ -240,15 +384,31 @@
 
 查询让 ``Motion`` 从 ``On`` 开始，并要求到达完整的配置。
 
-.. literalinclude:: hot_start.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q start_motion_on.fbmcq --color never
+   BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Trace
+     0: Controller.Running{Safety: [init], Motion: On}
+          -> Controller.Running{Safety: Watching, Motion: On} [initial]
+          Running: [start] -> Safety.Watching [initial]
+          Motion: On -> On [fallback]
+   ...
 
 轨迹从 ``Controller.Running{Safety: [init], Motion: On}`` 开始。第 0 步有两行：\ ``Running: [start] -> Safety.Watching [initial]`` 启动等待初始化的区域，\ ``Motion: On -> On [fallback]`` 运行 ``Motion`` 的 ``during``\ 。没有任何一行进入 ``Motion``\ ，因为它是被直接放到位的。
 
 让某个拥有者的全部区域都已完成的起点会在编译查询时被拒绝，因为没有任何帧可以保存这个位置（\ :eq:`eq-region-position-domain` 的第三行）。这是负例；查询是有意被拒绝的。
 
-.. literalinclude:: hot_start_refused.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ cat start_all_done.fbmcq
+   init state("Root.Job{A: [done], B: [done]}");
+   check reach <= 1: true;
+   $ pyfcstm bmc -i joint.fcstm -q start_all_done.fbmcq
+   Failed to compile BMC query: invalid_start_position at initial.state_path: all regions are done at 'Root.Job'; a finished owner cannot be hot-started.
+   $ echo $?
+   1
 
 诊断码是 ``invalid_start_position``\ ，退出码为 1，不写出 JSON 结果。不是模型中位置的配置文本（例如 ``Root.Job{A: Nope}``\ ）也用同一个诊断码拒绝，而指向不存在状态的普通路径用 ``unknown_state`` 拒绝。
 
@@ -274,16 +434,41 @@
 * 还没有启动的区域显示 ``[init]``\ ；
 * 同一周期里拥有者被重新进入时，进入的调用看到每个区域都是 ``[init]``\ ，而退出与切面的调用仍然看到原来的位置。
 
-``called`` 与 ``call_count`` 也会把一组区域结束时结算的 ``>> during after`` 调用，按仿真器告诉处理函数的状态来统计：切面包住整组时是拥有者，位于下面时是叶子（\ ``test/bmc/test_region_call_records.py`` 中的 ``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf``\ ）。下一个脚本的模型进入 ``O``\ ，让两个区域结束，并在第二步里再次进入 ``O``\ 。
+``called`` 与 ``call_count`` 也会把一组区域结束时结算的 ``>> during after`` 调用，按仿真器告诉处理函数的状态来统计：切面包住整组时是拥有者，位于下面时是叶子（\ ``test/bmc/test_region_call_records.py`` 中的 ``test_an_aspect_over_a_group_reports_the_owner_and_over_a_region_its_leaf``\ ）。下一个脚本的模型进入 ``O``\ ，让两个区域结束，并在第二步里再次进入 ``O``\ 。六条查询各自询问：某个抽象动作是否在某一步被调用，同时整台机器匹配某个模式；存在这样的调用时脚本打印 ``sat``\ ，不存在时打印 ``unsat``\ 。
 
 .. literalinclude:: reenter.fcstm
    :language: fcstm
    :linenos:
 
-.. literalinclude:: call_snapshots.demo.sh.txt
-   :language: text
+.. testcode::
 
-成对地看。第 0 步里 ``Q``\ （区域 ``B``\ ）的进入看到 ``A`` 已经在 ``P``\ ：\ ``A`` 先行动。第 0 步里 ``P`` 的进入看到 ``B`` 是 ``[init]``\ 。第 1 步里拥有者在两个区域都结束之后再次被进入：\ ``P`` 的进入看到 ``B`` 是 ``[init]`` 而不是 ``Q``\ ，\ ``P`` 的退出仍然看到 ``B`` 在 ``Q``\ 。每一对里有一条可实现、一条不可实现的查询，所以这个答案是编码的性质，而不是求解器碰巧选出的那一个见证的性质。
+   from pyfcstm.bmc import compile_bmc_query, solve_bmc_property
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open("reenter.fcstm", encoding="utf-8") as stream:
+       model = load_state_machine_from_text(stream.read())
+   asks = [
+       ("Root.O.B.Q.OnQ", 0, "Root.O{A: P}"),
+       ("Root.O.B.Q.OnQ", 0, "Root.O{A: [init]}"),
+       ("Root.O.A.P.OnEnter", 1, "Root.O{B: [init]}"),
+       ("Root.O.A.P.OnEnter", 1, "Root.O{B: Q}"),
+       ("Root.O.A.P.OnExit", 1, "Root.O{B: Q}"),
+       ("Root.O.A.P.OnExit", 1, "Root.O{B: [init]}"),
+   ]
+   for action, step, pattern in asks:
+       query = 'check reach <= 2: called("%s", step=%d, where active("%s"));' % (action, step, pattern)
+       print(solve_bmc_property(compile_bmc_query(model, query)).status, query)
+
+.. testoutput::
+
+   sat check reach <= 2: called("Root.O.B.Q.OnQ", step=0, where active("Root.O{A: P}"));
+   unsat check reach <= 2: called("Root.O.B.Q.OnQ", step=0, where active("Root.O{A: [init]}"));
+   sat check reach <= 2: called("Root.O.A.P.OnEnter", step=1, where active("Root.O{B: [init]}"));
+   unsat check reach <= 2: called("Root.O.A.P.OnEnter", step=1, where active("Root.O{B: Q}"));
+   sat check reach <= 2: called("Root.O.A.P.OnExit", step=1, where active("Root.O{B: Q}"));
+   unsat check reach <= 2: called("Root.O.A.P.OnExit", step=1, where active("Root.O{B: [init]}"));
+
+成对地看。第 0 步里 ``Q``\ （区域 ``B``\ ）的进入看到 ``A`` 已经在 ``P``\ ：\ ``A`` 先行动，它不会看到 ``A`` 是 ``[init]``\ 。第 1 步里拥有者在两个区域都结束之后再次被进入：\ ``P`` 的进入看到 ``B`` 是 ``[init]`` 而不是 ``Q``\ ，\ ``P`` 的退出仍然看到 ``B`` 在 ``Q``\ 。每一对里有一条可实现、一条不可实现的查询，所以这个答案是编码的性质，而不是求解器碰巧选出的那一个见证的性质。
 
 7. 见证，以及回放比较什么
 -------------------------
@@ -295,12 +480,36 @@
 * ``case_label`` 是在所有区域之外运行的那条路径的标签，没有这样的路径时为 ``null``\ 。区域内部的分支只在 ``local_cases`` 里报告。
 * 抽象调用带有调用那一刻的配置。
 
-下一个脚本把工作查询里对调顺序的模型求解成 JSON，并用 :download:`show_witness.py <show_witness.py>` 打印见证的三个视图。
+第 1 节的 ``result.json`` 保存着工作查询里对调顺序的模型的见证。下一个脚本打印每一步在所有区域之外运行的路径的标签和各局部分支，最后打印回放结果。
 
-.. literalinclude:: witness_regions.demo.sh.txt
-   :language: text
+.. testcode::
 
-第 4 帧是反例帧：故障周期之后 ``Motion`` 是 ``On``\ 。第 2 步先列出进入 ``Running`` 的转换（\ ``scope=None``\ ），然后按书写顺序每个区域一条初始路径。第 3 步的 ``case_label=None``\ ，因为没有路径在区域之外运行，并且有两个局部分支：\ ``Motion`` 打开，\ ``Safety`` 回退。这个模型里 ``Motion`` 先写，所以它排在前面。
+   import json
+
+   with open("result.json", encoding="utf-8") as stream:
+       result = json.load(stream)
+   for step in result["witness"]["steps"]:
+       print("step %d: case_label=%s" % (step["index"], step["case_label"]))
+       for case in step["local_cases"]:
+           print("    scope=%s kind=%s" % (case["scope"], case["kind"]))
+   print("replay ok=%s mismatches=%d" % (result["replay"]["ok"], len(result["replay"]["mismatches"])))
+
+.. testoutput::
+
+   step 0: case_label=__init__::initial::Controller.Idle::0
+       scope=None kind=initial
+   step 1: case_label=Controller.Idle::fallback::Controller.Idle::0
+       scope=None kind=fallback
+   step 2: case_label=Controller.Idle::transition::Controller.Running::0
+       scope=None kind=transition
+       scope=Controller.Running kind=initial
+       scope=Controller.Running kind=initial
+   step 3: case_label=None
+       scope=Controller.Running.Motion kind=transition
+       scope=Controller.Running.Safety kind=fallback
+   replay ok=True mismatches=0
+
+第 1 节的第 4 帧是反例帧：故障周期之后 ``Motion`` 是 ``On``\ 。第 2 步先列出进入 ``Running`` 的转换（\ ``scope=None``\ ），然后按书写顺序每个区域一条初始路径。第 3 步的 ``case_label=None``\ ，因为没有路径在区域之外运行，并且有两个局部分支：\ ``Motion`` 打开，\ ``Safety`` 回退。这个模型里 ``Motion`` 先写，所以它排在前面。
 
 人读报告把同样的分支打印成轨迹里的行。作用域相对于一步的任一端、机器在所有区域之外停驻的那个状态来书写，所以不同拥有者之下的同名区域读起来不同；拥有者本身读作它自己的最后一段名字，\ ``[start]`` 代表进入一个作用域，\ ``[done]`` 代表已结束的区域。上面报告里的 ``Running: [start] -> Motion.Off [initial]`` 就是区域 ``Motion`` 作为拥有者 ``Running`` 的一部分被进入。
 
@@ -334,19 +543,44 @@
 .. literalinclude:: spin.fbmcq
    :language: fbmcq
 
-下一个脚本通过 Python 接口用三个上限构建公式。命令行没有设置这个上限的选项。
+下一个脚本通过 Python 接口用两个上限构建 ``laps.fcstm`` 的公式。命令行没有设置这个上限的选项。
 
-.. literalinclude:: group_reentry.demo.py.txt
-   :language: text
+.. testcode::
 
-7 允许六圈，默认值也允许；6 少一次，错误里写明了拥有者、上限和选项。第二个模型 ``spin.fcstm`` 用输入来限制圈数，所以任何上限都不够。通过命令行，同一个错误表现为意外错误横幅和退出码 1，因为命令目前还没有把这个构建错误转成受控的诊断。这是负例；不要照抄这个模型。
+   from pyfcstm.bmc import BmcBuildError, BmcOptions, compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open("laps.fcstm", encoding="utf-8") as stream:
+       model = load_state_machine_from_text(stream.read())
+   with open("spin.fbmcq", encoding="utf-8") as stream:
+       query = stream.read()
+   for limit in (7, 6):
+       try:
+           compile_bmc_query(model, query, options=BmcOptions(max_group_reentries=limit))
+           print("max_group_reentries=%d: built" % limit)
+       except BmcBuildError as err:
+           print("max_group_reentries=%d: BmcBuildError: %s" % (limit, err))
+
+.. testoutput::
+
+   max_group_reentries=7: built
+   max_group_reentries=6: BmcBuildError: state 'Root.Spin' re-enters its own group more than 6 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+
+7 允许六圈，默认值 16 也允许；6 少一次，错误里写明了拥有者、上限和选项。第二个模型 ``spin.fcstm`` 用输入来限制圈数，所以任何上限都不够。通过命令行，同一个错误表现为意外错误横幅和退出码 1，因为命令目前还没有把这个构建错误转成受控的诊断。这是负例；不要照抄这个模型。
 
 .. literalinclude:: spin.fcstm
    :language: fcstm
    :linenos:
 
-.. literalinclude:: group_reentry.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i spin.fcstm -q spin.fbmcq
+   Unexpected error found when running pyfcstm!
+   Traceback (most recent call last):
+   ...
+   _BmcCliInternalError: state 'Root.Spin' re-enters its own group more than 16 times inside one cycle, so the relation cannot be bounded; raise BmcOptions.max_group_reentries to unroll it deeper.
+   $ echo $?
+   1
 
 另有三个上限与它无关。
 
@@ -354,10 +588,27 @@
 * 宏步展开器有区域继承来的固定保护，没有任何选项能改变它们：一条路径上至多 1000 个微步，栈深度 64。它们限制的是穿过一个单元的一条路径。本页不就区域能嵌套多深做任何声明。
 * 宏步展开器会拒绝在执行动作的同时回到某个状态的路径，也就是依赖动作的循环；仿真器在运行时抛出的搜索上限没有对应的有界形式。因此在声明了区域的共享语义用例里，四个搜索上限用例、三个依赖动作的循环用例和一个超出展开深度的重入用例被排除在与仿真器的差分检查之外。另有四个区域用例因其他原因被排除：两个需要调用者完整给出变量的热启动，两个需要查询语言从不使用的短事件名。
 
-.. literalinclude:: expression_depth.demo.sh.txt
-   :language: text
+.. testcode::
 
-五十项能构建，性质成立；一百五十项在编译时被拒绝，退出码为 1，没有轨迹。
+   from pyfcstm.bmc import InvalidBmcQuery, compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open("blocked.fcstm", encoding="utf-8") as stream:
+       model = load_state_machine_from_text(stream.read())
+   for terms in (50, 150):
+       query = "check reach <= 1: %s;" % " && ".join(["true"] * terms)
+       try:
+           compile_bmc_query(model, query)
+           print("%d terms: compiled" % terms)
+       except InvalidBmcQuery as err:
+           print("%d terms: InvalidBmcQuery: %s" % (terms, err))
+
+.. testoutput::
+
+   50 terms: compiled
+   150 terms: InvalidBmcQuery: expression_too_deep at query: an expression nests deeper than 100 levels; split the chain of operators across several assume or check clauses.
+
+五十项能编译；一百五十项在编译时被拒绝。通过命令行，同一个拒绝表现为以 ``Failed to compile BMC query: expression_too_deep ...`` 开头的一行，退出码为 1，没有轨迹。
 
 9. 与仿真器已知的差异
 ---------------------
@@ -374,8 +625,35 @@
    :language: fcstm
    :linenos:
 
-.. literalinclude:: known_differences.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
+     Runtime error: modulo_by_zero at step 1
+     Runtime error location: action block transition_effect in transition Root.Run.R.C::0::INIT_STATE->J
+   ...
+     Replay: runtime error reproduced: operation assignment to 'x' evaluation failed: integer ...modulo by zero
+   ...
+   $ echo $?
+   5
+   $ pyfcstm bmc -i outranked.fcstm -q outranked.fbmcq --color never
+   BMC reach <= 3: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
+     Runtime error: modulo_by_zero at step 1
+     Runtime error location: guard g1 in transition Root.Q::1::Q->T2
+   ...
+     Replay: runtime error reproduced: transition guard evaluation failed: integer ...modulo by zero
+   ...
+   $ echo $?
+   5
+   $ pyfcstm bmc -i dead_end.fcstm -q dead_end.fbmcq --color never --no-runtime-safety
+   Unexpected error found when running pyfcstm!
+   Traceback (most recent call last):
+   ...
+   SimulationRuntimeExpressionError: operation assignment to 'x' evaluation failed: integer ...modulo by zero
+   $ echo $?
+   1
 
 默认情况下两个模型都报告 ``RUNTIME ERROR REACHABLE WITHIN BOUND``\ ，退出码为 5，并给出失败的操作和运行时复现了该错误的确认。使用 ``--no-runtime-safety`` 时，\ ``dead_end.fcstm`` 上的性质查询找到了见证，回放抛出仿真器自己的错误：命令行打印意外错误横幅，退出码是 1 而不是 4。只有在确认模型不会除以零或越界时才关闭这项检查；之后的结果依赖这个假设。
 
@@ -397,12 +675,12 @@
      - ``region_frame_constraints``\ 、\ ``_owner_resting``\ ；\ ``relation.py`` 中的 ``BmcTraceSymbols.region_position``
      - ``test_a_resting_owner_never_has_every_region_done``\ 、\ ``test_regions_are_inactive_exactly_while_their_owner_does_not_rest``
      - ``interlock.fbmcq``
-     - 第 1 节第 0 帧到第 4 帧的位置
+     - 第 1 节第 0 帧到第 4 帧的配置
    * - :eq:`eq-region-value-chain`
      - ``_StepBuilder.advance_group``\ 、\ ``region_env``
      - ``test_the_earlier_region_decides_before_the_later_one_looks``\ 、\ ``test_swapping_the_regions_delays_the_stop_by_one_cycle``
      - 两种顺序下的 ``interlock.fbmcq``
-     - 第 3 步交接的值（第 2 节）
+     - 第 1 节的第 3 帧与第 4 帧（第 2 节）
    * - :eq:`eq-region-owner-start`
      - ``_StepBuilder.entry``\ （\ ``ok`` 与续接检查）
      - ``test_regions_start_in_declaration_order_on_the_values_left_behind``\ 、\ ``test_a_group_that_cannot_start_leaves_a_cold_start_delta``
@@ -423,7 +701,7 @@ Sphinx 检查引用能否解析，漂移检查比较中英文页面的标签与 
 
 本页确立了什么，没有确立什么：
 
-* 事实，由上面的查询展示：书写顺序改变联锁查询的结论；三个位置标记出现在公式所说的地方；起不来的区域会拒绝冷启动；没有续接时最后一个区域被拒绝；两个上限和两处已知差异的表现与打印出来的一致。
+* 事实，由上面的查询展示：书写顺序改变联锁查询的结论；各帧的配置遵守位置约束；起不来的区域会拒绝冷启动；没有续接时最后一个区域被拒绝；两个上限和两处已知差异的表现与打印出来的一致。
 * 事实，由测试而不是本页的运行展示：台账以及第 4 节、第 6 节点名的测试，例如切面包住一组时告诉处理函数的状态。
 * 推断：编码在共享语义用例和随机差分模型都不包含的形状上也与仿真器一致。差分检查是证据而不是证明，每个见证的回放是第二道防线。
 * 本页不涉及：求解耗时怎样增长，见 :doc:`/explanations/bmc_scaling/index_zh`\ 。

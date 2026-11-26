@@ -43,7 +43,7 @@ Inspect 任务指南
    * - 参考链接
      - 负责完整字段、选项或诊断码的页面。
 
-长流程保留在教程目录里的 ``inspect_*.demo.sh`` 文件中；正文只展示对读者有意义的短片段。
+带有更长报告的完整流程见教程；本页只展示对每项任务有意义的短摘录。
 
 1. 选择报告格式
 ----------------------------------------
@@ -82,7 +82,7 @@ Inspect 任务指南
 
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --color never | sed -n '1,22p'
 
-预期信号。已检查输出开头是：
+预期信号。报告开头是下面的摘录。前几张任务卡的 ``bash`` 块引用教程的模型，不在文档检查里运行；摘录是这些命令事先记录的输出：
 
 .. code-block:: text
 
@@ -227,7 +227,7 @@ Inspect 任务指南
        --format llm-md -o /tmp/inspect.llm.md
    sed -n '1,7p' /tmp/inspect.llm.md
 
-预期信号。已检查示例开头是：
+预期信号。Markdown 文件开头是：
 
 .. code-block:: text
 
@@ -372,18 +372,34 @@ Inspect 任务指南
    :language: fcstm
    :caption: region_read_back.fcstm
 
-命令或代码。``region_order_diagnostics.demo.sh`` 打印报告里某个诊断码对应的那一块，若没有该诊断就说明未报告：
+命令或代码。请把 :download:`region_read_back.fcstm` 和 :download:`region_read_back_fixed.fcstm` 下载到一个空目录。报告很长，所以输出只保留该诊断码对应的那一块（修复后的模型则保留统计诊断数量的那一行），其余用 ``...`` 省略：
 
-.. literalinclude:: region_order_diagnostics.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_order_diagnostics.demo.sh.txt
-   :language: text
-   :end-before: == region_blind_overwrite.fcstm
+   $ pyfcstm inspect -i region_read_back.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.
+     --> region_read_back.fcstm:8:31
+      |
+    7 |         [*] -> Idle;
+    8 |         state Idle { during { seen = level; } }
+      |                               ^^^^^^^^^^^^^
+    9 |     }
+      |
+      = source: inspect-static
+      = why: An earlier region reads something a later region produces in the same cycle, so it sees the previous cycle's value.
+      = fix: kind: confirm_order; target: region; rationale: Keep the declaration order when reading the previous cycle's value is intended.
+      = fix: kind: reorder_regions; target: region; rationale: Declare the producing region before the reading region when the current cycle's value is needed.
+      = do-not: Do not treat this as a defect; it is the defined behavior of ordered regions.
+   $ pyfcstm inspect -i region_read_back_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 预期信号。第一个模型得到 ``[INFO] I_REGION_BACKWARD_READ``，指出读取的区域、变量和写入它的靠后区域，并给出读取处的位置。第二个模型
 ``region_read_back_fixed.fcstm`` 把 ``Writer`` 声明在前，这个诊断码不再报告。这条消息是提示：想要上一个周期的值就保持顺序（``confirm_order``），需要本周期的值就调整顺序
-（``reorder_regions``）。靠前的区域用 ``active()`` 查询靠后区域的状态时也报同一个诊断码。
+（``reorder_regions``）。修复后模型的统计行显示 ``0 infos``，原来的提示就在那里。靠前的区域用 ``active()`` 查询靠后区域的状态时也报同一个诊断码。
 
 文件副作用。无；报告输出到标准输出。
 
@@ -400,11 +416,31 @@ Inspect 任务指南
    :language: fcstm
    :caption: region_blind_overwrite.fcstm
 
-命令或代码。同一个脚本，这是它的后半部分：
+命令或代码。请下载 :download:`region_blind_overwrite.fcstm` 和 :download:`region_blind_overwrite_fixed.fcstm`。和上面一样，输出只保留该诊断码对应的那一块和统计行：
 
-.. literalinclude:: region_order_diagnostics.demo.sh.txt
-   :language: text
-   :start-after: region_read_back_fixed.fcstm: I_REGION_BACKWARD_READ is not reported
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_blind_overwrite.fcstm --color never
+   ...
+   [WARN] W_REGION_BLIND_OVERWRITE
+     Region 'Root.Late' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Early'; that earlier write is lost whenever it runs.
+     --> region_blind_overwrite.fcstm:11:28
+       |
+    10 |         [*] -> B;
+    11 |         state B { during { out = y + 2; } }
+       |                            ^^^^^^^^^^^^
+    12 |     }
+       |
+      = source: inspect-static
+      = why: A later region overwrites, in every cycle and without looking at it, a variable written by an earlier region, so the earlier write has no effect.
+      = fix: kind: use_previous_value; target: statement; rationale: Combine with the earlier value, for example ``x = x + y;``, when both writes are meant to count.
+      = fix: kind: use_separate_variables; target: variable; rationale: Give each region its own variable when the writes are independent.
+      = do-not: Do not remove the earlier write without checking that no other state of that region depends on it.
+      = do-not: Do not report a default value that a later region overrides only in some states or under a condition.
+   $ pyfcstm inspect -i region_blind_overwrite_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 预期信号。警告指向 ``Late`` 里的覆盖语句；在机器可读的报告里，``previous_write_span`` 指出被丢掉的写入。报告建议的修法是合并两个值（
 ``region_blind_overwrite_fixed.fcstm`` 里的 ``out = out + y + 2;``，之后不再报告这个诊断码），或者给每个区域各用一个变量。这条警告刻意收得很窄：有条件的覆盖、只有部分状态执行的覆盖、
@@ -425,16 +461,32 @@ Inspect 任务指南
    :language: fcstm
    :caption: region_never_completes.fcstm
 
-命令或代码。
+命令或代码。请下载 :download:`region_never_completes.fcstm` 和 :download:`region_owner_completes_fixed.fcstm`：
 
-.. literalinclude:: region_owner_never_completes.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_owner_never_completes.demo.sh.txt
-   :language: text
+   $ pyfcstm inspect -i region_never_completes.fcstm --color never
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'Root.Job' -> 'Root.Next' is unreachable for reasons: owner_never_completes.
+     --> region_never_completes.fcstm:17:5
+       |
+    16 |     state Next;
+    17 |     Job -> Next;
+       |     ^^^^^^^^^^^^
+    18 | }
+       |
+      = source: inspect-static
+      = why: This authored transition is unreachable under the available analysis evidence. The reason list distinguishes source-state reachability, event-consumer reachability, forced expansion, guards, shadowing, and redundancy.
+      = fix: kind: inspect_transition; target: transition; rationale: Check each entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior.
+      = do-not: Do not remove a transition solely because this warning is present; verify that the reported reason matches the intended runtime model.
+   $ pyfcstm inspect -i region_owner_completes_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
 
 预期信号。``Job -> Next`` 上出现 ``W_UNREACHABLE_TRANSITION``，原因是 ``owner_never_completes``。给 ``B`` 一条能结束的路径
-（``region_owner_completes_fixed.fcstm``）后，带这个原因的报告数量变成 ``0``。拥有者（owner）上的强制转换（forced transition）总是可达，不受影响。
+（``region_owner_completes_fixed.fcstm``）后，这条警告消失：统计行里的警告数从四条降到一条。拥有者（owner）上的强制转换（forced transition）总是可达，不受影响。
 
 文件副作用。无。
 
@@ -476,7 +528,4 @@ Inspect 任务指南
 本页验证来源
 ----------------------------------------
 
-短摘录来自这些已检查资源：``inspect_human.demo.sh.txt`` 负责人类可读输出，
-``inspect_formats.demo.sh.txt`` 负责 JSON 和大语言模型报告形状，
-``inspect_cli_edges.demo.sh.txt`` 负责颜色和后缀行为，
-``inspect_invalid.demo.sh.txt`` 负责解析失败。只有源资源改变时才需要重新运行对应脚本；单纯复用短摘录时，不应在正文嵌入长 shell 脚本。
+区域任务卡 13 至 15 的摘录由文档检查与真实输出核对。前面各任务卡的摘录来自 :doc:`../../tutorials/inspect/index_zh` 的模型，是事先记录的，不会被运行；该模型或报告格式改变时需要重新记录。

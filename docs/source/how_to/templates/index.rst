@@ -367,8 +367,10 @@ Declare that a custom template supports regions
 -----------------------------------------------
 
 **Input.** A custom template directory and a model with regions
-(``region_controller.fcstm``, the interlock controller of
-:doc:`/tutorials/regions/index`).  A template is written for one execution
+(:download:`controller.fcstm </_models/controller.fcstm>`, the interlock controller of
+:doc:`/tutorials/regions/index`).  Download it, and the two files of
+``region_listing_template/``, into an empty directory and run the commands
+there.  A template is written for one execution
 model.  ``features: [region]`` in ``config.yaml`` states that the template
 renders models that declare regions.  Without the declaration, ``pyfcstm
 generate`` refuses such a model before it writes anything; a model without
@@ -386,23 +388,36 @@ declares the feature and lists every owner with its regions in writing order:
 
 **Command or code.**
 
-.. literalinclude:: region_declared.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_declared.demo.sh.txt
-   :language: text
+   $ pyfcstm generate -i controller.fcstm -t region_listing_template -o out --clear
+   $ cat out/regions.txt
+   owner Controller.Running
+     region 1: Safety (1 states)
+     region 2: Motion (2 states)
+   $ python -c 'from pyfcstm.render import StateMachineCodeRenderer; print(sorted(StateMachineCodeRenderer("region_listing_template").features))'
+   ['region']
 
 Without the declaration the same template is refused.  This is a negative
 example:
 
-.. literalinclude:: region_undeclared.demox.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_undeclared.demox.sh.err
-   :language: text
+   $ mkdir undeclared
+   $ cp region_listing_template/regions.txt.j2 undeclared/
+   $ printf 'expr_styles: {}\n' > undeclared/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o undeclared_out --clear
+   generate with template directory '.../undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o undeclared_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
 
-The exit code is 1 (``region_undeclared.demox.sh.exitcode``); the script
-shortens the paths in the message.
+The exit status is 1.  The tool prints the absolute path of the template
+directory; it is left out as ``...`` here.
 
 **Expected signal.** With the declaration, the output lists the owner and its
 two regions in writing order, and ``StateMachineCodeRenderer.features`` is
@@ -426,7 +441,8 @@ The listing template above is honest about this only because it does not
 generate behavior.
 
 **File side effect.** ``pyfcstm generate`` writes ``regions.txt`` into the
-output directory; the scripts use scratch directories and remove them.
+output directory; the commands write under ``out/``, ``undeclared/`` and
+``undeclared_out/`` of the directory where you run them.
 
 **First failure check.** If a template you changed is still refused, read
 ``StateMachineCodeRenderer(path).features``: an unknown or duplicated member of

@@ -14,7 +14,7 @@ facts. A command failure means the input could not become a report; a successful
 report can still contain warnings and infos.
 
 .. figure:: ../../tutorials/inspect/inspect_diagnostics.fcstm.puml.svg
-   :alt: Inspect demo state machine with combo relay pseudo states
+   :alt: Inspect example state machine with combo relay pseudo states
    :width: 82%
 
    The figure proves the authored machine is small but not trivial: combo
@@ -26,8 +26,8 @@ Shared rules for every recipe
 
 Each card states the same six audit facts: **Input**, **Command or code**,
 **Expected signal**, **File side effect**, **First failure check**, and
-**Reference link**. Longer regenerated workflows stay in the tutorial
-``inspect_*.demo.sh`` files and are referenced only for focused evidence.
+**Reference link**. The walkthrough with longer reports is the tutorial; this page
+shows only the short excerpts that matter for each task.
 
 1. Choose the report format
 ---------------------------
@@ -70,7 +70,9 @@ or review comment:
 
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --color never | sed -n '1,22p'
 
-**Expected signal.** The checked demo begins with:
+**Expected signal.** The report begins with the excerpt below.  The ``bash``
+blocks of the first cards refer to the tutorial's model and are not run by the
+documentation checks; the excerpts are the output recorded from those commands.
 
 .. code-block:: text
 
@@ -231,7 +233,7 @@ and ``do_not``; the final count line is ``2 1``. Validate it with the
        --format llm-md -o /tmp/inspect.llm.md
    sed -n '1,7p' /tmp/inspect.llm.md
 
-**Expected signal.** The checked demo begins with:
+**Expected signal.** The Markdown file begins with:
 
 .. code-block:: text
 
@@ -416,15 +418,33 @@ writing order, so ``Reader`` sees ``level`` from the previous cycle.
    :language: fcstm
    :caption: region_read_back.fcstm
 
-**Command or code.** ``region_order_diagnostics.demo.sh`` prints the block of
-one diagnostic code from a report, or says that the code is not reported:
+**Command or code.** Download :download:`region_read_back.fcstm` and
+:download:`region_read_back_fixed.fcstm` into an empty directory.  The report
+is long, so the output keeps the block of the diagnostic code (and, for the
+fixed model, the line that counts the diagnostics) and leaves the rest out:
 
-.. literalinclude:: region_order_diagnostics.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_order_diagnostics.demo.sh.txt
-   :language: text
-   :end-before: == region_blind_overwrite.fcstm
+   $ pyfcstm inspect -i region_read_back.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Root.Reader' reads variable 'level', which is produced by the later region 'Root.Writer'; it sees the value from the previous cycle.
+     --> region_read_back.fcstm:8:31
+      |
+    7 |         [*] -> Idle;
+    8 |         state Idle { during { seen = level; } }
+      |                               ^^^^^^^^^^^^^
+    9 |     }
+      |
+      = source: inspect-static
+      = why: An earlier region reads something a later region produces in the same cycle, so it sees the previous cycle's value.
+      = fix: kind: confirm_order; target: region; rationale: Keep the declaration order when reading the previous cycle's value is intended.
+      = fix: kind: reorder_regions; target: region; rationale: Declare the producing region before the reading region when the current cycle's value is needed.
+      = do-not: Do not treat this as a defect; it is the defined behavior of ordered regions.
+   $ pyfcstm inspect -i region_read_back_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 **Expected signal.** The first model gets an ``[INFO] I_REGION_BACKWARD_READ``
 naming the reading region, the variable and the later region that writes it,
@@ -432,7 +452,8 @@ with the span of the read.  The second model, ``region_read_back_fixed.fcstm``,
 declares ``Writer`` first and reports nothing for this code.  The message is a
 note: keep the order when the previous-cycle value is what you want
 (``confirm_order``), and reorder when you need this cycle's value
-(``reorder_regions``).  The same code is reported when an earlier region asks
+(``reorder_regions``).  The count line of the fixed model shows ``0 infos``,
+which is where the information was before.  The same code is reported when an earlier region asks
 ``active()`` about a state of a later region.
 
 **File side effect.** None; the reports go to stdout.
@@ -453,11 +474,33 @@ every cycle and ``Late`` assigns ``out = y + 2`` in every cycle without reading
    :language: fcstm
    :caption: region_blind_overwrite.fcstm
 
-**Command or code.** The same script as above; this is its second half:
+**Command or code.** Download :download:`region_blind_overwrite.fcstm` and
+:download:`region_blind_overwrite_fixed.fcstm`.  As above, the output keeps the
+block of the diagnostic code and the count line:
 
-.. literalinclude:: region_order_diagnostics.demo.sh.txt
-   :language: text
-   :start-after: region_read_back_fixed.fcstm: I_REGION_BACKWARD_READ is not reported
+.. code-block:: console
+
+   $ pyfcstm inspect -i region_blind_overwrite.fcstm --color never
+   ...
+   [WARN] W_REGION_BLIND_OVERWRITE
+     Region 'Root.Late' overwrites variable 'out' in every cycle without using the value written by the earlier region 'Root.Early'; that earlier write is lost whenever it runs.
+     --> region_blind_overwrite.fcstm:11:28
+       |
+    10 |         [*] -> B;
+    11 |         state B { during { out = y + 2; } }
+       |                            ^^^^^^^^^^^^
+    12 |     }
+       |
+      = source: inspect-static
+      = why: A later region overwrites, in every cycle and without looking at it, a variable written by an earlier region, so the earlier write has no effect.
+      = fix: kind: use_previous_value; target: statement; rationale: Combine with the earlier value, for example ``x = x + y;``, when both writes are meant to count.
+      = fix: kind: use_separate_variables; target: variable; rationale: Give each region its own variable when the writes are independent.
+      = do-not: Do not remove the earlier write without checking that no other state of that region depends on it.
+      = do-not: Do not report a default value that a later region overrides only in some states or under a condition.
+   $ pyfcstm inspect -i region_blind_overwrite_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 **Expected signal.** The warning points at the overwriting statement in
 ``Late`` and, in the machine-readable report, ``previous_write_span`` names the
@@ -487,18 +530,35 @@ transition ``Job -> Next`` runs only after every region is done.
    :language: fcstm
    :caption: region_never_completes.fcstm
 
-**Command or code.**
+**Command or code.** Download :download:`region_never_completes.fcstm` and
+:download:`region_owner_completes_fixed.fcstm`:
 
-.. literalinclude:: region_owner_never_completes.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_owner_never_completes.demo.sh.txt
-   :language: text
+   $ pyfcstm inspect -i region_never_completes.fcstm --color never
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'Root.Job' -> 'Root.Next' is unreachable for reasons: owner_never_completes.
+     --> region_never_completes.fcstm:17:5
+       |
+    16 |     state Next;
+    17 |     Job -> Next;
+       |     ^^^^^^^^^^^^
+    18 | }
+       |
+      = source: inspect-static
+      = why: This authored transition is unreachable under the available analysis evidence. The reason list distinguishes source-state reachability, event-consumer reachability, forced expansion, guards, shadowing, and redundancy.
+      = fix: kind: inspect_transition; target: transition; rationale: Check each entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior.
+      = do-not: Do not remove a transition solely because this warning is present; verify that the reported reason matches the intended runtime model.
+   $ pyfcstm inspect -i region_owner_completes_fixed.fcstm --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
 
 **Expected signal.** ``W_UNREACHABLE_TRANSITION`` with the reason
 ``owner_never_completes`` on ``Job -> Next``.  Give ``B`` a way to finish
-(``region_owner_completes_fixed.fcstm``) and the count of reports with that
-reason becomes ``0``.  A forced transition on the owner is always reachable
+(``region_owner_completes_fixed.fcstm``) and that warning disappears: the count
+line drops from four warnings to one.  A forced transition on the owner is always reachable
 and is not affected.
 
 **File side effect.** None.
@@ -542,8 +602,7 @@ This table is supplementary; it is not one of the thirteen task cards.
 Verification evidence for this page
 -----------------------------------
 
-The short excerpts above are grounded in checked tutorial resources:
-``inspect_human.demo.sh.txt`` for human output, ``inspect_formats.demo.sh.txt``
-for JSON/LLM shape, ``inspect_cli_edges.demo.sh.txt`` for color/suffix behavior,
-and ``inspect_invalid.demo.sh.txt`` for parse failure. Re-run scripts only when
-those source resources change.
+The excerpts of cards 13 to 15 are compared with the real output by the
+documentation checks.  The excerpts of the earlier cards were recorded from the
+model of :doc:`../../tutorials/inspect/index` and are not run; record them again
+when that model or the report format changes.

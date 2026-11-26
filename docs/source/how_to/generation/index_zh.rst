@@ -87,31 +87,26 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 冒烟检查 Python 输出
 --------------------
 
-最小 Python 消费者导入 ``machine.py`` 并推进几个事件：
+最小 Python 消费者导入 ``machine.py``。
 
-.. literalinclude:: ../../tutorials/generation/python_runtime.demo.py
-   :language: python
-   :lines: 47-60
+下面的冒烟检查使用区域教程里的联锁控制器；请把 :download:`controller.fcstm </_models/controller.fcstm>` 下载到一个空目录。生成的 ``machine.py`` 不依赖 ``pyfcstm``，所以普通的 ``python`` 就能导入它：
 
-已纳入文档构建的演示会打印：
+.. code-block:: console
 
-.. literalinclude:: ../../tutorials/generation/python_runtime.demo.py.txt
-   :language: text
+   $ pyfcstm generate -i controller.fcstm --template python -o generated/python --clear
+   $ PYTHONPATH=generated/python python -c "import machine; print(machine.ControllerMachine.__name__)"
+   ControllerMachine
 
-这份证据表示生成的 Python 运行时可导入，并能执行展示的事件序列。更广的模拟器语义对齐由模板单元测试覆盖，不由这一条教程冒烟检查证明。
+这份证据表示生成的 Python 运行时可导入。真正发送事件、读取位置的消费者是 `含区域模型的任务`_ 里第一张任务卡的程序。更广的模拟器语义对齐由模板单元测试覆盖，不由这一条冒烟检查证明。
 
 冒烟检查 C 和 C++ 输出
 ----------------------
 
-文档树中的本机演示会生成 ``c``、``c_poll``、``cpp`` 和 ``cpp_poll`` 输出，并在 ``cc``、``c++`` 和 ``cmake`` 可用时构建小驱动。输出先给本地工具链快照，再按模板分段：
+本机检查需要 C 编译器，C++ 模板还需要 C++ 编译器和 ``cmake``，所以文档检查不运行它。任务卡 `设定 C 运行时的容量宏`_ 用一个小驱动构建生成的 ``c`` 运行时，给出命令和一次真实构建记录下的输出。
 
-.. literalinclude:: ../../tutorials/generation/native_runtime.demo.sh.txt
-   :language: text
-   :lines: 1-28
+那张任务卡是本地冒烟检查。它证明生成文件在构建它的工具链上完成编译并运行；它不是对所有嵌入式编译器、工业配置、清理器配置或认证环境的声明。
 
-这是本地冒烟检查。它证明生成文件在显示的工具链上完成编译并运行；它不是对所有嵌入式编译器、工业配置、清理器配置或认证环境的声明。
-
-如果本机演示失败，先记录工具链快照，再判断失败属于生成器问题、构建工具缺失，还是自定义驱动和生成 README 不一致。不要只贴最后一行编译错误；模板维护者需要看到使用的模板名、输出目录、编译器版本和最小驱动。
+如果本机冒烟检查失败，先记录编译器和 ``cmake`` 的版本，再判断失败属于生成器问题、构建工具缺失，还是自定义驱动和生成 README 不一致。不要只贴最后一行编译错误；模板维护者需要看到使用的模板名、输出目录、编译器版本和最小驱动。
 
 选择显式事件或轮询
 ------------------
@@ -293,9 +288,9 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 文档里的本机冒烟策略
 --------------------
 
-``native_runtime.demo.sh`` 是本教程家族的规范小型本机冒烟检查。修改生成、C 家族模板文档或本机构建声明时，应运行它，或写明当前环境不能运行的具体理由。
+本页的小型本机冒烟检查是容量任务卡里的编译并运行驱动；更大的是仓库里的本机工具链模板测试（``PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 make template_unittest TEMPLATE_UNITTEST_ARGS="--include-suites c --run-native-toolchain"``）。修改生成、C 家族模板文档或本机构建声明时，应运行其中之一，或写明当前环境不能运行的具体理由。
 
-如果运行了，记录工具链行和每个模板的成功段落。如果不能运行，不要把本机声明悄悄改成正文里的成功；写清缺少哪个二进制，例如 ``cmake``、``cc`` 或 ``c++``，并把结论限定在生成层，而不是本机运行层。
+如果运行了，记录编译器版本和每个模板的结果。如果不能运行，不要把本机声明悄悄改成正文里的成功；写清缺少哪个二进制，例如 ``cmake``、``cc`` 或 ``c++``，并把结论限定在生成层，而不是本机运行层。
 
 生成后的读者分流
 ----------------
@@ -315,7 +310,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 * 修改了哪些页面，以及每个页面负责哪类读者角色；
 * 用于 Python 消费者冒烟检查的 ``simple_machine.fcstm`` 生成命令；
-* 是否运行了 ``native_runtime.demo.sh``；若没有运行，写明缺少的工具或策略理由；
+* 是否运行了本机编译并运行的冒烟检查；若没有运行，写明缺少的工具或策略理由；
 * 每个模板家族检查过哪些生成文件；
 * 哪个生成 README 章节作为接口名称来源；
 * 哪个参考页负责每个选项、模板名和配置键；
@@ -327,24 +322,24 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 * 英文页和中文页使用同一组模板、同一组失败边界和同一组证据层级；
 * 中文页首次交接“渲染器（renderer）”等术语后，后续普通正文不重复夹英文；
-* 长脚本只通过 ``literalinclude`` 展示聚焦输出，不把整段脚本塞回正文；
+* 示例保持简短，输出来自真实运行，不手写；
 * 若本机工具链不可用，验收记录写明这是环境限制，不把本机声明降级成未经验证的成功。
 
 * 若引用生成 README，必须说明它是机器专属契约，不替代通用参考页。
-* 若新增输出片段，必须来自当前文档资源或重新生成后的记录。
+* 若新增输出片段，必须来自真实运行，需要编译器的命令则写明未在文档检查里运行。
 
 含区域模型的任务
 ----------------
 
 每个内置模板（``python``、``c``、``c_poll``、``cpp`` 与 ``cpp_poll``）都能为含区域（region）的模型生成运行时。下面的任务卡使用
-``region_controller.fcstm``，也就是 :doc:`/tutorials/regions/index_zh` 里的联锁控制器，并给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、
+联锁控制器（:doc:`/tutorials/regions/index_zh`，:download:`controller.fcstm </_models/controller.fcstm>`），并给出同样的六项：\ **起点**\ 、\ **命令或代码**\ 、
 \ **预期信号**\ 、\ **文件副作用**\ 、\ **失败时先查什么**\ 、\ **参考链接**\ 。生成的运行时与 :class:`pyfcstm.simulate.SimulationRuntime`
 逐周期一致；建模任务见 :doc:`/how_to/regions/index_zh`。
 
 生成五套运行时并运行 Python 的那一套
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**起点。** ``region_controller.fcstm`` 和 Python 3.7 及以上的解释器。生成的 ``machine.py`` 不依赖 ``pyfcstm``。程序 ``region_app.py``
+**起点。** ``controller.fcstm`` 和 Python 3.7 及以上的解释器。生成的 ``machine.py`` 不依赖 ``pyfcstm``。请把 :download:`region_app.py` 下载到旁边。程序 ``region_app.py``
 继承生成的类，实现两个输入读取方法，通过 ``configuration``、``leaves``、``is_active`` 与 ``region_status`` 读取位置；它还恢复一个热启动并发送事件。
 
 .. literalinclude:: region_app.py
@@ -353,17 +348,69 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 
 **命令或代码。**
 
-.. literalinclude:: region_generate.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_generate.demo.sh.txt
-   :language: text
+   $ pyfcstm generate -i controller.fcstm --template python -o out/python --clear
+   $ pyfcstm generate -i controller.fcstm --template c -o out/c --clear
+   $ pyfcstm generate -i controller.fcstm --template c_poll -o out/c_poll --clear
+   $ pyfcstm generate -i controller.fcstm --template cpp -o out/cpp --clear
+   $ pyfcstm generate -i controller.fcstm --template cpp_poll -o out/cpp_poll --clear
+   $ LC_ALL=C ls out/*
+   out/c:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
 
-**预期信号。** 前五行是各个模板生成的文件。程序把位置打印成文本（``Controller.Running{Safety: Watching, Motion: On}``）、活动叶子和变量。
+   out/c_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   out/cpp:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   out/cpp_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   out/python:
+   README.md
+   README_zh.md
+   machine.py
+   $ PYTHONPATH=out/python python region_app.py
+   after start: Controller.Running{Safety: Watching, Motion: On}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+     motor=1 permit=1
+   is_active Running: True
+   region_status Safety: live
+   fault raised: Controller.Running{Safety: Watching, Motion: Off}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+     motor=0 permit=0
+   hot start: Controller.Running{Safety: Watching, Motion: On}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+     motor=1 permit=1
+   hot start, one cycle later: Controller.Running{Safety: Watching, Motion: Off}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+     motor=0 permit=0
+   after /Stop: Controller.Idle
+     leaves ['Controller.Idle']
+     motor=0 permit=0
+**预期信号。** 列表给出各个模板生成的文件。程序把位置打印成文本（``Controller.Running{Safety: Watching, Motion: On}``）、活动叶子和变量。
 ``fault`` 升高后，电机在同一个周期关断。热启动不执行任何 ``enter`` 动作就把两个区域就位，``initial_vars`` 像其他变量一样携带隐藏变量 ``__forced_0``。
 ``/Stop`` 事件在一个周期里离开 ``Running``。
 
-**文件副作用。** ``pyfcstm generate`` 把上面的文件写入输出目录，使用 ``--clear`` 时先清空该目录。脚本写入临时目录，结束后删除。
+**文件副作用。** ``pyfcstm generate`` 把上面的文件写入输出目录，使用 ``--clear`` 时先清空该目录。这些命令把文件写在你运行命令的目录下的 ``out/``。
 
 **失败时先查什么。** 程序抛出 ``SimulationRuntimeEventError`` 时读它的消息：依赖位置的名字会对每个活动叶子各解析一次，所以请写完整路径或 ``/名字``。
 类名或方法与预期不同时，读生成的 ``README.md``：它是按这个模型写的。
@@ -373,7 +420,7 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 设定 C 运行时的容量宏
 ~~~~~~~~~~~~~~~~~~~~~
 
-**起点。** 同一个模型的 ``c`` 运行时、一个 C 编译器，以及 ``region_capacity_app.c``。机器的存储是静态预留的，``machine.h`` 里的两个宏决定其大小：
+**起点。** 同一个模型的 ``c`` 运行时、一个 C 编译器，以及 :download:`region_capacity_app.c`。机器的存储是静态预留的，``machine.h`` 里的两个宏决定其大小：
 ``CONTROLLER_MACHINE_ARENA_CAPACITY``\ （一次决策所检查的配置与待办项数）和 ``CONTROLLER_MACHINE_TRAIL_CAPACITY``\ （嵌套检查的层数）。
 默认值按模型算出。只有周期以容量报错失败时才需要覆盖。覆盖后的值要对 ``machine.c`` 与每个包含 ``machine.h`` 的文件一致地定义。
 
@@ -381,19 +428,39 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
    :language: c
    :caption: region_capacity_app.c
 
-**命令或代码。** 脚本把程序构建三次：用默认值、用太小的值（演示失败）、用更大的值：
+**命令或代码。** 这些命令把程序构建三次：用默认值、用太小的值（演示失败）、用更大的值。它们需要 C 编译器，所以文档检查不运行；下面的输出来自对这些命令的一次真实运行：
 
-.. literalinclude:: region_capacity.demo.sh
-   :language: bash
+.. code-block:: bash
 
-.. literalinclude:: region_capacity.demo.sh.txt
-   :language: text
+   pyfcstm generate -i controller.fcstm --template c -o c_out --clear
+   cp region_capacity_app.c c_out/app.c
+   grep -E '^#define CONTROLLER_MACHINE_(ARENA|TRAIL)_CAPACITY' c_out/machine.h
+   cd c_out
+   cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app && ./app
+   cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=4 machine.c app.c -lm -o app && ./app
+   cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=480 -DCONTROLLER_MACHINE_TRAIL_CAPACITY=96 machine.c app.c -lm -o app && ./app
 
-**预期信号。** 默认值够用：三个周期，退出码 0。``ARENA_CAPACITY=4`` 时第 2 个周期（进入区域的那个）以 ``Speculative search exceeded the capacity safety limit`` 失败，
+.. code-block:: text
+
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   storage bytes: 14272
+   cycle 1: Controller.Idle motor=0
+   cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+   storage bytes: 3040
+   cycle 1: Controller.Idle motor=0
+   cycle 2 failed: Speculative search exceeded the capacity safety limit (4 configurations); define CONTROLLER_MACHINE_ARENA_CAPACITY to a larger value to allow a longer search.
+   storage bytes: 55856
+   cycle 1: Controller.Idle motor=0
+   cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+
+**预期信号。** 默认值够用：三个周期，退出状态 0。``ARENA_CAPACITY=4`` 时第 2 个周期（进入区域的那个）以 ``Speculative search exceeded the capacity safety limit`` 失败，
 消息指出该宏；机器报告失败，而不是行为异常。更大的值同样成功，并让存储变大（``storage bytes``）。要确认选定的值够用，就用它运行你关心的场景：
 值太小会明确失败，所以干净的运行就是证据。存储大小依赖平台（上面的数字来自一次 64 位构建）。
 
-**文件副作用。** 脚本把生成的源文件和可执行文件写入临时目录，结束后删除。
+**文件副作用。** 这些命令把生成的源文件和可执行文件写入 ``c_out/``。
 
 **失败时先查什么。** 读失败消息：它指出要调大的宏。程序只在某些构建里失败时，检查每个编译单元是否看到同一个 ``-D`` 值。
 
@@ -402,24 +469,34 @@ pyfcstm 当前打包五个内置模板：``python``、``c``、``c_poll``、``cpp
 处理“模板没有声明 region”的拒绝
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**起点。** ``plain_template/``：一个自定义模板，它的 ``config.yaml`` 没有在 ``features`` 里列出 ``region``；以及一个含区域的模型。为单一活动路径写的模板
+**起点。** 目录 ``plain_template/`` 里的 :download:`plain_template/config.yaml` 和 :download:`plain_template/summary.txt.j2`：一个自定义模板，它的 ``config.yaml`` 没有在 ``features`` 里列出 ``region``；以及一个含区域的模型。为单一活动路径写的模板
 会给区域生成错误的代码，所以 ``pyfcstm generate`` 在写任何文件之前就拒绝。这是负例。
 
 **命令或代码。**
 
-.. literalinclude:: region_refused.demox.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_refused.demox.sh.err
-   :language: text
+   $ pyfcstm generate -i controller.fcstm -t plain_template -o refused_out --clear
+   generate with template directory '.../plain_template' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o refused_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test ! -e refused_out && echo "no output directory was written"
+   no output directory was written
+   $ pyfcstm generate -i controller.fcstm --template python -o refused_out --clear
+   $ LC_ALL=C ls refused_out
+   README.md
+   README_zh.md
+   machine.py
 
-退出码是 1（``region_refused.demox.sh.exitcode``）。消息里的路径被脚本缩短了；工具本身打印的是绝对路径。
+退出状态是 1。工具打印的是模板目录的绝对路径，这里用 ``...`` 省略。
 
 **预期信号。** 消息指出第一个区域，并给出两条出路：写模板的人，在模板确实能渲染区域之后才声明 ``features: [region]``\ （见 :doc:`/how_to/templates/index_zh`）；
-写模型的人，改用支持区域的模板。改用内置模板则成功：
-
-.. literalinclude:: region_refused_fixed.demo.sh.txt
-   :language: text
+写模型的人，改用支持区域的模板。改用内置模板则成功（上面的最后两条命令）。
 
 **文件副作用。** 失败时没有：不会创建输出目录。
 

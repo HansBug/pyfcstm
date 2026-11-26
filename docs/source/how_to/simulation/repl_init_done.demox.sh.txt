@@ -1,4 +1,0 @@
-────────────────────────────────────────────────────────────
->>> init Controller.Running{Safety: [done], Motion: [done]} permit=1 motor=0 __forced_0=0
-────────────────────────────────────────────────────────────
-Initialization failed: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.

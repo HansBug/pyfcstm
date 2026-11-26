@@ -6,32 +6,67 @@ Use candidate diagnostics when a committed trace shows the path taken but omits 
 Capture the rejected successor
 ------------------------------
 
-Run from the repository root, or download :download:`candidate_failure.fcstm` and adjust the path. This model offers ``A -> Blocked`` before ``A -> B``. Entering ``Blocked`` assigns ``x=100`` but its initial guard requires ``x < 0``.
+Download :download:`candidate_failure.fcstm` into an empty directory and run the examples there. The ``bash`` blocks on this page show commands that the documentation checks do not run; the ``console`` and Python blocks are run against the real output. This model offers ``A -> Blocked`` before ``A -> B``. Entering ``Blocked`` assigns ``x=100`` but its initial guard requires ``x < 0``.
 
 .. literalinclude:: candidate_failure.fcstm
    :language: fcstm
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/how_to/simulation/candidate_failure.fcstm \
+   pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --no-color -e 'cycle; cycle Root.A.Go; why Root.A::0::A->Blocked --verbose'
 
 The second call ends in ``Root.B`` with ``x=1``. Its report contains ``successor_rejected`` for the first candidate and a guard check with ``x=100``. ``why`` prints that captured evidence without executing another cycle. No file is written. If it says ``No diagnostic report``, enable collection before reproducing the call; turning it on afterwards cannot recover past evidence.
 
-The equivalent Python program is executable as-is from the checkout:
+The equivalent Python program prints the same report and the committed variables:
 
-.. code-block:: bash
+.. testcode::
 
-   python docs/source/how_to/simulation/candidate_diagnostics.demo.py
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: candidate_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
+   model = load_state_machine_from_file("candidate_failure.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   result = runtime.cycle("Root.A.Go", diagnostics=True)
+   print(result.diagnostics)
+   print("vars:", dict(runtime.vars))
 
-Its complete compact report is:
+.. testoutput::
 
-.. literalinclude:: candidate_diagnostics.demo.py.txt
-   :language: text
+   Cycle 2: cycle; Root.A -> Root.B
+   Result: cycle committed.
+   Events: Root.A.Go
+   Inputs: {}
+   Parameters: {}
+   Persistent values before: {'x': 0}
+   Persistent values after:  {'x': 1}
+   Committed micro-transitions (in execution order):
+     #6 Root.A::1::A->B
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root.A::0::A->Blocked [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:11:5
+     #2 Root.Blocked::0::INIT_STATE->Inner [validation] guard_false: guard failed; candidate not selected
+       Guard x < 0: failed; values={'x': 100}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'x': 100}; inputs={}; parameters={}
+       source=.../candidate_failure.fcstm:7:9
+   #3 Root.A::1::A->B [preflight] selected: selected in this phase; not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:12:5
+   #4 Root.A::0::A->Blocked [execution] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:11:5
+     #5 Root.Blocked::0::INIT_STATE->Inner [validation] guard_false: guard failed; candidate not selected
+       Guard x < 0: failed; values={'x': 100}
+       Checked while validating candidate #4.
+       Values at check (not final values): vars={'x': 100}; inputs={}; parameters={}
+       source=.../candidate_failure.fcstm:7:9
+   #6 Root.A::1::A->B [execution] selected: committed
+     Event Root.A.Go: present
+     source=.../candidate_failure.fcstm:12:5
+   vars: {'x': 1}
 
 Read the evidence in this order:
 
@@ -56,20 +91,37 @@ A false guard on one search branch does not prove that the entire candidate fail
 Inspect combo rollback and fallback
 -----------------------------------
 
-Download :download:`combo_diagnostics.fcstm` and :download:`combo_diagnostics.demo.py` into the same directory, or run the checked-in program from the repository root:
-
-.. code-block:: bash
-
-   python docs/source/how_to/simulation/combo_diagnostics.demo.py
+Download :download:`combo_diagnostics.fcstm` into the directory of the examples.
 
 .. literalinclude:: combo_diagnostics.fcstm
    :language: fcstm
 
 The program constructs a fresh runtime for each of three cases. All events in ``A + B`` are checked inside the same macro step, using that call's frozen input. It does not mean A on one cycle followed by B on another.
 
-.. literalinclude:: combo_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("combo_diagnostics.fcstm")
+   cases = [
+       ("missing B", 12, ["Root.Start.A"]),
+       ("target guard false", 3, ["Root.Start.A", "Root.Start.B"]),
+       ("complete path", 12, ["Root.Start.A", "Root.Start.B"]),
+   ]
+   for title, sensor, events in cases:
+       runtime = SimulationRuntime(
+           model, parameters={"limit": 10}, input_source={"sensor": sensor}
+       )
+       runtime.cycle()
+       runtime.cycle(events)
+       print(title, "->", runtime.configuration, dict(runtime.vars))
+
+.. testoutput::
+
+   missing B -> Root.Fallback {'score': 121, 'reading': 0}
+   target guard false -> Root.Fallback {'score': 121, 'reading': 0}
+   complete path -> Root.Target.Good {'score': 11011, 'reading': 12}
 
 .. list-table:: Expected committed boundaries
    :header-rows: 1
@@ -87,12 +139,48 @@ The program constructs a fresh runtime for each of three cases. All events in ``
      - Whole path succeeds; the fallback is not evaluated.
      - ``Root.Target.Good``; ``score=11011``, ``reading=12``.
 
-The middle case's actual output is shown below; the other two cases are omitted here and are printed by the same program:
+The middle case's full report comes from a second program that runs only that case:
 
-.. literalinclude:: combo_diagnostics.demo.py.txt
-   :language: text
-   :start-after: === target guard false ===
-   :end-before: === complete path ===
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("combo_diagnostics.fcstm")
+   runtime = SimulationRuntime(
+       model, parameters={"limit": 10}, input_source={"sensor": 3}
+   )
+   runtime.cycle()
+   result = runtime.cycle(["Root.Start.A", "Root.Start.B"], diagnostics=True)
+   print(result.diagnostics)
+
+.. testoutput::
+
+   Cycle 2: cycle; Root.Start -> Root.Fallback
+   Result: cycle committed.
+   Events: Root.Start.A, Root.Start.B
+   Inputs: {'sensor': 3}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 121, 'reading': 0}
+   Committed micro-transitions (in execution order):
+     #8 Root.Start::1::Start->Fallback
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root.Start -> Root.Target [combo: A + B] (term 1: A; prefix) [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     Event Root.Start.A: present
+     source=.../combo_diagnostics.fcstm:22:5
+     #2 Root.Start -> Root.Target [combo: A + B] (term 2: B; terminal) [validation] enabled: local conditions passed during search; not proof of a committed path
+       Event Root.Start.B: present
+       Checked while validating candidate #1.
+       source=.../combo_diagnostics.fcstm:22:5
+     #3 Root.Target::0::INIT_STATE->Good [validation] guard_false: guard failed; candidate not selected
+       Guard reading >= limit: failed; values={'limit': 10, 'reading': 3}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'score': 10011, 'reading': 3}; inputs={'sensor': 3}; parameters={'limit': 10}
+       source=.../combo_diagnostics.fcstm:15:9
+   ...
+   #8 Root.Start::1::Start->Fallback [execution] selected: committed
+   ...
 
 The rejected path computes source exit ``+1``, terminal effect ``+10`` and ``reading=sensor``, then target entry ``+10000``. Its initial guard therefore sees 10011 and 3. Those are values at a speculative check. The fallback commits its own ``+1+20+100`` from the original boundary, yielding 121. Read ``vars_before`` and ``vars_after`` from the report itself; no extra runtime inspection is required to distinguish them from the failed check's snapshot.
 
@@ -100,30 +188,68 @@ There is no separate undo-action log. ``successor_rejected`` and child evidence 
 
 The default combo display identifies the authored source, target and canonical trigger. It is a readable semantic label, not replacement DSL. Verbose text and ``transition_label`` retain expanded addresses. A shared prefix explicitly lists multiple origins; committing that shared micro-transition does not prove every originating alternative committed. Check the terminal path and final boundary as well.
 
-No files are written by this program. If the expected target differs, first check that both fully qualified events were supplied in the same call and that the frozen input meets the target guard. Use ``report.to_text(check_id=3, verbose=True)`` or CLI ``why 3 --verbose`` to query the observed failure with its ancestors; IDs are local to that report. :doc:`../../reference/simulation/diagnostics` defines the selectors and fields.
+These programs write no files. If the expected target differs, first check that both fully qualified events were supplied in the same call and that the frozen input meets the target guard. Use ``report.to_text(check_id=3, verbose=True)`` or CLI ``why 3 --verbose`` to query the observed failure with its ancestors; IDs are local to that report. :doc:`../../reference/simulation/diagnostics` defines the selectors and fields.
 
 Distinguish Delta from a normal stay-in-place cycle
 ---------------------------------------------------
 
-Download :download:`delta_diagnostics.fcstm` and :download:`delta_diagnostics.demo.py` together, or run:
-
-.. code-block:: bash
-
-   python docs/source/how_to/simulation/delta_diagnostics.demo.py
+Download :download:`delta_diagnostics.fcstm` into the directory of the examples.
 
 .. literalinclude:: delta_diagnostics.fcstm
    :language: fcstm
 
-.. literalinclude:: delta_diagnostics.demo.py
-   :language: python
-   :start-at: from pathlib
-
 The first frozen input is 3. The initial route computes ``score=110`` and ``reading=3`` but cannot leave the pseudo state for a stoppable state. The call returns Delta, retaining the original root boundary and zero persistent values; the committed trace is empty. The second input is 12, so initialization completes with ``score=1110`` and ``reading=12``. The first attempt's 110 is not accumulated.
 
-.. literalinclude:: delta_diagnostics.demo.py.txt
-   :language: text
+.. testcode::
 
-A Delta warning is also logged to stderr. The program writes no files. Delta advances the cycle counter, history and input source; it does not rewind the environment. If the second call still fails, inspect the sequence and guard values rather than expecting the first sample to be reused. A normal stoppable leaf can stay active, run ``during`` and change outputs while ``decisions`` is empty; that is a normal cycle, and its report still contains inputs, parameters and both boundary snapshots. Ignored calls instead have ``inputs=None`` because no new sampling occurred.
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SequenceInput, SimulationRuntime
+
+   model = load_state_machine_from_file("delta_diagnostics.fcstm")
+   runtime = SimulationRuntime(
+       model, parameters={"limit": 10},
+       input_source={"sensor": SequenceInput([3, 12])},
+   )
+   for _ in range(2):
+       result = runtime.cycle(diagnostics=True)
+       print(result.diagnostics)
+       print("delta:", result.delta, dict(runtime.vars))
+
+.. testoutput::
+
+   Cycle 1 completed as Delta - State: Root; no stoppable successor was committed
+   Cycle 1: delta; Root -> Root
+   Result: no stoppable successor committed; state and persistent values unchanged; cycle and inputs advanced.
+   Events: (none processed)
+   Inputs: {'sensor': 3}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 0, 'reading': 0}
+   Committed micro-transitions: (none)
+   Candidate evidence (parent links describe validation, not execution order):
+   #1 Root::0::INIT_STATE->Prepare [preflight] successor_rejected: successor validation failed; this candidate's speculative writes were not committed
+     source=.../delta_diagnostics.fcstm:14:5
+     #2 Root.Prepare::0::Prepare->Ready [validation] guard_false: guard failed; candidate not selected
+       Guard reading >= limit: failed; values={'limit': 10, 'reading': 3}
+       Checked while validating candidate #1.
+       Values at check (not final values): vars={'score': 110, 'reading': 3}; inputs={'sensor': 3}; parameters={'limit': 10}
+       source=.../delta_diagnostics.fcstm:15:5
+   ...
+   delta: True {'score': 0, 'reading': 0}
+   Cycle 2: cycle; Root -> Root.Ready
+   Result: cycle committed.
+   Events: (none processed)
+   Inputs: {'sensor': 12}
+   Parameters: {'limit': 10}
+   Persistent values before: {'score': 0, 'reading': 0}
+   Persistent values after:  {'score': 1110, 'reading': 12}
+   Committed micro-transitions (in execution order):
+     #4 Root::0::INIT_STATE->Prepare
+     #6 Root.Prepare::0::Prepare->Ready
+   ...
+   delta: False {'score': 1110, 'reading': 12}
+
+A Delta warning is also logged to stderr, which is the first line of the output above. The program writes no files. Delta advances the cycle counter, history and input source; it does not rewind the environment. If the second call still fails, inspect the sequence and guard values rather than expecting the first sample to be reused. A normal stoppable leaf can stay active, run ``during`` and change outputs while ``decisions`` is empty; that is a normal cycle, and its report still contains inputs, parameters and both boundary snapshots. Ignored calls instead have ``inputs=None`` because no new sampling occurred.
 
 When the same pseudo edge executes repeatedly within one macro step, each committed occurrence remains visible, even if its label repeats. Compact text folds only adjacent uncommitted checks whose evidence is identical apart from ID, retaining every ID and the count. Different variable values or validation parents are distinct facts. Verbose text and JSON always retain every original check. For the relationship to whole-path guard constraints, see :ref:`exec-diagnostic-boundaries`.
 
@@ -158,7 +284,7 @@ Collect machine-readable reports
 
 .. code-block:: bash
 
-   pyfcstm simulate -i docs/source/how_to/simulation/candidate_failure.fcstm \
+   pyfcstm simulate -i candidate_failure.fcstm \
      --diagnostics --diagnostics-format jsonl --no-color \
      -e 'cycle; cycle Root.A.Go' > decisions.jsonl
    python -c 'import json; rows=[json.loads(s) for s in open("decisions.jsonl")]; assert len(rows)==2; assert rows[1]["state_after"]==["Root","B"]; print("2 valid reports")'

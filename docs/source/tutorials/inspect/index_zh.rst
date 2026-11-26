@@ -8,10 +8,11 @@
 使用诊断较丰富的示例
 ----------------------------------------
 
-已纳入文档构建的教程输入是：
+已纳入文档构建的教程输入如下。请把 :download:`inspect_diagnostics.fcstm <inspect_diagnostics.fcstm>` 下载到一个空目录，再在那里运行命令：
 
 .. literalinclude:: inspect_diagnostics.fcstm
    :language: fcstm
+   :linenos:
 
 它是合法 DSL。里面的警告是有意安排的教学信号，不是解析失败。
 
@@ -51,13 +52,28 @@
    report = json.loads(Path("inspect.json").read_text())
    print(report["root_state_path"])
    print(len(report["states"]))
-   print([item["code"] for item in report["diagnostics"]])
+   for item in report["diagnostics"]:
+       print(item["span"]["line"], item["code"])
 
 .. testoutput::
 
    InspectDemo
    6
-   ['W_DURING_CONST_ASSIGN', 'W_COMBO_DUPLICATE_EVENT', 'W_COMBO_GUARD_PREFIX_IMPLIED', 'W_LEAF_NO_OUTGOING_TRANSITION', 'W_LEAF_NO_OUTGOING_TRANSITION', 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT', 'W_UNWRITTEN_READ_VAR', 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT', 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT', 'I_UNREFERENCED_VAR_MAYBE_ABSTRACT', 'W_GUARD_VARS_NEVER_CHANGE', 'W_GUARD_VARS_NEVER_CHANGE', 'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE']
+   12 W_DURING_CONST_ASSIGN
+   19 W_COMBO_DUPLICATE_EVENT
+   20 W_COMBO_GUARD_PREFIX_IMPLIED
+   15 W_LEAF_NO_OUTGOING_TRANSITION
+   16 W_LEAF_NO_OUTGOING_TRANSITION
+   1 I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   2 W_UNWRITTEN_READ_VAR
+   3 I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   4 I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   5 I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   20 W_GUARD_VARS_NEVER_CHANGE
+   20 W_GUARD_VARS_NEVER_CHANGE
+   4 W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
+
+前两行之后，每一行是一条诊断：先是它指向的模型行号，再是诊断码。对照上面带行号的模型：第 12 行是常量的 ``during`` 赋值，第 19 行是重复的 ``Confirm`` 项，第 20 行是组合触发的守卫项，第 15 和 16 行是两个没有出边的叶子状态，第 1 到 5 行是变量声明，第 4 行是对 C 目标来说过大的字面量。
 
 这个格式是完整 ``ModelInspect`` 契约。字段说明见 :doc:`../../reference/inspect_report/index_zh`。
 

@@ -1,0 +1,31 @@
+$ cat region_plain_template/config.yaml
+expr_styles:
+  default:
+    base_lang: dsl
+
+$ pyfcstm generate -i controller.fcstm -t region_plain_template -o out   (refused)
+exit_code: 1
+stderr (the page directory and the scratch directory are shortened):
+generate with template directory '<page directory>/region_plain_template' does not support region models yet. (line 12)
+The model declares 2 regions, the first is 'Controller.Running.Safety'.
+If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+  pyfcstm generate -i ../../tutorials/regions/controller.fcstm --template c -o out
+Or take the regions out of the model.
+output directory: not created
+
+$ cat region_declared_template/config.yaml
+features: [region]
+expr_styles:
+  default:
+    base_lang: dsl
+
+$ pyfcstm generate -i controller.fcstm -t region_declared_template -o out
+exit_code: 0
+Controller
+Idle
+Running
+Watching
+Off
+On
+__forced_gate_0

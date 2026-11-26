@@ -216,6 +216,71 @@ single-character operators.
      - ``&`` / ``|``
      - Logical operators must not split into bitwise-looking pieces.
 
+Region and ``active()`` coverage
+--------------------------------
+
+``region`` and ``active`` are reserved words. A ``region`` block exists only
+inside a state, and ``active("path")`` is a condition expression, not an
+arithmetic one. The table lists where each construct is handled and what each
+surface does not do. The statements come from the files named in the table; the
+jsfcstm rows were read from source and were not executed for this page.
+
+.. list-table:: Where ``region`` and ``active`` are handled
+   :header-rows: 1
+   :widths: 22 30 48
+
+   * - Surface
+     - File
+     - Coverage
+   * - Lexer grammar
+     - ``pyfcstm/dsl/grammar/GrammarLexer.g4``
+     - Tokens ``REGION: 'region'`` and ``ACTIVE: 'active'``. Both are in ``RESERVED_WORD``, so an import target cannot be spelled ``region`` or ``active``.
+   * - Parser grammar
+     - ``pyfcstm/dsl/grammar/GrammarParser.g4``
+     - ``region_definition: REGION ID '{' region_inner_statement* '}'``. A composite state holds either child states or regions, never both. ``region_inner_statement`` is a state, a transition, a forced transition, a ``>> during`` aspect, an event declaration or ``;``; ``enter``, ``during``, ``exit`` and variable declarations do not parse inside a region. A state that owns regions keeps ``enter``, ``during``, ``exit``, aspects and events, but no transitions, forced transitions, histories or imports. ``active`` is the ``cond_expression`` alternative ``ACTIVE '(' STRING ')'``.
+   * - Pygments lexer
+     - ``pyfcstm/highlight/pygments_lexer.py``
+     - ``region`` is ``Keyword.Declaration`` with ``state``; ``active`` is ``Name.Builtin`` with the built-in functions. Identifiers that only contain the word, such as ``active_count``, are plain names. The demo below prints the token types.
+   * - TextMate grammar
+     - ``editors/fcstm.tmLanguage.json``
+     - A ``meta.definition.region.fcstm`` rule matches ``region Name {`` and scopes the name ``entity.name.namespace.region.fcstm``; ``region`` is also in the declaration keyword list, and ``active`` is ``support.function.builtin.fcstm``. Both words are excluded from the identifier lookaheads.
+   * - jsfcstm syntax tree and model
+     - ``editors/jsfcstm/src/ast/``, ``model/``
+     - ``regionDefinition`` nodes and region-aware model objects. Folding treats ``regionDefinition`` like a state, and the formatter recognises ``region`` as the start of a statement when it looks for the end of an abstract action.
+   * - jsfcstm diagnostics
+     - ``editors/jsfcstm/src/editor/region-diagnostics.ts``
+     - ``E_REGION_STRUCTURE`` with reasons ``empty_region`` and ``history_boundary``, ``E_DUPLICATE_REGION`` with ``previous_span``, and ``E_ACTIVE_QUERY_TARGET`` with reasons ``invalid_path``, ``not_found``, ``region`` and ``pseudo``. The same code and reason as Python for the same input.
+   * - VS Code and editor features
+     - ``editors/vscode/src/``, ``editors/jsfcstm/src/editor/``
+     - No region-specific code in the completion, hover or symbol modules. Region diagnostics, folding and formatting come from jsfcstm; the diagram preview is described on :doc:`/reference/visualization_options/index`.
+
+What does not exist on the editor side:
+
+* ``mixed_children``, ``owner_statements`` (``E_REGION_STRUCTURE``) and ``initializer`` (``E_ACTIVE_QUERY_TARGET``) are never reported by jsfcstm because the grammar already refuses those inputs as syntax errors. The Python model reports them only for ASTs built through the public node classes.
+* A query whose path enters an imported module is not judged by jsfcstm, because the imported states exist only after assembly.
+* The two order diagnostics ``I_REGION_BACKWARD_READ`` and ``W_REGION_BLIND_OVERWRITE`` do not exist in jsfcstm. ``inspectModel`` throws for a model with regions or ``active()`` queries; see :ref:`inspect-report-region-order`.
+* ``python editors/validate.py`` reads ``editors/vscode/syntaxes/fcstm.tmLanguage.json``, which is a packaging output. In a checkout where it has not been produced, the command stops with ``FileNotFoundError``. Its built-in test source contains both ``region`` and ``active(...)``.
+
+Pygments token types of the constructs, printed by a demo that imports
+:class:`pyfcstm.highlight.pygments_lexer.FcstmLexer` directly (so it does not
+depend on the entry point being installed):
+
+.. literalinclude:: region_highlight.fcstm
+   :language: fcstm
+   :caption: region_highlight.fcstm
+
+.. literalinclude:: region_highlight.demo.py
+   :language: python
+   :caption: region_highlight.demo.py
+
+.. literalinclude:: region_highlight.demo.py.txt
+   :language: text
+   :caption: region_highlight.demo.py.txt
+
+Read the output as follows: both ``region`` keywords and the three ``state``
+keywords share ``Keyword.Declaration``; the region names are plain ``Name``;
+``active`` is ``Name.Builtin`` while ``active_count`` stays ``Name``.
+
 Keyword update checklist
 ------------------------
 

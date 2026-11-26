@@ -21,11 +21,7 @@ from click.testing import CliRunner
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.model import load_state_machine_from_text
-from test.testings.native_semantic_alignment import (
-    GENERATED_C_ALIGNMENT,
-    GENERATED_C_POLL_ALIGNMENT,
-    run_native_alignment_case_subprocess,
-)
+from test.end_to_end import MODEL_CASES
 from test.testings.simulate_semantics import (
     load_semantic_case,
     run_generated_python_alignment_case,
@@ -33,15 +29,6 @@ from test.testings.simulate_semantics import (
 )
 
 pytestmark = pytest.mark.unittest
-
-MODEL_CASES = (
-    "region_controller_interlock_prototype_trace",
-    "region_done_region_waits_and_last_completion_continues_same_cycle",
-    "region_group_exit_takes_a_nested_group_out_before_its_owner",
-    "region_group_preemption_wins_over_child_completion_in_same_cycle",
-    "region_active_query_follows_enter_exit_effect_and_same_cycle_order",
-)
-
 
 @pytest.fixture(params=MODEL_CASES)
 def case(request):
@@ -105,13 +92,6 @@ def test_generated_python_runtime_follows_the_simulator(case):
     run_generated_python_alignment_case(case)
 
 
-@pytest.mark.parametrize("runner", [GENERATED_C_ALIGNMENT, GENERATED_C_POLL_ALIGNMENT])
-def test_generated_c_runtimes_follow_the_simulator(case, runner):
-    """The generated C and C poll runtimes agree with the simulator after every cycle."""
-    result = run_native_alignment_case_subprocess(runner, case.id)
-    assert result.status == "passed", result.message
-
-
 def test_inspect_lists_every_region_in_written_order(case, model_path):
     """``pyfcstm inspect`` finishes and reports each region at its written position."""
     result = _invoke("inspect", "-i", model_path, "--format", "json")
@@ -124,8 +104,8 @@ def test_inspect_lists_every_region_in_written_order(case, model_path):
     assert not [d for d in report["diagnostics"] if d.get("severity") == "error"]
 
 
-def test_plantuml_draws_every_region_in_written_order(case, model_path):
-    """The PlantUML text names the regions in written order, separated by ``--``."""
+def test_plantuml_draws_every_region_at_its_written_position(case, model_path):
+    """The PlantUML text numbers each region by its written position, with ``--`` between them."""
     result = _invoke("plantuml", "-i", model_path)
     assert result.exit_code == 0, result.output
     notes = re.findall(r"\*\*region (\d+): ([^*]+)\*\*", result.output)
@@ -155,6 +135,17 @@ def test_diagram_snapshot_and_command_give_the_same_regions(case, model_path):
     )
 
 
+def test_diagram_viewer_page_names_every_region(case, model_path, tmp_path):
+    """``pyfcstm diagram -o`` writes the viewer page, and the regions are in it."""
+    page = tmp_path / "viewer.html"
+    result = _invoke("diagram", "-i", model_path, "-o", page)
+    assert result.exit_code == 0, result.output
+    text = page.read_text(encoding="utf-8")
+    for names in _regions_by_owner(case).values():
+        for name in names:
+            assert name in text
+
+
 def test_exported_and_reloaded_model_behaves_the_same(case):
     """The model written out and read back meets the same scenario, in simulation and in Python."""
     exported = str(load_state_machine_from_text(case.dsl_code).to_ast_node())
@@ -163,29 +154,103 @@ def test_exported_and_reloaded_model_behaves_the_same(case):
     run_generated_python_alignment_case(reloaded)
 
 
-def _richest_configuration(case):
-    """The configuration of the scenario that shows the most regions at once."""
-    configurations = [
-        step["expect"]["configuration"]
-        for step in case.data["steps"]
-        if step.get("expect", {}).get("configuration")
-    ]
-    return max(configurations, key=len)
+# What each model is about, as a bounded reachability query: the position and the values that only
+# the behaviour of the model can produce, the earliest frame it can appear in, and a variant with a
+# wrong value that nothing can reach.
+BMC_PROBES = {
+    "region_controller_interlock_prototype_trace": (
+        'active("Controller.Running{Safety: Watching, Motion: On}") && var("motor") == 1',
+        3,
+        'active("Controller.Running{Safety: Watching, Motion: On}") && var("permit") == 0',
+    ),
+    "region_done_region_waits_and_last_completion_continues_same_cycle": (
+        'active("Workflow.AwaitPermission") && var("aexit") == 1 && var("w") == 1',
+        3,
+        'active("Workflow.AwaitPermission") && var("aexit") == 0 && var("w") == 1',
+    ),
+    "region_group_exit_takes_a_nested_group_out_before_its_owner": (
+        'active("Root.Off") && var("seq") == 123459',
+        2,
+        'active("Root.Off") && var("seq") == 543219',
+    ),
+    "region_group_preemption_wins_over_child_completion_in_same_cycle": (
+        'active("Workflow.Idle") && var("order") == 123',
+        2,
+        'active("Workflow.Idle") && var("order") == 321',
+    ),
+    "region_active_query_follows_enter_exit_effect_and_same_cycle_order": (
+        'active("Root.P{Safety: Tripped, Motion: Stop}") && var("x1") == 1 && var("x2") == 2'
+        ' && var("y1") == 2 && var("y2") == 2 && var("z1") == 1 && var("z2") == 2',
+        2,
+        'active("Root.P{Safety: Tripped, Motion: Stop}") && var("x1") == 1 && var("x2") == 1',
+    ),
+}
 
 
-def test_bmc_finds_a_witness_that_the_simulator_replays(case, model_path, tmp_path):
-    """``pyfcstm bmc`` reaches the richest configuration of the scenario, and the replay agrees."""
-    target = _richest_configuration(case)
-    steps = len(case.data["steps"])
-    query = tmp_path / "reach.fbmcq"
-    query.write_text('check reach <= %d: active("%s");\n' % (steps, target), encoding="utf-8")
+def _bmc(model_path, tmp_path, goal):
+    """Run ``pyfcstm bmc`` on a bounded reachability query and return the result and its JSON."""
+    query = tmp_path / "query.fbmcq"
+    query.write_text("check reach <= 6: %s;\n" % goal, encoding="utf-8")
     result = _invoke("bmc", "-i", model_path, "-q", query, "--json")
+    return result, json.loads(result.output)
+
+
+def test_bmc_reaches_what_only_the_model_can_do_and_the_simulator_replays_it(
+    case, model_path, tmp_path
+):
+    """``pyfcstm bmc`` reaches the position and values of the model, and the replay agrees with it."""
+    goal, earliest, _ = BMC_PROBES[case.id]
+    result, report = _bmc(model_path, tmp_path, goal)
     assert result.exit_code == 0, result.output
-    report = json.loads(result.output)
+    assert report["result"]["witness_found"] is True
     assert report["replay"]["ok"] is True
     assert report["replay"]["mismatches"] == []
     frames = report["replay"]["runtime_trace"]["frames"]
-    assert target in [frame["configuration"] for frame in frames]
+    target = re.search(r'active\("([^"]+)"\)', goal).group(1)
+    reached = [index for index, frame in enumerate(frames) if frame["configuration"] == target]
+    assert reached and reached[0] >= earliest, (reached, earliest)
+
+
+def test_bmc_finds_nothing_with_a_wrong_value(case, model_path, tmp_path):
+    """The same position with a value the model cannot produce has no witness."""
+    _, _, wrong = BMC_PROBES[case.id]
+    result, report = _bmc(model_path, tmp_path, wrong)
+    assert result.exit_code == 1, result.output
+    assert report["result"]["witness_found"] is False
+
+
+def test_bmc_guarantees_that_the_interlock_never_runs_the_motor_without_permission(
+    tmp_path,
+):
+    """The interlock model satisfies ``motor on implies permission`` at every step of the bound."""
+    case = load_semantic_case("region_controller_interlock_prototype_trace")
+    path = tmp_path / "model.fcstm"
+    path.write_text(case.dsl_code, encoding="utf-8")
+    query = tmp_path / "query.fbmcq"
+    query.write_text('check forbid <= 6: var("motor") == 1 && var("permit") == 0;\n', encoding="utf-8")
+    result = _invoke("bmc", "-i", path, "-q", query, "--json")
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)["result"]
+    assert report["property_satisfied"] is True
+    assert report["counterexample_found"] is False
+
+
+def test_simulate_command_follows_the_scenario(case, model_path):
+    """``pyfcstm simulate`` run in batch mode prints the configuration the scenario expects."""
+    commands = []
+    expected = []
+    for step in case.data["steps"]:
+        events = step.get("cycle") or []
+        events = [events] if isinstance(events, str) else events
+        inputs = step.get("inputs") or {}
+        commands.append(
+            " ".join(["cycle"] + list(events) + ["--input %s=%s" % item for item in inputs.items()])
+        )
+        expected.append(step.get("expect", {}).get("configuration"))
+    result = _invoke("simulate", "-i", model_path, "-e", "; ".join(commands), "--no-color")
+    assert result.exit_code == 0, result.output
+    printed = re.findall(r"^Current State: (.+)$", result.output, re.M)
+    assert printed == [item for item in expected if item is not None]
 
 
 @pytest.mark.parametrize("template", ["python", "c", "c_poll", "cpp", "cpp_poll"])
@@ -194,4 +259,5 @@ def test_generate_command_writes_every_built_in_runtime(case, model_path, tmp_pa
     output = tmp_path / ("out_" + template)
     result = _invoke("generate", "-i", model_path, "--template", template, "-o", output)
     assert result.exit_code == 0, result.output
-    assert [path for path in output.rglob("*") if path.is_file()]
+    sources = [path.name for path in output.rglob("*") if path.is_file() and path.name.startswith("machine.")]
+    assert sources, [path.name for path in output.rglob("*")]

@@ -26,34 +26,47 @@ copied as static assets.
    ├── machine_summary.txt.j2
    └── static_note.txt
 
-An empty configuration is legal:
+An empty configuration is legal. A first rendered file can inspect the model
+object and state paths. This script writes the three files of the layout above
+(``{}`` is the empty configuration) into the current directory:
 
-.. code-block:: yaml
+.. testcode::
 
-   {}
+   from pathlib import Path
 
-A first rendered file can inspect the model object and state paths:
-
-.. code-block:: jinja
-
+   template = Path("my_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("{}\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
    {%- endfor %}
+   """)
 
-Render it with the tutorial model:
+Download :download:`simple_machine.fcstm </_models/simple_machine.fcstm>`, the
+tutorial model, into the same directory and render it:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate \
-       -i docs/source/_models/simple_machine.fcstm \
-       -t my_template \
-       -o /tmp/pyfcstm-template-check \
-       --clear
+   $ pyfcstm generate -i simple_machine.fcstm -t my_template -o out --clear
+   $ LC_ALL=C ls out
+   machine_summary.txt
+   static_note.txt
+   $ cat out/machine_summary.txt
+   Machine: SimpleMachine
+   States:
+   - SimpleMachine
+   - SimpleMachine.Idle
+   - SimpleMachine.Running
+   - SimpleMachine.Stopped
+   $ cat out/static_note.txt
+   Copied as is.
 
-The expected success signal is a generated ``machine_summary.txt`` plus the
-copied ``static_note.txt``. This proves only that the renderer can consume the
+The success signal is a generated ``machine_summary.txt`` plus the copied
+``static_note.txt``. This proves only that the renderer can consume the
 template; it does not prove target-language runtime semantics.
 
 Understand file mapping
@@ -304,25 +317,29 @@ Runnable micro-template shape
 -----------------------------
 
 A short authoring example should fit on one screen. Keep the project-specific
-logic out of the prose and name the success signal explicitly:
+logic out of the prose and name the success signal explicitly. This one loads a
+named expression style and counts the states; it runs next to the template of
+the first section:
 
-.. code-block:: text
+.. testcode::
 
-   my_template/
-     config.yaml
-     machine_summary.txt.j2
-     static_note.txt
+   from pathlib import Path
 
-.. code-block:: yaml
-
-   expr_styles:
-     py_expr:
-       base_lang: python
-
-.. code-block:: jinja
-
+   template = Path("micro_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("expr_styles:\n  py_expr:\n    base_lang: python\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
+   """)
+
+.. code-block:: console
+
+   $ pyfcstm generate -i simple_machine.fcstm -t micro_template -o micro_out --clear
+   $ cat micro_out/machine_summary.txt
+   model=SimpleMachine
+   states=4
 
 The success signal is a rendered ``machine_summary.txt`` and a copied
 ``static_note.txt``. This example proves file mapping and a named expression
@@ -395,7 +412,16 @@ declares the feature and lists every owner with its regions in writing order:
    owner Controller.Running
      region 1: Safety (1 states)
      region 2: Motion (2 states)
-   $ python -c 'from pyfcstm.render import StateMachineCodeRenderer; print(sorted(StateMachineCodeRenderer("region_listing_template").features))'
+
+.. testcode::
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   renderer = StateMachineCodeRenderer("region_listing_template")
+   print(sorted(renderer.features))
+
+.. testoutput::
+
    ['region']
 
 Without the declaration the same template is refused.  This is a negative

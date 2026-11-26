@@ -159,7 +159,9 @@ def test_exported_and_reloaded_model_behaves_the_same(case):
 
 # What each model is about, as a bounded reachability query: the position and the values that only
 # the behaviour of the model can produce, the earliest frame it can appear in, and a variant with a
-# wrong value that nothing can reach.
+# wrong value that nothing can reach. The earliest frame is the number of steps of the shortest
+# witness (the smallest bound for which the query is satisfiable), not a guess: the solver may return
+# a longer witness on one machine and the shortest one on another, so a larger number would be flaky.
 BMC_PROBES = {
     "region_controller_interlock_prototype_trace": (
         'active("Controller.Running{Safety: Watching, Motion: On}") && var("motor") == 1',
@@ -168,7 +170,7 @@ BMC_PROBES = {
     ),
     "region_done_region_waits_and_last_completion_continues_same_cycle": (
         'active("Workflow.AwaitPermission") && var("aexit") == 1 && var("w") == 1',
-        3,
+        2,
         'active("Workflow.AwaitPermission") && var("aexit") == 0 && var("w") == 1',
     ),
     "region_group_exit_takes_a_nested_group_out_before_its_owner": (

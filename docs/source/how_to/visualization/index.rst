@@ -118,7 +118,8 @@ Compare detail preset outputs
 -----------------------------
 
 The same model can be shown with different detail levels for different readers.
-The examples below reuse generated artifacts from the visualization tutorial.
+The figures below are the drawings that the visualization tutorial renders from
+its ``example.fcstm``, with the commands in the last column.
 
 .. list-table:: Detail preset comparison
    :header-rows: 1
@@ -126,19 +127,19 @@ The examples below reuse generated artifacts from the visualization tutorial.
    * - Preset
      - Intended reader
      - What is hidden first
-     - Existing source
+     - Command
    * - ``minimal``
      - Architecture discussion and non-implementation readers.
      - Lifecycle actions and pseudo-state styling.
-     - :download:`output_minimal.puml <../../tutorials/visualization/output_minimal.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l minimal -o output_minimal.puml``
    * - ``normal``
      - General documentation and code review.
      - Lifecycle action bodies.
-     - :download:`output_normal.puml <../../tutorials/visualization/output_normal.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l normal -o output_normal.puml``
    * - ``full``
      - Debugging, semantic review, and implementation discussion.
      - Nothing from the preset-level switches.
-     - :download:`output_full.puml <../../tutorials/visualization/output_full.puml>`
+     - ``pyfcstm plantuml -i example.fcstm -l full -o output_full.puml``
 
 .. figure:: ../../tutorials/visualization/output_minimal.puml.svg
    :alt: Minimal detail preset output
@@ -258,10 +259,24 @@ configuration such as event color dictionaries:
    )
    plantuml_text = model.to_plantuml(options)
 
-For complete runnable examples, download
-:download:`python_basic.demo.py <../../tutorials/visualization/python_basic.demo.py>`
-and
-:download:`python_options.demo.py <../../tutorials/visualization/python_options.demo.py>`.
+The same call works on a model you load from a file.  This program uses the
+interlock controller (:download:`controller.fcstm </_models/controller.fcstm>`)
+and prints the first and last line of the exported source:
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.model.plantuml import PlantUMLOptions
+
+   model = load_state_machine_from_file("controller.fcstm")
+   text = model.to_plantuml(PlantUMLOptions(detail_level="minimal"))
+   print(text.splitlines()[0])
+   print(text.splitlines()[-1])
+
+.. testoutput::
+
+   @startuml
+   @enduml
 
 Concrete visualization recipes
 ------------------------------
@@ -460,7 +475,7 @@ Tasks for models with regions
 -----------------------------
 
 A region is drawn as a concurrent partition, not as a state.  The cards below
-use ``region_controller.fcstm`` (the interlock controller of
+use :download:`controller.fcstm </_models/controller.fcstm>` (the interlock controller of
 :doc:`/tutorials/regions/index`) and state the same six facts: **Input**,
 **Command or code**, **Expected signal**, **File side effect**, **First
 failure check** and **Reference link**.  The four places that draw regions
@@ -471,7 +486,7 @@ below.  The modeling tasks are on :doc:`/how_to/regions/index`.
 Export PlantUML for a model with regions and render it
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``region_controller.fcstm``.  The export separates the regions of
+**Input.** ``controller.fcstm``, and :download:`region_events.fcstm` for the legend.  Download them into an empty directory and run the commands there.  The export separates the regions of
 an owner with ``--`` and starts each partition with a note
 ``region N: Name``, where ``N`` is the writing order, which is also the
 execution order.  ``max_depth`` counts a region as one level.  Event paths pass
@@ -480,11 +495,53 @@ through the region (``/Left.Ping``).  ``region_events.fcstm`` declares a
 
 **Command or code.**
 
-.. literalinclude:: region_plantuml.demo.sh
-   :language: bash
+The output is the whole exported source, so only the lines that matter are kept
+and the rest is left out as ``...``:
 
-.. literalinclude:: region_plantuml.demo.sh.txt
-   :language: text
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+               **region 1: Safety**
+   ...
+           --
+   ...
+               **region 2: Motion**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=3
+   ...
+               **region 1: Safety**
+   ...
+           --
+   ...
+               **region 2: Motion**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
+   ...
+               **region 1: Safety**
+   ...
+           state "..." as controller__running__safety___collapsed_
+           --
+   ...
+               **region 2: Motion**
+   ...
+           state "..." as controller__running__motion___collapsed_
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=1
+   ...
+           state "..." as controller__running___collapsed_
+   ...
+   $ pyfcstm plantuml -i region_events.fcstm -c show_events=true -c event_visualization_mode=legend
+   ...
+   legend right
+   **Event Scoping**
+   ----
+   <color:#000000>■</color> **Ping** (1 transitions)
+     <size:10><color:gray>/Left.Ping</color></size>
+   <color:#000000>■</color> **Ping** (1 transitions)
+     <size:10><color:gray>/Right.Ping</color></size>
+   endlegend
+   ...
 
 **Expected signal.** The default export has one ``--`` and two
 ``region N:`` notes, in writing order.  With ``max_depth=3`` the output is the
@@ -494,7 +551,7 @@ same; ``max_depth=2`` keeps the two partitions but collapses their states into
 source with any PlantUML setup; the default Graphviz layout is the one this
 page assumes:
 
-.. figure:: region_controller.fcstm.puml.svg
+.. figure:: /_models/controller.fcstm.puml.svg
    :alt: PlantUML drawing of the interlock controller with two concurrent partitions in Running
    :width: 80%
 
@@ -502,7 +559,7 @@ page assumes:
    Motion``, separated by a dashed line.
 
 **File side effect.** ``pyfcstm plantuml -o`` writes only the named file; the
-script writes to a scratch directory and removes it.
+commands above print to standard output and write no file.
 
 **First failure check.** If a partition is missing from the picture, open the
 ``.puml`` file and count the ``--`` lines (one fewer than the regions of the
@@ -513,7 +570,7 @@ owner); the next card covers the one known renderer limit.
 See regions in the HTML viewer and the VS Code preview
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Input.** ``region_controller.fcstm``.  ``pyfcstm diagram`` writes portable
+**Input.** ``controller.fcstm``.  ``pyfcstm diagram`` writes portable
 JSON or a self-contained HTML viewer.  In the viewer, the regions of one owner
 sit side by side inside the owner's frame: equal height in a top-to-bottom
 layout and equal width in a left-to-right layout, separated by dashed dividers,
@@ -526,11 +583,26 @@ configuration.
 **Command or code.** The portable JSON carries each region as a node with
 ``region: true`` and its writing order in ``ordinal``:
 
-.. literalinclude:: region_diagram.demo.sh
-   :language: bash
+.. code-block:: console
 
-.. literalinclude:: region_diagram.demo.sh.txt
-   :language: text
+   $ pyfcstm diagram -i controller.fcstm -o machine.json
+   machine.json
+
+.. testcode::
+
+   import json
+
+   data = json.load(open("machine.json", encoding="utf-8"))
+   running = [c for c in data["rootState"]["children"] if c["name"] == "Running"][0]
+   for region in running["children"]:
+       print(region["qualifiedName"], region["region"], region["ordinal"])
+   print(data["summary"])
+
+.. testoutput::
+
+   Controller.Running.Safety True 1
+   Controller.Running.Motion True 2
+   {'actions': 4, 'events': 2, 'states': 6, 'transitions': 7, 'variables': 4}
 
 The viewer and the editor preview are not run in this guide's build: they need
 the packaged viewer assets (a development checkout builds them with ``make
@@ -538,8 +610,8 @@ build_assets``) or a desktop editor.
 
 .. code-block:: bash
 
-   pyfcstm diagram -i region_controller.fcstm -o viewer.html
-   pyfcstm diagram -i region_controller.fcstm --open
+   pyfcstm diagram -i controller.fcstm -o viewer.html
+   pyfcstm diagram -i controller.fcstm --open
 
 In VS Code, open the ``.fcstm`` file and run ``Open Preview to the Side`` (the
 command ``fcstm.preview.open``) from the command palette.  The preview follows
@@ -571,19 +643,27 @@ limit comes from PlantUML itself; it was not reproduced here because no
 PlantUML renderer is available in this build.
 
 **Command or code.** Check that the exported source carries no layout
-directive, and render with the default Graphviz layout:
+directive (the first line prints whether the text ``pragma layout`` occurs, the
+second counts the ``--`` separators), and render with the default Graphviz layout:
 
-.. literalinclude:: region_layout.demo.sh
-   :language: bash
+.. testcode::
 
-.. literalinclude:: region_layout.demo.sh.txt
-   :language: text
+   from pyfcstm.model import load_state_machine_from_file
 
-**Expected signal.** No layout directive, and one ``--`` between the two
+   text = load_state_machine_from_file("controller.fcstm").to_plantuml()
+   print("pragma layout" in text)
+   print(sum(line.strip() == "--" for line in text.splitlines()))
+
+.. testoutput::
+
+   False
+   1
+
+**Expected signal.** ``False`` for the layout directive, and ``1`` for the ``--`` between the two
 partitions.  If your pipeline injected a directive, remove it and render
 again; every partition comes back.
 
-**File side effect.** None beyond the scratch directory the script removes.
+**File side effect.** None.
 
 **First failure check.** If only the first partition is drawn, search the
 source that was rendered (not the one exported) for ``pragma layout``, and

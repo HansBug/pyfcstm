@@ -25,8 +25,10 @@ Short answers
   :math:`R`; the fit is quadratic with a small second-order term.  It does not
   depend on the states per region :math:`S`, grows slowly with the transitions
   per state :math:`T`, and is linear in the variables written :math:`V`.
-  Nesting :math:`D` levels costs about :math:`D` times one level; the memo of
-  the simulator keeps the first entry polynomial.
+  Nesting :math:`D` levels costs 4.4 times one level for a plain chain of
+  owners (931 µs against 212 µs at :math:`D = 12`) and about :math:`D` times
+  one level when every level also carries a second region (3543 µs against
+  354 µs); the memo of the simulator keeps the first entry polynomial.
 * **Generated Python.**  The generated runtime was 2.6 to 8.4 times faster than
   the simulator on the same models (median 5.0).  It is still far from what a
   hand-written specialisation would do (see the :ref:`known gap <region-perf-python>`).
@@ -34,7 +36,7 @@ Short answers
   (log-log slope 1.43 over :math:`R = 1..64`), the size of one machine grows
   almost quadratically (slope 1.9 between :math:`R = 16` and :math:`R = 64`),
   and the first cycle that enters nested owners grows by a factor of 2.0 to 2.2
-  per level.  The capacity macros are exact functions of the model size.
+  per level from :math:`D = 6` on (about 1.8 per level over :math:`D = 1..12`).  The capacity macros are exact functions of the model size.
 
 How to read the numbers
 -----------------------
@@ -422,27 +424,27 @@ Recorded values of the simulator measurements, printed from the committed data f
 
    R sweep (R): us per cycle / first cycle us
      R=1: 234/500  R=2: 395/618  R=4: 683/1044  R=8: 1284/1964  R=16: 2511/3476  R=32: 5552/7551  R=64: 15436/18297  R=128: 44288/49382
-     linear R2 0.9711, slope 338.645 us per unit | quadratic R2 0.9999, x^2 term 1.7141 us | power exponent 1.06 (R2 0.982)
+     linear R2 0.9711, slope 338.645 us per unit | quadratic R2 0.9999, 96.17 + 126.2 x + 1.714 x^2 us | power exponent 1.06 (R2 0.982)
 
    S sweep (S): us per cycle / first cycle us
      S=3: 624/889  S=4: 696/1051  S=8: 640/877  S=16: 672/1157  S=32: 675/951  S=64: 703/1036  S=128: 741/1209
-     linear R2 0.6810, slope 0.714 us per unit | quadratic R2 0.6851, x^2 term -0.0017 us | power exponent 0.03 (R2 0.589)
+     linear R2 0.6810, slope 0.714 us per unit | quadratic R2 0.6851, 650.2 + 0.9244 x - 0.00165 x^2 us | power exponent 0.03 (R2 0.589)
 
    T sweep (T): us per cycle / first cycle us
      T=1: 552/895  T=2: 648/911  T=3: 678/902  T=4: 716/1069  T=5: 748/1056  T=6: 746/917  T=7: 775/907
-     linear R2 0.8856, slope 33.297 us per unit | quadratic R2 0.9741, x^2 term -6.0759 us | power exponent 0.17 (R2 0.979)
+     linear R2 0.8856, slope 33.297 us per unit | quadratic R2 0.9741, 488.7 + 81.9 x - 6.076 x^2 us | power exponent 0.17 (R2 0.979)
 
    V sweep (V): us per cycle / first cycle us
      V=1: 637/916  V=2: 674/1229  V=4: 731/981  V=8: 867/1080  V=16: 1049/1202  V=32: 1417/1453  V=64: 1981/1957
-     linear R2 0.9904, slope 21.310 us per unit | quadratic R2 0.9995, x^2 term -0.1211 us | power exponent 0.27 (R2 0.927)
+     linear R2 0.9904, slope 21.310 us per unit | quadratic R2 0.9995, 619 + 29 x - 0.1211 x^2 us | power exponent 0.27 (R2 0.927)
 
    D_chain sweep (D): us per cycle / first cycle us
      D=1: 212/340  D=2: 262/556  D=3: 316/821  D=4: 361/1125  D=5: 435/1510  D=6: 494/2271  D=8: 595/3214  D=10: 763/5884  D=12: 931/7201
-     linear R2 0.9901, slope 64.293 us per unit | quadratic R2 0.9982, x^2 term 1.8475 us | power exponent 0.60 (R2 0.950)
+     linear R2 0.9901, slope 64.293 us per unit | quadratic R2 0.9982, 174.3 + 40.44 x + 1.848 x^2 us | power exponent 0.60 (R2 0.950)
 
    D_branch sweep (D): us per cycle / first cycle us
      D=1: 354/510  D=2: 559/1004  D=3: 781/2120  D=4: 1000/2427  D=5: 1255/3279  D=6: 1514/4464  D=8: 2091/7589  D=10: 2899/11585  D=12: 3543/17332
-     linear R2 0.9881, slope 291.746 us per unit | quadratic R2 0.9989, x^2 term 9.7317 us | power exponent 0.94 (R2 0.982)
+     linear R2 0.9881, slope 291.746 us per unit | quadratic R2 0.9989, 182.5 + 166.1 x + 9.732 x^2 us | power exponent 0.94 (R2 0.982)
 
 Fits
 ~~~~
@@ -539,22 +541,23 @@ Recorded values of the generated Python measurements, printed from :file:`data/e
 
    R sweep (R): generated Python us per cycle, and simulator/generated ratio
      R=1: 40 (5.8x)  R=2: 69 (5.7x)  R=4: 131 (5.2x)  R=8: 273 (4.7x)  R=16: 614 (4.1x)  R=32: 1458 (3.8x)  R=64: 4800 (3.2x)  R=128: 17081 (2.6x)
-     linear R2 0.9448 | quadratic R2 1.0000, x^2 term 0.9177 us
+     linear R2 0.9448 | quadratic R2 1.0000, 58.39 + 15.5 x + 0.9177 x^2 us
    S sweep (S): generated Python us per cycle, and simulator/generated ratio
      S=3: 127 (4.9x)  S=4: 134 (5.2x)  S=8: 130 (4.9x)  S=16: 135 (5.0x)  S=32: 132 (5.1x)  S=64: 135 (5.2x)  S=128: 133 (5.6x)
-     linear R2 0.1552 | quadratic R2 0.3437, x^2 term -0.0008 us
+     linear R2 0.1552 | quadratic R2 0.3437, 130.3 + 0.1282 x - 0.0008119 x^2 us
    T sweep (T): generated Python us per cycle, and simulator/generated ratio
      T=1: 108 (5.1x)  T=2: 129 (5.0x)  T=3: 141 (4.8x)  T=4: 150 (4.8x)  T=5: 153 (4.9x)  T=6: 158 (4.7x)  T=7: 167 (4.6x)
-     linear R2 0.9121 | quadratic R2 0.9746, x^2 term -1.3360 us
+     linear R2 0.9121 | quadratic R2 0.9746, 92.45 + 19.52 x - 1.336 x^2 us
    V sweep (V): generated Python us per cycle, and simulator/generated ratio
      V=1: 129 (4.9x)  V=2: 140 (4.8x)  V=4: 145 (5.0x)  V=8: 173 (5.0x)  V=16: 222 (4.7x)  V=32: 303 (4.7x)  V=64: 478 (4.1x)
-     linear R2 0.9992 | quadratic R2 0.9994, x^2 term -0.0050 us
+     linear R2 0.9992 | quadratic R2 0.9994, 125.5 + 5.825 x - 0.004998 x^2 us
    D_chain sweep (D): generated Python us per cycle, and simulator/generated ratio
      D=1: 40 (5.3x)  D=2: 45 (5.8x)  D=3: 53 (6.0x)  D=4: 62 (5.8x)  D=5: 68 (6.4x)  D=6: 72 (6.8x)  D=8: 86 (6.9x)  D=10: 96 (8.0x)  D=12: 111 (8.4x)
-     linear R2 0.9965 | quadratic R2 0.9973, x^2 term -0.0545 us
+     linear R2 0.9965 | quadratic R2 0.9973, 32.77 + 7.045 x - 0.05447 x^2 us
+     first cycle us (minimum of fresh runs): D=1: 86  D=2: 151  D=3: 193  D=4: 275  D=5: 373  D=6: 501  D=8: 844  D=10: 1459  D=12: 1753
    D_branch sweep (D): generated Python us per cycle, and simulator/generated ratio
      D=1: 71 (5.0x)  D=2: 111 (5.0x)  D=3: 153 (5.1x)  D=4: 197 (5.1x)  D=5: 241 (5.2x)  D=6: 302 (5.0x)  D=8: 413 (5.1x)  D=10: 536 (5.4x)  D=12: 688 (5.1x)
-     linear R2 0.9896 | quadratic R2 0.9998, x^2 term 1.7943 us
+     linear R2 0.9896 | quadratic R2 0.9998, 38.26 + 32.4 x + 1.794 x^2 us
 
    ratio over all 47 points: median 5.0, min 2.6, max 8.4
    final variables equal to the simulator's after 1024 cycles: 47 of 47 points
@@ -568,6 +571,15 @@ Recorded values of the generated Python measurements, printed from :file:`data/e
      R=32: 1825459 bytes, 142.7 ms
      R=64: 3573103 bytes, 340.8 ms
      R=128: 7079885 bytes, 912.8 ms
+
+   generated machine.py bytes and import ms, by S (R=4):
+     S=3: 167685 bytes, 15.3 ms
+     S=4: 193990 bytes, 16.8 ms
+     S=8: 299207 bytes, 26.7 ms
+     S=16: 510659 bytes, 37.6 ms
+     S=32: 935306 bytes, 70.6 ms
+     S=64: 1785996 bytes, 131.0 ms
+     S=128: 3491361 bytes, 336.6 ms
 
 .. figure:: fig_python_vs_simulator_en.plot.py.svg
    :alt: Generated Python and simulator time per cycle on the same sweeps
@@ -629,7 +641,7 @@ Recorded values of the generated C measurements, printed from :file:`data/e2.jso
      R=16    3279.9 |  104560 |    981112 |      11.1
      R=32    9660.6 |  179976 |   3617848 |      21.4
      R=64   29617.3 |  331616 |  13867960 |      52.0
-     power exponent of ns per cycle 1.43 (R2 0.991); quadratic R2 0.9999; linear R2 0.967
+     power exponent of ns per cycle 1.43 (R2 0.991); quadratic R2 0.9999, -207.1 + 142.1 x + 5.067 x^2 ns; linear R2 0.967
 
    S sweep (S): ns per cycle | .text bytes | sizeof bytes | first cycle us
      S=3      302.4 |   35961 |     35800 |       4.3
@@ -638,7 +650,7 @@ Recorded values of the generated C measurements, printed from :file:`data/e2.jso
      S=16     435.7 |   66938 |    222376 |       5.2
      S=32     742.9 |  103506 |    630184 |       5.7
      S=64    1165.5 |  178514 |   2035624 |       7.1
-     power exponent of ns per cycle 0.43 (R2 0.923); quadratic R2 0.9944; linear R2 0.994
+     power exponent of ns per cycle 0.43 (R2 0.923); quadratic R2 0.9944, 246.3 + 14.68 x - 0.003683 x^2 ns; linear R2 0.994
 
    T sweep (T): ns per cycle | .text bytes | sizeof bytes | first cycle us
      T=1      347.0 |   42020 |     92200 |       5.4
@@ -648,7 +660,7 @@ Recorded values of the generated C measurements, printed from :file:`data/e2.jso
      T=5      474.5 |   65060 |     92200 |       5.9
      T=6      502.7 |   70660 |     92200 |       4.8
      T=7      486.5 |   76772 |     92200 |       5.0
-     power exponent of ns per cycle 0.19 (R2 0.862); quadratic R2 0.8854; linear R2 0.721
+     power exponent of ns per cycle 0.19 (R2 0.862); quadratic R2 0.8854, 272.4 + 77.48 x - 6.664 x^2 ns; linear R2 0.721
 
    V sweep (V): ns per cycle | .text bytes | sizeof bytes | first cycle us
      V=1      365.7 |   47748 |     92200 |       4.7
@@ -658,7 +670,7 @@ Recorded values of the generated C measurements, printed from :file:`data/e2.jso
      V=16     525.0 |   84450 |    147160 |       4.9
      V=32     543.6 |  110602 |    205784 |       5.3
      V=64     576.1 |  177138 |    323032 |       5.0
-     power exponent of ns per cycle 0.15 (R2 0.729); quadratic R2 0.8806; linear R2 0.724
+     power exponent of ns per cycle 0.15 (R2 0.729); quadratic R2 0.8806, 313.6 + 11.36 x - 0.1138 x^2 ns; linear R2 0.724
 
    D_chain sweep (D): ns per cycle | .text bytes | sizeof bytes | first cycle us
      D=1       86.6 |   32329 |     14968 |       3.3
@@ -670,7 +682,7 @@ Recorded values of the generated C measurements, printed from :file:`data/e2.jso
      D=8      605.4 |   41670 |     66040 |      92.2
      D=10     813.6 |   44230 |     87544 |     427.1
      D=12    1176.6 |   47498 |    112120 |    2093.5
-     power exponent of ns per cycle 1.05 (R2 0.966); quadratic R2 0.9973; linear R2 0.959
+     power exponent of ns per cycle 1.05 (R2 0.966); quadratic R2 0.9973, 75.86 + 17.38 x + 6.04 x^2 ns; linear R2 0.959
 
    the base model R=4 S=8 T=2 D=1 V=1 appears in several sweeps; its ns per cycle:
      347.1 358.1 402.5 365.7  (spread 16%)
@@ -789,7 +801,8 @@ First entry of nested owners
    logarithmic.  Simulator and Python: minimum of 5 fresh runs; C: minimum of 7
    runs.  The figure proves that the C runtime has no memo: its first cycle is
    3.3 µs at :math:`D = 1` and 2.1 ms at :math:`D = 12`, a factor of 2.0 to 2.2
-   per level (4.6 from :math:`D = 8` to 10 and 4.9 from 10 to 12).  At
+   per level from :math:`D = 6` on (4.0 from :math:`D = 6` to 8, 4.6 from 8 to 10
+   and 4.9 from 10 to 12; 1.5 per level from :math:`D = 4` to 5).  At
    :math:`D = 12` it is slower than the generated Python (1.7 ms).  Source:
    :file:`data/e2.jsonl`, :file:`data/e3.jsonl` and :file:`data/e4.jsonl`.
 
@@ -859,7 +872,7 @@ Summary
      - 15 KB at :math:`R = 1`, 13.2 MiB at :math:`R = 64`
    * - Generated C, nesting
      - Measured
-     - :math:`D`, 2.0 to 2.2 times per level on the first cycle
+     - :math:`D`, 2.0 to 2.2 times per level on the first cycle from :math:`D = 6` on
      - 3.3 µs at :math:`D = 1`, 2.1 ms at :math:`D = 12`
 
 Advice for modelers
@@ -881,7 +894,8 @@ Advice for modelers
   only after you know your model's need; a smaller value is an error at run
   time, not silent misbehaviour.
 * **Keep nesting shallow in C if the entry time matters.**  Each level multiplies
-  the first cycle by 2.0 to 2.2 once the depth passes 4; steady time does not.
+  the first cycle by 2.0 to 2.2 from depth 6 on (about 1.8 over the whole range
+  of 1 to 12); steady time does not.
 * **Write fewer variables per transition if cycles matter.**  :math:`V` is the
   one parameter with a clean linear cost in the simulator (21 µs per variable)
   and in Python (5.5 µs per variable).

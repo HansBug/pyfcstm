@@ -18,21 +18,61 @@
 
 **每个工具里含义相同。**\ 被检查、被仿真、被当作生成代码运行的模型必须只有一种含义。下面把对调后的控制器分别放进模拟器和生成的 Python 运行时运行，再用有界模型检查核对性质“只有 ``permit`` 不为 0 时电机才开着”：
 
-.. literalinclude:: same_order_everywhere.demo.py
-   :language: python
-   :caption: ``same_order_everywhere.demo.py``
+.. code-block:: console
 
-.. literalinclude:: same_order_everywhere.demo.py.txt
-   :language: text
-   :caption: ``same_order_everywhere.demo.py.txt``\ ：两个运行时逐周期的配置文本与变量
+   $ pyfcstm generate -i controller_swapped.fcstm --template python -o out
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "out")
+   from machine import ControllerMachine
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   ready = {"fault": 0, "requested": 1}
+   fault = {"fault": 1, "requested": 1}
+   steps = [(None, ready), (["/Start"], ready), (None, ready), (None, fault), (None, fault), (None, ready)]
+   model = load_state_machine_from_text(open("controller_swapped.fcstm").read())
+   simulator = SimulationRuntime(model, input_source=ready)
+   generated = ControllerMachine()
+   for number, (events, inputs) in enumerate(steps, start=1):
+       simulator.cycle(events, inputs=inputs)
+       generated.cycle(events, inputs=inputs)
+       same = str(simulator.configuration) == generated.configuration and all(
+           simulator.vars[name] == generated.vars[name] for name in ("permit", "motor")
+       )
+       print(number, generated.configuration, generated.vars["permit"], generated.vars["motor"], same)
+
+.. testoutput::
+
+   1 Controller.Idle 0 0 True
+   2 Controller.Running{Motion: Off, Safety: Watching} 1 0 True
+   3 Controller.Running{Motion: On, Safety: Watching} 1 1 True
+   4 Controller.Running{Motion: On, Safety: Watching} 0 1 True
+   5 Controller.Running{Motion: Off, Safety: Watching} 0 0 True
+   6 Controller.Running{Motion: Off, Safety: Watching} 1 0 True
 
 .. literalinclude:: interlock.fbmcq
    :language: text
    :caption: ``interlock.fbmcq``
 
-.. literalinclude:: interlock_bmc.demo.sh.txt
-   :language: text
-   :caption: ``interlock_bmc.demo.sh.txt``\ ：同一性质对两种顺序的结果
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q interlock.fbmcq
+   BMC invariant <= 8: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   Scenario: FEASIBLE
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   ...
+   $ pyfcstm bmc -i controller_swapped.fcstm -q interlock.fbmcq
+   BMC invariant <= 8: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   Scenario: FEASIBLE
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   ...
+   $ echo $?
+   1
 
 * 两个运行时每个周期都一致，包括对调后的控制器同时出现 ``permit=0`` 与 ``motor=1`` 的那个周期。
 * 在 ``Safety`` 在前的控制器上，性质在上界内成立；在对调后的控制器上，性质在上界内被违反（退出状态 ``1`` 表示违反）。检查器找到了轨迹里那个晚一拍的现象，而没有人为它写过测试。
@@ -85,13 +125,50 @@ FCSTM 里的事件是调用方为一个周期提供的标志。周期里所有�
 
 下面每一项都是语言的有意界限。五个示例里四个被语法拒绝，区域之间的跳转被模型构建拒绝，输出是真实的：
 
-.. literalinclude:: not_in_the_language.demox.py
-   :language: python
-   :caption: ``not_in_the_language.demox.py``
+.. testcode::
 
-.. literalinclude:: not_in_the_language.demox.py.txt
-   :language: text
-   :caption: 标准输出；脚本以状态码 ``1`` 退出（\ ``not_in_the_language.demox.py.exitcode``\ ）
+   from pyfcstm.dsl.error import GrammarParseError
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   cases = [
+       ("history written on an owner", "state Root { [*] -> P; state P { region R { [*] -> A; state A; } [H] -> A; } }"),
+       ("child states mixed with a region", "state Root { [*] -> P; state P { state X; region R { [*] -> A; state A; } } }"),
+       ("enter block inside a region", "state Root { [*] -> P; state P { region R { enter { } [*] -> A; state A; } } }"),
+       ("jump from one region to another", "state Root { [*] -> P; state P { region R1 { [*] -> A; state A; } region R2 { [*] -> B; state B; B -> A; } } }"),
+       ("variable declared in a region", "state Root { [*] -> P; state P { region R { def int x = 0; [*] -> A; state A; } } }"),
+   ]
+   for title, text in cases:
+       try:
+           load_state_machine_from_text(text)
+       except (GrammarParseError, ModelValidationError) as error:
+           # GrammarParseError: the grammar refuses the text; ModelValidationError: the model builder refuses it.
+           print("==", title)
+           print(type(error).__name__)
+           print("\n".join(str(error).splitlines()[:2]))
+
+.. testoutput::
+
+   == history written on an owner
+   GrammarParseError
+   Found 2 errors during parsing:
+   Error 1: Syntax error at line 1, column 65, near '[H]': Unexpected token '[H]'
+   == child states mixed with a region
+   GrammarParseError
+   Found 3 errors during parsing:
+   Error 1: Syntax error at line 1, column 42, near 'region': Unexpected token 'region'
+   == enter block inside a region
+   GrammarParseError
+   Found 3 errors during parsing:
+   Error 1: Syntax error at line 1, column 44, near 'enter': Unexpected token 'enter'
+   == jump from one region to another
+   ModelValidationError
+   Unknown to state 'A' of transition:
+   B -> A; (line 1)
+   == variable declared in a region
+   GrammarParseError
+   Found 2 errors during parsing:
+   Error 1: Syntax error at line 1, column 44, near 'def': Unexpected token 'def'
 
 * **拥有者上的历史。**\ 拥有者不能在区域旁边声明 ``[H]`` 或 ``[H*]``\ （第一个示例把 ``[H] -> A`` 写在区域之后）。区域内部的复合状态的历史可以使用。
 * **子状态与区域混写。**\ 一个状态要么含普通子状态，要么含区域。

@@ -1,2 +1,0 @@
-controller           status=unsat outcome=property_satisfied exit=0
-controller_swapped   status=sat outcome=property_violated exit=1

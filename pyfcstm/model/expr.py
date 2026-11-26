@@ -270,6 +270,13 @@ class Expr(AstExportable):
         :return: AST node representation
         :rtype: dsl_nodes.Expr
         :raises NotImplementedError: Must be implemented by subclasses
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Integer
+            >>> node = Integer(3).to_ast_node()
+            >>> str(node)
+            '3'
         """
         raise NotImplementedError  # pragma: no cover
 
@@ -1059,6 +1066,12 @@ class Integer(Expr):
 
         :return: Integer AST node
         :rtype: dsl_nodes.Integer
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Integer
+            >>> str(Integer(3).to_ast_node())
+            '3'
         """
         return dsl_nodes.Integer(raw=str(int(self.value)))
 
@@ -1082,6 +1095,12 @@ class Float(Expr):
 
         :return: Float or Constant AST node
         :rtype: dsl_nodes.Expr
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Float
+            >>> str(Float(1.5).to_ast_node())
+            '1.5'
         """
         const_name = None
         if abs(self.value - math.pi) < 1e-10:
@@ -1119,6 +1138,12 @@ class Boolean(Expr):
 
         :return: Boolean AST node
         :rtype: dsl_nodes.Boolean
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Boolean
+            >>> str(Boolean(True).to_ast_node())
+            'True'
         """
         return dsl_nodes.Boolean(raw=str(self.value).lower())
 
@@ -1265,6 +1290,12 @@ class BinaryOp(Op):
 
         :return: BinaryOp AST node
         :rtype: dsl_nodes.BinaryOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+            >>> str(BinaryOp(x=Variable('x'), op='+', y=Integer(1)).to_ast_node())
+            'x + 1'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
 
@@ -1348,6 +1379,12 @@ class UnaryOp(Op):
 
         :return: UnaryOp AST node
         :rtype: dsl_nodes.UnaryOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import UnaryOp, Variable
+            >>> str(UnaryOp(op='-', x=Variable('x')).to_ast_node())
+            '-x'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
         x_node = self.x.to_ast_node()
@@ -1390,6 +1427,12 @@ class UFunc(Expr):
 
         :return: UFunc AST node
         :rtype: dsl_nodes.UFunc
+
+        Example::
+
+            >>> from pyfcstm.model.expr import UFunc, Variable
+            >>> str(UFunc(func='abs', x=Variable('x')).to_ast_node())
+            'abs(x)'
         """
         return dsl_nodes.UFunc(func=self.func, expr=self.x.to_ast_node())
 
@@ -1439,6 +1482,14 @@ class ConditionalOp(Op):
 
         :return: ConditionalOp AST node
         :rtype: dsl_nodes.ConditionalOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import BinaryOp, ConditionalOp, Integer, Variable
+            >>> condition = BinaryOp(x=Variable('x'), op='>', y=Integer(0))
+            >>> node = ConditionalOp(cond=condition, if_true=Integer(1), if_false=Integer(2))
+            >>> str(node.to_ast_node())
+            '(x > 0) ? 1 : 2'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
 
@@ -1485,6 +1536,12 @@ class Variable(Expr):
 
         :return: Name AST node
         :rtype: dsl_nodes.Name
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Variable
+            >>> str(Variable('x').to_ast_node())
+            'x'
         """
         return dsl_nodes.Name(name=self.name)
 

@@ -1074,6 +1074,14 @@ class OnStage(AstExportable):
 
         :return: The parent state or None if no parent is set
         :rtype: Optional['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('def int x = 0; state Root { enter { x = 1; } }')
+            >>> action = model.root_state.on_enters[0]
+            >>> action.parent.name
+            'Root'
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -1087,6 +1095,15 @@ class OnStage(AstExportable):
 
         :param new_parent: The new parent state or None to clear the parent
         :type new_parent: Optional['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('def int x = 0; state Root { enter { x = 1; } }')
+            >>> action = model.root_state.on_enters[0]
+            >>> action.parent = model.root_state
+            >>> action.parent is model.root_state
+            True
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover

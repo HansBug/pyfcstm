@@ -428,6 +428,12 @@ a release cannot start from files that have drifted apart. Change release behavi
 add a step to an entry point. The publishing steps themselves (`gh release create/upload/edit`, the PyPI upload) are
 the one part a rehearsal cannot run, so keep them as single commands over files the shared steps prepared.
 
+Change the version only with `python tools/bump_version.py <new>`; `python tools/bump_version.py --check` reports any
+location that disagrees. It owns every place the current version is written (the package metadata, its docstring
+example and the tests that compare it), refuses to write anything when one of them no longer matches, leaves
+historical numbers such as `deprecated_in` or dependency pins alone, and reports when the release notes do not yet
+start with a section for the new version.
+
 ### Documentation
 
 ```bash

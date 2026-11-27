@@ -162,6 +162,48 @@ class _SolveBudget:
         return min(cast(int, self.timeout_ms), remaining_ms)
 
 
+def _check_solver(
+    solver: z3.Solver, assumptions: Sequence[z3.BoolRef], budgeted: bool
+) -> Optional[z3.CheckSatResult]:
+    """Run one solver check and report a budget cancellation as ``None``.
+
+    When a timeout fires inside some Z3 engines (observed in the non-linear
+    arithmetic engine), ``check`` raises ``Z3Exception('canceled')`` instead of
+    returning ``unknown``.  A budgeted check treats exactly that exception as an
+    undecided result; every other Z3 error, and a cancellation while no timeout
+    is set, still propagates.
+
+    :param solver: Solver to check.
+    :type solver: z3.Solver
+    :param assumptions: Assumption literals handed to ``check``.
+    :type assumptions: Sequence[z3.BoolRef]
+    :param budgeted: Whether a solver timeout was set for this check.
+    :type budgeted: bool
+    :return: The Z3 result, or ``None`` when the budget cancelled the check.
+    :rtype: Optional[z3.CheckSatResult]
+    :raises z3.Z3Exception: For any Z3 error other than a budget cancellation.
+
+    Example::
+
+        >>> import z3
+        >>> _check_solver(z3.Solver(), (), True)
+        sat
+    """
+    try:
+        return solver.check(*assumptions)
+    except z3.Z3Exception as err:
+        # Z3Exception: raised by ``check`` when the timeout cancels the search
+        # inside an engine that signals it by exception; only the message
+        # ``canceled`` under a set timeout is a budget cut, anything else is a
+        # real Z3 error.
+        message = err.value
+        if isinstance(message, bytes):
+            message = message.decode("utf-8", "replace")
+        if budgeted and message == "canceled":
+            return None
+        raise
+
+
 def _check_with_budget(
     solver: z3.Solver, budget: _SolveBudget
 ) -> Tuple[
@@ -196,8 +238,10 @@ def _check_with_budget(
     if remaining is not None:
         solver.set(timeout=remaining)
     start = time.monotonic()
-    status = solver.check()
+    status = _check_solver(solver, (), remaining is not None)
     elapsed_ms = (time.monotonic() - start) * 1000.0
+    if status is None:
+        return "unknown", None, "canceled", elapsed_ms, True
     if status == z3.sat:
         return "sat", solver.model(), None, elapsed_ms, True
     if status == z3.unsat:

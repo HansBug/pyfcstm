@@ -87,6 +87,7 @@ from .provenance import (
 )
 from .solver import (
     _SolveBudget,
+    _check_solver,
     _check_with_budget,
     _free_symbols,
     _solver_for_profile,
@@ -468,8 +469,10 @@ def _run_probe(
     if remaining is not None:
         solver.set(timeout=remaining)
     start = time.monotonic()
-    status = solver.check(*assumptions)
+    status = _check_solver(solver, assumptions, remaining is not None)
     elapsed = (time.monotonic() - start) * 1000.0
+    if status is None:
+        return "unknown", ProbeRecord(name, "unknown", True, elapsed, "canceled")
     if status == z3.unsat:
         return "unsat", ProbeRecord(name, "unsat", True, elapsed)
     if status == z3.sat:

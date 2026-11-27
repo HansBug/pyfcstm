@@ -178,7 +178,7 @@ def test_integer_numerals_of_other_values_go_to_the_operator(value) -> None:
 
 def test_the_numeral_table_is_emptied_when_it_is_full() -> None:
     first = int_term(10**9)
-    for value in range(10**9 + 1, 10**9 + 1 + 65537):
+    for value in range(10**9 + 1, 10**9 + 1 + 4097):
         int_term(value)
     assert z3.eq(int_term(10**9), first)
     assert int_term(10**9) is not first

@@ -187,7 +187,7 @@ _MEMO = _MemoSlot()
 
 
 @contextlib.contextmanager
-def answer_memo(limit: int = 16384) -> Iterator[None]:
+def answer_memo(limit: int = 1024) -> Iterator[None]:
     """Remember the definite answers of :func:`is_sat` while the block runs.
 
     A caller that asks the same question again and again, as building a
@@ -200,7 +200,7 @@ def answer_memo(limit: int = 16384) -> Iterator[None]:
     alive, so the table is emptied whenever it holds ``limit`` of them.
 
     :param limit: Number of remembered answers after which the table is
-        emptied, defaults to ``16384``.
+        emptied, defaults to ``1024``.
     :type limit: int, optional
     :return: A context manager yielding ``None``.
     :rtype: Iterator[None]

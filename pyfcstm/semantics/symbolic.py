@@ -321,7 +321,10 @@ def _skips(condition: z3.BoolRef) -> bool:
     return z3.is_false(condition) or (z3.is_not(condition) and z3.is_true(condition.arg(0)))
 
 
-_INT_TERMS_LIMIT = 65536
+# A model has a few hundred distinct integer literals, and every numeral the table
+# keeps stays in the main context for the life of the process, so the table is
+# small and emptied when it is full.
+_INT_TERMS_LIMIT = 4096
 _INT_TERMS: Dict[Tuple[int, int], Tuple[z3.IntNumRef, z3.Context]] = {}
 
 

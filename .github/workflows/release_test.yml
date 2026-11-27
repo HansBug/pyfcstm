@@ -31,6 +31,12 @@ jobs:
   source_release:
     name: Try package the source
     runs-on: ${{ matrix.os }}
+    env:
+      # Build under the same conditions as a tag build in release.yml: a
+      # detached HEAD (no branch name) and an explicit build identity.
+      PYFCSTM_BUILD_COMMIT: ${{ github.sha }}
+      PYFCSTM_BUILD_DIRTY: 'false'
+      PYFCSTM_BUILD_REF: release-test
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +50,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 20
+      - name: Detach HEAD like a tag checkout
+        shell: bash
+        run: git checkout --detach
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v7
         with:
@@ -60,6 +69,8 @@ jobs:
           if [ -f requirements-build.txt ]; then pip install -r requirements-build.txt; fi
           if [ -f requirements-test.txt ]; then pip install -r requirements-test.txt; fi
           pip install --upgrade build
+      - name: Check that Release Test builds like a tag build
+        run: make release_workflow_parity_check
       - name: Build packages
         run: |
           make build_info
@@ -830,6 +841,12 @@ jobs:
   release_cli:
     name: CLI Build And Release
     runs-on: ${{ matrix.os }}
+    env:
+      # Build under the same conditions as a tag build in release.yml: a
+      # detached HEAD (no branch name) and an explicit build identity.
+      PYFCSTM_BUILD_COMMIT: ${{ github.sha }}
+      PYFCSTM_BUILD_DIRTY: 'false'
+      PYFCSTM_BUILD_REF: release-test
     if: "!contains(github.event.head_commit.message, 'ci skip')"
     strategy:
       fail-fast: false
@@ -884,6 +901,9 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Detach HEAD like a tag checkout
+        shell: bash
+        run: git checkout --detach
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v7
         with:

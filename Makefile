@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check semantics_boundary_check semantics_check c_kernel_alignment_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest docs_doctest
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check release_workflow_parity_check test_boundary_check resource_ownership_check semantics_boundary_check semantics_check c_kernel_alignment_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest docs_doctest
 
 PYTHON := $(shell which python)
 
@@ -128,6 +128,7 @@ help:
 	@echo "  make rst_auto     - Generate RST documentation from Python source"
 	@echo "                      Options: RANGE_DIR=<dir>"
 	@echo "  make docs_terminology_check - Check Chinese documentation terminology"
+	@echo "  make release_workflow_parity_check - Check that Release Test builds like a tag build"
 	@echo "  make sha256       - Update generated SHA-256 sidecar files"
 	@echo ""
 	@echo "ANTLR Grammar:"
@@ -380,6 +381,10 @@ template_source_install_check:
 docs_terminology_check:
 	$(PYTHON) tools/check_docs_terminology.py --self-check
 	$(PYTHON) tools/check_docs_terminology.py --check
+
+release_workflow_parity_check:
+	$(PYTHON) tools/check_release_workflow_parity.py --self-check
+	$(PYTHON) tools/check_release_workflow_parity.py --check
 
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py

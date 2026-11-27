@@ -1,0 +1,27 @@
+def int seq = 0;
+state Root {
+    event Stop;
+    [*] -> P;
+    state P {
+        enter { seq = seq * 10 + 1; }
+        during before { seq = seq * 10 + 2; }
+        during after { seq = seq * 10 + 3; }
+        exit { seq = seq * 10 + 4; }
+        region A {
+            [*] -> A1;
+            state A1 {
+                enter { seq = seq * 10 + 5; }
+                exit { seq = seq * 10 + 6; }
+            }
+        }
+        region B {
+            [*] -> B1;
+            state B1 {
+                enter { seq = seq * 10 + 7; }
+                exit { seq = seq * 10 + 8; }
+            }
+        }
+    }
+    state Off;
+    !P -> Off : /Stop;
+}

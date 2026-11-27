@@ -82,9 +82,13 @@ function expressionPrecedence(expression: FcstmAstExpression): number | null {
     return null;
 }
 
+function canonicalExpressionText(expression: FcstmAstExpression): string;
+function canonicalExpressionText(expression: FcstmAstExpression | null | undefined): string | null;
 function canonicalExpressionText(expression: FcstmAstExpression | null | undefined): string | null {
     if (!expression) return null;
     switch (expression.expressionKind) {
+        case 'activeStateQuery':
+            return `active(${JSON.stringify(expression.path)})`;
         case 'literal':
             return expression.literalType === 'boolean'
                 ? expression.valueText.toLowerCase()
@@ -94,17 +98,16 @@ function canonicalExpressionText(expression: FcstmAstExpression | null | undefin
             return expression.name;
         case 'parenthesized': {
             const value = canonicalExpressionText(expression.expression);
-            return value === null ? null : `(${value})`;
+            return `(${value})`;
         }
         case 'function': {
             const argument = canonicalExpressionText(expression.argument);
-            return argument === null ? null : `${expression.functionName}(${argument})`;
+            return `${expression.functionName}(${argument})`;
         }
         case 'unary': {
             const op = canonicalUnaryOperator(expression.op);
             const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
             let value = canonicalExpressionText(expression.operand);
-            if (value === null) return null;
             const valuePrecedence = expressionPrecedence(expression.operand);
             if (valuePrecedence !== null && valuePrecedence <= myPrecedence) value = `(${value})`;
             return `${op}${value}`;
@@ -114,7 +117,6 @@ function canonicalExpressionText(expression: FcstmAstExpression | null | undefin
             const myPrecedence = EXPR_PRECEDENCE[op];
             let left = canonicalExpressionText(expression.left);
             let right = canonicalExpressionText(expression.right);
-            if (left === null || right === null) return null;
             const leftPrecedence = expressionPrecedence(expression.left);
             if (leftPrecedence !== null) {
                 if (RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)) {
@@ -137,7 +139,6 @@ function canonicalExpressionText(expression: FcstmAstExpression | null | undefin
             const condition = canonicalExpressionText(expression.condition);
             let whenTrue = canonicalExpressionText(expression.whenTrue);
             let whenFalse = canonicalExpressionText(expression.whenFalse);
-            if (condition === null || whenTrue === null || whenFalse === null) return null;
             if ((expressionPrecedence(expression.whenTrue) ?? 99) <= EXPR_PRECEDENCE['?:']) whenTrue = `(${whenTrue})`;
             if ((expressionPrecedence(expression.whenFalse) ?? 99) <= EXPR_PRECEDENCE['?:']) whenFalse = `(${whenFalse})`;
             return `(${condition}) ? ${whenTrue} : ${whenFalse}`;

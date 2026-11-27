@@ -1,12 +1,17 @@
 """Tests for SMT-local verification algorithms."""
 
+from dataclasses import replace
 from textwrap import dedent
 
 import pytest
+import z3
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
+from pyfcstm.diagnostics import inspect_model
 from pyfcstm.verify import (
+    CALL_COUNT_SCALING_ORDER,
+    COMPLEXITY_TIER_ORDER,
     AlgorithmResult,
     composite_init_guards_incomplete,
     dead_guard,
@@ -15,6 +20,7 @@ from pyfcstm.verify import (
     enter_postcondition_implies_during_precondition,
     forced_guard_unsat_under_init,
     guard_tautology,
+    run_inspect_algorithms,
     transition_shadowed_by_predecessor,
 )
 from pyfcstm.verify.encoding import _core as encoding_core
@@ -72,6 +78,16 @@ def transition_by_guard(machine, text):
             if transition.guard is not None and text in str(transition.guard):
                 return transition
     raise AssertionError("transition not found")
+
+
+def declared_forced_transition(machine, text):
+    """A transition of a forced declaration, marked the way inspect marks it.
+
+    A loaded machine carries no mark of its forced declarations, so the
+    per-transition algorithm that asks for one is handed a marked copy of the
+    transition that has the guard.
+    """
+    return replace(transition_by_guard(machine, text), is_forced=True)
 
 
 def timeout_result(*args, **kwargs):
@@ -1739,7 +1755,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "counter > threshold")
+        transition = declared_forced_transition(machine, "counter > threshold")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1759,7 +1775,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "1 / x")
+        transition = declared_forced_transition(machine, "1 / x")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1783,7 +1799,7 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "x == 0")
+        transition = declared_forced_transition(machine, "x == 0")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1808,7 +1824,25 @@ class TestForcedGuardUnsatUnderInit:
             }
             """
         )
-        transition = transition_by_guard(machine, "counter > threshold")
+        transition = declared_forced_transition(machine, "counter > threshold")
+
+        result = forced_guard_unsat_under_init(transition, variables(machine))
+
+        assert result == AlgorithmResult(kind="sat")
+
+    def test_a_guard_that_is_defined_and_true_at_init_does_not_trigger(self):
+        machine = parse_machine(
+            """
+            def int x = 2;
+            state System {
+                state A;
+                state B;
+                [*] -> A;
+                !A -> B : if [4 / x == 2];
+            }
+            """
+        )
+        transition = declared_forced_transition(machine, "4 / x")
 
         result = forced_guard_unsat_under_init(transition, variables(machine))
 
@@ -1835,7 +1869,7 @@ class TestForcedGuardUnsatUnderInit:
         monkeypatch.setattr(encoding_core, "is_sat", sat_timeout_result)
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "counter > threshold"),
+            declared_forced_transition(machine, "counter > threshold"),
             variables(machine),
             smt_timeout_ms=1,
         )
@@ -1861,7 +1895,7 @@ class TestForcedGuardUnsatUnderInit:
         )
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "flags ^ 1"),
+            declared_forced_transition(machine, "flags ^ 1"),
             variables(machine),
         )
 
@@ -1889,7 +1923,7 @@ class TestForcedGuardUnsatUnderInit:
         var_def.init = Variable("missing")
 
         result = forced_guard_unsat_under_init(
-            transition_by_guard(machine, "counter > threshold"),
+            declared_forced_transition(machine, "counter > threshold"),
             variables(machine),
         )
 
@@ -2712,9 +2746,11 @@ class TestTransitionShadowedByPredecessor:
 
         assert result == AlgorithmResult(kind="sat")
 
+    @pytest.mark.parametrize('indeterminate_call', [2, 3])
     def test_candidate_trigger_unknown_is_not_reported_as_shadowed(
         self,
         monkeypatch,
+        indeterminate_call,
     ):
         machine = parse_machine(
             """
@@ -2733,7 +2769,7 @@ class TestTransitionShadowedByPredecessor:
 
         def shadow_unsat_then_trigger_unknown(*args, **kwargs):
             calls.append(args)
-            if len(calls) == 1:
+            if len(calls) < indeterminate_call:
                 from pyfcstm.solver.logical import SatResult
 
                 return SatResult(kind="unsat")
@@ -2744,11 +2780,13 @@ class TestTransitionShadowedByPredecessor:
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 2
+        assert len(calls) == indeterminate_call
 
+    @pytest.mark.parametrize('indeterminate_call', [2, 3])
     def test_candidate_trigger_timeout_is_not_reported_as_shadowed(
         self,
         monkeypatch,
+        indeterminate_call,
     ):
         machine = parse_machine(
             """
@@ -2767,7 +2805,7 @@ class TestTransitionShadowedByPredecessor:
 
         def shadow_unsat_then_trigger_timeout(*args, **kwargs):
             calls.append(args)
-            if len(calls) == 1:
+            if len(calls) < indeterminate_call:
                 from pyfcstm.solver.logical import SatResult
 
                 return SatResult(kind="unsat")
@@ -2778,7 +2816,7 @@ class TestTransitionShadowedByPredecessor:
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="timeout")
-        assert len(calls) == 2
+        assert len(calls) == indeterminate_call
 
     def test_unconditional_predecessor_does_not_force_unknown_candidate_shadow(self, monkeypatch):
         machine = parse_machine(
@@ -2811,14 +2849,13 @@ class TestTransitionShadowedByPredecessor:
         machine = parse_machine(
             """
             def int x = 0;
-            def int y = 0;
             state System {
                 state A;
                 state B;
                 state C;
                 [*] -> A;
                 A -> B;
-                A -> C : if [x ** y > 0];
+                A -> C : if [x ** 2 > 0];
             }
             """
         )
@@ -2827,6 +2864,40 @@ class TestTransitionShadowedByPredecessor:
 
         assert result.kind == "unsat"
         assert [item["code"] for item in result.diagnostics] == ["W_TRANSITION_SHADOWED"]
+
+    @pytest.mark.parametrize("guard", ["x ** 2 > 0", "x ** y > 0"])
+    def test_the_answer_does_not_depend_on_what_the_process_solved_before(self, guard):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C : if [%s];
+            }
+            """
+            % guard
+        )
+
+        fresh = transition_shadowed_by_predecessor(machine, variables(machine)).kind
+        # Extracting one model from the default Z3 context used to change what
+        # the non-linear query above answered afterwards.
+        solver = z3.Solver()
+        solver.add(z3.BoolVal(True))
+        assert solver.check() == z3.sat
+        solver.model()
+        after_a_model = transition_shadowed_by_predecessor(
+            machine, variables(machine)
+        ).kind
+
+        assert fresh == after_a_model
+        # ``x ** y`` with two variables is outside what Z3 decides for
+        # non-linear arithmetic, so ``unknown`` is an allowed answer there.
+        assert fresh in ("unsat", "unknown")
 
     def test_unconditional_predecessor_does_not_shadow_dead_candidate_guard(self):
         machine = parse_machine(
@@ -5102,6 +5173,118 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="sat")
+
+
+class TestForcedDeclarationsGiveTheResultOfTheirExpansion:
+    """A forced declaration is syntactic sugar: the model loaded from its
+    expansion is analysed exactly like the model that declares it."""
+
+    SOURCE = """
+    def int x = 0;
+    state Root {
+        event Stop;
+        [*] -> P;
+        state P {
+            [*] -> a1 : if [x >= 0];
+            state a1 { during { x = x + 1; } }
+            a1 -> [*] : if [x > 9];
+        }
+        state Q;
+        state R;
+        !P -> Q : /Stop;
+        P -> R : /Stop;
+        P -> R : if [x > 2];
+        P -> Q : if [x > 2];
+        Q -> P : if [x < 0];
+    }
+    """
+
+    @staticmethod
+    def _verdict_of(result):
+        # What is compared is the answer: the kind, the reason and every
+        # finding with the transitions it names. A witness is whatever the
+        # solver picked.
+        ignored = {"witness"}
+
+        def strip(value):
+            if isinstance(value, dict):
+                return {k: strip(v) for k, v in value.items() if k not in ignored}
+            if isinstance(value, (list, tuple)):
+                return [strip(v) for v in value]
+            return value
+
+        return result.kind, result.reason, strip(list(result.diagnostics))
+
+    @pytest.mark.parametrize(
+        "algorithm",
+        [transition_shadowed_by_predecessor, composite_init_guards_incomplete],
+        ids=["shadowing", "initial_guards"],
+    )
+    def test_the_whole_machine_algorithms_agree(self, algorithm):
+        machine = parse_machine(self.SOURCE)
+        assert machine.forced_variables == ("__forced_0",)
+        expansion = parse_machine(str(machine.to_ast_node()))
+        assert expansion.forced_variables == ()
+
+        declared = algorithm(machine, variables(machine))
+        expanded = algorithm(expansion, variables(expansion))
+
+        assert declared.kind != "undecidable_skip"
+        assert self._verdict_of(declared) == self._verdict_of(expanded)
+
+
+class TestForcedDeclarationsInTheVerifyRun:
+    """``run_inspect_algorithms`` answers the same for a forced declaration and its expansion."""
+
+    SOURCE = """
+    def int x = 0;
+    state Root {
+        event Stop;
+        [*] -> Run;
+        state Run { [*] -> A; state A { during { x = x + 1; } } }
+        state Idle;
+        !Run -> Idle : if [x > 5 && x < 2];
+        Idle -> Run : if [x < 0];
+    }
+    """
+
+    @staticmethod
+    def _answers(machine):
+        def strip(value):
+            if isinstance(value, dict):
+                return {k: strip(v) for k, v in value.items() if k != "witness"}
+            if isinstance(value, (list, tuple)):
+                return [strip(v) for v in value]
+            return value
+
+        results = run_inspect_algorithms(
+            machine,
+            max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+            max_call_count_scaling=CALL_COUNT_SCALING_ORDER[-1],
+        )
+        return sorted(
+            (item.algorithm_name, item.result_kind, item.reason, strip(list(item.diagnostics)))
+            for item in results
+        )
+
+    def test_every_algorithm_gives_the_declaration_the_answer_of_its_expansion(self):
+        machine = parse_machine(self.SOURCE)
+        assert machine.forced_variables == ("__forced_0",)
+        expansion = parse_machine(str(machine.to_ast_node()))
+
+        assert self._answers(machine) == self._answers(expansion)
+
+    def test_the_inspect_report_still_warns_about_the_declaration_as_written(self):
+        # The warning is about the declaration, so it comes from the model as
+        # written, which only the inspect report is built from.
+        report = inspect_model(
+            parse_machine(self.SOURCE),
+            enable_verify=True,
+            max_complexity_tier=COMPLEXITY_TIER_ORDER[-1],
+            smt_timeout_ms=20000,
+        )
+        codes = [item.code for item in report.diagnostics]
+        assert "W_FORCED_GUARD_UNSAT" in codes
 
 
 class TestCompositeInitGuardsIncomplete:

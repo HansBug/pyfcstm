@@ -1,0 +1,2 @@
+check forbid <= 4:
+    var("motor") == 1 && var("permit") == 0;

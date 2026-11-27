@@ -305,6 +305,10 @@ selector is anchored at the current predicate step; ``*`` spans
 ``where`` expression cannot match a record because its definedness is conjoined
 with its value.
 
+For a model with regions, ``active(...)`` also accepts a configuration pattern,
+and inside a call ``where`` it describes the whole machine at the moment of the
+call; :doc:`/explanations/bmc_regions/index` shows how both are lowered.
+
 ``cover`` does not lower an arbitrary frame predicate.  It validates a naked
 ``case("label")`` atom, accepts only public ``transition`` and ``fallback``
 case kinds, and disjoins matching selectors across the bounded steps.

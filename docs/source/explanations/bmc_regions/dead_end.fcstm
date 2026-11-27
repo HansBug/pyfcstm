@@ -1,0 +1,16 @@
+input int d;
+def int x = 0;
+state Root {
+    [*] -> Run;
+    state Run {
+        region R {
+            [*] -> A;
+            state A { during { x = x + 1; } }
+            state C {
+                [*] -> J effect { x = 10 % d; };
+                pseudo state J;
+            }
+            A -> C : if [d == 0];
+        }
+    }
+}

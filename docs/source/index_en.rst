@@ -18,6 +18,7 @@ Key Features
 
 * **Expressive DSL Syntax**: Intuitive domain-specific language for defining states, transitions, events, and lifecycle actions
 * **Hierarchical State Machines**: Full support for nested states with parent-child relationships and aspect-oriented programming
+* **Ordered Parallel Regions**: A state can run several regions side by side in one cycle, in writing order, and every tool (simulation, inspection, bounded model checking, code generation, diagrams) takes them
 * **Multi-Language Code Generation**: Template-based rendering system supporting C, C++, Python, and custom target languages
 * **PlantUML Visualization**: Automatic generation of state machine diagrams for documentation
 * **ANTLR4-Based Parser**: Robust grammar parsing with detailed error reporting
@@ -100,6 +101,7 @@ show the whole learning path directly from this home page.
     tutorials/generation/index
     tutorials/visualization/index
     tutorials/history/index
+    tutorials/regions/index
     tutorials/bmc/index
 
 * :doc:`Tutorial roadmap <tutorials/index>`
@@ -110,6 +112,7 @@ show the whole learning path directly from this home page.
 * :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
 * :doc:`tutorials/history/index`
+* :doc:`tutorials/regions/index`
 * :doc:`tutorials/bmc/index`
 
 How-to Guides
@@ -129,6 +132,7 @@ extra click through a category page.
     how_to/cli_workflows/index
     how_to/bmc/index
     how_to/dsl/index
+    how_to/regions/index
     how_to/simulation/index
     how_to/simulation/diagnostics
     how_to/inspect/index
@@ -142,6 +146,7 @@ extra click through a category page.
 * :doc:`how_to/cli_workflows/index`
 * :doc:`how_to/bmc/index`
 * :doc:`how_to/dsl/index`
+* :doc:`how_to/regions/index`
 * :doc:`how_to/simulation/index`
 * :doc:`how_to/inspect/index`
 * :doc:`how_to/generation/index`
@@ -165,9 +170,14 @@ in the global navigation.
     explanations/architecture/index
     explanations/dsl_semantics/index
     explanations/execution_semantics/index
+    explanations/region_semantics/index
+    explanations/region_design/index
+    explanations/region_performance/index
     explanations/bmc_semantics/index
     explanations/bmc_properties/index
     explanations/bmc_solving/index
+    explanations/bmc_regions/index
+    explanations/bmc_scaling/index
     explanations/diagnostics/index
     explanations/visualization/index
     explanations/template_rendering/index
@@ -177,9 +187,14 @@ in the global navigation.
 * :doc:`explanations/architecture/index`
 * :doc:`explanations/dsl_semantics/index`
 * :doc:`explanations/execution_semantics/index`
+* :doc:`explanations/region_semantics/index`
+* :doc:`explanations/region_design/index`
+* :doc:`explanations/region_performance/index`
 * :doc:`explanations/bmc_semantics/index`
 * :doc:`explanations/bmc_properties/index`
 * :doc:`explanations/bmc_solving/index`
+* :doc:`explanations/bmc_regions/index`
+* :doc:`explanations/bmc_scaling/index`
 * :doc:`explanations/diagnostics/index`
 * :doc:`explanations/visualization/index`
 * :doc:`explanations/template_rendering/index`
@@ -199,6 +214,7 @@ generated API documentation remains the last item in this reference area.
     Reference map <reference/index>
     reference/cli/index
     reference/dsl/index
+    reference/region_model/index
     reference/inspect_report/index
     reference/diagnostics_codes/index
     reference/simulation/index
@@ -214,6 +230,7 @@ generated API documentation remains the last item in this reference area.
 * :doc:`Reference map <reference/index>`
 * :doc:`reference/cli/index`
 * :doc:`reference/dsl/index`
+* :doc:`reference/region_model/index`
 * :doc:`reference/inspect_report/index`
 * :doc:`reference/diagnostics_codes/index`
 * :doc:`reference/simulation/index`

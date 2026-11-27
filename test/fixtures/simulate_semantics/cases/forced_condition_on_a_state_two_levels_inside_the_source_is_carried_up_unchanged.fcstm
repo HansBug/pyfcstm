@@ -1,0 +1,16 @@
+input int u;
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P {
+        [*] -> C;
+        state C {
+            [*] -> c1;
+            state c1 { during { n = n + 1; } }
+            state c2 { during { n = n + 1; } }
+            c1 -> c2 : if [u == 1];
+        }
+    }
+    state Q { during { n = n + 1; } }
+    !P -> Q : if [active("Root.P.C.c2")];
+}

@@ -1,11 +1,22 @@
-{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '0' if item.name in model.forced_variables else ('1' if item.type == 'int' else '1.0') }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 
 {% set doc_event_paths = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
 {% for event in state.events.values() -%}
 {% set doc_event_paths.items = doc_event_paths.items + [event.path_name] -%}
 {% endfor -%}
-{% endfor %}
+{% endfor -%}
+{%- for scan_region in model.walk_regions() -%}
+{%- for event in scan_region.events.values() -%}
+{%- set doc_event_paths.items = doc_event_paths.items + [event.path_name] -%}
+{%- endfor -%}
+{%- endfor %}
+{%- set owner_ns = namespace(owner=none) -%}
+{%- for owner_candidate in model.walk_states() -%}
+{%- if owner_ns.owner is none and owner_candidate.regions -%}
+{%- set owner_ns.owner = owner_candidate -%}
+{%- endif -%}
+{%- endfor -%}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
 {%- for scan_group in [
@@ -33,6 +44,31 @@
     state.list_on_durings(aspect='after', with_ids=True),
     state.list_on_during_aspects(aspect='before', with_ids=True),
     state.list_on_during_aspects(aspect='after', with_ids=True),
+] -%}
+{% for _, item in group -%}
+{% set resolved = namespace(item=item, seen=[]) -%}
+{% for _ in range(action_ref_hop_limit) -%}
+{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
+{% set resolved.seen = resolved.seen + [resolved.item] -%}
+{% set resolved.item = resolved.item.ref -%}
+{% endif -%}
+{% endfor -%}
+{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
+{% set abstract_ns.rows = abstract_ns.rows + [{
+    'func_name': resolved.item.func_name,
+    'hook_name': action_hook_name(resolved.item),
+    'owner_path': action_owner_path(resolved.item),
+    'stage': resolved.item.stage,
+    'aspect': resolved.item.aspect,
+}] -%}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% for region in model.walk_regions() -%}
+{% for group in [
+    region.list_on_during_aspects(aspect='before', with_ids=True),
+    region.list_on_during_aspects(aspect='after', with_ids=True),
 ] -%}
 {% for _, item in group -%}
 {% set resolved = namespace(item=item, seen=[]) -%}
@@ -92,7 +128,7 @@ sensor_values = {{ example_values(model.inputs.values()) }}
 machine = Device(sensor_values{% if model.parameters %}, parameters={{ example_values(model.parameters.values()) }}{% endif %})
 machine.cycle()
 
-print(machine.current_state_path)
+{% if model.has_regions %}print(machine.configuration){% else %}print(machine.current_state_path){% endif %}
 {% for item in model.parameters.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
 {% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
 {% endfor %}# Send committed outputs to your actuator/driver after normal return.
@@ -115,7 +151,7 @@ python app.py
 | `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
 | `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
 
-`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
+`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持原值。通过 `vars` 读取结果，它是只读视图；应用代码直接修改内部存储属于不支持的用法，可能破坏模型已经验证过的性质。状态只能读取；改变状态的途径只有 `cycle()` 与热启动。output 不触发外部 setter 或执行器回调。
 
 在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改原始映射不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters` 和生成的 `get_param_*()` 读取。
 
@@ -179,11 +215,48 @@ machine.cycle(inputs={{ example_values(model.inputs.values()) }})
 - 以 `.` 开头的父级相对路径，例如 `..Sibling.Event`
 - 在当前状态上下文中可解析的兼容短名称
 
-如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。
+如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。{% if model.has_regions %}
 
-`cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过 `current_state_path`、`current_state_name`、`vars` 和 `is_ended` 观察运行时。如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循 Python 当次提供的迭代顺序。
+这个模型声明了 region，所以可能同时有多个叶状态处于活动。依赖当前位置的名称（例如 `Go` 或 `..Reset`）会对每个活动叶状态各解析一次：没有任何活动叶状态找到事件时报错（`SimulationRuntimeEventError`），找到的都是同一个事件时使用该事件，找到不同事件时视为有歧义并列出每个候选。完整路径与以 `/` 开头的路径无论状态机停在哪里含义都相同，短名称有歧义时请改用它们。热启动后仍为 `[init]` 的 region 还没有活动叶状态，在它的初始转换执行之前不参与解析。{% endif %}
 
-<a id="initialization"></a>
+`cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过 {% if model.has_regions %}`configuration`{% else %}`current_state_path`、`current_state_name`{% endif %}、`vars` 和 `is_ended` 观察运行时。如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循 Python 当次提供的迭代顺序。
+
+{% if model.has_regions %}
+<a id="regions"></a>
+
+## Region 与位置
+
+这个模型声明了 region。含 region 的状态（owner）在每个周期里按书写顺序运行它的全部 region，所以靠后的 region 能看到靠前的 region 在同一周期里产生的变量值和状态。状态机的位置因此是一棵树，而不是一条路径：含 region 的状态机没有 `current_state_path` 与 `current_state_name`（读取它们是 `AttributeError`），请通过 `configuration`（配置，configuration）读取位置。
+
+`configuration` 是一行文本，写法与仿真器完全一致：
+
+| 文本 | 含义 |
+| --- | --- |
+| `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}` | owner `{{ owner_ns.owner.path | join('.') }}` 的每个 region 都停在所写的状态上 |
+| 状态位置写 `[done]` | 该 region 已完成，在 owner 再次进入之前一直保持完成 |
+| 状态位置写 `[init]` | 该 region 等待初始化；热启动没有写出该 region 时出现，一直保持到该 region 的初始转换执行为止 |
+
+<!-- example:regions -->
+
+```python
+print(machine.configuration)
+print(machine.region_status({{ (owner_ns.owner.regions.values() | first).path | join('.') | tojson }}))
+print(machine.is_active({{ owner_ns.owner.path | join('.') | tojson }}))
+print(machine.leaves)
+```
+
+| 查询 | 结果 |
+| --- | --- |
+| `configuration` | 上面的位置文本；它不会是 `None`，请先看 `is_ended` |
+| `region_status(path)` | `'live'`（region 持有活动状态）、`'done'`、`'pending'`（owner 活动但 region 尚未初始化，文本为 `[init]`）或 `'inactive'`（owner 不在当前位置里）；路径未知或指向状态时抛出 `ValueError` |
+| `is_active(path)` | 该状态是否属于当前位置 |
+| `leaves` | 活动叶状态的路径元组组成的元组 |
+
+owner 的最后一个 region 完成时，owner 在同一个周期里沿自己的出边继续；若无法继续，这最后一次完成会被拒绝，叶状态继续工作。进入一个组时按顺序进入各 region，只要靠后的 region 没有合法入口，整个进入都被拒绝。无法得到合法位置的周期是 Delta 周期：位置与变量保持不变，不调用任何 hook。
+
+region 内状态的动作 hook 看到的是该分支的位置。跨越多个 region 的 hook（例如 owner 的进入、退出，或包住整组的切面）里，`ctx.state_path` 与 `ctx.active_leaf` 是所有分支共有的最深状态，例如 owner；`ctx.configuration` 是调用时刻的位置文本。离开 owner 的过程中，已经离开的 region 无论是完成的还是被打断的都显示为 `[done]`，所以 `exit` hook 需要区分两者时请用变量记录。仅仅被试探或被拒绝的候选不会调用任何 hook。
+
+{% endif %}<a id="initialization"></a>
 
 ## 初始化与恢复
 
@@ -201,15 +274,23 @@ machine = Device(
 
 ### 热启动
 
-下面的片段接在 `app.py` 的成功周期之后。保存同一检查点的状态、全部 control/output 和全部参数，再构造另一个 `Device`。示例恢复仍在运行的叶状态；若指定组合状态，则从其初始转换等待模式开始。热启动不重放进入动作，必须提供完整快照，不能用来修改运行中实例的参数。检查点也不等同于可跨平台保存的二进制格式。
+下面的片段接在 `app.py` 的成功周期之后。保存同一检查点的状态、全部 control/output 和全部参数，再构造另一个 `Device`。示例恢复仍在运行的叶状态；若指定组合状态，则从其初始转换等待模式开始。热启动不重放进入动作，必须提供完整快照，不能用来修改运行中实例的参数。检查点也不等同于可跨平台保存的二进制格式。{% if model.forced_variables %}
+
+名字以 `__forced_` 开头的变量属于模型里的强制转换。状态机只在一个周期内部使用它们，所以在每个检查点上它们都是 `0`。它们是模型的普通变量：热启动像对待其他变量一样，从保存的检查点取值。名字形如 `__forced_gate_<n>` 的状态是生成的伪状态，周期只会从中经过。{% endif %}{% if model.has_regions %}
+
+对含 region 的模型，`initial_state` 接受检查点的位置文本（例如 `{{ owner_ns.owner.path | join('.') }}{{ '{' }}{% for region in owner_ns.owner.regions.values() %}{{ region.name }}: {{ (region.substates.keys() | list)[0] }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}`）、可以穿过 region 的点路径或名字元组。写出来的叶状态就位，不执行任何进入动作；没写出来的部分等待初始化，在第一个周期里走各自的初始转换：没有写子状态的组合状态、被省略的 region，以及只写到 owner 的路径（它的全部 region）。写成 `[done]` 的 region 保持完成；所有 region 都是 `[done]` 的 owner 会被 `ValueError` 拒绝。点路径只保留它经过的那条分支，组里的其他 region 都等待初始化。
+{% endif %}
 
 <!-- example:hot-start -->
 
 ```python
-state = machine.current_state_path
+{% if model.has_regions %}if machine.is_ended:
+    raise ValueError("Cannot restore a completed machine as a live checkpoint")
+state = machine.configuration
+{% else %}state = machine.current_state_path
 if state is None:
     raise ValueError("Cannot restore a completed machine as a live checkpoint")
-checkpoint_vars = dict(machine.vars)
+{% endif %}checkpoint_vars = dict(machine.vars)
 checkpoint_parameters = dict(machine.parameters)
 machine = Device(
     sensor_values,
@@ -221,7 +302,7 @@ machine = Device(
 
 ## 结果、错误与生命周期
 
-`cycle()` 返回 `None`。正常返回后读取 `vars`、`current_state_path`、`is_ended` 和 `last_cycle_was_delta`。Delta 周期是成功的无进展步骤：持久状态保持，但仍消耗本拍输入。`vars` 同时包含 control 和 output，应用应只读；提交会替换该字典，因此每拍重新获取，保存检查点时使用 `dict(machine.vars)`。`last_inputs` 和动作上下文都是独立的只读快照。
+`cycle()` 返回 `None`。正常返回后读取 `vars`、{% if model.has_regions %}`configuration`{% else %}`current_state_path`{% endif %}、`is_ended` 和 `last_cycle_was_delta`。Delta 周期是成功的无进展步骤：持久状态保持，但仍消耗本拍输入。`vars` 同时包含 control 和 output，每次访问返回已提交值的只读视图，因此每个周期之后重新读取；保存检查点时使用 `dict(machine.vars)`。`last_inputs` 和动作上下文都是独立的只读快照。
 
 输入获取失败、非法数值和表达式错误会阻止周期提交。修正原因后可再次调用 `cycle()`，届时重新采样。设备读取、日志和动作产生的外部副作用无法撤销；如果执行器必须反映已提交状态，应在周期正常返回后发送 output。同一实例的访问应串行执行，不要在 reader 或 Hook 中递归调用 `cycle()`。
 
@@ -234,7 +315,7 @@ machine = Device(
 | `{{ machine_class_name(model) }}(initial_state=None, initial_vars=None, *, parameters=None)` | 冷构造或完整热恢复 |
 | `cycle(events=None, *, inputs=None)` | 执行应用调度的一个周期，返回 None |
 | `vars`, `parameters`, `last_inputs` | 持久值观察、固定配置和最近已提交输入 |
-| `current_state_path`, `current_state_name` | 当前路径元组/短名，结束后为 None |
+{% if model.has_regions %}| `configuration`, `region_status(path)`, `is_active(path)`, `leaves` | 位置文本、某个 region 的状态、某个状态是否活动、活动叶状态的路径元组 |{% else %}| `current_state_path`, `current_state_name` | 当前路径元组/短名，结束后为 None |{% endif %}
 | `is_ended`, `last_cycle_was_delta`, `cycle_count` | 结束标记、Delta 标记和已完成周期数 |
 | `read_<input>()`, `get_input_<input>()`, `get_param_<param>()` | 实现输入读取方法，使用生成的只读 getter |
 | `get_abstract_hook_map()`, `ABSTRACT_HOOKS` | DSL 抽象动作到覆写方法名的映射 |
@@ -253,7 +334,8 @@ machine = Device(
 | `action_stage`, `call_stage` | 生命周期调用位置的阶段 |
 | `named_ref` | 命名 ref 调用位置，直接/匿名调用为 None |
 | `get_var(name)`, `has_var(name)` | 读取/检查持久值快照 |
-| `get_state_name()`, `get_full_state_path()` | 执行状态的短名/完整路径 |
+| `get_state_name()`, `get_full_state_path()` | 执行状态的短名/完整路径 |{% if model.has_regions %}
+| `configuration` | 调用时刻的位置文本 |{% endif %}
 
 ### 错误
 
@@ -262,7 +344,8 @@ machine = Device(
 | `NotImplementedError` | 所需输入既无读取实现，也无显式值 |
 | `ValueError` | 未知/缺失名称、非法快照或数值 |
 | `SimulationRuntimeExpressionError` | DSL 表达式求值失败，__cause__ 保留数值异常 |
-| `SimulationRuntimeDfsError` | 验证超过结构性安全上限 |
+| `SimulationRuntimeDfsError` | 验证超过结构性安全上限{% if model.has_regions %}，或某个循环没有出路 |
+| `SimulationRuntimeEventError` | 事件名没有找到事件，或在多个活动叶状态之间有歧义{% endif %} |
 
 应用 reader 和动作中的异常向外传播。只捕获应用能够处理的错误，重试前先报告原因。失败周期不增加 `cycle_count`。
 
@@ -282,7 +365,11 @@ machine = Device(
 
 {% for state in model.walk_states() %}- `{{ state | state_path }}`
 {% endfor %}
-### 事件路径
+{% if model.has_regions %}### Region 路径
+
+{% for region in model.walk_regions() %}- `{{ region.path | join('.') }}`
+{% endfor %}
+{% endif %}### 事件路径
 
 {% for path in doc_event_paths.items | unique %}- `{{ path }}`
 {% else %}没有声明事件。

@@ -1,0 +1,13 @@
+def int out = 0;
+def int y = 0;
+state Root {
+    region First {
+        state A { during { out = 1; } }
+        [*] -> A;
+    }
+    region Second {
+        >> during before { out = 7; }
+        state B { during { y = y + 1; } }
+        [*] -> B;
+    }
+}

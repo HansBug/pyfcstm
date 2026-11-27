@@ -66,11 +66,24 @@ DEFAULT\_STRUCTURE\_STATISTICS\_POLICY
 .. autodata:: DEFAULT_STRUCTURE_STATISTICS_POLICY
 
 
+BEHAVIOR\_DIAGNOSTIC\_CODES
+-----------------------------------------------------
+
+.. autodata:: BEHAVIOR_DIAGNOSTIC_CODES
+
+
 StateInfo
 -----------------------------------------------------
 
 .. autoclass:: StateInfo
     :members: path,name,parent_path,is_leaf,is_pseudo,is_composite,substates,initial_targets,entry_actions,during_actions,exit_actions,aspect_before,aspect_after,has_abstract_action,span
+
+
+RegionInfo
+-----------------------------------------------------
+
+.. autoclass:: RegionInfo
+    :members: path,name,owner_path,index,substates,initial_targets,aspect_before,aspect_after,span
 
 
 TransitionInfo
@@ -189,7 +202,7 @@ ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification,structure_statistics
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification,structure_statistics,regions
 
 
 inspect\_model

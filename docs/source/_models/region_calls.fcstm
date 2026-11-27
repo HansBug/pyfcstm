@@ -1,0 +1,29 @@
+def int laps = 0;
+
+state Root {
+    [*] -> Run;
+    state Run {
+        enter abstract RunEnter;
+        exit abstract RunExit;
+        >> during after abstract GroupTail;
+        region A {
+            [*] -> A1;
+            state A1 {
+                enter abstract AEnter;
+                during abstract AWork;
+            }
+            A1 -> [*];
+        }
+        region B {
+            [*] -> B1;
+            state B1 {
+                enter abstract BEnter;
+                during abstract BWork;
+            }
+            B1 -> [*];
+        }
+    }
+    state Done;
+    Run -> Run : if [laps < 1] effect { laps = laps + 1; }
+    Run -> Done;
+}

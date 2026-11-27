@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 import z3
 
@@ -62,6 +62,12 @@ from .ast import (
 )
 from .errors import BmcBuildError, InvalidBmcQuery, UnsupportedBmcQuery
 from .query import BmcProperty
+from .region_pattern import ActivePattern, parse_active_pattern, pattern_predicate
+from .region_relation import (
+    PositionSnapshot,
+    region_occurrences,
+    reported_call_state,
+)
 from .relation import (
     BmcCoreFormula,
     _lower_bmc_cond_expr,
@@ -348,8 +354,6 @@ def _validate_condition_context(expr: BmcCondExpr, context: str, path: str) -> N
         _validate_condition_context(expr.if_false, context, path + ".if_false")
         return
     if isinstance(expr, Active):
-        if context == "call_where":
-            raise UnsupportedBmcQuery("%s call where cannot use active()." % path)
         if expr.frame != "current":
             raise UnsupportedBmcQuery(
                 "%s uses an explicit frame selector; property compiler "
@@ -531,6 +535,23 @@ class _CallSnapshotSymbols:
 
     snapshot: Mapping[str, z3.ArithRef]
     parameters: Mapping[str, z3.ArithRef] = field(default_factory=dict)
+    domain: Optional[Any] = None
+    active: Optional[Callable[[str], z3.BoolRef]] = None
+
+    def active_state(self, frame_index: int, state_path: str) -> z3.BoolRef:
+        """Return whether a state or configuration pattern is active at the call.
+
+        ``frame_index`` is ignored, as for the variables: the call-time position,
+        not a trace frame, is what is asked about.
+
+        :param frame_index: Ignored frame index supplied by the shared lowerer.
+        :type frame_index: int
+        :param state_path: State path or configuration pattern of ``active(...)``.
+        :type state_path: str
+        :return: The predicate over the positions captured with the call.
+        :rtype: z3.BoolRef
+        """
+        return self.active(state_path)
 
     def resolve_query_value(
         self, frame_index: int, step_index: Optional[int], name: str
@@ -576,15 +597,54 @@ def _snapshot_cond_expr(
     label: str,
     step_index: int,
     parameters: Mapping[str, z3.ArithRef],
+    domain: Any = None,
+    active: Optional[Callable[[str], z3.BoolRef]] = None,
 ) -> z3.BoolRef:
     lowered = _lower_bmc_cond_expr(
         expr,
-        _CallSnapshotSymbols(snapshot, parameters),
+        _CallSnapshotSymbols(snapshot, parameters, domain, active),
         frame_index=step_index,
         step_index=step_index,
     )
     definedness = _and(item.constraint for item in lowered.definedness_constraints)
     return z3.And(_require_bool(lowered.expr, label), definedness)
+
+
+def _reported_state(core: BmcCoreFormula, record) -> Tuple[str, str]:
+    """Return the state and active leaf a handler is told for a call."""
+    if not core.region_steps:
+        return record.state_path, record.active_leaf_path
+    return reported_call_state(core.context.domain, record)
+
+
+def _call_time_active(
+    core: BmcCoreFormula, record, position: Optional[PositionSnapshot]
+) -> Callable[[str], z3.BoolRef]:
+    """Return ``active(...)`` as the handler of one call experiences it.
+
+    For a model without regions the handler is told the state the action runs in
+    and the machine is in that state and its ancestors, so the answer is known when
+    the query is compiled.  For a model with regions it is read off the positions
+    the machine has at the moment of the call.
+    """
+    if position is None:
+        leaf = record.active_leaf_path
+
+        def constant(text: str) -> z3.BoolRef:
+            return z3.BoolVal(leaf == text or leaf.startswith(text + "."))
+
+        return constant
+    domain = core.context.domain
+
+    def over_positions(text: str) -> z3.BoolRef:
+        pattern = (
+            parse_active_pattern(domain, text) if "{" in text else ActivePattern(text)
+        )
+        return pattern_predicate(
+            domain, pattern, position.main, position.regions.__getitem__
+        )
+
+    return over_positions
 
 
 def _call_match_expr(
@@ -593,6 +653,9 @@ def _call_match_expr(
     filter_node: CallFilter,
     step_index: int,
     parameters: Mapping[str, z3.ArithRef],
+    reported: Tuple[str, str],
+    core: Optional[BmcCoreFormula] = None,
+    position: Optional[PositionSnapshot] = None,
 ) -> z3.BoolRef:
     terms = [relation.selector]
     if filter_node.action is not None:
@@ -602,9 +665,9 @@ def _call_match_expr(
     if filter_node.role is not None:
         terms.append(z3.BoolVal(record.role == filter_node.role))
     if filter_node.state is not None:
-        terms.append(z3.BoolVal(record.state_path == filter_node.state))
+        terms.append(z3.BoolVal(reported[0] == filter_node.state))
     if filter_node.active_leaf is not None:
-        terms.append(z3.BoolVal(record.active_leaf_path == filter_node.active_leaf))
+        terms.append(z3.BoolVal(reported[1] == filter_node.active_leaf))
     if filter_node.named_ref_is_null:
         terms.append(z3.BoolVal(record.named_ref is None))
     elif filter_node.named_ref is not None:
@@ -612,7 +675,13 @@ def _call_match_expr(
     if filter_node.where is not None:
         terms.append(
             _snapshot_cond_expr(
-                filter_node.where, record.snapshot, "call where", step_index, parameters
+                filter_node.where,
+                record.snapshot,
+                "call where",
+                step_index,
+                parameters,
+                core.context.domain,
+                _call_time_active(core, record, position),
             )
         )
     return _and(terms)
@@ -630,8 +699,20 @@ def _lower_call_count(
     )
     items = []
     for selected_step in selected_steps:
-        for relation in core.steps[selected_step].case_relations:
-            for record in relation.call_records:
+        if core.region_steps:
+            # The calls of a cycle of a model with regions are the calls of every
+            # path and settlement that is part of it, each under its own condition.
+            sources = [
+                _Occurrence(
+                    occurrence.condition, occurrence.call_records, occurrence.positions
+                )
+                for occurrence in region_occurrences(core.region_steps[selected_step])
+            ]
+        else:
+            sources = list(core.steps[selected_step].case_relations)
+        for relation in sources:
+            positions = getattr(relation, "positions", ())
+            for index, record in enumerate(relation.call_records):
                 items.append(
                     z3.If(
                         _call_match_expr(
@@ -640,6 +721,9 @@ def _lower_call_count(
                             expr.filter,
                             selected_step,
                             core.symbols.parameters,
+                            _reported_state(core, record),
+                            core,
+                            positions[index] if positions else None,
                         ),
                         z3.IntVal(1),
                         z3.IntVal(0),
@@ -708,17 +792,42 @@ def _validate_cover_label_schema(label: str) -> str:
     return case_kind
 
 
+@dataclass(frozen=True)
+class _Occurrence:
+    """The calls one path or settlement of a cycle makes and the condition it runs under."""
+
+    selector: z3.BoolRef
+    call_records: Tuple[Any, ...]
+    positions: Tuple[Any, ...] = ()
+
+
 def _cover_selectors(core: BmcCoreFormula, label: str) -> Tuple[z3.BoolRef, ...]:
     label_kind = _validate_cover_label_schema(label)
-    relations = tuple(
-        relation
-        for step in core.steps
-        for relation in step.case_relations
-        if relation.case.label == label
-    )
+    if core.region_steps:
+        # A local case is named by its public label, which every path of every
+        # unit that takes it shares, and it is taken when its path is part of the
+        # cycle; the paths of a group start only count under the path that starts it.
+        found = tuple(
+            (occurrence.case.case.kind, occurrence.condition)
+            for step in core.region_steps
+            for occurrence in region_occurrences(step)
+            if occurrence.case is not None
+            and occurrence.case.case.public_label == label
+        )
+        relations = tuple(kind for kind, _ in found)
+        selectors = tuple(condition for _, condition in found)
+    else:
+        found_relations = tuple(
+            relation
+            for step in core.steps
+            for relation in step.case_relations
+            if relation.case.label == label
+        )
+        relations = tuple(relation.case.kind for relation in found_relations)
+        selectors = tuple(relation.selector for relation in found_relations)
     if not relations:
         raise InvalidBmcQuery("cover case label is unknown: %r." % label)
-    kinds = {relation.case.kind for relation in relations}
+    kinds = set(relations)
     if kinds != {
         label_kind
     }:  # pragma: no cover - relation labels are internally canonical.
@@ -728,7 +837,7 @@ def _cover_selectors(core: BmcCoreFormula, label: str) -> Tuple[z3.BoolRef, ...]
             "cover case label is not coverable: %r has kind %s."
             % (label, sorted(kinds)[0])
         )
-    return tuple(relation.selector for relation in relations)
+    return selectors
 
 
 def _compile_cover(core: BmcCoreFormula, prop: BmcProperty) -> Tuple[z3.BoolRef, str]:
@@ -827,6 +936,16 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         >>> core = build_bmc_core_formula(BmcEngine(model).prepare('check reach <= 1: active("Root");'))
         >>> compile_bmc_property(core).solve_formula.sort().name()
         'Bool'
+        >>> regional = load_state_machine_from_text('''
+        ... state Root {
+        ...     region A { [*] -> P; state P; }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> core = build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: active("Root.A.P");'))
+        >>> compile_bmc_property(core).kind
+        'reach'
     """
     checked_core = _require_core(core)
     prop = _property_source(checked_core)

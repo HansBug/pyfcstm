@@ -67,10 +67,34 @@ def state_root_active(state_root):
 class TestModelStateRoot:
     def test_model(self, model):
         assert model.defines == {
-            "x": VarDefine(name="x", type="int", init=Integer(value=0), doc=None),
-            "y": VarDefine(name="y", type="int", init=Integer(value=0), doc=None),
-            "z": VarDefine(name="z", type="int", init=Integer(value=0), doc=None),
-            "flag": VarDefine(name="flag", type="int", init=Integer(value=0), doc=None),
+            "x": VarDefine(
+                name="x",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
+            "y": VarDefine(
+                name="y",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
+            "z": VarDefine(
+                name="z",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
+            "flag": VarDefine(
+                name="flag",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            ),
         }
         assert model.root_state.name == "Root"
         assert model.root_state.path == ("Root",)
@@ -79,16 +103,36 @@ class TestModelStateRoot:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="x", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="x",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="y", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="y",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="z", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="z",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="flag", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="flag",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
         ]
         assert ast_node.root_state.name == "Root"
@@ -97,6 +141,7 @@ class TestModelStateRoot:
         assert state_root.name == "Root"
         assert state_root.path == ("Root",)
         assert sorted(state_root.substates.keys()) == ["Active"]
+        assert state_root.regions == {}
         assert state_root.events == {}
         assert len(state_root.transitions) == 1
         assert state_root.transitions[0].from_state == INIT_STATE
@@ -107,6 +152,9 @@ class TestModelStateRoot:
         assert state_root.transitions[0].doc is None
         assert state_root.transitions[0].parent_ref().name == "Root"
         assert state_root.transitions[0].parent_ref().path == ("Root",)
+        assert state_root.transitions[0].target_history is None
+        assert state_root.transitions[0].history_role is None
+        assert state_root.transitions[0].history_user_guard is None
         assert state_root.named_functions == {}
         assert state_root.on_enters == []
         assert state_root.on_durings == []
@@ -117,6 +165,8 @@ class TestModelStateRoot:
         assert state_root.extra_name is None
         assert not state_root.is_pseudo
         assert state_root.doc is None
+        assert not state_root.is_history_gate
+        assert not state_root.is_forced_gate
         assert state_root.abstract_on_during_aspects == []
         assert state_root.abstract_on_durings == []
         assert state_root.abstract_on_enters == []
@@ -130,6 +180,9 @@ class TestModelStateRoot:
         assert state_root.init_transitions[0].doc is None
         assert state_root.init_transitions[0].parent_ref().name == "Root"
         assert state_root.init_transitions[0].parent_ref().path == ("Root",)
+        assert state_root.init_transitions[0].target_history is None
+        assert state_root.init_transitions[0].history_role is None
+        assert state_root.init_transitions[0].history_user_guard is None
         assert not state_root.is_leaf_state
         assert state_root.is_root_state
         assert not state_root.is_stoppable
@@ -149,6 +202,9 @@ class TestModelStateRoot:
         assert state_root.transitions_entering_children[0].parent_ref().path == (
             "Root",
         )
+        assert state_root.transitions_entering_children[0].target_history is None
+        assert state_root.transitions_entering_children[0].history_role is None
+        assert state_root.transitions_entering_children[0].history_user_guard is None
         assert len(state_root.transitions_entering_children_simplified) == 1
         assert (
             state_root.transitions_entering_children_simplified[0].from_state
@@ -168,6 +224,17 @@ class TestModelStateRoot:
         assert state_root.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Root",)
+        assert (
+            state_root.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_root.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_root.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_root.transitions_from) == 1
         assert state_root.transitions_from[0].from_state == "Root"
         assert state_root.transitions_from[0].to_state == EXIT_STATE
@@ -176,6 +243,9 @@ class TestModelStateRoot:
         assert state_root.transitions_from[0].effects == []
         assert state_root.transitions_from[0].doc is None
         assert state_root.transitions_from[0].parent_ref is None
+        assert state_root.transitions_from[0].target_history is None
+        assert state_root.transitions_from[0].history_role is None
+        assert state_root.transitions_from[0].history_user_guard is None
         assert len(state_root.transitions_to) == 1
         assert state_root.transitions_to[0].from_state == INIT_STATE
         assert state_root.transitions_to[0].to_state == "Root"
@@ -184,6 +254,9 @@ class TestModelStateRoot:
         assert state_root.transitions_to[0].effects == []
         assert state_root.transitions_to[0].doc is None
         assert state_root.transitions_to[0].parent_ref is None
+        assert state_root.transitions_to[0].target_history is None
+        assert state_root.transitions_to[0].history_role is None
+        assert state_root.transitions_to[0].history_user_guard is None
 
     def test_state_root_to_ast_node(self, state_root):
         ast_node = state_root.to_ast_node()
@@ -348,6 +421,8 @@ class TestModelStateRoot:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -358,6 +433,7 @@ class TestModelStateRoot:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 )
             ],
             enters=[],
@@ -367,6 +443,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_list_on_enters(self, state_root):
@@ -429,6 +507,7 @@ class TestModelStateRoot:
         assert state_root_active.name == "Active"
         assert state_root_active.path == ("Root", "Active")
         assert sorted(state_root_active.substates.keys()) == []
+        assert state_root_active.regions == {}
         assert state_root_active.events == {}
         assert state_root_active.transitions == []
         assert state_root_active.named_functions == {}
@@ -544,6 +623,8 @@ class TestModelStateRoot:
         assert state_root_active.extra_name is None
         assert not state_root_active.is_pseudo
         assert state_root_active.doc is None
+        assert not state_root_active.is_history_gate
+        assert not state_root_active.is_forced_gate
         assert state_root_active.abstract_on_during_aspects == []
         assert state_root_active.abstract_on_durings == []
         assert state_root_active.abstract_on_enters == []
@@ -688,6 +769,9 @@ class TestModelStateRoot:
         assert state_root_active.transitions_to[0].doc is None
         assert state_root_active.transitions_to[0].parent_ref().name == "Root"
         assert state_root_active.transitions_to[0].parent_ref().path == ("Root",)
+        assert state_root_active.transitions_to[0].target_history is None
+        assert state_root_active.transitions_to[0].history_role is None
+        assert state_root_active.transitions_to[0].history_user_guard is None
 
     def test_state_root_active_to_ast_node(self, state_root_active):
         ast_node = state_root_active.to_ast_node()
@@ -834,6 +918,8 @@ class TestModelStateRoot:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_root_active_list_on_enters(self, state_root_active):

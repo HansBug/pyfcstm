@@ -1,0 +1,17 @@
+def int c = 0;
+state Root {
+    event Next;
+    [*] -> P;
+    state P {
+        enter { c = c + 100; }
+        region Only {
+            [*] -> A;
+            state A { during { c = c + 1; } }
+            state B { during { c = c + 10; } }
+            A -> B :: Next;
+            B -> [*] : if [c >= 130];
+        }
+    }
+    state Done;
+    P -> Done;
+}

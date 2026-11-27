@@ -22,20 +22,65 @@ FCSTM 仿真首次运行
 
 批处理模式和交互命令行使用同一套命令处理器。命令用分号分隔，所以一段短转录就能检查初始进入、可用事件、事件驱动转换、当前状态显示和历史输出：
 
-.. code-block:: bash
+模型是 ``example1_basic.full.fcstm``\ 。把 :download:`example1_basic.full.fcstm <example1_basic.full.fcstm>` 下载到一个空目录，就能在那里运行下面的命令。
 
-   pyfcstm simulate -i ../cli/simple_machine.fcstm \
-     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
-     --no-color
+.. literalinclude:: example1_basic.full.fcstm
+   :language: fcstm
+   :caption: ``example1_basic.full.fcstm``
 
-文档中的输出来自真实 demo 脚本：
+.. code-block:: console
 
-.. literalinclude:: cli_batch.demo.sh.txt
-   :language: text
+   $ pyfcstm simulate -i example1_basic.full.fcstm --no-color \
+     -e "cycle; events; cycle Go; current; cycle; history 3"
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Root.A
+   Variables:
+     counter = 1
 
-第一次 ``cycle`` 会把机器初始化到 ``SimpleMachine.Idle``。``events`` 随后显示当前状态可用的
-``Start`` 事件。执行 ``cycle Start`` 后，当前状态变为 ``SimpleMachine.Running``；``cycle Stop`` 到达
-``SimpleMachine.Stopped``，短 ``history`` 表展示三次已记录周期。
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Go (Root.A.Go)
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Go
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Root.B
+   Variables:
+     counter = 21
+
+   ────────────────────────────────────────────────────────────
+   >>> history 3
+   ────────────────────────────────────────────────────────────
+    Cycle  State   Delta  counter
+   -------------------------------
+      1    Root.A  False     1
+      2    Root.B  False    11
+      3    Root.B  False    21
+
+第一次 ``cycle`` 会把机器初始化到 ``Root.A``\ ，``A`` 的 ``during`` 已经执行了一次，所以 ``counter`` 为 1。``events`` 随后显示当前状态可用的
+``Go`` 事件。执行 ``cycle Go`` 后，当前状态变为 ``Root.B``\ ；之后不带事件的 ``cycle`` 仍停在 ``Root.B``\ ，短 ``history`` 表展示三次已记录周期。
 
 尝试 Python 运行时循环
 ----------------------
@@ -44,14 +89,50 @@ FCSTM 仿真首次运行
 ``SimulationRuntime``，然后调用 ``cycle()``。每次调用都会返回循环结果（``CycleResult``）：兼容旧行为的
 ``value`` 当前为 ``None``，而 ``input_events``、``consumed_events`` 和 ``unconsumed_events`` 会说明本周期提供、使用和未使用的规范事件路径。
 
-.. literalinclude:: basic_usage.demo.py
-   :language: python
-   :caption: 最小 Python 仿真循环
+.. testcode::
 
-输出：
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: basic_usage.demo.py.txt
-   :language: text
+   machine = load_state_machine_from_text("""
+   def int counter = 0;
+
+   state System {
+       [*] -> Idle;
+
+       state Idle {
+           during {
+               counter = counter + 1;
+           }
+       }
+
+       state Active {
+           during {
+               counter = counter + 10;
+           }
+       }
+
+       Idle -> Active : if [counter >= 5];
+       Active -> Idle : if [counter >= 50];
+   }
+   """)
+
+   runtime = SimulationRuntime(machine)
+   print("Initial: state=%s, counter=%d" % (".".join(runtime.current_state.path), runtime.vars["counter"]))
+   for i in range(1, 8):
+       runtime.cycle()
+       print("Cycle %d: state=%s, counter=%d" % (i, ".".join(runtime.current_state.path), runtime.vars["counter"]))
+
+.. testoutput::
+
+   Initial: state=System, counter=0
+   Cycle 1: state=System.Idle, counter=1
+   Cycle 2: state=System.Idle, counter=2
+   Cycle 3: state=System.Idle, counter=3
+   Cycle 4: state=System.Idle, counter=4
+   Cycle 5: state=System.Idle, counter=5
+   Cycle 6: state=System.Active, counter=15
+   Cycle 7: state=System.Active, counter=25
 
 这个例子只打印状态和变量。如果需要精确的 ``CycleResult`` 字段、事件输入形式、导出格式或公开运行时异常，请查
 :doc:`../../reference/simulation/index_zh`。
@@ -87,10 +168,13 @@ FCSTM 仿真首次运行
    * - DSL 语义背景
      - :doc:`../../explanations/dsl_semantics/index_zh`
 
-旧示例资源继续保留在本目录，保证旧链接和源文件到输出的配对稳定。迁移日志会记录每个资源，最终清理审计也会说明这些兼容资源为什么保留。
-
 自定义数值输入生成器
 --------------------
 
 模型需要逐拍读取环境值时，可参照 :doc:`../../reference/simulation/inputs_zh` 的构造和
 基类扩展示例，了解显式覆盖、相关输入向量以及采样失败时的推进契约。
+
+下一步
+------
+
+* :doc:`/tutorials/regions/index_zh` 运行一个含有序并行区域的模型，并展示区域的书写顺序会改变一个周期的结果。

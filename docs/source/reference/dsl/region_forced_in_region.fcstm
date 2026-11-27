@@ -1,0 +1,21 @@
+state Plant {
+    event Stop;
+    [*] -> Job;
+    state Job {
+        region Panel {
+            [*] -> On;
+            state On {
+                [*] -> Quiet;
+                state Quiet;
+                state Loud;
+                Quiet -> Loud : /Trip;
+            }
+            state Off;
+            !On -> Off : /Stop;
+        }
+        region Aux {
+            [*] -> Idle;
+            state Idle;
+        }
+    }
+}

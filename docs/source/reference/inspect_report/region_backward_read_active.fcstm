@@ -1,0 +1,17 @@
+def int watching = 0;
+state Root {
+    region Reader {
+        state Idle {
+            during {
+                if [active("Root.Writer.Busy")] {
+                    watching = 1;
+                }
+            }
+        }
+        [*] -> Idle;
+    }
+    region Writer {
+        state Busy;
+        [*] -> Busy;
+    }
+}

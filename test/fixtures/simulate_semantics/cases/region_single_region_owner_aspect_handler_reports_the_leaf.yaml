@@ -1,0 +1,47 @@
+title: An aspect of an owner with one region wraps one leaf, so its handler reports that leaf as a plain composite
+  would
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+handlers:
+- action: Root.P.Pre
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    handler_calls:
+    - action: Root.P.Pre
+      state: Root.P.A.A1
+      stage: during
+      vars: {}
+      active_leaf: Root.P.A.A1
+      call_stage: during
+      abstract_target: Root.P.Pre
+      named_ref: null
+      configuration: 'Root.P{A: A1}'
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1}'
+    handler_calls:
+    - action: Root.P.Pre
+      state: Root.P.A.A1
+      stage: during
+      vars: {}
+      active_leaf: Root.P.A.A1
+      call_stage: during
+      abstract_target: Root.P.Pre
+      named_ref: null
+      configuration: 'Root.P{A: A1}'
+    - action: Root.P.Pre
+      state: Root.P.A.A1
+      stage: during
+      vars: {}
+      active_leaf: Root.P.A.A1
+      call_stage: during
+      abstract_target: Root.P.Pre
+      named_ref: null
+      configuration: 'Root.P{A: A1}'

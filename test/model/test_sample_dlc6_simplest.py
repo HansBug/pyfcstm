@@ -78,7 +78,13 @@ def state_l1_l2_l22(state_l1_l2):
 class TestModelStateL1:
     def test_model(self, model):
         assert model.defines == {
-            "a": VarDefine(name="a", type="int", init=Integer(value=0), doc=None)
+            "a": VarDefine(
+                name="a",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
+            )
         }
         assert model.root_state.name == "L1"
         assert model.root_state.path == ("L1",)
@@ -87,7 +93,12 @@ class TestModelStateL1:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="a", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
+                name="a",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             )
         ]
         assert ast_node.root_state.name == "L1"
@@ -96,6 +107,7 @@ class TestModelStateL1:
         assert state_l1.name == "L1"
         assert state_l1.path == ("L1",)
         assert sorted(state_l1.substates.keys()) == ["L2"]
+        assert state_l1.regions == {}
         assert state_l1.events == {}
         assert len(state_l1.transitions) == 2
         assert state_l1.transitions[0].from_state == INIT_STATE
@@ -106,6 +118,9 @@ class TestModelStateL1:
         assert state_l1.transitions[0].doc is None
         assert state_l1.transitions[0].parent_ref().name == "L1"
         assert state_l1.transitions[0].parent_ref().path == ("L1",)
+        assert state_l1.transitions[0].target_history is None
+        assert state_l1.transitions[0].history_role is None
+        assert state_l1.transitions[0].history_user_guard is None
         assert state_l1.transitions[1].from_state == "L2"
         assert state_l1.transitions[1].to_state == EXIT_STATE
         assert state_l1.transitions[1].event is None
@@ -114,6 +129,9 @@ class TestModelStateL1:
         assert state_l1.transitions[1].doc is None
         assert state_l1.transitions[1].parent_ref().name == "L1"
         assert state_l1.transitions[1].parent_ref().path == ("L1",)
+        assert state_l1.transitions[1].target_history is None
+        assert state_l1.transitions[1].history_role is None
+        assert state_l1.transitions[1].history_user_guard is None
         assert sorted(state_l1.named_functions.keys()) == ["mock", "user_A", "user_B"]
         assert state_l1.named_functions["mock"].stage == "during"
         assert state_l1.named_functions["mock"].aspect == "before"
@@ -256,6 +274,8 @@ class TestModelStateL1:
         assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
         assert state_l1.doc is None
+        assert not state_l1.is_history_gate
+        assert not state_l1.is_forced_gate
         assert len(state_l1.abstract_on_during_aspects) == 2
         assert state_l1.abstract_on_during_aspects[0].stage == "during"
         assert state_l1.abstract_on_during_aspects[0].aspect == "before"
@@ -317,6 +337,9 @@ class TestModelStateL1:
         assert state_l1.init_transitions[0].doc is None
         assert state_l1.init_transitions[0].parent_ref().name == "L1"
         assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
+        assert state_l1.init_transitions[0].target_history is None
+        assert state_l1.init_transitions[0].history_role is None
+        assert state_l1.init_transitions[0].history_user_guard is None
         assert not state_l1.is_leaf_state
         assert state_l1.is_root_state
         assert not state_l1.is_stoppable
@@ -378,6 +401,9 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children[0].doc is None
         assert state_l1.transitions_entering_children[0].parent_ref().name == "L1"
         assert state_l1.transitions_entering_children[0].parent_ref().path == ("L1",)
+        assert state_l1.transitions_entering_children[0].target_history is None
+        assert state_l1.transitions_entering_children[0].history_role is None
+        assert state_l1.transitions_entering_children[0].history_user_guard is None
         assert len(state_l1.transitions_entering_children_simplified) == 1
         assert (
             state_l1.transitions_entering_children_simplified[0].from_state
@@ -395,6 +421,14 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("L1",)
+        assert (
+            state_l1.transitions_entering_children_simplified[0].target_history is None
+        )
+        assert state_l1.transitions_entering_children_simplified[0].history_role is None
+        assert (
+            state_l1.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_l1.transitions_from) == 1
         assert state_l1.transitions_from[0].from_state == "L1"
         assert state_l1.transitions_from[0].to_state == EXIT_STATE
@@ -403,6 +437,9 @@ class TestModelStateL1:
         assert state_l1.transitions_from[0].effects == []
         assert state_l1.transitions_from[0].doc is None
         assert state_l1.transitions_from[0].parent_ref is None
+        assert state_l1.transitions_from[0].target_history is None
+        assert state_l1.transitions_from[0].history_role is None
+        assert state_l1.transitions_from[0].history_user_guard is None
         assert len(state_l1.transitions_to) == 1
         assert state_l1.transitions_to[0].from_state == INIT_STATE
         assert state_l1.transitions_to[0].to_state == "L1"
@@ -411,6 +448,9 @@ class TestModelStateL1:
         assert state_l1.transitions_to[0].effects == []
         assert state_l1.transitions_to[0].doc is None
         assert state_l1.transitions_to[0].parent_ref is None
+        assert state_l1.transitions_to[0].target_history is None
+        assert state_l1.transitions_to[0].history_role is None
+        assert state_l1.transitions_to[0].history_user_guard is None
 
     def test_state_l1_to_ast_node(self, state_l1):
         ast_node = state_l1.to_ast_node()
@@ -444,6 +484,8 @@ class TestModelStateL1:
                             force_transitions=[],
                             is_pseudo=True,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="L22",
@@ -463,6 +505,8 @@ class TestModelStateL1:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -473,6 +517,7 @@ class TestModelStateL1:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="L21",
@@ -483,6 +528,7 @@ class TestModelStateL1:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="L22",
@@ -493,6 +539,7 @@ class TestModelStateL1:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -515,6 +562,8 @@ class TestModelStateL1:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 )
             ],
             transitions=[
@@ -525,6 +574,7 @@ class TestModelStateL1:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="L2",
@@ -533,6 +583,7 @@ class TestModelStateL1:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[
@@ -569,6 +620,8 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_l1_list_on_enters(self, state_l1):
@@ -883,6 +936,7 @@ class TestModelStateL1:
         assert state_l1_l2.name == "L2"
         assert state_l1_l2.path == ("L1", "L2")
         assert sorted(state_l1_l2.substates.keys()) == ["L21", "L22"]
+        assert state_l1_l2.regions == {}
         assert state_l1_l2.events == {}
         assert len(state_l1_l2.transitions) == 3
         assert state_l1_l2.transitions[0].from_state == INIT_STATE
@@ -893,6 +947,9 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[0].doc is None
         assert state_l1_l2.transitions[0].parent_ref().name == "L2"
         assert state_l1_l2.transitions[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.transitions[0].target_history is None
+        assert state_l1_l2.transitions[0].history_role is None
+        assert state_l1_l2.transitions[0].history_user_guard is None
         assert state_l1_l2.transitions[1].from_state == "L21"
         assert state_l1_l2.transitions[1].to_state == "L22"
         assert state_l1_l2.transitions[1].event == Event(
@@ -903,6 +960,9 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[1].doc is None
         assert state_l1_l2.transitions[1].parent_ref().name == "L2"
         assert state_l1_l2.transitions[1].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.transitions[1].target_history is None
+        assert state_l1_l2.transitions[1].history_role is None
+        assert state_l1_l2.transitions[1].history_user_guard is None
         assert state_l1_l2.transitions[2].from_state == "L22"
         assert state_l1_l2.transitions[2].to_state == EXIT_STATE
         assert state_l1_l2.transitions[2].event == Event(
@@ -913,6 +973,9 @@ class TestModelStateL1:
         assert state_l1_l2.transitions[2].doc is None
         assert state_l1_l2.transitions[2].parent_ref().name == "L2"
         assert state_l1_l2.transitions[2].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.transitions[2].target_history is None
+        assert state_l1_l2.transitions[2].history_role is None
+        assert state_l1_l2.transitions[2].history_user_guard is None
         assert sorted(state_l1_l2.named_functions.keys()) == [
             "inner_mock",
             "user_A",
@@ -1049,6 +1112,8 @@ class TestModelStateL1:
         assert state_l1_l2.extra_name is None
         assert not state_l1_l2.is_pseudo
         assert state_l1_l2.doc is None
+        assert not state_l1_l2.is_history_gate
+        assert not state_l1_l2.is_forced_gate
         assert len(state_l1_l2.abstract_on_during_aspects) == 2
         assert state_l1_l2.abstract_on_during_aspects[0].stage == "during"
         assert state_l1_l2.abstract_on_during_aspects[0].aspect == "before"
@@ -1108,6 +1173,9 @@ class TestModelStateL1:
         assert state_l1_l2.init_transitions[0].doc is None
         assert state_l1_l2.init_transitions[0].parent_ref().name == "L2"
         assert state_l1_l2.init_transitions[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2.init_transitions[0].target_history is None
+        assert state_l1_l2.init_transitions[0].history_role is None
+        assert state_l1_l2.init_transitions[0].history_user_guard is None
         assert not state_l1_l2.is_leaf_state
         assert not state_l1_l2.is_root_state
         assert not state_l1_l2.is_stoppable
@@ -1151,6 +1219,9 @@ class TestModelStateL1:
             "L1",
             "L2",
         )
+        assert state_l1_l2.transitions_entering_children[0].target_history is None
+        assert state_l1_l2.transitions_entering_children[0].history_role is None
+        assert state_l1_l2.transitions_entering_children[0].history_user_guard is None
         assert len(state_l1_l2.transitions_entering_children_simplified) == 1
         assert (
             state_l1_l2.transitions_entering_children_simplified[0].from_state
@@ -1168,6 +1239,17 @@ class TestModelStateL1:
         assert state_l1_l2.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("L1", "L2")
+        assert (
+            state_l1_l2.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_l1_l2.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_l1_l2.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_l1_l2.transitions_from) == 1
         assert state_l1_l2.transitions_from[0].from_state == "L2"
         assert state_l1_l2.transitions_from[0].to_state == EXIT_STATE
@@ -1177,6 +1259,9 @@ class TestModelStateL1:
         assert state_l1_l2.transitions_from[0].doc is None
         assert state_l1_l2.transitions_from[0].parent_ref().name == "L1"
         assert state_l1_l2.transitions_from[0].parent_ref().path == ("L1",)
+        assert state_l1_l2.transitions_from[0].target_history is None
+        assert state_l1_l2.transitions_from[0].history_role is None
+        assert state_l1_l2.transitions_from[0].history_user_guard is None
         assert len(state_l1_l2.transitions_to) == 1
         assert state_l1_l2.transitions_to[0].from_state == INIT_STATE
         assert state_l1_l2.transitions_to[0].to_state == "L2"
@@ -1186,6 +1271,9 @@ class TestModelStateL1:
         assert state_l1_l2.transitions_to[0].doc is None
         assert state_l1_l2.transitions_to[0].parent_ref().name == "L1"
         assert state_l1_l2.transitions_to[0].parent_ref().path == ("L1",)
+        assert state_l1_l2.transitions_to[0].target_history is None
+        assert state_l1_l2.transitions_to[0].history_role is None
+        assert state_l1_l2.transitions_to[0].history_user_guard is None
 
     def test_state_l1_l2_to_ast_node(self, state_l1_l2):
         ast_node = state_l1_l2.to_ast_node()
@@ -1211,6 +1299,8 @@ class TestModelStateL1:
                     force_transitions=[],
                     is_pseudo=True,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="L22",
@@ -1228,6 +1318,8 @@ class TestModelStateL1:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -1238,6 +1330,7 @@ class TestModelStateL1:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="L21",
@@ -1246,6 +1339,7 @@ class TestModelStateL1:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="L22",
@@ -1254,6 +1348,7 @@ class TestModelStateL1:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1276,6 +1371,8 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_l1_l2_list_on_enters(self, state_l1_l2):
@@ -1474,6 +1571,7 @@ class TestModelStateL1:
         assert state_l1_l2_l21.name == "L21"
         assert state_l1_l2_l21.path == ("L1", "L2", "L21")
         assert sorted(state_l1_l2_l21.substates.keys()) == []
+        assert state_l1_l2_l21.regions == {}
         assert state_l1_l2_l21.events == {
             "E1": Event(
                 name="E1", state_path=("L1", "L2", "L21"), extra_name=None, doc=None
@@ -1491,6 +1589,8 @@ class TestModelStateL1:
         assert state_l1_l2_l21.extra_name is None
         assert state_l1_l2_l21.is_pseudo
         assert state_l1_l2_l21.doc is None
+        assert not state_l1_l2_l21.is_history_gate
+        assert not state_l1_l2_l21.is_forced_gate
         assert state_l1_l2_l21.abstract_on_during_aspects == []
         assert state_l1_l2_l21.abstract_on_durings == []
         assert state_l1_l2_l21.abstract_on_enters == []
@@ -1519,6 +1619,9 @@ class TestModelStateL1:
         assert state_l1_l2_l21.transitions_from[0].doc is None
         assert state_l1_l2_l21.transitions_from[0].parent_ref().name == "L2"
         assert state_l1_l2_l21.transitions_from[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2_l21.transitions_from[0].target_history is None
+        assert state_l1_l2_l21.transitions_from[0].history_role is None
+        assert state_l1_l2_l21.transitions_from[0].history_user_guard is None
         assert len(state_l1_l2_l21.transitions_to) == 1
         assert state_l1_l2_l21.transitions_to[0].from_state == INIT_STATE
         assert state_l1_l2_l21.transitions_to[0].to_state == "L21"
@@ -1528,6 +1631,9 @@ class TestModelStateL1:
         assert state_l1_l2_l21.transitions_to[0].doc is None
         assert state_l1_l2_l21.transitions_to[0].parent_ref().name == "L2"
         assert state_l1_l2_l21.transitions_to[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2_l21.transitions_to[0].target_history is None
+        assert state_l1_l2_l21.transitions_to[0].history_role is None
+        assert state_l1_l2_l21.transitions_to[0].history_user_guard is None
 
     def test_state_l1_l2_l21_to_ast_node(self, state_l1_l2_l21):
         ast_node = state_l1_l2_l21.to_ast_node()
@@ -1545,6 +1651,8 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=True,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_l1_l2_l21_list_on_enters(self, state_l1_l2_l21):
@@ -1614,6 +1722,7 @@ class TestModelStateL1:
         assert state_l1_l2_l22.name == "L22"
         assert state_l1_l2_l22.path == ("L1", "L2", "L22")
         assert sorted(state_l1_l2_l22.substates.keys()) == []
+        assert state_l1_l2_l22.regions == {}
         assert state_l1_l2_l22.events == {
             "E1": Event(
                 name="E1", state_path=("L1", "L2", "L22"), extra_name=None, doc=None
@@ -1631,6 +1740,8 @@ class TestModelStateL1:
         assert state_l1_l2_l22.extra_name is None
         assert not state_l1_l2_l22.is_pseudo
         assert state_l1_l2_l22.doc is None
+        assert not state_l1_l2_l22.is_history_gate
+        assert not state_l1_l2_l22.is_forced_gate
         assert state_l1_l2_l22.abstract_on_during_aspects == []
         assert state_l1_l2_l22.abstract_on_durings == []
         assert state_l1_l2_l22.abstract_on_enters == []
@@ -1659,6 +1770,9 @@ class TestModelStateL1:
         assert state_l1_l2_l22.transitions_from[0].doc is None
         assert state_l1_l2_l22.transitions_from[0].parent_ref().name == "L2"
         assert state_l1_l2_l22.transitions_from[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2_l22.transitions_from[0].target_history is None
+        assert state_l1_l2_l22.transitions_from[0].history_role is None
+        assert state_l1_l2_l22.transitions_from[0].history_user_guard is None
         assert len(state_l1_l2_l22.transitions_to) == 1
         assert state_l1_l2_l22.transitions_to[0].from_state == "L21"
         assert state_l1_l2_l22.transitions_to[0].to_state == "L22"
@@ -1670,6 +1784,9 @@ class TestModelStateL1:
         assert state_l1_l2_l22.transitions_to[0].doc is None
         assert state_l1_l2_l22.transitions_to[0].parent_ref().name == "L2"
         assert state_l1_l2_l22.transitions_to[0].parent_ref().path == ("L1", "L2")
+        assert state_l1_l2_l22.transitions_to[0].target_history is None
+        assert state_l1_l2_l22.transitions_to[0].history_role is None
+        assert state_l1_l2_l22.transitions_to[0].history_user_guard is None
 
     def test_state_l1_l2_l22_to_ast_node(self, state_l1_l2_l22):
         ast_node = state_l1_l2_l22.to_ast_node()
@@ -1687,6 +1804,8 @@ class TestModelStateL1:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_l1_l2_l22_list_on_enters(self, state_l1_l2_l22):

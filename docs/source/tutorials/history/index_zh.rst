@@ -30,14 +30,50 @@
 
 ``!Session -> Fault :: OverTemp;`` 是一条强制转换：从 ``Session`` 的每个阶段都能离开（见 :ref:`dsl-forced-transition-task-zh`\ ）。运行一次会话，进入 ``ConstantVoltage``\ ，让它过温，再让故障自行解除：
 
-.. literalinclude:: charger_restart.demo.sh
-   :language: bash
-   :caption: ``charger_restart.demo.sh``
+.. code-block:: console
 
-由脚本生成的输出（脚本只保留每次运行最后的 ``current`` 报告）：
+   $ pyfcstm simulate -i charger_restart.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 5
+   Current State: Charger.Session.Charging.ConstantVoltage
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     energy = 7
+     faults = 0
+     precharge_runs = 1
+   $ pyfcstm simulate -i charger_restart.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.Cleared; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Authenticating
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     energy = 7
+     faults = 1
+     precharge_runs = 1
 
-.. literalinclude:: charger_restart.demo.sh.txt
-   :language: text
+每次运行会为每个周期打印一份报告；\ ``...``\ 省掉了除最后的 ``current`` 报告之外的全部内容。
+
+两个 ``__forced_*`` 变量不是你声明的。模型转换（model conversion）用一个隐藏变量来执行每条强制转换，它只在带走 ``Session`` 的那个周期内部被置为 1，所以每份报告里都是 0。第 8 步会展示它们用在哪里。
 
 第二份报告暴露了问题。普通进入会执行 ``Session`` 的初始转换，所以充电桩回到了 ``Authenticating``\ 。车主必须重新鉴权，下一次 ``Authorized`` 还会再执行一遍 ``Precharge`` 及其绝缘检测。在这个模型里，\ ``ManualReset``\ 的行为完全相同。\ ``energy``\ 保持原值，\ ``faults``\ 记下了这次故障，因为离开和进入状态从不重置变量。
 
@@ -80,36 +116,128 @@
 4. 再运行同一次会话
 -------------------
 
-下面的脚本运行与第 1 步相同的会话，在 ``ConstantVoltage`` 打断它，然后分别通过两种历史各恢复一次：
+下面的命令运行与第 1 步相同的会话，在 ``ConstantVoltage`` 打断它，然后分别通过两种历史各恢复一次：
 
-.. literalinclude:: charger_resume.demo.sh
-   :language: bash
-   :caption: ``charger_resume.demo.sh``
+.. code-block:: console
 
-由脚本生成的输出（脚本只保留每次运行最后的 ``current`` 报告）：
+   $ pyfcstm simulate -i charger.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.Cleared; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Charging.ConstantVoltage
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     __hist_Session = 8
+     __hist_goto = 0
+     energy = 9
+     faults = 1
+     precharge_runs = 1
+   $ pyfcstm simulate -i charger.fcstm --no-color -e "\
+   cycle; \
+   cycle Charger.Idle.PlugIn; \
+   cycle Charger.Session.Authenticating.Authorized; \
+   cycle Charger.Session.Charging.Precharge.Ready; \
+   cycle Charger.Session.Charging.ConstantCurrent.NearFull; \
+   cycle Charger.Session.OverTemp; \
+   cycle Charger.Fault.ManualReset; \
+   current"
+   ...
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 7
+   Current State: Charger.Session.Charging.Precharge
+   Variables:
+     __forced_0 = 0
+     __forced_1 = 0
+     __hist_Session = 8
+     __hist_goto = 0
+     energy = 7
+     faults = 1
+     precharge_runs = 2
 
-.. literalinclude:: charger_resume.demo.sh.txt
-   :language: text
+每次运行会为每个周期打印一份报告；\ ``...``\ 省掉了除最后的 ``current`` 报告之外的全部内容。
 
 **深历史**\ 恢复到 ``Charging.ConstantVoltage``\ 。恢复会跳过路径上的初始转换，包括 ``Session`` 里的 ``[*] -> Authenticating`` 和 ``Charging`` 里的 ``[*] -> Precharge``\ ，所以 ``precharge_runs`` 仍为 1。\ ``energy``\ 从 7 增加到 9，因为被恢复的叶状态在进入它的那个周期就执行了 ``during``\ ，与任何被进入的叶状态一样。
 
 **浅历史**\ 读取的是同一条记录，但只恢复 ``Session`` 中通往记录叶状态的直接子状态，也就是 ``Charging``\ ；输出里的 ``__hist_Session = 8``\ 仍是完整的叶状态。进入 ``Charging`` 后，它会执行自己的初始转换，所以充电桩处于 ``Precharge``\ ，\ ``precharge_runs``\ 变为 2。操作员的复位会重做绝缘检测，但不需要重新鉴权。
 
-输出里出现两个 ``__hist_*`` 变量，是因为仿真器运行的是模型转换（model conversion）之后的模型：历史已经被改写成普通的变量和转换。第 8 步会展示改写后的样子，现在只需把它们看作记录背后的存储。
+输出里出现两个 ``__hist_*`` 变量，是因为仿真器运行的是模型转换之后的模型：历史已经被改写成普通的变量和转换。第 8 步会展示改写后的样子，现在只需把它们看作记录背后的存储。
 
 5. 观察记录何时变化
 -------------------
 
 下面的 Python 循环在每个周期之后打印记录。\ :meth:`~pyfcstm.model.model.StateMachine.history_record`\ 把记录解码为相对 ``Session`` 的叶状态路径。只有 ``Session`` 不活动时，记录才代表最近一次离开，所以其他时候脚本打印 ``(Session active)``\ 。
 
-.. literalinclude:: charger_record.demo.py
-   :language: python
-   :caption: ``charger_record.demo.py``
+.. testcode::
 
-由脚本生成的输出：
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: charger_record.demo.py.txt
-   :language: text
+   with open("charger.fcstm") as f:
+       machine = load_state_machine_from_text(f.read())
+   runtime = SimulationRuntime(machine)
+
+   # One event per cycle; None runs a cycle without an event.
+   events = [
+       None,
+       "Idle.PlugIn",
+       "Session.Authenticating.Authorized",
+       "Session.Charging.Precharge.Ready",
+       "Session.Charging.ConstantCurrent.NearFull",
+       "Session.OverTemp",
+       "Fault.Cleared",
+       "Session.OverTemp",
+       "Fault.ManualReset",
+       "Session.Charging.Precharge.Ready",
+       "Session.Unplug",
+       "Idle.PlugIn",
+   ]
+
+   row = "{:>2}  {:<12} {:<15} {:>9} {:>6}  {}"
+   print(row.format("#", "event", "active leaf", "precharge", "energy", "Session record"))
+   for step, event in enumerate(events):
+       runtime.cycle(["Charger." + event] if event else [])
+       path = runtime.current_state.path
+       if path[1] == "Session":
+           record = "(Session active)"
+       else:
+           record = machine.history_record(runtime.vars, "Charger.Session") or "none"
+       print(
+           row.format(
+               step,
+               event.split(".")[-1] if event else "-",
+               path[-1],
+               runtime.vars["precharge_runs"],
+               runtime.vars["energy"],
+               record,
+           )
+       )
+
+.. testoutput::
+
+    #  event        active leaf     precharge energy  Session record
+    0  -            Idle                    0      0  none
+    1  PlugIn       Authenticating          0      0  (Session active)
+    2  Authorized   Precharge               1      0  (Session active)
+    3  Ready        ConstantCurrent         1      5  (Session active)
+    4  NearFull     ConstantVoltage         1      7  (Session active)
+    5  OverTemp     Fault                   1      7  Charging.ConstantVoltage
+    6  Cleared      ConstantVoltage         1      9  (Session active)
+    7  OverTemp     Fault                   1      9  Charging.ConstantVoltage
+    8  ManualReset  Precharge               2      9  (Session active)
+    9  Ready        ConstantCurrent         2     14  (Session active)
+   10  Unplug       Idle                    2     14  Charging.ConstantCurrent
+   11  PlugIn       Authenticating          2     14  (Session active)
 
 从上往下读这张表：
 
@@ -122,20 +250,66 @@
 6. 检查模型并修复一个错误
 -------------------------
 
-检查命令按你书写的模型（模型转换之前）进行判断。下面的脚本先检查 ``charger.fcstm``\ ，再检查一份删掉了 ``[H*]`` 声明的副本。第二次检查加了 ``--collect-errors``\ ：不加时，检查命令遇到第一个模型错误就停止，只输出一行消息，不带诊断码。
+检查命令按你书写的模型（模型转换之前）进行判断。下面的命令先检查 ``charger.fcstm``\ ，再检查一份删掉了 ``[H*]`` 声明的副本。
 
-.. literalinclude:: charger_check.demo.sh
-   :language: bash
-   :caption: ``charger_check.demo.sh``
+.. code-block:: console
 
-由脚本生成的输出（脚本保留第一份报告的摘要和警告，以及第二份报告的错误块）：
+   $ pyfcstm inspect -i charger.fcstm --format human --color never
+   [WARN] FCSTM Inspect Report: charger.fcstm
 
-.. literalinclude:: charger_check.demo.sh.txt
-   :language: text
+   Summary
+     status: warning
+     root: Charger
+     states: 9 total / 6 leaf
+     transitions: 21
+     variables: 3
+       energy: control; external supply: none
+       precharge_runs: control; external supply: none
+       faults: control; external supply: none
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'energy' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'precharge_runs' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'faults' does not affect any transition guard.
+   ...
+
+报告被缩减到摘要和三条警告；``...`` 省掉了其余内容。然后做一份删掉 ``[H*]`` 声明的副本，它从 ``Session`` 里去掉一行：
+
+.. testcode::
+
+   text = open("charger.fcstm").read()
+   deep = "        [H*] -> Authenticating;  // deep history, used while no record exists\n"
+   open("forgot_deep.fcstm", "w").write(text.replace(deep, ""))
+
+把这份副本检查两次。不加 ``--collect-errors`` 时，检查命令遇到第一个模型错误就停止，只输出一行消息，不带诊断码；加上它则把错误收进报告，这里只保留摘要行和错误块。两次都失败，所以各自后面跟着 ``$ echo $?``\ ：
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i forgot_deep.fcstm --format human --color never
+   Invalid state machine model in forgot_deep.fcstm: Charger.Session does not declare deep history ([H*] -> ...;), so it cannot be entered through Session.[H*]. (line 37)
+   $ echo $?
+   1
+   $ pyfcstm inspect -i forgot_deep.fcstm --collect-errors --format human --color never
+   [ERROR] FCSTM Inspect Report: forgot_deep.fcstm
+   ...
+     diagnostics: 1 errors / 3 warnings / 0 infos
+   ...
+   [ERROR] E_HISTORY_TARGET_UNDECLARED
+     Charger.Session does not declare deep history ([H*] -> ...;), so it cannot be entered through Session.[H*].
+     --> forgot_deep.fcstm:37:5
+   ...
+   $ echo $?
+   1
 
 第一份报告与 ``charger_restart.fcstm`` 一样只有三条警告，说明历史没有带来新的诊断。报告列出你声明的三个变量，没有任何 ``__hist_*`` 变量。
 
-第二份报告是需要学会辨认的错误。\ ``Session.[H*]``\ 要求深历史，但 ``Session`` 已经不再声明它，所以检查命令在这条转换上报告 ``E_HISTORY_TARGET_UNDECLARED``\ ，并以状态码 1 退出。\ ``pyfcstm simulate``\ 、\ ``pyfcstm generate``\ 和 ``pyfcstm bmc`` 也会拒绝同一个模型，因为历史从不会被隐式提供。有两种修复方式：
+这份副本就是需要学会辨认的错误。\ ``Session.[H*]``\ 要求深历史，但 ``Session`` 已经不再声明它，所以检查命令在这条转换上报告 ``E_HISTORY_TARGET_UNDECLARED``\ ，并以状态码 1 退出。\ ``pyfcstm simulate``\ 、\ ``pyfcstm generate``\ 和 ``pyfcstm bmc`` 也会拒绝同一个模型，因为历史从不会被隐式提供。有两种修复方式：
 
 * 如果恢复应当精确回到被打断的阶段，把 ``[H*] -> Authenticating;`` 放回 ``Session``\ ；
 * 如果恢复应当从头开始，改写成 ``Fault -> Session :: Cleared;``\ 。
@@ -143,16 +317,90 @@
 7. 跨越断电保存记录
 -------------------
 
-充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
+充电桩在 ``Fault`` 中断电后重新启动时，必须恢复会话的记录。热启动要提供所有变量，包括 ``__hist_*`` 变量，所以控制器必须把记录存下来。``__forced_*`` 变量同样是普通变量：它们在每个检查点都是 0，与其他变量一起保存、一起提供。请保存源码层面的记录，而不是那些数字：数字是状态编号，模型一改就会变。\ :meth:`~pyfcstm.model.model.StateMachine.history_variables`\ 会把保存的记录换算回这些变量。热启动本身的用法见 :doc:`/how_to/simulation/index_zh`\ 的“在状态上热启动”一节。
 
-.. literalinclude:: charger_hot_start.demo.py
-   :language: python
-   :caption: ``charger_hot_start.demo.py``
+控制器在断电前保存记录。下面的脚本让充电停在 ``Fault``\ ，并写出控制器会放进非易失存储的内容，这里用一个 JSON 文件：
 
-由脚本生成的输出：
+.. testcode::
 
-.. literalinclude:: charger_hot_start.demo.py.txt
-   :language: text
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   OWNER = "Charger.Session"
+   machine = load_state_machine_from_file("charger.fcstm")
+
+   # Charge into ConstantCurrent, then overheat.
+   runtime = SimulationRuntime(machine)
+   for event in [
+       None,
+       "Idle.PlugIn",
+       "Session.Authenticating.Authorized",
+       "Session.Charging.Precharge.Ready",
+       "Session.OverTemp",
+   ]:
+       runtime.cycle(["Charger." + event] if event else [])
+
+   # What goes to non-volatile storage: the state, the model's own variables and
+   # the source-level record, but no generated __hist_* number.
+   saved = {
+       "state": ".".join(runtime.current_state.path),
+       "record": machine.history_record(runtime.vars, OWNER),
+       "vars": {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")},
+   }
+   with open("saved.json", "w") as f:
+       json.dump(saved, f)
+   print("saved state: ", saved["state"])
+   print("saved record:", saved["record"])
+   print("saved vars:  ", saved["vars"])
+
+.. testoutput::
+
+   saved state:  Charger.Fault
+   saved record: Charging.ConstantCurrent
+   saved vars:   {'energy': 5, 'precharge_runs': 1, 'faults': 1, '__forced_0': 0, '__forced_1': 0}
+
+重启之后，第二个脚本读回这个文件，热启动两次：一次带保存的记录，一次不带。每个恢复出来的状态机随后收到 ``Cleared``\ ：
+
+.. testcode::
+
+   import json
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   OWNER = "Charger.Session"
+   machine = load_state_machine_from_file("charger.fcstm")
+   with open("saved.json") as f:
+       saved = json.load(f)
+
+   cases = [("with the saved record", saved["record"]), ("without a record", None)]
+   for label, record in cases:
+       hidden = machine.history_variables({OWNER: record} if record else None)
+       initial_vars = dict(saved["vars"])
+       initial_vars.update(hidden)
+       runtime = SimulationRuntime(
+           machine, initial_state=saved["state"], initial_vars=initial_vars
+       )
+       runtime.cycle(["Charger.Fault.Cleared"])
+       print("After the power loss,", label)
+       print("  history variables:", hidden)
+       print("  after Cleared:    ", ".".join(runtime.current_state.path))
+       print("  precharge_runs:   ", runtime.vars["precharge_runs"])
+       print()
+
+.. testoutput::
+
+   After the power loss, with the saved record
+     history variables: {'__hist_goto': 0, '__hist_Session': 7}
+     after Cleared:     Charger.Session.Charging.ConstantCurrent
+     precharge_runs:    1
+
+   After the power loss, without a record
+     history variables: {'__hist_goto': 0, '__hist_Session': 0}
+     after Cleared:     Charger.Session.Authenticating
+     precharge_runs:    1
 
 有保存的记录时，重启后的 ``Cleared`` 恢复到 ``ConstantCurrent``\ ，与没有断电时完全一样，也不会重复预充。没有记录时，深历史使用默认目标，会话从 ``Authenticating`` 开始。
 
@@ -161,29 +409,151 @@
 
 仿真器、生成的代码和 BMC 都看不到 ``[H]`` 或 ``[H*]``\ 。在它们运行之前，模型转换已经把历史改写成普通的 FCSTM。打印转换后的模型，就能看到改写后的样子：
 
-.. literalinclude:: charger_lowered.demo.py
-   :language: python
-   :caption: ``charger_lowered.demo.py``
+.. testcode::
 
-由脚本生成的输出：
+   from pyfcstm.model import load_state_machine_from_text
 
-.. literalinclude:: charger_lowered.demo.py.txt
-   :language: fcstm
+   with open("charger.fcstm") as f:
+       machine = load_state_machine_from_text(f.read())
+   print(str(machine.to_ast_node()))
+
+.. testoutput::
+
+   def int energy = 0;
+   def int precharge_runs = 0;
+   def int faults = 0;
+   def int __hist_goto = 0;
+   def int __hist_Session = 0;
+   def int __forced_0 = 0;
+   def int __forced_1 = 0;
+   state Charger {
+       state Idle {
+           event PlugIn;
+       }
+       state Session {
+           state Authenticating {
+               exit {
+                   __hist_Session = 4;
+               }
+               event Authorized;
+           }
+           state Charging {
+               state Precharge {
+                   enter {
+                       precharge_runs = precharge_runs + 1;
+                   }
+                   exit {
+                       __hist_Session = 6;
+                   }
+                   event Ready;
+               }
+               state ConstantCurrent {
+                   during {
+                       energy = energy + 5;
+                   }
+                   exit {
+                       __hist_Session = 7;
+                   }
+                   event NearFull;
+               }
+               state ConstantVoltage {
+                   during {
+                       energy = energy + 2;
+                   }
+                   exit {
+                       __hist_Session = 8;
+                   }
+               }
+               [*] -> ConstantCurrent : if [__hist_goto == 7] effect {
+                   __hist_goto = 0;
+               }
+               [*] -> ConstantVoltage : if [__hist_goto == 8] effect {
+                   __hist_goto = 0;
+               }
+               Precharge -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               Precharge -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               ConstantCurrent -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               ConstantCurrent -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               ConstantVoltage -> [*] : /Session.OverTemp effect {
+                   __forced_0 = 1;
+               }
+               ConstantVoltage -> [*] : /Session.Unplug effect {
+                   __forced_1 = 1;
+               }
+               [*] -> Precharge : if [__hist_goto == 0 || __hist_goto == 5 || __hist_goto == 6] effect {
+                   __hist_goto = 0;
+               }
+               Precharge -> ConstantCurrent :: Ready;
+               ConstantCurrent -> ConstantVoltage :: NearFull;
+           }
+           event OverTemp;
+           event Unplug;
+           [*] -> Charging : if [__hist_goto >= 5 && __hist_goto <= 8];
+           Authenticating -> [*] : OverTemp effect {
+               __forced_0 = 1;
+           }
+           Authenticating -> [*] : Unplug effect {
+               __forced_1 = 1;
+           }
+           Charging -> [*] : if [__forced_0 == 1 && __forced_1 == 0];
+           Charging -> [*] : if [__forced_1 == 1 && __forced_0 == 0];
+           [*] -> Authenticating : if [__hist_goto == 0 || __hist_goto == 4] effect {
+               __hist_goto = 0;
+           }
+           Authenticating -> Charging :: Authorized;
+       }
+       state Fault {
+           enter {
+               faults = faults + 1;
+           }
+           event Cleared;
+           event ManualReset;
+       }
+       pseudo state __forced_gate_0;
+       pseudo state __forced_gate_1;
+       Session -> Fault : if [__forced_0 == 1 && __forced_1 == 0] effect {
+           __forced_0 = 0;
+       }
+       Session -> __forced_gate_0 :: OverTemp;
+       Session -> Idle : if [__forced_1 == 1 && __forced_0 == 0] effect {
+           __forced_1 = 0;
+       }
+       Session -> __forced_gate_1 :: Unplug;
+       [*] -> Idle;
+       Idle -> Session :: PlugIn;
+       Fault -> Session :: Cleared effect {
+           __hist_goto = (__hist_Session != 0) ? __hist_Session : 4;
+       }
+       Fault -> Session :: ManualReset effect {
+           __hist_goto = (__hist_Session == 4) ? 4 : ((__hist_Session >= 6 && __hist_Session <= 8) ? 5 : 4);
+       }
+       __forced_gate_0 -> Fault : if [__forced_0 == 0 && __forced_1 == 0];
+       __forced_gate_1 -> Idle : if [__forced_0 == 0 && __forced_1 == 0];
+   }
 
 用这份输出核对前面几步观察到的现象：
 
-* 你声明的变量后面多了两个 ``int`` 变量：\ ``__hist_Session``\ 保存记录，\ ``__hist_goto``\ 保存进行中的恢复，状态机稳定时它总是 0。
+* 你声明的变量后面多了四个 ``int`` 变量。其中两个属于历史：\ ``__hist_Session``\ 保存记录，\ ``__hist_goto``\ 保存进行中的恢复，状态机稳定时它总是 0。另外两个 ``__forced_0`` 和 ``__forced_1`` 属于强制转换，见最后一条。
 * ``Session``\ 下的每个叶状态都有一个 ``exit`` 动作，把自己的编号写入 ``__hist_Session``\ ：\ ``Authenticating``\ 是 4，三个充电阶段是 6 到 8。第 5 步表格第 5 行记下 ``Charging.ConstantVoltage``\ （编号 8）靠的就是它，这也是每次离开所有者都会更新记录的原因。
 * ``Fault -> Session.[H*] :: Cleared``\ 变成了一条普通进入，它的 ``effect`` 在有记录时把 ``__hist_goto`` 设为记录，没有记录时设为 4，也就是默认目标 ``Authenticating`` 的编号。
 * ``Fault -> Session.[H] :: ManualReset``\ 把 ``Charging`` 内部的记录（编号 6 到 8）映射为 5，也就是 ``Charging`` 自身的编号。
 * ``Session``\ 和 ``Charging`` 的初始转换都由 ``__hist_goto`` 守卫。0 选择普通的初始子状态，其他值把进入引向恢复目标，到达目标的那条转换再把 ``__hist_goto`` 重置为 0。以 5 为目标的恢复最终落在 ``Charging`` 的 ``[*] -> Precharge`` 上，这正是浅历史恢复会重新预充的原因。
+* 其余部分是两条强制转换的执行方式，与历史无关。每个阶段都有一条 ``-> [*]`` 转换，它保留事件并把 ``__forced_0`` 或 ``__forced_1`` 置为 1；\ ``Charging``\ 和 ``Session`` 在该变量为 1 时把退出继续向上传；最终离开 ``Session`` 的那条转换再把它清回 0。两个 ``__forced_gate_*`` 伪状态属于写在 ``Session`` 自己这一层的那两条转换：它们各自在这里被拆成两步，好在任一变量为 1 时先等着。
 
 .. figure:: charger.fcstm.puml.svg
-   :alt: 模型转换之后的充电桩，带有受守卫的初始转换和历史变量
+   :alt: 按书写呈现的充电桩，历史入口标为 [H] 和 [H*]
    :align: center
    :width: 100%
 
-   ``pyfcstm plantuml -i charger.fcstm``\ 画出的同一个转换后的模型。图中的标签只有代码标识符，所以两种语言共用这一张图。
+   ``pyfcstm plantuml -i charger.fcstm``\ 画出的充电桩。图里画的是按书写的模型，而不是模型转换的产物：进入历史的转换写成 ``Session[H]`` 或 ``Session[H*]``\ ，两种历史的默认目标各是所有者描述里的 ``[H]`` 和 ``[H*]`` 那一行。每条强制转换画成每个阶段一条箭头。上面的变量、受守卫的初始转换和中继都不画。图中的标签只有代码标识符，所以两种语言共用这一张图。
 
 下一步去哪里
 ------------

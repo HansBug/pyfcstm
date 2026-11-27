@@ -60,6 +60,12 @@ _EQUATION_LABELS = (
     "bmc-core-subset-minimality",
     "bmc-proof-input-binding",
     "bmc-proof-input-bijection",
+    # explanations/bmc_regions: how regions enter the bounded transition system.
+    "eq-region-position-domain",
+    "eq-region-value-chain",
+    "eq-region-owner-start",
+    "eq-region-joint-completion",
+    "eq-region-group-reentry",
 )
 
 _PAGE_PAIRS = (
@@ -68,6 +74,7 @@ _PAGE_PAIRS = (
     "explanations/bmc_semantics/index",
     "explanations/bmc_properties/index",
     "explanations/bmc_solving/index",
+    "explanations/bmc_regions/index",
     "reference/bmc_query/index",
     "reference/bmc_results/index",
     # The CLI reference documents ``pyfcstm bmc`` alongside the other commands,
@@ -81,6 +88,37 @@ _EQUATION_PAIRS = (
     "explanations/bmc_semantics/index",
     "explanations/bmc_properties/index",
     "explanations/bmc_solving/index",
+    "explanations/bmc_regions/index",
+)
+
+# --- scaling page: equations, resources -------------------------------------
+# The scaling explanation keeps its own frozen label list, separate from the
+# semantics ledger above, because its equations describe measured cost rather
+# than the encoding.  Order is the order of appearance on the page.
+_SCALING_PAGE = "explanations/bmc_scaling/index"
+
+_SCALING_EQUATION_LABELS = (
+    "bmc-scaling-nodes-flat",
+    "bmc-scaling-nodes-flat-vars",
+    "bmc-scaling-nodes-regions",
+    "bmc-scaling-bool-vars",
+    "bmc-scaling-size-order",
+    "bmc-scaling-calls-flat",
+    "bmc-scaling-calls-regions",
+    "bmc-scaling-contexts",
+    "bmc-scaling-compile-time",
+    "bmc-scaling-solve-time",
+    "bmc-scaling-propagation-fit",
+    "bmc-scaling-conflict-growth",
+)
+
+_SCALING_DATA_FILES = (
+    "formula_grid.jsonl",
+    "solve_law.jsonl",
+    "unit_cost.jsonl",
+    "variables.jsonl",
+    "pigeonhole.jsonl",
+    "timing.jsonl",
 )
 
 _SCHEMA_RELATIVE_PATH = Path("reference/bmc_results/bmc_cli.schema.json")
@@ -214,6 +252,28 @@ _EXPLANATION_TYPES = (
     "BmcSourceRef",
 )
 
+#: Names the region-encoding page has to document, in both languages.
+#:
+#: The three position markers are public constants, the others are the witness
+#: fields, the option, and the diagnostics a reader meets on that page.  They are
+#: transcribed from pyfcstm/bmc/domain.py, engine.py, witness.py and binding.py.
+_REGION_POSITION_MARKERS = (
+    "REGION_DONE_ID",
+    "REGION_INACTIVE_ID",
+    "REGION_PENDING_ID",
+)
+_REGION_VOCABULARY = _REGION_POSITION_MARKERS + (
+    "region_position",
+    "local_cases",
+    "case_label",
+    "max_group_reentries",
+    "BmcBuildError",
+    "invalid_start_position",
+    "invalid_active_pattern",
+    "expression_too_deep",
+    "--no-runtime-safety",
+)
+
 #: Which prose page owns which part of the vocabulary.
 #:
 #: Keyed by page pair, so each requirement is checked in the English page and its
@@ -260,6 +320,8 @@ _EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
             "structural_only",
         )
     ),
+    # explanations/bmc_regions: the region encoding vocabulary a reader can look up.
+    "explanations/bmc_regions/index": _REGION_VOCABULARY,
 }
 
 #: Vocabularies that must be tabulated together rather than mentioned apart.
@@ -274,6 +336,8 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
         _PROOF_VERIFICATION_METHODS,
         _PROOF_NODE_KINDS,
     ),
+    # The three markers are one closed set, so they sit in one table.
+    "explanations/bmc_regions/index": (_REGION_POSITION_MARKERS,),
 }
 
 #: Rules the reference page must mark as currently unreachable.
@@ -559,6 +623,18 @@ def _check_equations(errors: List[str]) -> None:
 
 
 def _check_pages(errors: List[str]) -> None:
+    """Check that every BMC page pair is reachable and owns no sibling pages.
+
+    Each English page and its Chinese counterpart must exist, must not hold a
+    ``toctree`` of its own, and must be listed directly by the matching root
+    index. The tutorial, how-to, explanation and reference roadmaps must link
+    to the BMC pages they route to.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
     source = _REPO_ROOT / "docs/source"
     root_en = _read(source / "index_en.rst")
     root_zh = _read(source / "index_zh.rst")
@@ -583,11 +659,13 @@ def _check_pages(errors: List[str]) -> None:
             "bmc_semantics/index",
             "bmc_properties/index",
             "bmc_solving/index",
+            "bmc_regions/index",
         ),
         "explanations/index_zh.rst": (
             "bmc_semantics/index_zh",
             "bmc_properties/index_zh",
             "bmc_solving/index_zh",
+            "bmc_regions/index_zh",
         ),
         "reference/index.rst": ("bmc_query/index", "bmc_results/index"),
         "reference/index_zh.rst": (
@@ -600,6 +678,68 @@ def _check_pages(errors: List[str]) -> None:
         for target in required:
             if target not in text:
                 errors.append("%s does not link to %s." % (relative, target))
+
+
+def _check_scaling_page(errors: List[str]) -> None:
+    """Check the scaling explanation's pages, equations and committed data.
+
+    The page states closed forms and measured fits, so the same drift risks as
+    the semantics ledger apply: the English and Chinese LaTeX must be literally
+    equal, every labelled equation must be cited with ``:eq:``, and the data
+    files the figures and tables are drawn from must be committed.
+
+    The labels must equal ``_SCALING_EQUATION_LABELS`` in order, and a page may
+    also cite a label of the semantics ledger.  When either language file is
+    missing the function records that and returns at once, because every later
+    comparison needs both.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "docs/source"
+    english = source / (_SCALING_PAGE + ".rst")
+    chinese = source / (_SCALING_PAGE + "_zh.rst")
+    for path in (english, chinese):
+        if not path.is_file():
+            errors.append("%s is missing." % path.relative_to(_REPO_ROOT))
+            return
+        if ".. toctree::" in _read(path):
+            errors.append("%s must not own sibling pages through a toctree." % path)
+    english_equations = _extract_equations(english)
+    chinese_equations = _extract_equations(chinese)
+    for language, equations in (
+        ("English", english_equations),
+        ("Chinese", chinese_equations),
+    ):
+        labels = tuple(label for label, _latex in equations)
+        if labels != _SCALING_EQUATION_LABELS:
+            errors.append(
+                "%s scaling equation ledger does not match the frozen label list."
+                % language
+            )
+    if english_equations != chinese_equations:
+        errors.append("English and Chinese scaling equation labels/LaTeX differ.")
+    known = set(_SCALING_EQUATION_LABELS)
+    for path in (english, chinese):
+        cited = set()
+        for label in _equation_references(path):
+            cited.add(label)
+            if label not in known and label not in _EQUATION_LABELS:
+                errors.append(
+                    "%s references equation %r, which no labelled block defines."
+                    % (path.relative_to(_REPO_ROOT), label)
+                )
+        missing = [label for label in _SCALING_EQUATION_LABELS if label not in cited]
+        if missing:
+            errors.append(
+                "%s never references %s." % (path.relative_to(_REPO_ROOT), ", ".join(missing))
+            )
+    data = source / "explanations/bmc_scaling/data"
+    for name in _SCALING_DATA_FILES:
+        if not (data / name).is_file():
+            errors.append("scaling data file %s is missing." % name)
 
 
 def _check_readme(errors: List[str]) -> None:
@@ -1582,15 +1722,85 @@ def check_rendered(html_roots: Dict[str, Path]) -> None:
         )
 
 
+#: Pages whose example resources are verified as files.
+_RESOURCE_PAGES = ("explanations/bmc_regions/index",)
+
+
+def _page_resources(path: Path) -> Tuple[str, ...]:
+    """Return the files a page includes or offers for download.
+
+    Only the visible text is scanned (through ``_visible_text``), so a resource
+    named inside a comment or a code block does not count.  Both
+    ``literalinclude`` and ``:download:`` references are collected, because a
+    page can offer a file without displaying it.
+
+    :param path: Page to scan.
+    :type path: pathlib.Path
+    :return: Resource paths as written, relative to the page, sorted and unique.
+    :rtype: Tuple[str, ...]
+    """
+    text = _visible_text(path)
+    found = set(re.findall(r"^\s*\.\. literalinclude::\s+(\S+)", text, re.MULTILINE))
+    found.update(re.findall(r":download:`[^`<]*<([^>`]+)>`", text))
+    return tuple(sorted(found))
+
+
+def _check_page_resources(errors: List[str]) -> None:
+    """Confirm each page's resources exist and both languages use the same set.
+
+    A resource path that starts with ``/`` is relative to ``docs/source``, as
+    Sphinx reads it, so the shared models in ``_models`` can be checked too.
+    Only the pages named in ``_RESOURCE_PAGES`` are checked.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "docs/source"
+    for relative in _RESOURCE_PAGES:
+        sets: Dict[str, Tuple[str, ...]] = {}
+        for label, path in _prose_pages(relative):
+            resources = _page_resources(path)
+            sets[label] = resources
+            for resource in resources:
+                base = source if resource.startswith("/") else path.parent
+                if not (base / resource.lstrip("/")).is_file():
+                    errors.append("%s uses %s, which does not exist." % (label, resource))
+        english, chinese = (sets[label] for label, _path in _prose_pages(relative))
+        if english != chinese:
+            errors.append(
+                "%s: English and Chinese pages include different resources: %s."
+                % (relative, ", ".join(sorted(set(english) ^ set(chinese))))
+            )
+
+
 def check() -> None:
-    """Run every deterministic BMC documentation contract check."""
+    """Run every deterministic BMC documentation contract check.
+
+    The checks cover the equation ledger, the page pairs and their navigation,
+    the localized diagrams, the committed resources of the pages that carry
+    them, the result schema, and the vocabulary and counts the prose states.
+    Problems are collected before anything is raised, so one run lists them all.
+
+    :return: ``None``.
+    :rtype: None
+    :raises CheckFailure: If any contract check reports a problem.
+
+    Example::
+
+        $ python tools/check_bmc_docs.py --check
+        BMC documentation structure, diagrams, and equation ledger are up to date.
+    """
     errors: List[str] = []
     _check_equations(errors)
     _check_equation_references(errors)
+    _check_scaling_page(errors)
     _check_headline_transcription(errors)
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)
+    _check_page_resources(errors)
     _check_schema(errors)
     _check_explanation_vocabulary(errors)
     _check_tabulated_vocabulary(errors)

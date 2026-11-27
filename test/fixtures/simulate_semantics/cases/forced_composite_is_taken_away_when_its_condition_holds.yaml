@@ -1,0 +1,32 @@
+title: A forced transition takes a composite away as soon as its condition holds
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The condition is judged at the leaf the machine rests in; the leaf and the composite are left and the target is entered in the same cycle. The plain expansion that re-judged the condition on every level gave the same result here.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 3

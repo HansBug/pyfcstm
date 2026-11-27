@@ -22,6 +22,8 @@ HIDDEN_IMPORTS = [
     # Built-in C/C++ templates load this renderer through Jinja configuration
     # strings, so PyInstaller cannot discover it from a static import graph.
     'pyfcstm.render.c_runtime',
+    'pyfcstm.render.c_kernel',
+    'pyfcstm.render.c_configuration',
     # pyfcstm.bmc exposes model-aware layers through importlib-based lazy
     # exports. PyInstaller cannot discover those module names statically.
     'pyfcstm.bmc.binding',

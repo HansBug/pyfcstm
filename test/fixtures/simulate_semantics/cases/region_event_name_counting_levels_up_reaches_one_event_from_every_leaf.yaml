@@ -1,0 +1,20 @@
+title: A name that counts levels up from each leaf reaches the same event of the owner from both leaves,
+  so it is used and both regions take their transition
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'Controller.Running{Safety: Watching, Motion: Off}'
+  vars:
+    trail: 0
+steps:
+- cycle:
+  - ..Stop
+  expect:
+    configuration: 'Controller.Running{Safety: Tripped, Motion: On}'
+    vars:
+      trail: 0

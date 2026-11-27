@@ -1,0 +1,16 @@
+input int limit;
+control int n = 0;
+
+state Root {
+    [*] -> Owner;
+    state Owner {
+        region A {
+            [*] -> Hop : if [n < limit];
+            pseudo state Hop;
+            Hop -> [*];
+        }
+    }
+    state Done;
+    Owner -> Owner effect { n = n + 1; };
+    Owner -> Done;
+}

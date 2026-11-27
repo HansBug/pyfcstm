@@ -1,0 +1,9 @@
+state Solo {
+    [*] -> Only;
+    state Only {
+        region Lane {
+            [*] -> Run;
+            state Run;
+        }
+    }
+}

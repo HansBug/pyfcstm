@@ -1,0 +1,31 @@
+title: A forced transition judges its condition where the group rests, not again after the exit actions changed what the condition reads
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The exit action of the resting state clears the variable the condition reads. The condition is true when the state is chosen, so the whole group leaves and the owner takes the declared target; a condition that were asked again after the exit would turn it away.
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      armed: 1
+      seq: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      armed: 0
+      seq: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      armed: 0
+      seq: 1
+    delta: false

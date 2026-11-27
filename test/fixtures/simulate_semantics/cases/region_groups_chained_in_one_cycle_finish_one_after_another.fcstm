@@ -1,0 +1,11 @@
+def int seq = 0;
+state Root {
+    [*] -> P0;
+    state P0 { exit { seq = seq * 10 + 1; } region R { [*] -> p; pseudo state p; p -> [*]; } }
+    state P1 { exit { seq = seq * 10 + 2; } region R { [*] -> p; pseudo state p; p -> [*]; } }
+    state P2 { exit { seq = seq * 10 + 3; } region R { [*] -> p; pseudo state p; p -> [*]; } }
+    state Done;
+    P0 -> P1;
+    P1 -> P2;
+    P2 -> Done;
+}

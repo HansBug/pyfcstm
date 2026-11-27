@@ -23,11 +23,11 @@ model facts and verification intent are supplied.
 
 | Capability family | Available authoring surface | Use it when the task provides |
 |---|---|---|
-| Initialization | omitted `init`; `init cold`; `init state("...")`; `init terminated`; explicit `havoc *` or `havoc { ... }`; explicit `where` | A start policy or initial-value constraint |
+| Initialization | omitted `init`; `init cold`; `init state("...")` with a state path or, in a model with regions, a position text; `init terminated`; explicit `havoc *` or `havoc { ... }`; explicit `where` | A start policy or initial-value constraint |
 | Environment | frame assumptions (`always`, `at k`); event assumptions (`*`, point, or range); event cardinality (`any`, `at_most_one`) | Environmental timing, values, or event-exclusivity rules |
 | Questions | `reach`, `forbid`, `invariant`, `must_reach`, `exists_always`, `cover`, and `response` | The intended witness, violation, coverage, or response meaning |
 | Expressions | typed variables, `var()`, `cycle`, literals, constants, arithmetic, integer operators, comparisons, boolean logic, conditionals, and documented unary functions | A typed value relation that is actually part of the requirement |
-| Model observations | `active()`, `terminated()`, response-trigger `event(..., current)`, `case()`, `called()`, and `call_count()` | Exact paths, labels, frame/step meaning, and call metadata |
+| Model observations | `active()` (a state path or, in a model with regions, a position pattern), `terminated()`, response-trigger `event(..., current)`, `case()`, `called()`, and `call_count()` | Exact paths, region names, labels, frame/step meaning, and call metadata |
 | Call analysis | positional or named action filters; absolute/relative/open step ranges; stage, role, state, active leaf, named reference, and snapshot `where` | An abstract lifecycle-call requirement rather than only a state requirement |
 | File syntax and status | quoted strings, all accepted boolean spellings, `//`, `#`, and `/* ... */` comments in ordinary files; source-valid versus executable-profile distinctions | A normal file or a request that intentionally requires a currently unsupported form |
 
@@ -71,8 +71,9 @@ Before writing a query, identify only the facts the chosen property uses:
 | bare variable or `var()` | Exact variable name, type, unit, range, and meaning | A variable that sounds plausible |
 | `event()` | Exact event path and the relevant step | Event scope or an event at the final step |
 | `called()` / `call_count()` | Exact action path, role, step range, and snapshot meaning | An action name or call role |
-| `case()` | A tool-provided public case label | A label ordinal or internal case |
-| `init state()` | Exact state path and a justified hot-start intention | A start state chosen only to change the result |
+| `case()` | A tool-provided public case label; in a model with regions, a label whose paths pass through the region | A label ordinal or internal case |
+| `active("Owner{Region: State}")` | The owner path, each region name, and each state path inside that region | A region name taken from a display name, or a region the owner does not have |
+| `init state()` | Exact state path and a justified hot-start intention; in a model with regions, the owner path and the region names and state paths of every region you write | A start state chosen only to change the result |
 | `havoc` / `where` | Which initializers are intentionally relaxed and constrained | A relaxation used to avoid a counterexample |
 | `assume` | A stated environmental constraint | An assumption added only to obtain a desired result |
 | `response` | Trigger meaning, response meaning, and required window | That the trigger frame itself is a response |
@@ -135,6 +136,26 @@ condition; omitted `init` has no clause to modify:
 | `havoc *` | all persistent initial values are intentionally unconstrained | It relaxes values, not paths or events |
 | `havoc { x, "other" }` | only the named declared variables are relaxed | The set is non-empty, unique, and model-resolved |
 | `where condition` | a supplied frame-0 constraint | It constrains, rather than replaces, the selected initialization |
+
+### Starting a model with regions
+
+In a model with regions the `init state(...)` text may be a position instead of
+a plain state path. Three forms are valid, and each one builds a start
+position:
+
+| Text | Start position |
+|---|---|
+| `"Owner"` | The owner only: every region of the owner waits for initialization and enters through its own initial transition in written order |
+| `"Owner.Region.State"` | The branch through that region is in place; the other regions of the owner wait for initialization |
+| `"Owner{Region: State, Other: [done]}"` | The written regions are in place (`[done]` is a finished region, `[init]` a waiting one); a region left out waits for initialization |
+
+Write the owner path from the root state, name regions exactly as the model
+does, and write a region's state relative to that region. Only the owner is
+needed when the task does not say where the regions stand. A start in
+place does not run the `enter` actions of the states it places. The text is
+rejected with `invalid_start_position` when it is not a position of the model
+or when it leaves every region of an owner finished. An owner cannot rest with
+all regions done, so a `[done]` for the last live region is wrong.
 
 `where` may use frame variables, numeric and boolean operators, `active()`,
 and `terminated()`. It cannot use `cycle`, `event()`, `case()`, `called()`, or
@@ -274,6 +295,24 @@ not a state frame. `case("label")` refers to an authoritative public cover
 case. `called()` asks whether one abstract lifecycle call matches and
 `call_count()` returns how many calls match.
 
+In a model with regions, the string of `active(...)` may also be a position
+pattern such as `"Owner{Region: State, Other: [done]}"`. A pattern *matches*: a
+region it writes must stand where it says, and a region it leaves out is free.
+This differs from `init state(...)`, which *builds* a position, so a region it
+leaves out waits for initialization. `[done]` matches a finished region and
+`[init]` a region that has not started. A path without braces writes no region
+and keeps its ordinary meaning, so `active("Root.Run")` is true while `Run` is
+active, and `active("Root.Run.Motion.On")` names a state through its region.
+A pattern naming an unknown state, a region the state does not own, or a
+region twice is rejected with `invalid_active_pattern`. Braces on a state of a
+model without regions are rejected the same way.
+
+```fbmcq-snippet
+active("Owner{Region: State}")
+active("Owner{Region: State, Other: [done]}")
+active("Owner{Region: [init]}")
+```
+
 | Atom | Selector and context rule |
 |---|---|
 | `active("State.Path"[, current])` | Omitted or `current` only; legal in initial `where`, frame assumptions, ordinary property bodies, and response predicates |
@@ -329,6 +368,22 @@ check reach <= 1:
     called("Root.Idle.Tick", step=0, role="leaf_during", where x == 0)
     && call_count("Root.Idle.Tick", step=*) == 1;
 ```
+
+Inside the `where` of a call filter, `active(...)` describes the whole machine
+at the moment of the call: a region that moved earlier in the same cycle shows
+its new place, and a region that has not started shows `[init]`. An owner that
+is being entered sees its regions as `[init]`, while a call made before the
+owner is left still sees the old position. Use only the `active(...)` atom
+there. `call_count()` and `called()` count calls by the state the runtime
+reports for the call, so an aspect run around a whole group of regions belongs
+to the owner.
+
+In a model with regions, a `case()` label names a local case of one region,
+written with paths through that region, for example
+`Root.Run.Motion.Off::transition::Root.Run.Motion.On::0`. A step selects the
+local cases of every region that works in it, so the cover of one region's
+case does not depend on what another region does in that step. Use only labels
+the tool supplied.
 
 Do not put a `case()` atom inside a general boolean expression. Do not read an
 event at a step beyond the declared bound.
@@ -530,6 +585,62 @@ check exists_always <= 3:
     || call_count("Root.Controller.Hook", step=..+2) >= 0;
 ```
 
+### A model with regions
+
+The following examples use a second model: state `Controller` with leaf `Idle`
+and composite `Running`, entered by root event `/Start`. `Running` owns the
+regions `Safety` (state `Watching`) and `Motion` (states `Off` and `On`), in
+that written order. Inputs are `fault` and `requested`, `permit` is a control
+variable, and `motor` is an output. `Safety` sets `permit` from `fault`, then
+`Motion` goes from `Off` to `On` when `permit` and `requested` are non-zero and
+back to `Off` otherwise. `Motion.On` has the abstract enter action `Engage`,
+and the public case label of the `Off` to `On` transition is
+`Controller.Running.Motion.Off::transition::Controller.Running.Motion.On::0`.
+
+The owner alone is enough to start the group; the pattern asks only about
+`Motion` and leaves `Safety` free.
+
+```fbmcq-region-executable
+init state("Controller.Running");
+assume always: fault == 0 && requested == 1;
+check reach <= 3: active("Controller.Running{Motion: On}");
+```
+
+Start both regions in place and ask whether `Motion` can be on while `permit`
+is zero. `Safety` runs first, so `permit` is already current when `Motion`
+reads it.
+
+```fbmcq-region-executable
+init state("Controller.Running{Safety: Watching, Motion: Off}");
+check invariant <= 3: !(active("Controller.Running{Motion: On}") && permit == 0);
+```
+
+Leave `Motion` out of the start, then observe that it has not started:
+
+```fbmcq-region-executable
+init state("Controller.Running{Safety: Watching}");
+check reach <= 1: active("Controller.Running{Motion: [init]}");
+```
+
+Ask about an abstract call and the position of the machine at that call:
+
+```fbmcq-region-executable
+init state("Controller.Running");
+assume always: fault == 0 && requested == 1;
+check reach <= 3:
+    called("Controller.Running.Motion.On.Engage",
+           where active("Controller.Running{Safety: Watching}"));
+```
+
+Cover one region's local case:
+
+```fbmcq-region-executable
+init state("Controller.Running");
+assume always: fault == 0 && requested == 1;
+check cover <= 3:
+    case("Controller.Running.Motion.Off::transition::Controller.Running.Motion.On::0");
+```
+
 ## Invalid Examples
 
 The fence label identifies the expected failure stage. Do not call every error
@@ -551,6 +662,39 @@ check reach <= 1: active("Root.Unknown");
 check reach <= 1: sin(x) > 0;
 ```
 
+The next failures need the region model above. Each one binds to the model and
+fails there; the diagnostic code is named after the fence.
+
+`invalid_start_position`: both regions are written as finished, but an owner
+cannot start with every region done. Write the live region, or only the owner.
+
+```fbmcq-region-invalid-model
+init state("Controller.Running{Safety: [done], Motion: [done]}");
+check reach <= 2: true;
+```
+
+`invalid_active_pattern`: `Running` owns no region `Speed`. Use the region name
+the model gives, `Motion`.
+
+```fbmcq-region-invalid-model
+check reach <= 2: active("Controller.Running{Speed: On}");
+```
+
+`invalid_active_pattern`: `Idle` is a leaf and owns no regions, so braces on it
+cannot match. Drop the braces to ask whether `Idle` is active.
+
+```fbmcq-region-invalid-model
+check reach <= 2: active("Controller.Idle{Motion: On}");
+```
+
+`invalid_start_position`: `Flying` is not a state of region `Motion`. Use a
+state the model has, such as `On`.
+
+```fbmcq-region-invalid-model
+init state("Controller.Running{Safety: Watching, Motion: Flying}");
+check reach <= 2: true;
+```
+
 ## Pre-Output Checklist
 
 Before returning a query artifact, verify:
@@ -561,6 +705,11 @@ Before returning a query artifact, verify:
 3. The property kind and its result meaning match the stated intent.
 4. The bound covers every referenced frame, step, and response window.
 5. Initial state, `havoc`, `where`, and assumptions have explicit task support.
+   In a model with regions, a start text names the owner, a region path, or
+   braces with the real region names, and never leaves every region `[done]`.
+   A pattern in `active(...)` names only regions the state owns; remember that
+   a start builds a position (a region left out waits) while a pattern matches
+   one (a region left out is free).
 6. The predicate is defined where it is evaluated, relevant, and non-constant.
 7. The query cannot pass only because its initial or environmental constraints
    rule out every execution.
@@ -573,6 +722,7 @@ Before returning a query artifact, verify:
 | Property | Matches the desired witness or violation question | Changes property kind to force a result |
 | Bound | Covers the requested frame or window | Uses an off-by-one or too-short bound |
 | Initialization | Preserves the requested start policy | Hot-starts or relaxes variables without authority |
+| Regions | Writes the owner and real region names, and matches only the regions the question is about | Invents a region name, finishes every region, or mistakes a pattern for a start |
 | Assumption | States an explicit environment rule | Silently removes a counterexample |
 | Predicate | Tests a requirement-relevant, defined condition | Uses a constant or unrelated condition |
 | Response | Requires a later response and reports incomplete windows | Counts the trigger frame or calls incomplete success |

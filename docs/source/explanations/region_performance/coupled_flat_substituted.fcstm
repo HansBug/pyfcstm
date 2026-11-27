@@ -1,0 +1,10 @@
+input int x0;
+def int p = 0;
+def int c = 0;
+def int d = 0;
+state Root { [*] -> B0;
+  state B0 { during { p = x0; d = d + 1; } }
+  state B1 { during { p = x0; d = d + 1; } }
+  B0 -> B1 : if [x0 != 0] effect { c = c + 1; };
+  B1 -> B0 : if [x0 == 0] effect { c = c + 1; };
+}

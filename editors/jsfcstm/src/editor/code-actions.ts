@@ -1,6 +1,6 @@
 import {pathToFileURL} from 'node:url';
 
-import {inspectModel} from '../diagnostics';
+import {inspectModel, isInspectable} from '../diagnostics';
 import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticVariable} from '../semantics';
 import {FcstmDiagnostic, TextDocumentLike, TextRange, createRange} from '../utils/text';
@@ -122,7 +122,7 @@ export async function collectCodeActions(
 ): Promise<FcstmCodeAction[]> {
     const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
     const node = snapshot.nodes[snapshot.rootFile];
-    const semantic = node?.semantic;
+    const semantic = node.semantic;
     /* c8 ignore start */
     // Defensive: code-action provider only invokes against parsed
     // documents in the workspace graph; semantic is always present.
@@ -135,10 +135,10 @@ export async function collectCodeActions(
     const relevantDiagnostics = diagnostics.filter(item => (
         !suggestedFixFromDiagnostic(item) && rangeIntersects(item.range, range)
     ));
-    const localModel = semantic ? buildStateMachineModel(semantic) : null;
+    const localModel = buildStateMachineModel(semantic);
     if (localModel) {
         const existing = new Set<string>();
-        const inspectDiagnostics = inspectModel(localModel).diagnostics;
+        const inspectDiagnostics = isInspectable(localModel) ? inspectModel(localModel).diagnostics : [];
         const serverSuggestedKeysAtRange = new Set(
             collectInspectDiagnosticsFromItems(document, semantic, inspectDiagnostics, [], {rangeMode: 'fix-edit'})
                 .filter(diagnostic => (
@@ -148,10 +148,10 @@ export async function collectCodeActions(
                 .map(diagnosticKey),
         );
         for (const item of inspectDiagnostics) {
-            const suggestedFix = item.refs?.suggested_fix;
+            const suggestedFix = item.refs.suggested_fix;
             if (
                 item.code !== 'W_INITIAL_UNCONDITIONAL_MISSING' ||
-                typeof item.refs?.composite_path !== 'string' ||
+                typeof item.refs.composite_path !== 'string' ||
                 typeof suggestedFix !== 'object' ||
                 suggestedFix === null
             ) {
@@ -160,6 +160,8 @@ export async function collectCodeActions(
             const composite = semantic.states.find(state => (
                 state.identity.qualifiedName === item.refs.composite_path
             ));
+            // Defensive: the path comes from the model built out of the same semantic document.
+            /* c8 ignore next */
             if (!composite) continue;
             const transitionHit = semantic.transitions.some(transition => {
                 if (transition.sourceKind !== 'init' || transition.ownerStateId !== composite.identity.id) {
@@ -195,6 +197,8 @@ export async function collectCodeActions(
             // use client-supplied suggested_fix payloads as authorization
             // for either range.
             if (!rangeIntersects(diagnostic.range, range) && !serverSuggestedKeysAtRange.has(key)) continue;
+            // Defensive: the inspector does not report the same diagnostic twice.
+            /* c8 ignore next */
             if (existing.has(key)) continue;
             existing.add(key);
             relevantDiagnostics.push(diagnostic);
@@ -207,6 +211,8 @@ export async function collectCodeActions(
             const plan = planSuggestedFixEdit(document, semantic, diagnostic);
             if (plan) {
                 actions.push({
+                    // Defensive: a diagnostic that carries a fix always has a code.
+                    /* c8 ignore next */
                     title: `${suggestedFix.rationale} (${diagnostic.code ?? 'suggested fix'})`,
                     kind: 'quickfix',
                     diagnostics: [diagnostic],

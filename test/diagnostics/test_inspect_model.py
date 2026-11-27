@@ -460,6 +460,7 @@ class TestInspectModelViews:
             state Working {
                 state Idle;
                 [*] -> Idle;
+                Idle -> [*];
             }
             state Done;
             [*] -> Working;
@@ -479,6 +480,172 @@ class TestInspectModelViews:
             'Root.Working.Idle',
         )
         assert report.reachability_graph['Root.Working.Idle'] == tuple()
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Done'
+            for diag in report.diagnostics
+        )
+
+    def test_a_composite_state_whose_children_cannot_leave_never_takes_its_transitions(self):
+        # The composite state is its own one branch: it goes on only when a child
+        # of it takes ``-> [*]``, so ``Done`` cannot be entered.
+        dsl = """
+        state Root {
+            state Working {
+                state Idle;
+                [*] -> Idle;
+            }
+            state Done;
+            [*] -> Working;
+            Working -> Done;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert report.reachability_graph['Root'] == ('Root.Working', 'Root.Working.Idle')
+        assert report.reachability_graph['Root.Working'] == ('Root.Working.Idle',)
+        assert any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Done'
+            for diag in report.diagnostics
+        )
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'owner_never_completes': 1,
+        }
+
+    def test_the_exits_of_a_forced_transition_do_not_let_the_composite_state_go_on(self):
+        # ``!Run -> Idle`` takes the machine to ``Idle`` through its own exits, so
+        # ``Run -> Done`` still waits for a child that leaves on its own.
+        dsl = """
+        state Root {
+            event Reset;
+            [*] -> Run;
+            state Run { state A; [*] -> A; }
+            state Done;
+            state Idle;
+            Run -> Done;
+            !Run -> Idle : /Reset;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        unreachable = {
+            diag.refs['state_path']
+            for diag in report.diagnostics if diag.code == 'W_UNREACHABLE_STATE'
+        }
+        assert unreachable == {'Root.Done'}
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'owner_never_completes': 1,
+        }
+
+    def test_the_same_forced_declaration_written_in_two_scopes_keeps_the_inner_exit(self):
+        # The inner ``!* -> [*]`` is a real exit of ``S2`` although the outer one
+        # has the same text and expands to an exit below ``S2`` as well.
+        dsl = """
+        state Root {
+            event Eb;
+            [*] -> S2;
+            state S1 { [*] -> S0; state S0; }
+            state S2 { [*] -> S0; state S0; !* -> [*] :: Eb; }
+            S2 -> S1;
+            !* -> [*] :: Eb;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE' for diag in report.diagnostics
+        )
+
+    def test_an_authored_forced_exit_lets_the_composite_state_go_on(self):
+        dsl = """
+        state Root {
+            event Reset;
+            [*] -> Run;
+            state Run { state A; [*] -> A; !A -> [*] :: Reset; }
+            state Done;
+            Run -> Done;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE' for diag in report.diagnostics
+        )
+
+    def test_a_history_default_is_an_entry_of_the_composite_state_that_can_complete(self):
+        # ``Off -> C.[H]`` restores ``B`` (the default of the history), and ``B``
+        # leaves, so ``C`` can be over although its initial child ``A`` cannot.
+        dsl = """
+        state Root {
+            event Go;
+            [*] -> Off;
+            state Off;
+            state C {
+                [*] -> A;
+                [H] -> B;
+                state A;
+                state B;
+                B -> [*];
+            }
+            state Fin;
+            Off -> C.[H] :: Go;
+            C -> Fin;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert not any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Fin'
+            for diag in report.diagnostics
+        )
+        assert report.structure_statistics.unreachable_transition_reasons == {}
+
+    def test_a_history_default_nothing_enters_does_not_let_the_composite_state_complete(self):
+        dsl = """
+        state Root {
+            [*] -> C;
+            state C {
+                [*] -> A;
+                [H] -> B;
+                state A;
+                state B;
+                B -> [*];
+            }
+            state Fin;
+            C -> Fin;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
+        assert any(
+            diag.code == 'W_UNREACHABLE_STATE'
+            and diag.refs['state_path'] == 'Root.Fin'
+            for diag in report.diagnostics
+        )
+
+    def test_a_forced_transition_leaves_a_composite_state_that_cannot_complete(self):
+        dsl = """
+        state Root {
+            state Working {
+                state Idle;
+                [*] -> Idle;
+            }
+            state Done;
+            [*] -> Working;
+            !Working -> Done :: Stop;
+        }
+        """
+
+        report = inspect_model(_parse(dsl))
+
         assert not any(
             diag.code == 'W_UNREACHABLE_STATE'
             and diag.refs['state_path'] == 'Root.Done'
@@ -1003,6 +1170,7 @@ state Root {
                 state Orphan {
                     state A;
                     [*] -> A;
+                    A -> [*];
                 }
                 state Live;
                 [*] -> Live;
@@ -1010,9 +1178,10 @@ state Root {
             }
             """
         ))
-        assert report.structure_statistics.unreachable_transitions == 1
+        # Both the composite state's transition and the exit of its child.
+        assert report.structure_statistics.unreachable_transitions == 2
         assert report.structure_statistics.unreachable_transition_reasons == {
-            "unreachable_source_state": 1,
+            "unreachable_source_state": 2,
         }
 
     def test_structure_statistics_count_zero_expansion_forced_declaration(self):
@@ -1471,26 +1640,15 @@ class TestInspectModelGuardAffectDataFlow:
             collect_expr_variables(UnknownExpr())
 
     def test_build_use_def_graph_rejects_unknown_statement_subclass(self):
-        from types import SimpleNamespace
-
         from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+        from pyfcstm.model import load_state_machine_from_text
         from pyfcstm.model.model import OperationStatement
 
         class UnknownStatement(OperationStatement):
             pass
 
-        machine = SimpleNamespace(
-            walk_states=lambda: [SimpleNamespace(
-                on_enters=[SimpleNamespace(
-                    is_abstract=False,
-                    operations=[UnknownStatement()],
-                )],
-                on_durings=[],
-                on_exits=[],
-                on_during_aspects=[],
-                transitions=[],
-            )],
-        )
+        machine = load_state_machine_from_text('state Root { enter {} }')
+        machine.root_state.on_enters[0].operations.append(UnknownStatement())
 
         with pytest.raises(TypeError, match='UnknownStatement'):
             build_use_def_graph(machine)

@@ -1,0 +1,36 @@
+title: A group whose region could finish now or rest, and that is entered again with a new value after every finish,
+  keeps finishing because the next round could always rest; once the values come round again this is reported as
+  a loop
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region R takes its first initial candidate that can reach a stable position. Finishing is such a candidate in
+    every round, because one round later the region could rest instead. So no round ever rests, the counter x returns
+    to an earlier value after five rounds, and the cycle fails without changing anything.
+categories:
+- regions
+- runtime
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root
+    vars:
+      x: 0
+      z: 0
+    raises:
+      type: SimulationRuntimeDfsError
+      match: suspected loop
+      match_kind: substring
+- cycle: []
+  expect:
+    configuration: Root
+    vars:
+      x: 0
+      z: 0
+    raises:
+      type: SimulationRuntimeDfsError
+      match: suspected loop
+      match_kind: substring

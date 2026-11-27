@@ -123,6 +123,12 @@ division is never evaluated with ``d == 0``, because the runtime takes the first
 transition and stops; its site condition is unsatisfiable and the check is
 ``safe``.
 
+For a model with regions the stage covers the operations of every region,
+including those on candidate paths that dead-end and on continuations that a
+higher priority wins over.  :doc:`/explanations/bmc_regions/index` shows the two
+shapes where the core relation is satisfiable and the simulator still raises, and
+how this stage reports them.
+
 Verdicts are polarity-aware
 ---------------------------
 
@@ -312,6 +318,12 @@ Case labels and solver-only progress flags are intentionally absent from
 does not publish.  Conversely, ``delta``, event consumption, and abstract-call snapshots
 are included because matching only the final state would miss behaviorally
 important divergence.
+
+For a model with regions the comparisons grow by three: each frame's
+configuration, the transitions each step committed (which is what checks the
+decoded ``case_label`` and ``local_cases``, although the labels themselves are not
+compared), and the configuration inside each abstract call.  See
+:doc:`/explanations/bmc_regions/index`.
 
 Counterexample: replay is not a proof of the encoder
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

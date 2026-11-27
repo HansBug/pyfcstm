@@ -1,0 +1,13 @@
+state Root {
+    >> during before abstract Pre;
+    >> during after abstract Post;
+    region A {
+        >> during after abstract PostA;
+        [*] -> P;
+        state P { during abstract WorkA; }
+    }
+    region B {
+        [*] -> Q;
+        state Q { during abstract WorkB; }
+    }
+}

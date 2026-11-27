@@ -1,0 +1,29 @@
+input int x0;
+input int x1;
+def int c0 = 0;
+def int u0 = 0;
+def int c1 = 0;
+def int u1 = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region G0 {
+            [*] -> S0;
+            state S0 { during { u0 = u0 + 1; } }
+            state S1 { during { u0 = u0 + 1; } }
+            state S2 { during { u0 = u0 + 1; } }
+            S0 -> S1 : if [x0 == 1] effect { c0 = c0 + 1; };
+            S1 -> S2 : if [x0 == 1] effect { c0 = c0 + 1; };
+            S2 -> S0 : if [x0 == 1] effect { c0 = c0 + 1; };
+        }
+        region G1 {
+            [*] -> S0;
+            state S0 { during { u1 = u1 + 1; } }
+            state S1 { during { u1 = u1 + 1; } }
+            state S2 { during { u1 = u1 + 1; } }
+            S0 -> S1 : if [x1 == 1] effect { c1 = c1 + 1; };
+            S1 -> S2 : if [x1 == 1] effect { c1 = c1 + 1; };
+            S2 -> S0 : if [x1 == 1] effect { c1 = c1 + 1; };
+        }
+    }
+}

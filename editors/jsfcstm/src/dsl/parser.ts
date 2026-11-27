@@ -220,6 +220,9 @@ function normalizeSyntaxMessage(
     }
 
     if (/mismatched input/i.test(message)) {
+        if (tokenText === '<EOF>' && /\bRBRACE\b/i.test(message)) {
+            return 'Missing closing brace - check for unclosed state definitions or action blocks';
+        }
         if (
             /expecting \{';', 'named'\}/i.test(message)
             || /expecting \{(?:NAMED|SEMI), (?:NAMED|SEMI)\}/i.test(message)

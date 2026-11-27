@@ -1,0 +1,9 @@
+// The smallest model with a region. A single region is legal, and `Active`
+// and `region_count` are ordinary names because only the lower-case words
+// `region` and `active` are reserved.
+state Root {
+    region Active {
+        [*] -> region_count;
+        state region_count;
+    }
+}

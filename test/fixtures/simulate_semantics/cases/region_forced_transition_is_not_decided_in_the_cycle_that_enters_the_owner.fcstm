@@ -1,0 +1,20 @@
+def int seq = 0;
+state Root {
+    event Go;
+    event Stop;
+    [*] -> Idle;
+    state Idle;
+    state P {
+        enter { seq = seq + 1; }
+        [*] -> Pick;
+        pseudo state Pick;
+        state Work {
+            region A { [*] -> A1; state A1; }
+            region B { [*] -> B1; state B1; }
+        }
+        Pick -> Work;
+    }
+    state Off;
+    Idle -> P : /Go;
+    !P -> Off : /Stop;
+}

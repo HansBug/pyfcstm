@@ -24,13 +24,15 @@ Example::
 """
 
 import argparse
+import functools
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.simulate import (
     SimulationRuntimeActionReferenceError,
@@ -39,6 +41,8 @@ from pyfcstm.simulate import (
     SimulationRuntimeExpressionError,
     SimulationRuntimeTerminalStateError,
 )
+from pyfcstm.render import StateMachineCodeRenderer
+from pyfcstm.template import extract_template
 from test.testings import simulate_semantics
 from test.testings.simulate_semantics import (
     SemanticCase,
@@ -52,6 +56,7 @@ _MISSING_DELTA = object()
 GENERATED_C_ALIGNMENT = "generated_c_alignment"
 GENERATED_C_POLL_ALIGNMENT = "generated_c_poll_alignment"
 NATIVE_ALIGNMENT_RUNNERS = (GENERATED_C_ALIGNMENT, GENERATED_C_POLL_ALIGNMENT)
+NATIVE_TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll")
 
 # Worker failures must surface as hard failures rather than being masked by
 # any external allow-list data.
@@ -204,6 +209,65 @@ class NativeAlignmentReport:
         }
 
 
+@functools.lru_cache(maxsize=None)
+def _packaged_template_features(template_name: str) -> FrozenSet[str]:
+    """
+    Read the ``features`` a packaged built-in template declares.
+
+    :param template_name: Built-in template name.
+    :type template_name: str
+    :return: Declared feature names.
+    :rtype: FrozenSet[str]
+    """
+    with tempfile.TemporaryDirectory() as work:
+        return StateMachineCodeRenderer(extract_template(template_name, work)).features
+
+
+def iter_native_semantic_cases(
+    template_name: str, features: Optional[FrozenSet[str]] = None
+) -> List[SemanticCase]:
+    """
+    Select the shared fixtures one native C-family template must align on.
+
+    Every template runs the cases of the generated-runtime subset that do not
+    exercise regions. A template that declares the ``region`` feature also runs
+    every case of the ``regions`` category, whatever ``exclude_runners`` says
+    for the generated Python runner, so declaring the feature in a template's
+    ``config.yaml`` is what puts the region corpus under that template, and a
+    template that does not declare it never sees a region case.
+
+    :param template_name: One of ``c``, ``c_poll``, ``cpp`` and ``cpp_poll``.
+    :type template_name: str
+    :param features: Declared features to select for, defaults to the features
+        the packaged template declares.
+    :type features: typing.Optional[typing.FrozenSet[str]], optional
+    :return: Selected fixtures, sorted by case id.
+    :rtype: typing.List[test.testings.simulate_semantics.SemanticCase]
+    :raises ValueError: If ``template_name`` is not a native template.
+
+    Example::
+
+        >>> without = iter_native_semantic_cases("c", features=frozenset())
+        >>> with_regions = iter_native_semantic_cases("c", features=frozenset({"region"}))
+        >>> len(with_regions) > len(without)
+        True
+    """
+    if template_name not in NATIVE_TEMPLATE_NAMES:
+        raise ValueError("unknown native template: %r" % template_name)
+    if features is None:
+        features = _packaged_template_features(template_name)
+    selected = {
+        case.id: case
+        for case in iter_semantic_cases(runners=["generated_python_alignment"])
+        if "regions" not in case.data["categories"]
+    }
+    if "region" in features:
+        selected.update(
+            (case.id, case) for case in iter_semantic_cases(categories=["regions"])
+        )
+    return [selected[case_id] for case_id in sorted(selected)]
+
+
 def _validate_runner_name(runner: str) -> None:
     if runner not in NATIVE_ALIGNMENT_RUNNERS:
         raise ValueError("unknown native alignment runner: %r" % runner)
@@ -229,8 +293,48 @@ def _normalize_events_for_native(events: Any) -> Any:
     return events
 
 
-def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
-    return {
+def _exception_family(error: BaseException) -> str:
+    """
+    Name the exception class two runtimes are compared by.
+
+    Every exception of the ``SimulationRuntimeDfsError`` family (including the
+    simulator's private loop subclass) compares as one class, because a native
+    runtime reports "the speculative search found a loop" or "the search ran
+    past a safety limit" and the finer simulator class is not part of that
+    report. Any other exception compares by its own class name.
+
+    :param error: Exception raised by the simulator or by a native adapter.
+    :type error: BaseException
+    :return: ``SimulationRuntimeDfsError`` for the family, else the class name.
+    :rtype: str
+    """
+    if "SimulationRuntimeDfsError" in [cls.__name__ for cls in type(error).__mro__]:
+        return "SimulationRuntimeDfsError"
+    return type(error).__name__
+
+
+def _dfs_error_category(error: BaseException) -> str:
+    """
+    Classify an exception of the ``SimulationRuntimeDfsError`` family.
+
+    The two categories are what a native runtime can report without
+    reproducing the simulator's wording: ``loop`` for a search that came back to
+    a position it was already examining, and ``limit`` for a search that ran past
+    the step, depth or group-nesting safety limit. Where each limit triggers
+    differs between implementations; only "unbounded in either" is shared.
+
+    :param error: Exception of the ``SimulationRuntimeDfsError`` family.
+    :type error: BaseException
+    :return: ``loop`` or ``limit``.
+    :rtype: str
+    """
+    return "loop" if "suspected loop" in str(error) else "limit"
+
+
+def _native_handler_call_record(
+    runtime: Any, ctx: Any, with_configuration: bool = False
+) -> Dict[str, Any]:
+    record = {
         "action": ctx.action_name,
         "state": ctx.get_full_state_path(),
         "stage": ctx.action_stage,
@@ -240,6 +344,9 @@ def _native_handler_call_record(runtime: Any, ctx: Any) -> Dict[str, Any]:
         "abstract_target": ctx.abstract_target,
         "named_ref": ctx.named_ref,
     }
+    if with_configuration:
+        record["configuration"] = ctx.configuration
+    return record
 
 
 def _install_native_fixture_handlers(
@@ -249,6 +356,8 @@ def _install_native_fixture_handlers(
     if not case.data.get("handlers"):
         return calls
     hook_map = runtime.get_abstract_hook_map()
+    # Only region cases observe the configuration, as for the other runners.
+    with_configuration = "regions" in case.data["categories"]
     callback_map = {}
     for handler_data in case.data.get("handlers") or []:
         hook_name = hook_map[handler_data["action"]]
@@ -257,7 +366,9 @@ def _install_native_fixture_handlers(
             ctx, machine=runtime, item=handler_data, handler_calls=calls
         ):
             if item["behavior"] == "record_call":
-                handler_calls.append(_native_handler_call_record(machine, ctx))
+                handler_calls.append(
+                    _native_handler_call_record(machine, ctx, with_configuration)
+                )
             else:
                 raise ValueError("handlers behavior is invalid: %r" % item["behavior"])
 
@@ -272,6 +383,9 @@ class _GeneratedNativeAlignmentRuntime:
         self._native_runtime = native_runtime
         self._dsl_code = dsl_code
         self._last_simulation_delta = False
+        self._has_regions = bool(
+            getattr(simulation_runtime.state_machine, "has_regions", False)
+        )
         if hasattr(simulation_runtime, "_fixture_input_source"):
             self._fixture_input_source = simulation_runtime._fixture_input_source
 
@@ -299,6 +413,10 @@ class _GeneratedNativeAlignmentRuntime:
             % (self._dsl_code, value)
         )
         return value
+
+    @property
+    def configuration(self) -> Optional[str]:
+        return self._native_runtime.configuration
 
     @property
     def current_state(self) -> Optional[_StateProxy]:
@@ -331,7 +449,22 @@ class _GeneratedNativeAlignmentRuntime:
             "%s: vars mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
             % (when, self._dsl_code, comparable_sim_vars, comparable_native_vars)
         )
-        if sim_ended:
+        if self._has_regions:
+            # A model with regions has no single current state: the position is
+            # the configuration, compared as the text both sides print.
+            native_configuration = self._native_runtime.configuration
+            if sim_ended:
+                assert native_configuration is None, (
+                    "%s: native configuration should be None after end for DSL:\n%s\nconfiguration=%r"
+                    % (when, self._dsl_code, native_configuration)
+                )
+            else:
+                sim_configuration = str(self._simulation_runtime.configuration)
+                assert sim_configuration == native_configuration, (
+                    "%s: configuration mismatch for DSL:\n%s\nsimulation=%r\nnative=%r"
+                    % (when, self._dsl_code, sim_configuration, native_configuration)
+                )
+        elif sim_ended:
             assert self._native_runtime.current_state_path is None, (
                 "%s: native current_state_path should be None after end for DSL:\n%s\npath=%r"
                 % (when, self._dsl_code, self._native_runtime.current_state_path)
@@ -389,7 +522,7 @@ class _GeneratedNativeAlignmentRuntime:
                 "cycle(events=%r) exception mismatch for DSL:\n%s\nsimulation=%r, native=%r"
                 % (events, self._dsl_code, sim_exc, native_exc)
             )
-            assert type(sim_exc).__name__ == type(native_exc).__name__, (
+            assert _exception_family(sim_exc) == _exception_family(native_exc), (
                 "cycle(events=%r) exception type mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
                 % (
                     events,
@@ -400,17 +533,32 @@ class _GeneratedNativeAlignmentRuntime:
                     native_exc,
                 )
             )
-            assert str(sim_exc) == str(native_exc), (
-                "cycle(events=%r) exception message mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
-                % (
-                    events,
-                    self._dsl_code,
-                    type(sim_exc).__name__,
-                    sim_exc,
-                    type(native_exc).__name__,
-                    native_exc,
+            if _exception_family(sim_exc) == "SimulationRuntimeDfsError":
+                # The native runtime reports the kind of failure, not the
+                # simulator's wording (which names the positions it visited).
+                assert _dfs_error_category(sim_exc) == _dfs_error_category(native_exc), (
+                    "cycle(events=%r) search failure category mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_exc).__name__,
+                        sim_exc,
+                        type(native_exc).__name__,
+                        native_exc,
+                    )
                 )
-            )
+            else:
+                assert str(sim_exc) == str(native_exc), (
+                    "cycle(events=%r) exception message mismatch for DSL:\n%s\nsimulation=%s: %s\nnative=%s: %s"
+                    % (
+                        events,
+                        self._dsl_code,
+                        type(sim_exc).__name__,
+                        sim_exc,
+                        type(native_exc).__name__,
+                        native_exc,
+                    )
+                )
             sim_cause = sim_exc.__cause__
             native_cause = native_exc.__cause__
             assert (sim_cause is None) == (native_cause is None), (
@@ -784,7 +932,11 @@ def run_native_alignment_report(
         'generated_c_alignment'
     """
     _validate_runner_name(runner)
-    selected_ids = list(case_ids or [case.id for case in iter_semantic_cases()])
+    template_name = "c" if runner == GENERATED_C_ALIGNMENT else "c_poll"
+    selected_ids = list(
+        case_ids
+        or [case.id for case in iter_native_semantic_cases(template_name)]
+    )
     results = []
     for case_id in selected_ids:
         if subprocess_mode:

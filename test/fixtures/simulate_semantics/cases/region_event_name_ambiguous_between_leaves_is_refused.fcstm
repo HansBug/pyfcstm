@@ -1,0 +1,26 @@
+def int trail = 0;
+state Controller {
+    event Reset;
+    [*] -> Idle;
+    state Idle;
+    Idle -> Running :: Start;
+    state Running {
+        event Stop;
+        region Safety {
+            [*] -> Watching;
+            state Watching { event Trip; event Ping; }
+            state Tripped;
+            Watching -> Tripped :: Trip;
+            Watching -> Tripped : /Running.Stop;
+            Watching -> Watching :: Ping effect { trail = trail * 10 + 1; }
+        }
+        region Motion {
+            [*] -> Off;
+            state Off { event Go; event Ping; }
+            state On;
+            Off -> On :: Go;
+            Off -> On : /Running.Stop;
+            Off -> Off :: Ping effect { trail = trail * 10 + 2; }
+        }
+    }
+}

@@ -1,0 +1,1059 @@
+:orphan:
+
+How BMC cost grows with states, regions and bounds
+==================================================
+
+You run ``pyfcstm bmc`` on a model, and the question is whether the query will
+finish, where the time goes, and whether you can estimate that before you start.
+This page answers with measurements on synthetic models, closed forms that were
+checked against those measurements, and the places where no formula exists.
+
+**What you can compute in advance and what you cannot.**
+
+.. list-table:: Which quantities are predictable
+   :header-rows: 1
+   :widths: 24 20 56
+
+   * - Quantity
+     - Predictable?
+     - How
+   * - Formula size (Z3 nodes, Z3 boolean variables)
+     - Yes
+     - Exact closed form for region-free machines, fitted closed form with a
+       stated error for machines with regions
+       (:eq:`bmc-scaling-nodes-flat`, :eq:`bmc-scaling-nodes-regions`).
+   * - Time to build the formula
+     - Yes, roughly
+     - Number of Z3 calls from a closed form, times a unit cost that you measure
+       once on your machine (:eq:`bmc-scaling-compile-time`).
+   * - Peak memory
+     - Yes, roughly
+     - Follows the formula size; see :ref:`memory <bmc-scaling-memory>`.
+   * - Time to solve
+     - No
+     - No closed form exists. It is proportional to the number of solver
+       propagations, and that number has no formula
+       (:eq:`bmc-scaling-solve-time`).
+
+Every number below comes from a synthetic model that a script generates, not
+from your model. Treat the numbers as the shape of the cost, not as a promise.
+A model with heavy arithmetic, bit operations or many interacting guards can
+make the solving step much slower than any row here.
+
+How the measurements were made
+------------------------------
+
+Two campaigns feed this page, and each table or figure says which one it uses.
+
+.. list-table:: The two measurement campaigns
+   :header-rows: 1
+   :widths: 22 39 39
+
+   * - Item
+     - Original campaign
+     - Retest
+   * - Code
+     - commit ``560b7dc4``
+     - commit ``b054fbe3``
+   * - Machine
+     - Intel Xeon Platinum 8581C, Linux
+     - the same machine type, shared with other jobs; the load was not recorded
+   * - Software
+     - Python 3.11.15, z3 4.15.4
+     - Python 3.11.15, z3 4.15.4
+   * - Concurrency
+     - 56 processes at the same time
+     - one process at a time
+   * - Process model
+     - one fresh process per point
+     - one fresh process per point, after a warm-up compile of a two-state model
+       inside that process
+   * - Repeats
+     - the first run decides: a point that looked fast (about 8 s or less) was
+       run 3 times and the median kept, a slower point once; the count is in
+       ``reps``, and the 18 timed-out points have none
+     - the same rule, with a threshold of 8 s on the total time of the first
+       run; the count is in ``repeats``
+   * - Data
+     - ``data/original_measurements.jsonl``
+     - ``data/timing.jsonl`` and the other ``data/*.jsonl`` files
+
+The retest stopped after 15 of 99 planned timing points, because each remaining
+point could take up to 300 s on a shared machine. Those 15 points are a spot
+check of the original campaign, not a replacement. Every formula-size,
+call-count, propagation and exclusive-region number comes from the retest data.
+The retest records carry the commit, the machine, the Python and z3 versions,
+the number of repeats and the statistic that was kept (the one timed-out
+retest point has no repeats). The original records carry the commit, a machine
+string, a ``conditions`` string with the software versions and the concurrency,
+and ``reps``; they have no separate Python or z3 fields and no statistic field.
+The tool
+``tools/measure_bmc_scaling.py`` regenerates the files and checks the closed
+forms:
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py --help
+
+Symbols
+-------
+
+.. list-table:: Symbols used on this page
+   :header-rows: 1
+   :widths: 12 88
+
+   * - Symbol
+     - Meaning
+   * - :math:`R`
+     - Number of regions of one owner.
+   * - :math:`S`
+     - Leaf states per region.
+   * - :math:`T`
+     - Transitions per state.
+   * - :math:`D`
+     - Nesting levels of regions.
+   * - :math:`V`
+     - Number of variables written by transitions.
+   * - :math:`k`
+     - BMC step bound: the query is ``check reach <= k: ...``.
+   * - :math:`N`
+     - Leaf states of a machine without regions.
+   * - :math:`W`
+     - Number of transitions that carry an assignment.
+   * - :math:`P`
+     - Propagations that Z3 reports for the main solver check.
+   * - :math:`C_{\mathrm{ctx}}`
+     - Throw-away Z3 contexts created while the formula is built.
+
+The synthetic models
+--------------------
+
+The tool generates every model, so a point on a figure can be reproduced.
+
+* ``flat``: a ring of :math:`N` leaf states. State ``Si`` moves to ``S(i+1)`` on
+  ``d == 0``; the other :math:`T-1` transitions of each state are guarded back
+  edges. With :math:`V>0`, every ring transition except the last increments
+  :math:`V` variables, so :math:`W=N-1`.
+* ``regions``: one owner ``Run`` with :math:`R` regions of :math:`S` leaf states
+  each, built the same way inside each region.
+* ``pigeonhole``: :math:`m` regions that each pick one of :math:`m-1` states; the
+  query asks for all of them to differ.
+
+The query asks for something that cannot happen within :math:`k` steps, so the
+solver must prove "unreachable". That is the expensive, honest case: a
+satisfiable query ends when the solver finds one witness.
+
+The generator is the ``generate`` command of the maintenance tool, which is a
+script in the repository and not a ``pyfcstm`` command, so the documentation
+check does not run it.  This is the command and its output for two regions of
+three states, the first part being the model and the part after ``// query`` the
+unreachable-target query.
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py generate regions --R 2 --S 3 --k 2
+
+.. code-block:: text
+
+   input int d;
+   state Root {
+       [*] -> Run;
+       state Run {
+           region R0 {
+               [*] -> P0;
+               state P0;
+               state P1;
+               state P2;
+               P0 -> P1 : if [d == 0];
+               P0 -> P0 : if [d == 1];
+               P1 -> P2 : if [d == 0];
+               P1 -> P0 : if [d == 1];
+               P2 -> P1 : if [d == 1];
+           }
+           region R1 {
+               [*] -> P0;
+               state P0;
+               state P1;
+               state P2;
+               P0 -> P1 : if [d == 0];
+               P0 -> P0 : if [d == 1];
+               P1 -> P2 : if [d == 0];
+               P1 -> P1 : if [d == 1];
+               P2 -> P1 : if [d == 1];
+           }
+       }
+   }
+
+   // query
+   check reach <= 2: active("Root.Run{R0: P2, R1: P2}");
+
+**What it shows.** Each region has the chain ``P0 -> P1 -> P2`` on ``d == 0``
+and one back edge per state on ``d == 1``. The query asks for both regions to
+reach ``P2``, which needs more than ``k = 2`` steps. **What you can conclude.**
+The generator is small and deterministic: the same arguments give the same model.
+**What you cannot conclude.** These models say nothing about how guards in your
+own model interact.
+
+Formula size: exact where it can be
+-----------------------------------
+
+The size of the Z3 formula depends only on the structure and on :math:`k`, so it
+can be counted exactly. Count the distinct nodes of the formula DAG that
+``compile_bmc_query`` returns as ``solve_formula``. For a ring of :math:`N`
+states with two transitions per state and no variables, the count is:
+
+.. math::
+   :label: bmc-scaling-nodes-flat
+
+   \mathrm{nodes}_{\mathrm{flat}}(N,k) = 21\,N k - 18\,N + 33\,k + 6
+
+The form holds for :math:`k \ge 2` and for a query whose target state exists, which
+needs :math:`N \ge k+3` for the query used here. When every ring transition
+writes :math:`V` variables, the count becomes:
+
+.. math::
+   :label: bmc-scaling-nodes-flat-vars
+
+   \mathrm{nodes}_{\mathrm{flat},V}(N,k) = 23\,N k - 20\,N + 4\,V k + 35\,k + 9
+
+You can check the first closed form yourself with the public API. The script below
+builds the ring for three sizes, compiles the query for four bounds, counts the
+nodes through Z3's own Python interface, and prints the count next to
+:eq:`bmc-scaling-nodes-flat`.
+
+.. testcode::
+
+   from pyfcstm.bmc import compile_bmc_query
+   from pyfcstm.model import load_state_machine_from_text
+
+   print("N k nodes closed-form")
+   for n in (8, 12, 16):
+       ring = "".join(
+           "state S%d; S%d -> S%d : if [d == 0]; S%d -> S0 : if [d == 1];" % (i, i, (i + 1) % n, i)
+           for i in range(n)
+       )
+       model = load_state_machine_from_text("input int d; state Root { [*] -> S0; %s }" % ring)
+       for k in (2, 3, 4, 5):
+           query = 'check reach <= %d: active("Root.S%d");' % (k, k + 2)
+           seen, todo = set(), [compile_bmc_query(model, query).solve_formula]
+           while todo:
+               node = todo.pop()
+               if node.get_id() not in seen:
+                   seen.add(node.get_id())
+                   todo.extend(node.children())
+           print(n, k, len(seen), 21 * n * k - 18 * n + 33 * k + 6)
+
+.. testoutput::
+
+   N k nodes closed-form
+   8 2 264 264
+   8 3 465 465
+   8 4 666 666
+   8 5 867 867
+   12 2 360 360
+   12 3 645 645
+   12 4 930 930
+   12 5 1215 1215
+   16 2 456 456
+   16 3 825 825
+   16 4 1194 1194
+   16 5 1563 1563
+
+**What each part does.** The ``ring`` line writes the states and their two
+transitions; the ``while`` loop walks the expression DAG once and counts each node
+by its Z3 id; ``compile_bmc_query(...).solve_formula`` is the formula the solver
+receives.
+**What you see.** In all 12 rows the last two columns are equal: the measured
+count equals :math:`21Nk-18N+33k+6` exactly. **What you can conclude.** For this family the
+size is known without running the solver. **What you cannot conclude.** The
+closed form says nothing about other models. The node counter is the same
+technique as the maintenance tool uses; it is not a public pyfcstm function.
+
+For machines with regions, the node count has non-integer fitted coefficients:
+
+.. math::
+   :label: bmc-scaling-nodes-regions
+
+   \mathrm{nodes}_{\mathrm{reg}}(R,S,k) \approx 23\,R S k - 18\,R S + 22.3\,R k + 2.9\,R + 46.2\,k + 17.6
+
+The Z3 solver allocates boolean variables for the first check, and their number
+is exact for any :math:`T`:
+
+.. math::
+   :label: bmc-scaling-bool-vars
+
+   \mathrm{boolvars}(N,T,k) = 1 + 8k + T(k-1) + N(4k-2) + 3\,N T (k-1)
+
+Read together, the closed forms say that, for a fixed number of transitions per
+state, the formula grows with the product of states and bound, and that regions
+add up:
+
+.. math::
+   :label: bmc-scaling-size-order
+
+   |\Phi_k| = \Theta(N\,k) \quad\text{without regions},
+   \qquad
+   |\Phi_k| = \Theta(R\,S\,k) \quad\text{with regions},
+   \qquad T \text{ fixed}
+
+There is no :math:`R^2` term in the formula size. Regions are summed, not crossed.
+
+**The node count is not linear in** :math:`T`. The number of Z3 boolean variables
+is exactly linear in :math:`T` (:eq:`bmc-scaling-bool-vars`), but the node count
+is not: every doubling of :math:`T` multiplies it by a factor that rises with
+:math:`T`, from about 1.4 to 1.7 at small :math:`T` to about 3.3 to 3.7 at the
+largest measured :math:`T`. That is the behaviour of a quadratic term taking over
+at large :math:`T`. The closed forms on this page are for :math:`T=2`; this page
+gives no closed form in :math:`T`, and the cause of the growth was not examined.
+
+.. list-table:: Node count against transitions per state (original campaign, unsatisfiable queries)
+   :header-rows: 1
+   :widths: 10 25 15 25 15
+
+   * - :math:`T`
+     - nodes, no regions (:math:`N=100`, :math:`k=5`)
+     - factor
+     - nodes, regions (:math:`R=4`, :math:`S=8`, :math:`k=3`)
+     - factor
+   * - 1
+     - 5,263
+     - 
+     - 1,523
+     - 
+   * - 2
+     - 8,871
+     - 1.69
+     - 2,069
+     - 1.36
+   * - 4
+     - 16,503
+     - 1.86
+     - 3,275
+     - 1.58
+   * - 8
+     - 33,999
+     - 2.06
+     - 5,907
+     - 1.80
+   * - 16
+     - 78,835
+     - 2.32
+     - 13,079
+     - 2.21
+   * - 32
+     - 205,167
+     - 2.60
+     - 32,277
+     - 2.47
+   * - 64
+     - 608,655
+     - 2.97
+     - 85,157
+     - 2.64
+   * - 128
+     - 2,030,730
+     - 3.34
+     - 310,939
+     - 3.65
+   * - 256
+     - not measured
+     - 
+     - 1,152,649
+     - 3.71
+
+The rows are the ``nodes against T`` lines of the ``check-formulas`` output
+below; the factor is the ratio to the row above.
+
+.. list-table:: Which coefficients are exact and where they were checked
+   :header-rows: 1
+   :widths: 30 20 50
+
+   * - Closed form
+     - Coefficients
+     - Check (from the ``check-formulas`` output below)
+   * - :eq:`bmc-scaling-nodes-flat`
+     - integers, exact
+     - 16 grid points equal; 60 further points up to :math:`N=6400` and
+       :math:`k=128` equal
+   * - :eq:`bmc-scaling-nodes-flat-vars`
+     - integers, exact
+     - 24 grid points equal
+   * - :eq:`bmc-scaling-bool-vars`
+     - integers, exact
+     - 48 grid points equal, with :math:`T` in 1, 2, 4
+   * - :eq:`bmc-scaling-nodes-regions`
+     - fitted, not integers
+     - 48 grid points with residual at most 11.5 nodes; 95 further points up to
+       :math:`R=768`, :math:`S=1024`, :math:`k=48` with median error 0.12% and
+       maximum 0.94%
+
+The grid points are listed in ``data/formula_grid.jsonl``; the further points are
+the original measurements and the retest. A power-law fit of the exact
+:eq:`bmc-scaling-nodes-flat` data gives nodes :math:`\approx 14.6\,N^{0.98}k^{1.14}`.
+That exponent above 1 for :math:`k` is an artifact of the negative
+:math:`-18N` term, which makes the curve steeper at small :math:`k`. The true
+growth in :math:`k` is linear.
+
+.. figure:: nodes.plot.py.svg
+   :alt: Scatter of measured node counts against the closed form, on the diagonal.
+   :width: 60%
+
+   Measured Z3 node counts (horizontal) against :eq:`bmc-scaling-nodes-flat`
+   (vertical) for region-free machines. Both axes are logarithmic. The figure
+   shows that the points lie on the diagonal over three orders of magnitude; it
+   does not show anything about time. Data: ``formula_grid.jsonl``,
+   ``timing.jsonl`` and ``original_measurements.jsonl``; counts are
+   deterministic, so each point is one run.
+
+.. _bmc-scaling-memory:
+
+**Memory.** Peak resident memory follows the node count. In the retest it was
+107 MB at 8.9 thousand nodes, 857 MB at 557 thousand and 1429 MB at 1.07 million
+nodes. In the original campaign the largest formula, 2.03 million nodes (no
+regions, :math:`N=100`, :math:`T=128`, :math:`k=5`), needed 1395 MB. These are peak resident sizes of the whole process, measured in
+``rss_mb``.
+
+Time to build the formula
+-------------------------
+
+Building the formula is Python code that calls the Z3 C interface. The number
+of those calls is deterministic, and it has a closed form with fitted
+coefficients. For the ring with two transitions per state:
+
+.. math::
+   :label: bmc-scaling-calls-flat
+
+   \mathrm{calls}_{\mathrm{flat}}(N,k) \approx 1680\,N k - 1578\,N + 1698\,k + 449
+
+For machines with regions, there is a real :math:`R^2` term:
+
+.. math::
+   :label: bmc-scaling-calls-regions
+
+   \mathrm{calls}_{\mathrm{reg}}(R,S,k) \approx R S\,(1754 k - 1418) + R\,(976 k + 440) + R^2\,(151 k - 96) + 2561 k + 439
+
+In :eq:`bmc-scaling-calls-regions` the :math:`R^2` term exceeds the :math:`R S` term once :math:`R` is larger than
+about :math:`1754\,S/151`, that is about 11.6 times :math:`S`, when :math:`k` is
+large. At a finite :math:`k` the crossover is :math:`S\,(1754k-1418)/(151k-96)`,
+which is :math:`R=43` for :math:`S=4` and :math:`k=3`, the setting of the region
+sweeps. Below that, building the formula looks linear in
+the number of regions; above it, it bends upward. The formula size itself still
+grows linearly in :math:`R` at fixed :math:`T` (:eq:`bmc-scaling-size-order`), so the :math:`R^2` cost is paid in
+Python work, not in formula nodes. The cause of the term has not been pinned down
+(see :ref:`known room for improvement <bmc-scaling-room>`).
+
+The counts were checked on the grid and on three large points.
+
+The command below compares every closed form with the committed data files.  It
+is a maintenance command that reads only ``data/*.jsonl``, so its output is the
+same on every run, but it is a script in the repository and not a ``pyfcstm``
+command, so the documentation check does not run it.  The output is copied here
+from a run at the repository root, which is why the data directory is given
+with its full path.  Each line is one comparison; the numbers come from
+the points in ``data/``, which were measured as described in the table of the two
+campaigns above.
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py check-formulas --data docs/source/explanations/bmc_scaling/data
+
+.. code-block:: text
+
+   flat nodes, grid: 16 points, all equal to the closed form
+   flat nodes, out of sample: 60 points up to N=6400, k=128, 0 differ
+   flat nodes with written variables, grid: 24 points, all equal
+   z3 boolean variables, grid: 48 points (T in 1,2,4), all equal
+   power-law fit of the 60 out-of-sample flat points: nodes = 14.6 * N^0.98 * k^1.14
+   region nodes, grid: 48 points, max |residual| = 11.5 nodes
+   region nodes, out of sample: 95 points up to R=768, S=1024, k=48; median error 0.12%, max 0.94%
+   contexts 2*W*V*(k-1), W=N-1: 34 points, all equal
+   flat z3 calls, grid: 16 points, max relative error 0.24%
+   region z3 calls, grid: 48 points, max relative error 0.28%
+   z3 calls {'R': 96, 'S': 4} k=3: measured 5212124, closed form 5097658 (-2.2%)
+   z3 calls {'R': 256, 'S': 4} k=3: measured 29080930, closed form 28202938 (-3.0%)
+   z3 calls {'N': 1600, 'T': 2} k=5: measured 10933762, closed form 10924139 (-0.1%)
+   solve time vs propagations (>2e4): 37 checks, exponent 0.92, R^2 0.98, ns per propagation p10 176 median 222 p90 365
+   pigeonhole conflict ratio per added region: 5: x2.4, 6: x3.4, 7: x4.1, 8: x6.5, 9: x5.2, 10: x6.1, 11: x9.4
+   pigeonhole conflict ratio from 7 regions on: geometric mean x6.0
+   context cost N=100 V=4 k=5: 3168 contexts, build 4.9 s (0.5 s without variables), 1.37 ms per context
+   context cost N=100 V=16 k=5: 12672 contexts, build 16.7 s (0.5 s without variables), 1.27 ms per context
+   context cost N=100 V=64 k=5: 50688 contexts, build 65.6 s (0.5 s without variables), 1.28 ms per context
+   nodes against T, flat {'N': 100} k=5: T=1: 5263, T=2: 8871 (x1.69), T=4: 16503 (x1.86), T=8: 33999 (x2.06), T=16: 78835 (x2.32), T=32: 205167 (x2.60), T=64: 608655 (x2.97), T=128: 2030730 (x3.34)
+   nodes against T, regions {'R': 4, 'S': 8} k=3: T=1: 1523, T=2: 2069 (x1.36), T=4: 3275 (x1.58), T=8: 5907 (x1.80), T=16: 13079 (x2.21), T=32: 32277 (x2.47), T=64: 85157 (x2.64), T=128: 310939 (x3.65), T=256: 1152649 (x3.71)
+   build seconds per z3 call {'R': 96, 'S': 4} k=3: 2.72 s for 5212124 calls, 0.52 microseconds per call
+   build seconds per z3 call {'R': 256, 'S': 4} k=3: 14.84 s for 29080930 calls, 0.51 microseconds per call
+   build seconds per z3 call {'N': 1600, 'T': 2} k=5: 17.88 s for 10933762 calls, 1.63 microseconds per call
+   share of build time, original points above 1 s, flat: 134 points, median 96%, range 32% to 100%
+   share of build time, original points above 1 s, regions: 113 points, median 49%, range 17% to 95%
+   context cost, original campaign, N=100 V=4 k=5: build 19.3 s, 3168 contexts, 6.09 ms per context
+   context cost, original campaign, N=100 V=4 k=5: build 19.6 s, 3168 contexts, 6.19 ms per context
+   context cost, original campaign, N=100 V=16 k=5: build 76.4 s, 12672 contexts, 6.03 ms per context
+   context cost, original campaign, N=100 V=16 k=5: build 78.1 s, 12672 contexts, 6.16 ms per context
+   context cost, original campaign, N=100 V=64 k=5: build 87.9 s, 50688 contexts, 1.73 ms per context
+   context cost, original campaign, N=100 V=64 k=5: build 88.8 s, 50688 contexts, 1.75 ms per context
+   closed forms agree with the data in docs/source/explanations/bmc_scaling/data
+
+**What it shows.** Each line names a closed form, the number of points it was
+compared with and the result. Lines that say "all equal" are exact; lines that
+give an error are fitted. **What you can conclude.** The fitted call counts are
+within 0.3% on the grid and within 3.1% on the large points. **What you cannot
+conclude.** The region call-count grid stops at :math:`R=8`, :math:`S=24`,
+:math:`k=8`; beyond it the error grows slowly, as the :math:`-2.2\%` and
+:math:`-3.0\%` lines for :math:`R=96` and :math:`R=256` show.
+
+**Variable writes.** A transition that assigns variables adds a different kind
+of cost. During construction the compiler issues satisfiability checks, and each
+check creates a fresh Z3 context (this is deliberate: it keeps an answer
+independent of what the process solved before). The number of contexts is exact:
+
+.. math::
+   :label: bmc-scaling-contexts
+
+   C_{\mathrm{ctx}} = 2\,W\,V\,(k-1)
+
+The formula size hardly moves with :math:`V`, because :math:`4Vk` in
+:eq:`bmc-scaling-nodes-flat-vars` is small, but the context count grows linearly
+in :math:`V`. In the retest, :math:`N=100`, :math:`k=5` takes 0.5 to 0.6 s to
+build without variables (two records) and 4.9 s, 16.7 s and 65.6 s with :math:`V=4`, 16 and 64.
+That is 1.3 to 1.4 ms per context. Together:
+
+.. math::
+   :label: bmc-scaling-compile-time
+
+   t_{\mathrm{build}} \approx c_{\mathrm{call}}\cdot \mathrm{calls} + c_{\mathrm{ctx}}\cdot C_{\mathrm{ctx}}
+
+Here :math:`c_{\mathrm{call}}` is the cost of one Z3 call and
+:math:`c_{\mathrm{ctx}}` the cost of one context. In the retest, building the region machines with :math:`R=96` and :math:`R=256` (:math:`S=4`, :math:`k=3`) took 2.72 s and 14.8 s for 5.2 and 29.1 million calls, which is 0.52 and 0.51 microseconds per call. Building the ring with :math:`N=1600`, :math:`k=5` took 17.9 s for 10.9 million calls, which is 1.63 microseconds per call. So :math:`c_{\mathrm{call}}` belongs to the model family, not to the machine alone, and you should measure it on a small model of your own family.
+The per-context cost differs between the two campaigns. For :math:`N=100`,
+:math:`k=5`, the original campaign built in 19.3 to 19.6 s at :math:`V=4`, 76.4
+to 78.1 s at :math:`V=16` and 87.9 to 88.8 s at :math:`V=64`. That is about 6 ms
+per context at :math:`V=4` and 16, but 1.7 ms at :math:`V=64`, so the original
+scan flattens where the retest stays linear, and the original is about 3.9 to
+4.7 times slower than the retest at :math:`V=4` and :math:`V=16` and about 1.3 to
+1.4 times at :math:`V=64`. The original ran 56 processes at once and had no warm-up; whether
+either causes the gap was not tested, and the gap is not explained. The retest
+figures match :eq:`bmc-scaling-contexts`; treat the original figures as the
+pessimistic case.
+
+.. figure:: phases.plot.py.svg
+   :alt: Scatter of the share of build time in the total, per machine family.
+   :width: 70%
+
+   Share of the total time that building the formula takes (vertical, linear
+   axis, percent) against build plus solve time (horizontal, logarithmic axis,
+   seconds), for original-campaign points above 1 s. Blue points are
+   region-free machines and orange points are machines with regions. The figure
+   shows that building the formula takes most of the time for region-free
+   machines (median 96%, 134 points) and about half of it for machines with
+   regions (median 49%, 113 points); it does not show which Python lines are
+   responsible. Method: one fresh process per point,
+   median of 3 runs below 8 s, 56 processes at once.
+
+Time to solve: no formula
+-------------------------
+
+The solver time of the main check is close to proportional to the number of
+propagations that Z3 reports:
+
+.. math::
+   :label: bmc-scaling-solve-time
+
+   t_{\mathrm{solve}} \approx \tau\,P, \qquad \tau \approx 0.2\ \mu\mathrm{s}
+
+In the retest the median was 222 ns per propagation, with 10th and 90th
+percentiles of 176 ns and 365 ns. A fit on a logarithmic scale gives:
+
+.. math::
+   :label: bmc-scaling-propagation-fit
+
+   \log t_{\mathrm{solve}} = \beta \log P + \alpha, \qquad \beta \approx 0.92
+
+The coefficient of determination is 0.98 over 37 checks (those with more than
+:math:`2\cdot 10^4` propagations). So :eq:`bmc-scaling-propagation-fit` is a good description of the
+solver, but it is not a prediction: :math:`P` itself has no closed form and is
+not monotone in the model size. For the ring with :math:`k=8`, :math:`N=400`
+needs 1,329,691 propagations and :math:`N=800` only 621,198.
+
+.. figure:: fit.plot.py.svg
+   :alt: Scatter of solver seconds against propagations with a dashed proportional line.
+   :width: 60%
+
+   Solver seconds of the main check (vertical) against propagations reported by
+   Z3 (horizontal); both axes are logarithmic. The dashed line is the median
+   cost per propagation. The figure shows proportionality; it does not let you
+   predict :math:`P`. Method: 42 points, ``solve_law.jsonl``, each in a fresh
+   process after a warm-up, one run per point; 37 of them have more than
+   :math:`2\cdot 10^4` propagations.
+
+What the literature allows you to say is only an upper bound or an existence
+result. The table lists only the sources whose text was checked while this page
+was written, with the statement as that text makes it, and what it means for
+you. The page cites no source for a general analytic predictor of solver time.
+
+.. list-table:: Bounds from the literature
+   :header-rows: 1
+   :widths: 40 32 28
+
+   * - Statement
+     - Source
+     - What it means for a model
+   * - The completeness threshold of an LTL property can be over-approximated
+       from the Buechi automaton, and with that threshold standard SAT-based
+       bounded model checking is doubly exponential in the number of state
+       variables.
+     - `Clarke, Kroening, Ouaknine, Strichman, "Completeness and Complexity of
+       Bounded Model Checking" <https://people.mpi-sws.org/~joel/publications/compbmc04.pdf>`_
+     - Running BMC to completeness has only a doubly exponential bound; it says
+       nothing about one fixed small :math:`k`.
+   * - Reachability in a hierarchical machine (sequential nesting, without
+       variables or concurrency) is decided in time linear in the size of the
+       hierarchical structure, and is P-complete.
+     - `Alur and Yannakakis, "Model Checking of Hierarchical State Machines"
+       <https://www.cis.upenn.edu/~alur/Fse98.pdf>`_ (author's preprint of the
+       journal paper)
+     - The guarantee covers nesting only. It gives nothing for regions that run
+       together, nor for variables.
+   * - Intersection non-emptiness of DFAs that accept only finite languages is
+       NP-complete.
+     - `Rampersad and Shallit, "Detecting patterns in finite regular and
+       context-free languages" <https://arxiv.org/abs/0906.3220>`_, Theorem 1
+     - Our reading, not the paper's claim: reaching a joint configuration of
+       several regions within a bounded number of steps resembles this problem,
+       so no polynomial method should be expected in general.
+   * - A DPLL solver with unit propagation, clause learning, restarts and
+       internal randomness behaves like width-:math:`k` resolution with high
+       probability within :math:`O(n^{2k+2})` conflicts and restarts.
+     - `Atserias, Fichte, Thurley, "Clause-Learning Algorithms with Many
+       Restarts and Bounded-Width Resolution", JAIR 40, 2011
+       <https://arxiv.org/abs/1401.3868>`_ (abstract)
+     - The polynomial bound is for this idealised solver model, not for the
+       heuristics of Z3.
+   * - Even if the transition relation of a concurrent system has bounded
+       treewidth, its unrolling can have unbounded treewidth (Theorem 2.4).
+     - `Ferrara, Pan, Vardi, "Treewidth in Verification: Local vs. Global"
+       <https://www.cs.rice.edu/~vardi/papers/lpar052.pdf>`_
+     - Structural width does not give BMC a general polynomial bound.
+   * - Z3's resource limits are "completely deterministic if the problem and Z3
+       don't change", but small changes to the input can have a big impact on
+       the resources needed.
+     - Wintersteiger, in `F* issue 767 <https://github.com/FStarLang/FStar/issues/767>`_
+     - The counters describe one run; they do not predict another.
+
+Worst case: exclusive regions
+-----------------------------
+
+The cost of solving depends on how strongly the regions constrain each other, not
+on how many there are. Independent regions are cheap: in the original campaign,
+768 regions of four states each finished in 280 s. The opposite is a pigeonhole
+structure. Take :math:`m` regions, each of which can move into one of
+:math:`m-1` states by its own input, and ask whether all regions can end in
+different states. They cannot, and the solver has to prove it.
+
+The model and query come from the ``generate`` command of the maintenance tool,
+which is a script in the repository and not a ``pyfcstm`` command, so the
+documentation check does not run it.  This is the command and its output for three
+regions and two states, the part after ``// query`` being the all-different query.
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py generate pigeonhole --holes 2 --pigeons 3
+
+.. code-block:: text
+
+   input int d0;
+   input int d1;
+   input int d2;
+   state Root {
+       region P0 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d0 == 0];
+           W -> H1 : if [d0 == 1];
+       }
+       region P1 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d1 == 0];
+           W -> H1 : if [d1 == 1];
+       }
+       region P2 {
+           [*] -> W;
+           state W;
+           state H0;
+           state H1;
+           W -> H0 : if [d2 == 0];
+           W -> H1 : if [d2 == 1];
+       }
+   }
+
+   // query
+   check reach <= 2: (((((active("Root.P0.H0") || active("Root.P0.H1")) && (active("Root.P1.H0") || active("Root.P1.H1"))) && ((active("Root.P2.H0") || active("Root.P2.H1")) && !(active("Root.P0.H0") && active("Root.P1.H0")))) && ((!(active("Root.P0.H0") && active("Root.P2.H0")) && !(active("Root.P1.H0") && active("Root.P2.H0"))) && (!(active("Root.P0.H1") && active("Root.P1.H1")) && !(active("Root.P0.H1") && active("Root.P2.H1"))))) && !(active("Root.P1.H1") && active("Root.P2.H1")));
+
+**What it shows.** Each region ``P0``, ``P1``, ``P2`` leaves ``W`` into one of
+the states ``H0`` or ``H1``; the query demands that every region is in some
+``H`` state and that no two regions share one. With three regions and two
+states that is impossible. **What you can conclude.** The family is unsatisfiable
+for every :math:`m`. **What you cannot conclude.** One structure of mutual
+exclusion was measured; others may behave differently.
+
+The table is built from ``data/pigeonhole.jsonl`` (retest campaign, one fresh
+process per row, one run per row; ``Regions`` is the number of pigeons of the
+record, one more than its holes).  ``Solve seconds`` is the
+``t_solve`` field of the record and ``Conflicts`` is the ``conflicts``
+statistic of the query's own check (the next-to-last entry of ``checks``; for
+the two undecided rows, their only entry).  The ``check-formulas`` output
+below prints only the ratios of consecutive conflict counts.
+
+.. list-table:: Exclusive regions, unsatisfiable, retest
+   :header-rows: 1
+   :widths: 14 22 22 42
+
+   * - Regions
+     - Solve seconds
+     - Conflicts
+     - Result
+   * - 8
+     - 0.17
+     - 5,422
+     - unsat
+   * - 9
+     - 1.15
+     - 28,060
+     - unsat
+   * - 10
+     - 9.99
+     - 170,696
+     - unsat
+   * - 11
+     - 126
+     - 1,612,287
+     - unsat
+   * - 12
+     - 280
+     - 3,178,719
+     - unknown after the 280 s limit
+   * - 13
+     - 280
+     - 3,164,362
+     - unknown after the 280 s limit
+
+The conflict count grows by a factor that is near 6 per added region once there
+are 7 regions or more:
+
+.. math::
+   :label: bmc-scaling-conflict-growth
+
+   \mathrm{conflicts}(m) \approx c\,\rho^{m}, \qquad \rho \approx 6
+
+The control with the same structure but a satisfiable query (:math:`m` regions
+and :math:`m` states) needs 0.24 s at 12 regions. The factor is a fit over the
+decided points, not a theorem, and the two undecided rows show only that the
+solver ran out of time.
+
+.. figure:: pigeonhole.plot.py.svg
+   :alt: Solver seconds against the number of exclusive regions, with a satisfiable control.
+   :width: 60%
+
+   Solver seconds (vertical, logarithmic axis) against the number of mutually
+   exclusive regions (horizontal). The orange line is the unsatisfiable
+   structure and the crosses are runs that were not decided within 280 s. The
+   blue line is the satisfiable control of the same shape. The figure shows that
+   a few exclusive regions are enough to make proving impossibility expensive; it
+   does not say that your regions are exclusive. Method: ``pigeonhole.jsonl``, one
+   fresh process per point, one run per point.
+
+What time to expect
+-------------------
+
+The table below is the largest size that finished inside each budget, taken from
+the original campaign (commit ``560b7dc4``, 56 processes at once, one run for
+points above 8 s). Every query is an unsatisfiable ``check reach``, and the time
+is build plus solve. A size is "the largest measured", so the true limit lies
+between it and the next measured size.  The table is the transcribed output of
+the ``range-table`` command shown after it.
+
+.. list-table:: Largest measured size per time budget
+   :header-rows: 1
+   :widths: 40 16 16 16 12
+
+   * - Dimension (others fixed)
+     - 10 s
+     - 60 s
+     - 300 s
+     - First timeout
+   * - Region-free, leaf states :math:`N` (:math:`T=2`, :math:`k=5`)
+     - 800 (8 s)
+     - 1600 (22 s)
+     - 6400 (216 s)
+     - 12800
+   * - Region-free, bound :math:`k` (:math:`N=400`)
+     - 8 (6 s)
+     - 32 (30 s)
+     - 64 (118 s)
+     - 128
+   * - Region-free, transitions per state :math:`T` (:math:`N=100`, :math:`k=5`)
+     - 16 (6 s)
+     - 64 (50 s)
+     - 128 (175 s)
+     - 256
+   * - Region-free, written variables :math:`V` (:math:`N=50`, :math:`k=5`)
+     - 8 (10 s)
+     - 64 (45 s)
+     - 256 (144 s)
+     - none measured
+   * - Regions :math:`R` (:math:`S=4`, :math:`k=3`)
+     - 128 (10 s)
+     - 256 (35 s)
+     - 768 (280 s)
+     - 1024
+   * - States per region :math:`S` (:math:`R=4`, :math:`k=3`)
+     - 128 (4 s)
+     - 512 (37 s)
+     - 1024 (96 s)
+     - 2048
+   * - Bound :math:`k` (:math:`R=4`, :math:`S=40`)
+     - 16 (7 s)
+     - 32 (18 s)
+     - 32 (18 s)
+     - none measured
+   * - Bound :math:`k` (:math:`R=4`, :math:`S=200`)
+     - none
+     - none
+     - 48 (258 s)
+     - 64
+   * - Transitions per state :math:`T` (:math:`R=4`, :math:`S=8`, :math:`k=3`)
+     - 32 (4 s)
+     - 128 (43 s)
+     - 256 (162 s)
+     - none measured
+   * - Calls with ``where active(...)``, regions :math:`R` (:math:`S=4`, :math:`k=3`)
+     - 32 (6 s)
+     - 96 (60 s)
+     - 128 (109 s)
+     - 192
+   * - Calls without ``where``, regions :math:`R` (:math:`S=4`, :math:`k=3`)
+     - 64 (4 s)
+     - 256 (37 s)
+     - 512 (126 s)
+     - 1024
+
+The rows are the output of the ``range-table`` command of the maintenance tool,
+which reads the committed ``data/*.jsonl`` files; it is a script in the repository
+and not a ``pyfcstm`` command, so the documentation check does not run it.  The
+table above is its output, transcribed.
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py range-table --data docs/source/explanations/bmc_scaling/data
+
+.. figure:: time_flat.plot.py.svg
+   :alt: Build, solve and total seconds against states, bound and transitions per state for region-free machines.
+
+   Build time (blue), solve time (orange) and their sum (dashed grey), in seconds,
+   against leaf states :math:`N` (left), bound :math:`k` (middle) and transitions
+   per state :math:`T` (right) for region-free machines. All axes are
+   logarithmic. Black crosses are the retest totals of the same points. The figure
+   shows that the total follows the build time at every size and that solving
+   only catches up at large :math:`k`; it gives no closed form. Method: original
+   campaign, one fresh process per point, 56 processes at once, median of 3 runs
+   below 8 s and one run above (``original_measurements.jsonl``); crosses from
+   ``timing.jsonl``.
+
+.. figure:: time_regions.plot.py.svg
+   :alt: Build, solve and total seconds against regions, states per region and bound for machines with regions.
+
+   The same three curves for machines with regions, against regions :math:`R`
+   (left, :math:`S=4`, :math:`k=3`), states per region :math:`S` (middle,
+   :math:`R=4`, :math:`k=3`) and bound :math:`k` (right, :math:`R=4`,
+   :math:`S=40`). All axes are logarithmic. The figure shows that build and solve
+   time are of the same order for machines with regions and that both bend upward
+   as :math:`R` grows; it does not separate the :math:`R^2` construction term
+   from the linear terms. Method: as above; there are no retest points for
+   machines with regions.
+
+Nesting is limited by a fixed safety limit rather than by time. Owners nested 64
+levels deep with two regions each (128 regions) finished in 8.7 s. At 96 levels
+the witness replay stops at the simulator's group-initialization limit of 64
+groups (and ``pyfcstm bmc`` ends with exit status 1 and an unexpected-error
+traceback instead of a verdict). Region-free composite nesting reached 62 levels
+in 0.1 s; at 64 levels the compilation stops with ``macro-step expansion exceeded
+the stack-depth safety limit.`` These nesting points are original-campaign points
+with satisfiable queries at :math:`k=2`.
+
+**Retest spot check.** The 13 retest points that have an original counterpart,
+with the ratio retest over original:
+
+The table is the output of the ``compare-retest`` command of the maintenance
+tool, which reads the committed ``data/*.jsonl`` files; it is a script in the
+repository and not a ``pyfcstm`` command, so the documentation check does not run
+it.  The output is copied here from a run in the repository.  ``original`` and
+``retest`` are the total seconds of the two campaigns described above.
+
+.. code-block:: bash
+
+   python tools/measure_bmc_scaling.py compare-retest --data docs/source/explanations/bmc_scaling/data
+
+.. code-block:: text
+
+   configuration                       original    retest  ratio
+   {"N": 100, "T": 2} k=5                  0.7s      0.6s   0.79
+   {"N": 200, "T": 2} k=5                  1.5s      1.2s   0.79
+   {"N": 400, "T": 2} k=5                  3.3s      2.6s   0.78
+   {"N": 800, "T": 2} k=5                  7.7s      6.4s   0.82
+   {"N": 1600, "T": 2} k=5                21.7s     20.4s   0.94
+   {"N": 3200, "T": 2} k=5                62.1s     55.6s   0.90
+   {"N": 6400, "T": 2} k=5               216.4s    180.6s   0.83
+   {"N": 400, "T": 2} k=2                  1.1s      0.8s   0.75
+   {"N": 400, "T": 2} k=4                  2.5s      2.0s   0.79
+   {"N": 400, "T": 2} k=8                  5.6s      4.8s   0.85
+   {"N": 400, "T": 2} k=16                11.5s     10.7s   0.93
+   {"N": 400, "T": 2} k=32                30.1s     25.8s   0.86
+   {"N": 400, "T": 2} k=64               117.8s     94.0s   0.80
+
+The retest is faster in every point, with ratios between 0.75 and 0.94 and a
+median of 0.82. The original ran 56 processes at once, so each point shared
+memory bandwidth and caches with others; the retest ran alone, but on a machine
+that other jobs shared. Two further retest points did not finish: :math:`N=12800`
+exceeded the 420 s limit on the process, and :math:`N=400`, :math:`k=128` ended
+with ``unknown`` after the 250 s solver limit. Neither contradicts the original
+timeouts. Because every point is a single run, a ratio is a rough check and not
+a correction factor.
+
+How to keep a query computable
+------------------------------
+
+The task steps are in :doc:`/how_to/bmc/index`; this is the reasoning behind
+them.
+
+* **Count first, then run.** Count leaf states, transitions per state, written
+  variables and :math:`k`. With :eq:`bmc-scaling-nodes-flat` and
+  :eq:`bmc-scaling-calls-flat` you can estimate the formula and the build time.
+  Memory follows the nodes.
+* **Limit the variables that transitions write.** Each written variable adds
+  contexts in proportion to :math:`W\,(k-1)` (:eq:`bmc-scaling-contexts`). Write
+  only the variables the property needs.
+* **Deepen the bound step by step.** Start with a small :math:`k`. The formula
+  size grows linearly with it, and the solving step is the part that bends at
+  large :math:`k` (for :math:`N=400`, the share of time spent solving rose from
+  5% at :math:`k=2` to 63% at :math:`k=64` in the retest).
+* **Plan for a timeout.** Use the solver time limit and treat ``unknown`` or a
+  timeout as an expected outcome, not as an error in the model.
+* **Watch for mutually exclusive regions.** A handful of regions that exclude
+  each other can cost more than hundreds of independent ones
+  (:eq:`bmc-scaling-conflict-growth`). Shrink the exclusive part of the
+  property or verify those regions separately.
+
+.. _bmc-scaling-room:
+
+Known room for improvement
+--------------------------
+
+The maintainers collected optimisation ideas in `issue #600
+<https://github.com/HansBug/pyfcstm/issues/600>`_. None of them is part of the
+behaviour described here, and the page does not promise any of them. The ideas
+that matter for this page's measurements are: skipping the satisfiability checks
+that run on an empty constraint set during construction (the source of the
+contexts counted above), building one step of the transition relation and
+renaming it for the others, caching a compiled query, using fewer intermediate
+Z3 objects, finding where the :math:`R^2` construction term comes from, and
+trying other solver configurations or encodings for the exclusive-region case.
+
+What this page does not do
+--------------------------
+
+* It does not predict solving time; no closed form exists, and the literature
+  table lists why.
+* It does not cover real models: all measurements use synthetic models whose
+  guards depend on one input.
+* Its timings are single runs on a shared machine, with the original campaign
+  running 56 processes at once.
+* The cause of the :math:`R^2` construction term and of the changing cost of one
+  context are not explained.
+* Only one exclusive-region structure was measured.
+* It does not measure ``max_group_reentries``, multi-threaded solving or
+  witness decoding and replay.
+
+Equation ledger
+---------------
+
+.. list-table:: From equation to code, check and data
+   :header-rows: 1
+   :widths: 20 24 20 20 16
+
+   * - Label
+     - Claim
+     - Implementation
+     - Check and working command
+     - Data trace
+   * - ``bmc-scaling-nodes-flat``
+     - Node count of the ring, no variables
+     - ``compile_bmc_query``, ``BmcPropertyFormula.solve_formula``
+     - ``check-formulas``; the node-count script of the formula-size section
+     - ``formula_grid.jsonl``, ``timing.jsonl``
+   * - ``bmc-scaling-nodes-flat-vars``
+     - Node count with written variables
+     - same
+     - ``check-formulas``
+     - ``formula_grid.jsonl``
+   * - ``bmc-scaling-nodes-regions``
+     - Node count with regions (fitted)
+     - same
+     - ``check-formulas``
+     - ``formula_grid.jsonl``, ``original_measurements.jsonl``
+   * - ``bmc-scaling-bool-vars``
+     - Z3 boolean variables of the first check
+     - ``solve_bmc_property``, ``z3.Solver.statistics``
+     - ``check-formulas``
+     - ``formula_grid.jsonl``
+   * - ``bmc-scaling-size-order``
+     - Order of the formula size at fixed :math:`T`
+     - reading of the four equations above
+     - ``check-formulas`` (``nodes against T`` lines)
+     - ``original_measurements.jsonl``
+   * - ``bmc-scaling-calls-flat``
+     - Z3 calls to build the ring
+     - ``compile_bmc_query`` under ``cProfile``
+     - ``check-formulas``
+     - ``formula_grid.jsonl``, ``unit_cost.jsonl``
+   * - ``bmc-scaling-calls-regions``
+     - Z3 calls with regions, with an :math:`R^2` term
+     - same
+     - ``check-formulas``
+     - same
+   * - ``bmc-scaling-contexts``
+     - Contexts created per written variable
+     - ``pyfcstm.solver.logical.is_sat``
+     - ``check-formulas``
+     - ``variables.jsonl``, ``formula_grid.jsonl``
+   * - ``bmc-scaling-compile-time``
+     - Build time model
+     - ``compile_bmc_query``
+     - ``check-formulas`` (cost per context)
+     - ``variables.jsonl``, ``unit_cost_time.jsonl``
+   * - ``bmc-scaling-solve-time``
+     - Solve time per propagation
+     - ``solve_bmc_property``
+     - ``check-formulas``
+     - ``solve_law.jsonl``
+   * - ``bmc-scaling-propagation-fit``
+     - Logarithmic fit of solve time
+     - same
+     - ``check-formulas``
+     - ``solve_law.jsonl``
+   * - ``bmc-scaling-conflict-growth``
+     - Conflicts per added exclusive region
+     - ``solve_bmc_property``
+     - ``check-formulas``; the pigeonhole model of the worst-case section
+     - ``pigeonhole.jsonl``
+
+Where to go next
+----------------
+
+* :doc:`/how_to/bmc/index` for the commands that set time limits and bounds.
+* :doc:`/explanations/bmc_solving/index` for what the solver result means.
+* :doc:`/reference/bmc_query/index` for the query language used by every
+  measurement here.

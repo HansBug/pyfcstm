@@ -29,6 +29,12 @@ from pyfcstm.model import load_state_machine_from_text
 
 _FBMCQ_BLOCK_RE = re.compile(r"```fbmcq\n(.*?)\n```", re.DOTALL)
 _EXECUTABLE_BLOCK_RE = re.compile(r"```fbmcq-executable\n(.*?)\n```", re.DOTALL)
+_REGION_EXECUTABLE_BLOCK_RE = re.compile(
+    r"```fbmcq-region-executable\n(.*?)\n```", re.DOTALL
+)
+_REGION_INVALID_MODEL_BLOCK_RE = re.compile(
+    r"```fbmcq-region-invalid-model\n(.*?)\n```", re.DOTALL
+)
 _INVALID_PARSE_BLOCK_RE = re.compile(r"```fbmcq-invalid-parse\n(.*?)\n```", re.DOTALL)
 _INVALID_STRUCTURE_BLOCK_RE = re.compile(
     r"```fbmcq-invalid-structure\n(.*?)\n```", re.DOTALL
@@ -62,6 +68,48 @@ def fbmcq_model():
 
             [*] -> Idle;
             Idle -> Done :: Go;
+        }
+        """
+    )
+
+
+@pytest.fixture()
+def fbmcq_region_model():
+    """Return the model with regions used by the region Guide examples."""
+    return load_state_machine_from_text(
+        """
+        input int fault;
+        input int requested;
+        control int permit = 0;
+        output int motor = 0;
+
+        state Controller {
+            [*] -> Idle;
+
+            state Idle { during { motor = 0; } }
+
+            state Running {
+                region Safety {
+                    [*] -> Watching;
+                    state Watching {
+                        during {
+                            if [fault != 0] { permit = 0; } else { permit = 1; }
+                        }
+                    }
+                }
+                region Motion {
+                    [*] -> Off;
+                    state Off { during { motor = 0; } }
+                    state On {
+                        enter abstract Engage;
+                        during { motor = 1; }
+                    }
+                    Off -> On : if [permit != 0 && requested != 0];
+                    On -> Off : if [permit == 0 || requested == 0];
+                }
+            }
+
+            Idle -> Running : /Start;
         }
         """
     )
@@ -426,9 +474,13 @@ def test_fbmcq_guide_capability_boundaries_bind_and_lower(fbmcq_model):
 def test_fbmcq_guide_positive_blocks_parse_and_round_trip():
     """Every complete positive FBMCQ block parses and canonicalizes stably."""
     guide = llm.get_fbmcq_language_guide_prompt_for_llm()
-    examples = _FBMCQ_BLOCK_RE.findall(guide) + _EXECUTABLE_BLOCK_RE.findall(guide)
+    examples = (
+        _FBMCQ_BLOCK_RE.findall(guide)
+        + _EXECUTABLE_BLOCK_RE.findall(guide)
+        + _REGION_EXECUTABLE_BLOCK_RE.findall(guide)
+    )
 
-    assert len(examples) >= 7
+    assert len(examples) >= 12
     for example in examples:
         parsed = parse_bmc_query(example)
         assert parse_bmc_query(str(parsed)).to_canonical() == parsed.to_canonical()
@@ -492,3 +544,57 @@ def test_fbmcq_guide_invalid_blocks_fail_at_their_declared_stage(fbmcq_model):
         bind_bmc_query(query, model=fbmcq_model)
         with pytest.raises(UnsupportedBmcQuery):
             compile_bmc_query(fbmcq_model, query)
+
+
+@pytest.mark.unittest
+def test_fbmcq_guide_region_examples_bind_compile_solve_and_replay(
+    fbmcq_region_model,
+):
+    """Region Guide examples run through the real compile, solve and replay path."""
+    guide = llm.get_fbmcq_language_guide_prompt_for_llm()
+    examples = _REGION_EXECUTABLE_BLOCK_RE.findall(guide)
+
+    assert len(examples) >= 5
+    assert any('init state("Controller.Running");' in e for e in examples)
+    assert any("{Motion: [init]}" in e for e in examples)
+    assert any("where active(" in e for e in examples)
+    assert any("check cover" in e for e in examples)
+    for example in examples:
+        query = parse_bmc_query(example)
+        bind_bmc_query_structure(query)
+        bind_bmc_query(query, model=fbmcq_region_model)
+        formula = compile_bmc_query(fbmcq_region_model, query)
+        result = solve_bmc_property(formula)
+
+        assert result.status in {"sat", "unsat"}
+        if result.model is not None:
+            trace = decode_bmc_witness(formula, result.model)
+            assert replay_bmc_witness(fbmcq_region_model, trace).ok
+
+
+@pytest.mark.unittest
+def test_fbmcq_guide_region_invalid_blocks_fail_with_their_declared_code(
+    fbmcq_region_model,
+):
+    """Each region counterexample fails with the diagnostic code the Guide names for it."""
+    guide = llm.get_fbmcq_language_guide_prompt_for_llm()
+    examples = _REGION_INVALID_MODEL_BLOCK_RE.findall(guide)
+    expected_codes = {
+        "[done]": "invalid_start_position",
+        "{Speed: On}": "invalid_active_pattern",
+        "Controller.Idle{Motion: On}": "invalid_active_pattern",
+        "Motion: Flying": "invalid_start_position",
+    }
+
+    assert len(examples) == len(expected_codes)
+    for marker, code in expected_codes.items():
+        matching = [example for example in examples if marker in example]
+        assert len(matching) == 1, marker
+        # The Guide names the code in the paragraph right before the block.
+        before = guide.split(matching[0], 1)[0]
+        before = before.rsplit("```fbmcq-region-invalid-model", 1)[0]
+        assert f"`{code}`" in before.rstrip().rsplit("\n\n", 1)[-1]
+        query = parse_bmc_query(matching[0])
+        bind_bmc_query_structure(query)
+        with pytest.raises(InvalidBmcQuery, match=code):
+            bind_bmc_query(query, model=fbmcq_region_model)

@@ -1,0 +1,20 @@
+title: 'One region is done and another waits: the waiting one initializes while the done one stays done'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'W.Job{A: Q{A1: [done], A2: W2}, B: [init]}'
+  vars:
+    seq: 0
+    n: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: [done], A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 45
+      n: 10100

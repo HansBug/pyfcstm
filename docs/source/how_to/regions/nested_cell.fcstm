@@ -1,0 +1,25 @@
+input int go;
+
+state Plant {
+    region Line {
+        [*] -> Cell;
+        state Cell {
+            region Feed {
+                [*] -> Waiting;
+                state Waiting;
+                state Pushing;
+                Waiting -> Pushing : if [go != 0];
+            }
+            region Cut {
+                [*] -> Ready;
+                state Ready;
+                state Cutting;
+                Ready -> Cutting : if [go != 0];
+            }
+        }
+    }
+    region Monitor {
+        [*] -> Watching;
+        state Watching;
+    }
+}

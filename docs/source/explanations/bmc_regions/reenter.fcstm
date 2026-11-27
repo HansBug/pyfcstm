@@ -1,0 +1,20 @@
+input int go;
+state Root {
+    [*] -> O;
+    state O {
+        region A {
+            [*] -> P;
+            state P {
+                enter abstract OnEnter;
+                exit abstract OnExit;
+            }
+            P -> [*] : if [go != 0];
+        }
+        region B {
+            [*] -> Q;
+            state Q { enter abstract OnQ; }
+            Q -> [*] : if [go != 0];
+        }
+    }
+    O -> O;
+}

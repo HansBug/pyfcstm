@@ -48,6 +48,8 @@ If you already know the feature area, start from the task verb.
 * Need to prepare an environment or CI job: open :doc:`installation/index`.
 * Need a command chain: open :doc:`cli_workflows/index`.
 * Need to change source language content: open :doc:`dsl/index`.
+* Need several parts of one state to run side by side: open
+  :doc:`regions/index`.
 * Need runtime behavior: open :doc:`simulation/index`.
 * Need structure, diagnostics, or LLM repair feedback: open :doc:`inspect/index`.
 * Need generated code or templates: open :doc:`generation/index` or
@@ -153,6 +155,24 @@ the full semantic reasoning behind expansion.
 
 Next step: use :doc:`/reference/dsl/index` for exact syntax and
 :doc:`/explanations/dsl_semantics/index` when a form's meaning is not obvious.
+
+Region modeling tasks: :doc:`regions/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you are editing an FCSTM model and want one state to run several
+control parts in the same cycle, or you have a model that already does.
+
+Outcome: you can split a state into regions, nest them, share an event between
+them, choose their order, finish them together, cut the whole group from
+outside, read one region from another, and repair the errors that region models
+commonly produce. The page also lists where the region tasks of the other tools
+live.
+
+Non-goal: it does not explain why the rules are what they are or list every
+legal and illegal form.
+
+Next step: use :doc:`/explanations/region_semantics/index` for the rules and
+:doc:`/reference/dsl/index` for exact syntax.
 
 Simulation tasks: :doc:`simulation/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

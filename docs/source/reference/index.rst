@@ -44,6 +44,7 @@ If you know the subsystem, use the shortest lookup.
 
 * Command-facing behavior: :doc:`cli/index`.
 * Language forms: :doc:`dsl/index`.
+* Region model and configuration contract: :doc:`region_model/index`.
 * Report shape: :doc:`inspect_report/index`.
 * Diagnostic code: :doc:`diagnostics_codes/index`.
 * Runtime execution interface: :doc:`simulation/index`.

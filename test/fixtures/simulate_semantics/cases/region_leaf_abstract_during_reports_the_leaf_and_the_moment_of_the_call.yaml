@@ -1,0 +1,85 @@
+title: Abstract during actions of region leaves report their leaf and the configuration at the moment of the call
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+handlers:
+- action: Root.P.R1.A.WorkA
+  behavior: record_call
+- action: Root.P.R2.B.WorkB
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      w: 1
+    handler_calls:
+    - action: Root.P.R1.A.WorkA
+      state: Root.P.R1.A
+      stage: during
+      vars:
+        w: 0
+      active_leaf: Root.P.R1.A
+      call_stage: during
+      abstract_target: Root.P.R1.A.WorkA
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: [init]}'
+    - action: Root.P.R2.B.WorkB
+      state: Root.P.R2.B
+      stage: during
+      vars:
+        w: 1
+      active_leaf: Root.P.R2.B
+      call_stage: during
+      abstract_target: Root.P.R2.B.WorkB
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    vars:
+      w: 2
+    handler_calls:
+    - action: Root.P.R1.A.WorkA
+      state: Root.P.R1.A
+      stage: during
+      vars:
+        w: 0
+      active_leaf: Root.P.R1.A
+      call_stage: during
+      abstract_target: Root.P.R1.A.WorkA
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: [init]}'
+    - action: Root.P.R2.B.WorkB
+      state: Root.P.R2.B
+      stage: during
+      vars:
+        w: 1
+      active_leaf: Root.P.R2.B
+      call_stage: during
+      abstract_target: Root.P.R2.B.WorkB
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+    - action: Root.P.R1.A.WorkA
+      state: Root.P.R1.A
+      stage: during
+      vars:
+        w: 1
+      active_leaf: Root.P.R1.A
+      call_stage: during
+      abstract_target: Root.P.R1.A.WorkA
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+    - action: Root.P.R2.B.WorkB
+      state: Root.P.R2.B
+      stage: during
+      vars:
+        w: 2
+      active_leaf: Root.P.R2.B
+      call_stage: during
+      abstract_target: Root.P.R2.B.WorkB
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'

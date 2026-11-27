@@ -20,6 +20,7 @@ Generation-time helpers run inside pyfcstm; generated programs must remain self-
 | Generated guide | Both README Jinja files, rendered examples and executable documentation tests |
 | Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
 | Expression/getter emission | `config.yaml` role-aware expression/statement styles and `../../pyfcstm/render/render.py` context; generated action/guard tests |
+| Region behavior | The kernel part of `machine.py.j2`, the region sections of both guides, `test/template/python/test_region_runtime.py` and the shared `regions` fixtures |
 
 ## Runtime contracts
 
@@ -37,6 +38,20 @@ Sampling or execution failure preserves committed variables and `last_inputs`. S
 Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, per-step `inputs` and partial `expect.vars` / `expect.outputs`. Do not add parameter/input expectations or step-level parameter overrides. Tests must execute the generated runtime and compare values, lifecycle observations and failures with the simulator.
 
 Keep generated code Python 3.7+ and standard-library-only. Preserve exact input/parameter suffixes, `read_*` overrides, keyword-only `parameters` / `inputs`, read-only parameter/input snapshots and complete constructor forwarding in documented subclasses. Representative artifacts must pass Ruff check and format with an explicit Python 3.7 target.
+
+The `render_guard_lambda` macro lays every guard lambda out the way Ruff leaves it: a guard of up to 51 characters stays on the lambda line, one of up to 68 is wrapped once in parentheses, and a longer one is split in front of every `and` / `or` that is not inside brackets. Keep these widths in step with the indentation of the guard methods when that changes. Formatter-only rewrites that remain are non-blocking; the outputs are lint-clean and aligned with the simulator: a single operand that does not fit on a line (a parenthesised `||` chain of several terms in front of the give-way condition, for example), a long guard whose outermost operator is a conditional expression, which stays on the lambda line, the redundant outer parentheses that `=>`, `iff` and `xor` are rendered with, a float literal written with an exponent sign such as `1e+308`, an initializer of a variable with a very long hidden name, and long arithmetic in operation blocks and initializers, which is still emitted on one line.
+
+### Regions and the kernel
+
+Every model, with or without regions, is generated with the same kernel. It follows the region-aware part of `SimulationRuntime` (branch stacks, the chain of enclosing owners, group entry with rollback, owner continuation, the aspect ledger, the memoised stable-continuation search, hot start of a position tree, position-dependent event names), but it is written for the one model: states, regions and transitions are small integers, every state gets its own enter, during and transition-picking code with the actions, event checks and guards inline, and the tables that remain are indexed by those integers. Only the names a user passes in (hot-start text, event names) are looked up by string. The template declares `features: [region]` in `config.yaml`; remove that line and the renderer refuses models with regions again. Keep these invariants when changing it:
+
+- Behavior is the contract, not the text of the generated files: every shared fixture, including every `regions` fixture, and every test of the generated runtime must keep passing, and the alignment runner compares the exception class and message text and the position text, so a message of the kernel is copied from the simulator, never reworded.
+- A change to the simulator's region behavior is ported in the same change; do not let the two kernels drift. A behavior the fixtures do not pin down is checked with random models, with and without regions, against the simulator, including a hot start from the position of the oracle in the middle of a run.
+- Work is skipped only when it is provably not needed for the model, and each skip is checked by that differential run: the loop check of an advance is skipped for a model without pseudo states. The speculative trial of a candidate is never skipped, because an abstract hook of a failed trial would otherwise be seen.
+- State is read-only from outside: `vars` is a read-only view, the internal storage is underscore-private, and an interface that has no meaning for a model is not generated: a model with regions has no `current_state_path` or `current_state_name`.
+- The generated module stays self-contained, standard-library-only and Python 3.7+. Generated outputs must pass `ruff check`; the formatter may rewrite a few long hidden-variable names, long guard lambdas and float literals that the expression renderer produces.
+
+Verify with `pytest test/template/python` after `make tpl`, and with random models against the simulator for any change to the kernel.
 
 ## Documentation maintenance
 

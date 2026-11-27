@@ -1,57 +1,7 @@
 {% set state_items = model.walk_states() | list -%}
-{% set event_ns = namespace(items=[]) -%}
-{% for state in state_items -%}
-{% for event in state.events.values() -%}
-{% set event_ns.items = event_ns.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor -%}
-{% set abstract_ns = namespace(rows=[]) -%}
-{% set action_scan = namespace(items=[]) -%}
-{% for scan_state in state_items -%}
-{% for scan_group in [
-    scan_state.list_on_enters(with_ids=True),
-    scan_state.list_on_durings(aspect=None, with_ids=True),
-    scan_state.list_on_exits(with_ids=True),
-    scan_state.list_on_durings(aspect='before', with_ids=True),
-    scan_state.list_on_durings(aspect='after', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, scan_item in scan_group -%}
-{% set action_scan.items = action_scan.items + [scan_item] -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor -%}
-{% set action_ref_hop_limit = (action_scan.items | length) + 1 -%}
-{% for state in state_items -%}
-{% for group in [
-    state.list_on_enters(with_ids=True),
-    state.list_on_durings(aspect=None, with_ids=True),
-    state.list_on_exits(with_ids=True),
-    state.list_on_durings(aspect='before', with_ids=True),
-    state.list_on_durings(aspect='after', with_ids=True),
-    state.list_on_during_aspects(aspect='before', with_ids=True),
-    state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, item in group -%}
-{% set resolved = namespace(item=item) -%}
-{% for _ in range(action_ref_hop_limit) -%}
-{% if resolved.item.ref is not none -%}
-{% set resolved.item = resolved.item.ref -%}
-{% endif -%}
-{% endfor -%}
-{% if resolved.item.is_abstract and resolved.item.func_name not in abstract_ns.rows | map(attribute='func_name') | list -%}
-{% set abstract_ns.rows = abstract_ns.rows + [{
-    'func_name': resolved.item.func_name,
-    'hook_name': hook_field_id_name(resolved.item),
-    'owner_path': action_owner_path(resolved.item),
-    'stage': resolved.item.stage,
-    'aspect': resolved.item.aspect,
-}] -%}
-{% endif -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor -%}
+{% set event_ns = namespace(items=event_paths(model)) -%}
+{% set abstract_ns = namespace(rows=hook_rows(model)) -%}
+{% set action_ns = namespace(rows=action_rows(model)) -%}
 {% set m = machine_class_name(model) -%}
 {% set a = machine_macro_name(model) -%}
 
@@ -59,7 +9,7 @@
 
 本目录提供自包含的 C++98 封装及 C99 执行内核。将应用代码放在 `app.cpp` 中；模型行为变化时修改 DSL 并重新生成状态机文件。生成程序不依赖 Python 或第三方运行时库。
 
-**生成文件：**通过 `machine.hpp` 和 `MachineWrapper`接入应用。`machine.c` 和 `machine.cpp` 是生成的实现文件。`README.md` 提供对应英文指南。依次阅读[快速开始](#quick-start)、[接入说明](#integration)、[恢复](#recovery)和[编译](#build)。
+**生成文件：**通过 `machine.hpp` 和 `MachineWrapper`接入应用。`machine.c` 和 `machine.cpp` 是生成的实现文件。`README.md` 提供对应英文指南。封装背后的原生状态机类型是不透明（opaque）的静态定长存储：只能通过封装读取它。{% if model.has_regions %}此模型声明了区域（region），因此没有唯一的当前状态，请用配置值读取它的位置。{% else %}此模型没有声明区域，因此它的位置始终是唯一的当前状态。{% endif %}依次阅读[快速开始](#quick-start)、[接入说明](#integration)、[恢复](#recovery)、[配置值](#configuration)和[编译](#build)。
 
 <a id="quick-start"></a>
 
@@ -124,7 +74,7 @@ int main(void)
 {% endfor %}    machine.set_input_provider(&provider, &data);
 {% endif %}{% if abstract_ns.rows %}
     Wrapper::Hooks hooks = {{ m | upper }}_HOOKS_INIT;
-{% for row in abstract_ns.rows %}    hooks.{{ row['hook_name'] }} = app_action;
+{% for row in abstract_ns.rows %}    hooks.{{ row['hook_field'] }} = app_action;
 {% endfor %}    machine.set_hooks(&hooks, &data);
 {% endif %}
     /* Keep this instance and AppData alive for subsequent host-scheduled cycles. */
@@ -190,9 +140,9 @@ C++ 的输入、动作及事件回调沿用 `Wrapper::InputProvider`、`Wrapper:
 ### 已声明的动作
 
 {% if abstract_ns.rows %}
-| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |
+| Hook 字段 | DSL 动作路径 | 所属状态或区域 | 阶段 |
 | --- | --- | --- | --- |
-{% for row in abstract_ns.rows %}| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% for row in abstract_ns.rows %}| `{{ row['hook_field'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
 {% endfor %}
 {% else %}
 此模型未声明抽象动作。
@@ -240,7 +190,7 @@ if (!machine.cycle_with_inputs(inputs)) {
 <!-- example:initial-values -->
 
 ```cpp
-{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = 1;
+{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = {{ 0 if item.name in model.forced_variables else 1 }};
 options.vars_present.{{ item.name | to_c_identifier }} = 1;
 {% endfor %}{% else %}/* This model has no persistent variables to preset. */
 {% endif %}
@@ -248,12 +198,28 @@ options.vars_present.{{ item.name | to_c_identifier }} = 1;
 
 ### 热启动
 
-此片段接在快速开始的成功周期之后，获取同一检查点的状态、全部持久值和参数，并在不重放进入动作的情况下恢复。恢复已保存的检查点时使用保存的值，不要用当前默认参数或新配置替代检查点参数。组合状态目标从初始转换等待模式开始。热启动保留已挂载的输入提供器、Hook，失败则保留原运行状态。检查点获取和恢复必须与实例的其他访问串行执行。
+此片段接在快速开始的成功周期之后，获取同一检查点的{% if model.has_regions %}配置（状态机及每个区域的位置）{% else %}状态{% endif %}、全部持久值和参数，并在不重放进入动作的情况下恢复。恢复已保存的检查点时使用保存的值，不要用当前默认参数或新配置替代检查点参数。组合状态目标从初始转换等待模式开始。热启动保留已挂载的输入提供器和 Hook，失败则保留原运行状态。检查点获取和恢复必须与实例的其他访问串行执行。{% if model.has_regions %}含区域的模型没有 `current_state_id()`：用 `get_configuration` 获取位置，用 `hot_start_at` 恢复。机器结束后 `get_configuration` 失败。普通的 `hot_start` 仍可接受一个位于所有区域之外的状态 id。{% else %}`get_configuration` 与 `hot_start_at` 可以通过配置值恢复同一个检查点，见[配置值](#configuration)。{% endif %}{% set hidden_ns = namespace(found=false) %}{% for item in model.persistent_variables.values() %}{% if item.name[:2] == '__' %}{% set hidden_ns.found = true %}{% endif %}{% endfor %}{% if hidden_ns.found %}
+
+名字以 `__` 开头的变量由模型转换为强制转换、`active()` 查询等构造生成。它们是模型的普通变量：随 `Vars` 的其余部分一起复制，并从保存的检查点取值，使它们与保存的位置保持一致。{% if model.forced_variables %}`__forced_` 变量属于强制转换：状态机只在一个周期内部使用它们，所以在每个检查点上它们都是 `0`。名字形如 `__forced_gate_<n>` 的状态是生成的伪状态，周期只会从中经过。{% endif %}{% endif %}
 
 <!-- example:hot-start -->
 
 ```cpp
-Wrapper::StateId state = machine.current_state_id();
+{% if model.has_regions %}Wrapper::Configuration configuration;
+Wrapper::Vars initial_vars = *machine.vars();
+Wrapper::Parameters parameters;
+memset(&parameters, 0, sizeof(parameters));
+{% for item in model.parameters.values() %}parameters.{{ item.name | readonly_value_identifier }} = machine.get_param_{{ item.name | readonly_value_identifier }}();
+{% endfor %}
+if (!machine.get_configuration(&configuration)) {
+    fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
+    return 3;
+}
+if (!machine.hot_start_at(configuration, initial_vars, parameters)) {
+    fprintf(stderr, "hot start failed: %s\n", machine.last_error());
+    return 3;
+}
+{% else %}Wrapper::StateId state = machine.current_state_id();
 Wrapper::Vars initial_vars = *machine.vars();
 Wrapper::Parameters parameters;
 memset(&parameters, 0, sizeof(parameters));
@@ -267,11 +233,60 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
     fprintf(stderr, "hot start failed: %s\n", machine.last_error());
     return 3;
 }
+{% endif %}```
+
+<a id="configuration"></a>
+
+### 配置值
+
+`Wrapper::Configuration` 是一个说明状态机位置的普通值：`at` 是位于所有区域之外的最深活动状态，`regions[r]` 保存区域 `r` 的最深活动状态；区域仍在等待初始转换时为 `{{ a }}_REGION_SLOT_PENDING`，区域结束后为 `{{ a }}_REGION_SLOT_DONE`。全零配置表示尚未做自身初始化的根状态。可以随意复制；合法配置只有唯一的表示，因此可用 `memcmp` 比较两个配置。也可以直接用 `operator==` 与 `operator!=` 比较两个配置。`validate_configuration` 接受或拒绝一个值，并把 `kind`（`{{ a }}_CONFIGURATION_ERROR_*` 宏之一）、字节 `position` 和 `message` 填入 `Wrapper::ConfigurationError`；错误参数可以省略。
+
+查询函数是静态的封装方法，不需要状态机：`region_status` 对某个区域 id 返回 `{{ a }}_REGION_STATUS_INACTIVE`、`_PENDING`、`_LIVE` 或 `_DONE`，`is_active` 判断某个状态或其后代是否活动，`leaves` 写出活动叶状态 id 并返回其个数（传入 `NULL` 缓冲区和容量 `0` 即可只计数）。{% if model.has_regions %}区域 id 见[区域 ID](#region-ids) 表。{% else %}此模型没有区域，所以每个配置都只有 `at` 一个位置。{% endif %}
+
+文本形式与 pyfcstm 仿真器输出和接受的相同，例如 `Root.Run{Motion: Move, Guard: [done]}`：先写位于所有区域之外的最深状态的路径，再为每个拥有区域的状态写一个花括号块，块内列出各区域及其最深状态相对该区域的路径。`[init]` 表示区域尚未执行初始转换，`[done]` 表示区域已结束。`format_configuration` 把文本和结尾的 NUL 写入你的缓冲区，按给定大小截断，并返回完整长度（返回值不小于 `size` 即表示被截断）；无效配置写入空字符串。`parse_configuration` 成功时返回 1 并填充配置，失败时返回 0、填充错误信息且保持配置不变；文本中省略的区域视为待初始化。为 `machine.c`、`machine.cpp` 和所有使用方定义 `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` 可去掉 `format_configuration`、`parse_configuration` 及其名称表；值类型、校验函数和查询函数保留，此时 `message` 为空。
+
+此片段接在快速开始的成功周期之后：打印位置，再解析回来，并检查往返后得到相同的值。把解析得到的配置连同同一检查点的变量和参数传给 `hot_start_at`，即可从保存的文本恢复。
+
+<!-- example:configuration -->
+
+```cpp
+Wrapper::Configuration current;
+Wrapper::Configuration parsed;
+Wrapper::ConfigurationError parse_error;
+char text[512];
+size_t length;
+if (!machine.get_configuration(&current)) {
+    fprintf(stderr, "The machine has ended and has no configuration\n");
+    return 4;
+}
+length = Wrapper::format_configuration(current, text, sizeof(text));
+if (length >= sizeof(text)) {
+    fprintf(stderr, "The configuration text needs %lu bytes\n", (unsigned long)(length + 1u));
+    return 4;
+}
+printf("configuration = %s\n", text);
+if (!Wrapper::parse_configuration(text, &parsed, &parse_error)) {
+    fprintf(stderr, "configuration error %d at byte %lu: %s\n", parse_error.kind, (unsigned long)parse_error.position, parse_error.message);
+    return 4;
+}
+printf("round trip equal = %d\n", memcmp(&parsed, &current, sizeof(parsed)) == 0);
 ```
 
 ## 结果、失败与生命周期
 
 初始化和周期入口成功返回 1，失败返回 0，失败后立即读取 `last_error()`。C++ 构造函数通过 `last_error()` 报告失败，不抛异常。采样、验证或执行错误不会提交持久值和 `last_inputs`；修正原因后可重试，届时重新采样。外部读取、日志和动作副作用无法撤销。成功的 Delta 周期保持持久状态，同时发布本拍输入快照。
+
+决定整个周期的预先搜索忠实移植自仿真器，限制也相同：嵌套深度 64、组嵌套 64 和 1000 步。周期失败时，`last_error()` 会给出下列类别之一：
+
+| 消息开头 | 原因 | 处理方式 |
+| --- | --- | --- |
+| `Speculative search exceeded the capacity safety limit` | 搜索所需空间超过 `{{ a }}_ARENA_CAPACITY`（配置数或工作项数）或 `{{ a }}_TRAIL_CAPACITY`（嵌套检查数）；消息会点名对应的宏 | 在所有编译单元把被点名的宏定义成更大的值，见[容量宏](#capacity) |
+| `Speculative DFS exceeded the structural stack-depth safety limit`、`Group initialization nested deeper than the structural safety limit` 或 `Speculative DFS exceeded the step safety limit` | 模型的嵌套，或伪状态与转换的链，超出了仿真器固定的限制 | 这些限制不可配置；请去掉模型中无界的链 |
+| `Cannot reach a stoppable state in the same cycle; suspected loop.` | 经过伪状态或重新进入的闭环永远到不了周期可以停下的状态；这是错误，不是 Delta 周期 | 增加通向可停叶状态的退出、能终止的守卫，或把驱动退出与重新进入的事件分开 |
+| `Invalid event id`、`Machine is not initialized` 或 `Invalid state id` | 调用本身有误 | 修正调用方 |
+| `Missing input provider`、`Input provider failed` 或 `must be finite` | 输入采样或传入的值失败 | 修正提供器或取值后重试 |
+
+配置值与配置文本的失败通过 `Wrapper::ConfigurationError` 报告（见[配置值](#configuration)），不经过 `last_error()`。
 
 成功后通过 `vars()` 读取 control/output。返回值指向实例存储，不是历史副本；保留历史值应复制 `Vars`。input getter 仅在周期内有效，周期外通过 `last_inputs()` 读取，保留历史时复制 `Inputs`。上下文指针仅在回调期间有效。getter 要求实例已初始化且仍存活，结束后的周期调用不会采样。封装按值拥有底层实例，不要把其 `native_handle()` 传给 C 的销毁函数。
 
@@ -279,7 +294,7 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
 
 | 类型 | 用途 |
 | --- | --- |
-| `Wrapper::Machine` | C 实例类型；C++ 回调中的 native 指针使用此类型 |
+| `Wrapper::Machine` | C 实例类型；C++ 回调中的 native 指针使用此类型；不透明的静态定长存储 |
 | `Wrapper::InitOptions` | 冷启动值和存在标记 |
 | `Wrapper::Parameters` | 完整参数快照 |
 | `Wrapper::Inputs` | 完整逐周期输入快照 |
@@ -290,6 +305,9 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
 | `Wrapper::Int` | 有符号 64 位整数别名 |
 | `Wrapper::StateId` | 生成的状态标识 |
 | `Wrapper::EventId` | 生成的事件标识 |
+| `Wrapper::Configuration` | 位置值：`at` 加每个区域一个槽；可复制，可用 `memcmp` 比较 |
+| `Wrapper::ConfigurationError` | 校验与解析的拒绝报告：`kind`、字节 `position`、`message` |
+| `Wrapper::RegionId` / `Wrapper::RegionStatus` | 区域标识及其状态码 |
 
 ### 函数
 
@@ -302,6 +320,9 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
 | `init()` | 使用 DSL 默认值冷初始化或重置 |
 | `hot_start(state, vars, parameters)` | 恢复完整运行检查点 |
 | `hot_start(state, vars)` / `hot_start(state, vars_pointer)` | 仅无 param 模型可使用的完整持久值恢复入口 |
+| `hot_start_at(configuration, vars, parameters)` | 通过配置值恢复完整运行检查点 |
+| `hot_start_at(configuration, vars)` | 同上，适用于没有 param 的模型 |
+| `get_configuration(configuration_pointer)` | 写出当前位置；机器结束后返回 0 |
 | `set_input_provider(provider, user_data)` | 复制输入回调表，NULL 清空 |
 | `set_hooks(hooks, user_data)` | 借用动作表，NULL 卸载 |
 | `cycle()` | 使用已安装的 input reader 执行周期 |
@@ -310,24 +331,31 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
 | `vars()` | 读取持久状态 |
 | `is_ended()` | 判断是否结束 |
 | `last_cycle_was_delta()` | 判断是否为成功的无进展周期 |
-| `current_state_id()` | 当前状态标识（等待初始进入时可能是组合状态），或无效标记 |
+{% if not model.has_regions %}| `current_state_id()` | 当前状态标识（等待初始进入时可能是组合状态），或无效标记 |
 | `current_state_path()` | 诊断路径，结束后为 NULL |
-| `last_error()` | 错误文本或空字符串 |
+{% endif %}| `last_error()` | 错误文本或空字符串 |
 | `native_handle()` | 显式互操作时借用底层 C 实例 |
 | `cycle(event) / cycle(events, count)` | 提交显式生成事件标识 |
 | `cycle_with_inputs(inputs, events, count)` | 同时提供输入和显式事件标识 |
+| `Wrapper::region_status(configuration, region)` | 静态；某个区域的 `INACTIVE`、`PENDING`、`LIVE` 或 `DONE` |
+| `Wrapper::is_active(configuration, state)` | 静态；状态或其后代活动时非零 |
+| `Wrapper::leaves(configuration, leaves, capacity)` | 静态；写出活动叶状态 id 并返回其个数 |
+| `Wrapper::validate_configuration(configuration, error)` | 静态；合法返回 1，否则返回 0 并填充 `error`（默认 `NULL`） |
+| `Wrapper::format_configuration(configuration, buffer, size)` | 静态；写出文本形式并返回完整长度；定义 `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` 时省略 |
+| `Wrapper::parse_configuration(text, configuration, error)` | 静态；解析文本形式，失败时配置不变；定义 `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` 时省略 |
+| `operator==` / `operator!=` | 比较两个配置（声明在全局作用域） |
 
-各 input/param 的准确 getter 名称见接入章节。不带参数的热启动重载仅适用于没有 param 的模型。即使头文件公开了 frame、stack 和临时存储布局，这些字段仍由运行时管理。
+各 input/param 的准确 getter 名称见接入章节。不带参数的热启动重载仅适用于没有 param 的模型。配置查询函数不需要状态机。{% if model.has_regions %}含区域的模型不会生成 `current_state_id()` 和 `current_state_path()`，请使用 `get_configuration`。{% endif %}
 
 ### `Wrapper::ExecutionContext`
 
 | 字段 | 含义 |
 | --- | --- |
-| `state_id` | 对外报告的调用上下文状态标识；用生成的 `{{ machine_macro_name(model) }}_STATE_*` 宏比较 |
+| `state_id` | 调用点所报告的状态；用生成的 `{{ machine_macro_name(model) }}_STATE_*` 宏比较。区域内的动作报告它自己的状态；aspect 动作报告它所包裹的全部对象共有的最深状态，区域的 aspect 在该区域还没有活动状态时报告其拥有者 |
 | `vars` | 指向持久变量快照的只读指针 |
 | `action_id` | 解析后的 abstract 目标 action 标识；用生成的 `{{ machine_macro_name(model) }}_ACTION_*` 宏比较 |
 | `action_stage_id` | 这个调用点对外报告的生命周期阶段标识；用 `{{ machine_macro_name(model) }}_STAGE_*` 比较 |
-| `active_leaf_state_id` | 调用点可见的当前 active leaf 状态标识 |
+| `active_leaf_state_id` | 每个调用点上都与 `state_id` 相同；含区域的模型没有唯一的活动叶状态，请用 `get_configuration` 读取位置 |
 | `call_stage_id` | 解析 `ref` 链之前具体调用点的生命周期阶段标识 |
 | `abstract_target_id` | 解析 `ref` 链后的 abstract 目标 action 标识 |
 | `named_ref_id` | 调用点本身是具名 `ref` 时为该具名引用 action 标识，否则为 `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`；从匿名 `ref` 起始的引用链，无论中途经过多少具名动作都保持无效值 |
@@ -343,6 +371,26 @@ if (!machine.hot_start(state, initial_vars, parameters)) {
 ### 部署剖面
 
 `MachineWrapper` 按值拥有 C 运行时，可存放于应用拥有者、栈或静态存储中，不能复制。`PYFCSTM_GENERATED_NO_HEAP` 移除 C 堆分配辅助声明和定义，不改变封装构造方式。为 C 内核、封装和应用一致定义该宏；无堆不代表完全独立运行环境。
+
+<a id="capacity"></a>
+
+### 容量宏
+
+状态机的私有存储是静态预留的，因此不需要堆。`machine.h`（由 `machine.hpp` 包含）中的两个公开宏决定它的大小，默认值适合此模型：
+
+| 宏 | 限制对象 | 何时调大 |
+| --- | --- | --- |
+| `{{ a }}_ARENA_CAPACITY` | 一个周期的一次决策可以检查多少个配置（及待处理工作项） | 周期因 `Speculative search exceeded the capacity safety limit` 失败，且消息点名了此宏 |
+| `{{ a }}_TRAIL_CAPACITY` | 最多可嵌套多少层检查 | 同一失败消息点名了此宏 |
+
+`{{ a }}_STORAGE_BYTES` 由这两个宏推导。由于状态机的大小依赖它们，修改后的值必须对 `machine.c`、`machine.cpp` 和所有包含 `machine.hpp` 的源文件保持一致，例如通过编译器选项；不一致会让两侧得到不同的状态机大小。能容纳在默认值内的模型无需修改，低于模型所需的值会让周期以上述消息失败，而不会产生错误行为。 一个状态机对象的大小就是 `{{ a }}_STORAGE_BYTES` 字节，并随模型的状态数与区域数增长（约 400 个状态的模型会达到数兆字节），所以大模型的状态机应放在静态存储或堆上而不是栈上，放置前先查看 `sizeof`。 一次进入多层嵌套的区域所有者时，每一层都要计算两遍，所以首次进入这样一条嵌套链的那个周期，耗时会随层数翻倍：10 层约 0.04 秒，12 层约 0.5 秒，之后的周期不受影响。
+
+```bash
+gcc -std=c99 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -Wall -Wextra -pedantic -O2 -c machine.c -o machine.o
+g++ -std=c++98 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c machine.cpp -o machine_cpp.o
+g++ -std=c++98 -D{{ a }}_ARENA_CAPACITY=480 -D{{ a }}_TRAIL_CAPACITY=96 -fno-exceptions -fno-rtti -Wall -Wextra -pedantic -O2 -c app.cpp -o app.o
+g++ machine.o machine_cpp.o app.o -lm -o app
+```
 
 ### 单命令 C++ Wrapper 构建
 
@@ -450,7 +498,22 @@ C/C++ 部署前运行 `pyfcstm inspect`，检查默认 C/C++ deployment-profile 
 {% for state in state_items -%}
 | `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
-### 事件 ID
+{% if model.has_regions %}<a id="region-ids"></a>
+
+### 区域 ID
+
+区域按拥有者依状态 id 顺序编号，同一拥有者内按声明顺序编号。这些 id 用于 `region_status`，也用于索引 `Configuration.regions`。
+
+| 区域路径 | 宏 | 数值 |
+| --- | --- | ---: |
+{% set region_ns = namespace(index=0) -%}
+{% for state in state_items -%}
+{% for region in state.regions.values() -%}
+| `{{ region.path | join('.') }}` | `{{ a }}_REGION_{{ region.path | to_c_path_identifier }}` | `{{ region_ns.index }}` |
+{% set region_ns.index = region_ns.index + 1 -%}
+{% endfor -%}
+{% endfor %}
+{% endif %}### 事件 ID
 
 {% if event_ns.items %}
 | 事件路径 | 宏 | 数值 |
@@ -463,16 +526,10 @@ C/C++ 部署前运行 `pyfcstm inspect`，检查默认 C/C++ deployment-profile 
 {% endif %}
 ### 动作 ID
 
-{% if action_scan.items %}
-{% set action_doc_ns = namespace(rows=[]) -%}
-{% for action in action_scan.items -%}
-{% if action.func_name not in action_doc_ns.rows | map(attribute='func_name') | list -%}
-{% set action_doc_ns.rows = action_doc_ns.rows + [{'func_name': action.func_name}] -%}
-{% endif -%}
-{% endfor -%}
-| Action path | Macro | Value |
+{% if action_ns.rows %}
+| 动作路径 | 宏 | 数值 |
 | --- | --- | ---: |
-{% for row in action_doc_ns.rows -%}
+{% for row in action_ns.rows -%}
 | `{{ row['func_name'] }}` | `{{ machine_macro_name(model) }}_ACTION_{{ row['func_name'].split('.') | to_c_path_identifier }}` | `{{ loop.index0 }}` |
 {% endfor %}
 {% else %}
@@ -486,7 +543,7 @@ C/C++ 部署前运行 `pyfcstm inspect`，检查默认 C/C++ deployment-profile 
 | `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
 | `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
-只有这些表里的 canonical 宏s 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage 宏或 canonical path-boundary-safe 标识等保留 public 宏，模板会故意省略它。
+只有这些表里列出的规范宏（canonical macro）是稳定保证的公开契约。如果头文件同时为简单且不冲突的路径生成较短的兼容别名，应把它们视为可选便利名：一旦别名会与 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、无效 id 哨兵、阶段宏或按路径边界安全的规范标识等保留的公开宏冲突，模板会故意省略它。
 
 ### 规范化模型文本
 

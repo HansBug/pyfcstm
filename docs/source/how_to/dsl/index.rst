@@ -16,8 +16,9 @@ repairing common FCSTM DSL shapes. Each recipe states when to use the feature,
 what to write, how to verify it, what diagnostics to expect, and where to read
 more.
 
-A command that mentions a checked example is intended to run from the repository
-root.
+A command that names a checked example writes its path under ``docs/source``,
+so run it from the repository root. A command that needs a model of its own
+creates the file first, in the current directory.
 
 .. _dsl-small-valid-model-task:
 
@@ -34,17 +35,15 @@ that composite.
 
 Verify it:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
-
-Expected summary:
-
-.. code-block:: text
-
-   status: ok
-   root: Thermostat
-   diagnostics: 0 errors / 0 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   ...
+     status: ok
+     root: Thermostat
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
 
 Common mistake: putting a transition before both endpoint states exist. Keep the
 state declarations and transitions inside the same owning composite unless the
@@ -92,39 +91,52 @@ The fix is either ``Outside -> Parent;`` or moving the child-targeting
 transition inside ``Parent``. Read :ref:`dsl-state-forms` and
 :ref:`dsl-ownership-name-resolution` for the exact rule.
 
-If you save that bad model as ``/tmp/nested_target_invalid.fcstm``, verify the
-failure with:
+To see the failure, write that model to a file (the same model without the
+comment) and inspect it. The command fails, so its exit status follows:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i /tmp/nested_target_invalid.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   Invalid state machine model ... Unknown to state 'ChildB' of transition:
+   $ printf '%s\n' \
+     'state Root {' \
+     '    [*] -> Outside;' \
+     '    state Outside;' \
+     '    state Parent {' \
+     '        [*] -> ChildA;' \
+     '        state ChildA;' \
+     '        state ChildB;' \
+     '    }' \
+     '    Outside -> ChildB;' \
+     '}' > nested_target_invalid.fcstm
+   $ pyfcstm inspect -i nested_target_invalid.fcstm --format human --color never
+   Invalid state machine model in nested_target_invalid.fcstm: Unknown to state 'ChildB' of transition:
    Outside -> ChildB; (line 9)
+   $ echo $?
+   1
 
 Verify a checked hierarchy example:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: HierarchyDemo
-   diagnostics: 0 errors / 1 warnings / 1 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+   ...
+     status: warning
+     root: HierarchyDemo
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'execution_log' does not affect any transition guard.
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+     Transition 'HierarchyDemo.Parent' -> '[*]' has no event or guard.
+   ...
 
 Pseudo states are route-only leaf helpers, not business states with lifecycle
 behavior. The legacy pseudo-state example is kept as a checked resource:
 
 .. literalinclude:: ../../tutorials/dsl/pseudo_state_demo.fcstm
    :language: fcstm
-   :caption: Pseudo-state routing example; expected diagnostics: one ``W_UNREFERENCED_VAR`` and three ``I_TRANSITION_NEVER_EVENT_TRIGGERED`` notes.
+   :caption: Pseudo-state routing example.
 
 .. _dsl-event-scopes-task:
 
@@ -154,7 +166,7 @@ Checked examples:
 
 .. literalinclude:: ../../tutorials/dsl/event_scoping_complete.fcstm
    :language: fcstm
-   :caption: Complete event scopes; expected diagnostics: ``W_UNREFERENCED_VAR`` for the demonstration counter.
+   :caption: Complete event scopes; expected diagnostics: 11 warnings, mostly ``W_UNREACHABLE_STATE`` and ``W_UNREACHABLE_TRANSITION``, shown below.
 
 .. figure:: ../../tutorials/dsl/event_scoping_complete.fcstm.puml.svg
    :alt: Event scope state diagram
@@ -166,11 +178,41 @@ Checked examples:
    namespace. Inspect ``events[].qualified_name`` and ``events[].scope`` to
    confirm the same ownership that the diagram labels suggest.
 
-Verify and inspect event ownership:
+Verify it. The model demonstrates the three spellings and is not a machine in
+which every state can be reached, which is why the report is full of warnings;
+the ``unreachable:`` line counts what nothing enters:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format human --color never
+   ...
+     unreachable: 3 leaf states / 6 transitions
+   ...
+     diagnostics: 0 errors / 11 warnings / 0 infos
+   ...
+   [WARN] W_UNREACHABLE_STATE
+     State 'System.ModuleB.B1' is unreachable from the root entry path.
+   ...
+
+Then inspect event ownership:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_scoping_complete.fcstm --format json
+   ...
+     "events": [
+       {
+         "is_declared": false,
+         "is_used": true,
+         "qualified_name": "System.GlobalEvent",
+         "scope": "absolute",
+   ...
+         "qualified_name": "System.ModuleA.A1.LocalEvent",
+         "scope": "local",
+   ...
+         "qualified_name": "System.ModuleA.ChainEvent",
+         "scope": "chain",
+   ...
 
 In JSON, check ``events[].qualified_name`` and ``events[].scope``. For readability, prefer
 ``: /Start`` because it separates the event-scope ``:`` token from the absolute
@@ -208,9 +250,15 @@ Key points demonstrated by the file:
 
 Verify it:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/operation_blocks_complete.fcstm --format human --color never
+   ...
+     status: ok
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
+   No diagnostics.
 
 Expected diagnostic count is zero. Common mistake: if you see ``E_UNDEFINED_VAR`` with
 ``refs.is_temporary=true``, the usual fix is to assign the temporary before its
@@ -266,16 +314,14 @@ boolean xor. See :ref:`dsl-expression-reference` and
 
 Verify the checked expression example:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: ExpressionConditionTernary
-   diagnostics: 0 errors / 0 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/expression_condition_ternary.fcstm --format human --color never
+   ...
+     root: ExpressionConditionTernary
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
 
 .. _dsl-lifecycle-task:
 
@@ -341,16 +387,20 @@ Review the diagrams when you need lifecycle ordering:
 
 Verify the checked lifecycle example:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: AbstractReferenceDemo
-   diagnostics: 0 errors / 0 warnings / 3 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/abstract_reference_demo.fcstm --format human --color never
+   ...
+     root: AbstractReferenceDemo
+   ...
+     diagnostics: 0 errors / 0 warnings / 3 infos
+   ...
+   [INFO] I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   ...
+   [INFO] I_UNREFERENCED_VAR_MAYBE_ABSTRACT
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+   ...
 
 .. _dsl-aspect-task:
 
@@ -391,16 +441,21 @@ See :ref:`dsl-during-aspect-semantics` for the detailed boundary.
 
 Verify the checked aspect example:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: HierarchyDemo
-   diagnostics: 0 errors / 1 warnings / 1 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/hierarchy_execution.fcstm --format human --color never
+   ...
+     status: warning
+     root: HierarchyDemo
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'execution_log' does not affect any transition guard.
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+     Transition 'HierarchyDemo.Parent' -> '[*]' has no event or guard.
+   ...
 
 .. _dsl-forced-transition-task:
 
@@ -413,7 +468,7 @@ effects.
 
 .. literalinclude:: ../../tutorials/dsl/forced_transitions.fcstm
    :language: fcstm
-   :caption: Forced transition example; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings for demonstration-only variables.
+   :caption: Forced transition example; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings for demonstration-only variables and one ``W_UNREACHABLE_TRANSITION``.
 
 .. figure:: ../../tutorials/dsl/forced_transitions.fcstm.puml.svg
    :alt: Forced transition expansion diagram
@@ -445,17 +500,25 @@ hide behavior; write explicit normal transitions when effects are required.
 
 Verify the expansion size:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: System
-   transitions: 17
-   diagnostics: 0 errors / 2 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/forced_transitions.fcstm --format human --color never
+   ...
+     root: System
+     states: 7 total / 5 leaf
+     transitions: 17
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'error_code' does not affect any transition guard.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'recovery_attempts' does not affect any transition guard.
+   ...
+   [WARN] W_UNREACHABLE_TRANSITION
+     Authored transition 'System.Running' -> '[*]' is unreachable for reasons: owner_never_completes.
+   ...
 
 .. _dsl-combo-transition-task:
 
@@ -469,7 +532,7 @@ PlantUML consume the expanded model.
 
 .. literalinclude:: ../../tutorials/dsl/combo_transitions.fcstm
    :language: fcstm
-   :caption: Normal combo, entry combo, guard alias, root event term, effects, and generated pseudo relay states; expected diagnostics: none.
+   :caption: Normal combo, entry combo, guard alias, root event term, effects, and generated pseudo relay states; expected diagnostics: none (``"diagnostics": []`` below).
 
 .. figure:: ../../tutorials/dsl/combo_transitions.fcstm.puml.svg
    :alt: Combo transition expansion diagram
@@ -483,9 +546,22 @@ PlantUML consume the expanded model.
 
 Verify the expansion:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_transitions.fcstm --format json
+   ...
+     "combo_origins": [
+       {
+         "origin_id": "ComboTransitions.Session:Waiting->Accepted::: Request + [ready > 0] + Confirm:effect=[\"accepted = accepted + 1;\"]",
+   ...
+             "term_text": "Request",
+   ...
+             "term_text": "[ready > 0]",
+   ...
+             "term_text": "Confirm",
+   ...
+     "diagnostics": [],
+   ...
 
 Useful JSON fields:
 
@@ -576,40 +652,76 @@ model.
    combo triggers, ``effect`` blocks, forced ``!State`` and ``!*`` transitions,
    a parent's initial ``[*] -> Program.[H*];`` and an external self transition
    ``!Program -> Program.[H*] :: Reenter;``.
-3. **Run the model.** The demo pauses in ``Agitate`` and resumes once through
-   each history:
+3. **Run the model.** The model pauses in ``Agitate`` and resumes once through
+   each history. The listing keeps only the final ``current`` report of each run
+   (deep history first, shallow history second):
 
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
-      :language: bash
-      :caption: ``history_washer.demo.sh``
+   .. code-block:: console
 
-   Output, generated from the script:
-
-   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
-      :language: text
+      $ pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Deep; \
+      current"
+      ...
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Agitate
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 2
+        fill_entries = 1
+        program_entries = 2
+        wash_initials = 1
+      $ pyfcstm simulate -i docs/source/tutorials/dsl/history_washer.fcstm --no-color -e "\
+      cycle; \
+      cycle Washer.Paused.Fresh; \
+      cycle Washer.Program.Idle.Start; \
+      cycle Washer.Program.Wash.Fill.Filled; \
+      cycle Washer.Program.Pause; \
+      cycle Washer.Paused.Shallow; \
+      current"
+      ...
+      >>> current
+      ────────────────────────────────────────────────────────────
+      Cycle: 6
+      Current State: Washer.Program.Wash.Fill
+      Variables:
+        __forced_0 = 0
+        __hist_Program = 7
+        __hist_goto = 0
+        agitate_entries = 1
+        fill_entries = 2
+        program_entries = 2
+        wash_initials = 2
 
    Deep history resumes ``Wash.Agitate`` exactly: ``fill_entries`` stays 1 and
    ``wash_initials`` stays 1 because the initials on the restored path do not
    run. Shallow history only remembers the direct child ``Wash``, so it enters
    ``Wash`` and runs its ordinary initial again (``wash_initials`` becomes 2).
    The two ``__hist_*`` variables are the lowered history; see step 5.
+   ``__forced_0`` is the hidden variable that carries out the forced
+   ``!Program`` transition; it is 0 whenever the machine rests.
 4. **Check the model.** Inspect judges the model as written, so history adds
    no finding of its own:
 
-   .. code-block:: bash
+   .. code-block:: console
 
-      pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
-
-   Expected excerpt (truncated):
-
-   .. code-block:: text
-
-      states: 7 total / 4 leaf
-      transitions: 13
-      variables: 4
-        program_entries: control; external supply: none
-        ...
-      diagnostics: 0 errors / 4 warnings / 0 infos
+      $ pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
+      ...
+        states: 7 total / 4 leaf
+        transitions: 13
+        variables: 4
+          program_entries: control; external supply: none
+      ...
+        diagnostics: 0 errors / 4 warnings / 0 infos
+      ...
 
    The four warnings are the ``W_UNREFERENCED_VAR`` warnings of the counters.
    The report describes the model before lowering: it lists the four counters
@@ -619,33 +731,46 @@ model.
 5. **Hot start with a record.** History is lowered into ordinary ``int``
    variables that the simulator, generated code and BMC see: ``__hist_goto`` (the restore in
    progress, always ``0`` at a stable point) and one ``__hist_<owner>`` record
-   per owner. A hot start must supply them like any persistent variable. Use
+   per owner. A hot start must supply every variable of the machine, so these two
+   are part of ``initial_vars`` like any persistent variable, and so is the hidden
+   ``__forced_0`` of the forced ``!Program`` transition (``0`` at a stable point;
+   the example writes it by hand, and leaving it out raises ``ValueError``). Use
    :meth:`pyfcstm.model.model.StateMachine.history_variables` to compute them
    from a source-level record instead of writing ids by hand:
 
-   .. code-block:: python
+   .. testcode::
 
-      from pyfcstm.model import load_state_machine_from_text
+      from pyfcstm.model import load_state_machine_from_file
       from pyfcstm.simulate import SimulationRuntime
 
-      machine = load_state_machine_from_text(open("history_washer.fcstm").read())
-      user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0}
-      runtime = SimulationRuntime(
-          machine,
-          initial_state="Washer.Paused",
-          initial_vars={**user, **machine.history_variables({"Washer.Program": "Wash.Agitate"})},
-      )
+      machine = load_state_machine_from_file("docs/source/tutorials/dsl/history_washer.fcstm")
+      user = {
+          "program_entries": 0,
+          "fill_entries": 0,
+          "agitate_entries": 0,
+          "wash_initials": 0,
+          "__forced_0": 0,  # hidden variable of the forced !Program transition
+      }
+      user.update(machine.history_variables({"Washer.Program": "Wash.Agitate"}))
+      runtime = SimulationRuntime(machine, initial_state="Washer.Paused", initial_vars=user)
       runtime.cycle()
       runtime.cycle(["Washer.Paused.Deep"])
-      print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
-      print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
+      print(".".join(runtime.current_state.path))
+      print(machine.history_record(runtime.vars, "Washer.Program"))
+
+   .. testoutput::
+
+      Washer.Program.Wash.Agitate
+      Wash.Agitate
 
    ``history_record()`` decodes a record back to a leaf path; it is meaningful
-   while the owner is inactive. The simulator rejects a hot start whose
-   ``__hist_goto`` is not ``0`` or whose record names no stoppable leaf of its
-   owner, and its message lists the valid ids with their leaf paths. The
-   ``init`` command of ``pyfcstm simulate`` accepts the same variables, for
-   example ``__hist_goto=0 __hist_Program=7``.
+   while the owner is inactive. The ``__hist_*`` variables are ordinary
+   variables of the model, so a hot start treats them like any other variable:
+   whatever value is given is what the machine runs on, and nothing is checked
+   beyond that all of them are supplied. A checkpoint saved from a running
+   machine holds valid values by construction. The ``init`` command of
+   ``pyfcstm simulate`` accepts the same variables, for example
+   ``__hist_goto=0 __hist_Program=7``.
 
 Common mistakes and repairs:
 
@@ -679,31 +804,27 @@ Common mistakes and repairs:
      - Make the remembered path enterable, or add a separate ordinary entry for
        that situation. See :ref:`dsl-history-semantics`.
 
-Reproduce the first mistake: save this model as ``undeclared.fcstm``, where
-``O`` declares no history,
+Reproduce the first mistake with a model in which ``O`` declares no history.
+The first command writes ``undeclared.fcstm``; the second inspects it with
+``--collect-errors``:
 
-.. code-block:: fcstm
+.. code-block:: console
 
-   state R {
-       state A;
-       state O { state B; [*] -> B; }
-       [*] -> A;
-       A -> O.[H] :: Resume;
-   }
-
-and inspect it with ``--collect-errors``:
-
-.. code-block:: bash
-
-   pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
+   $ printf '%s\n' \
+     'state R {' \
+     '    state A;' \
+     '    state O { state B; [*] -> B; }' \
+     '    [*] -> A;' \
+     '    A -> O.[H] :: Resume;' \
+     '}' > undeclared.fcstm
+   $ pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
+   ...
    [ERROR] E_HISTORY_TARGET_UNDECLARED
      R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
      --> undeclared.fcstm:5:5
+   ...
+   $ echo $?
+   1
 
 All forms, diagnostics and lowered names are listed in
 :ref:`dsl-history-reference`; the execution rules and why they hold are in
@@ -722,7 +843,7 @@ Basic import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_basic.fcstm
    :language: fcstm
-   :caption: Basic import host; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings.
+   :caption: Basic import host.
 
 Mapping import:
 
@@ -743,13 +864,13 @@ Imported worker:
 
 .. literalinclude:: ../../tutorials/dsl/import_worker.fcstm
    :language: fcstm
-   :caption: Imported worker module; expected diagnostics: two ``W_UNREFERENCED_VAR`` warnings.
+   :caption: Imported worker module.
 
 Directory entry import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: Directory-style import through an explicit ``main.fcstm`` entry file; expected diagnostics: ``W_UNUSED_EVENT``, ``W_LEAF_NO_OUTGOING_TRANSITION``, and ``W_UNREFERENCED_VAR`` for demonstration-only imported resources.
+   :caption: Directory-style import through an explicit ``main.fcstm`` entry file; expected diagnostics: ``W_LEAF_NO_OUTGOING_TRANSITION`` and ``W_UNREFERENCED_VAR`` for demonstration-only imported resources.
 
 Mapping facts:
 
@@ -773,31 +894,28 @@ a numeric name, or a reserved keyword such as ``input`` or ``param``.
 
 The parent must explicitly declare a cross-role target. Missing targets retain the child role; implicit same-role sharing requires equal defaults and shared ``input`` requires an explicit declaration. Explicit parent defaults win and multiple legitimate writers introduce no restriction. Reject illegal source read-only writes before mapping. In collect mode a failed variable binding commits neither declarations nor substates from that import; diagnostics retain source files and import locations.
 
-With pyfcstm installed, save ``child.fcstm`` in a working directory:
+With pyfcstm installed, write two files in a working directory. ``child.fcstm`` declares an input and an output; ``host.fcstm`` binds the child input to the parent control variable ``cached`` and internalizes the child output as ``internal``:
 
-.. code-block:: fcstm
+.. code-block:: console
 
-   input int reading;
-   output int result = 0;
-   state Child { enter { result = reading; } }
-
-Save ``host.fcstm`` beside it, binding the child input to parent control state and internalizing the child output:
-
-.. code-block:: fcstm
-
-   control int cached = 5;
-   control int internal = 0;
-   state Host {
-       import "./child.fcstm" as Child {
-           var reading -> cached;
-           var result -> internal;
-       }
-       [*] -> Child;
-   }
+   $ printf '%s\n' \
+     'input int reading;' \
+     'output int result = 0;' \
+     'state Child { enter { result = reading; } }' > child.fcstm
+   $ printf '%s\n' \
+     'control int cached = 5;' \
+     'control int internal = 0;' \
+     'state Host {' \
+     '    import "./child.fcstm" as Child {' \
+     '        var reading -> cached;' \
+     '        var result -> internal;' \
+     '    }' \
+     '    [*] -> Child;' \
+     '}' > host.fcstm
 
 Run this Python code from that directory. It executes in memory and creates no output files:
 
-.. code-block:: python
+.. testcode::
 
    from pyfcstm.model import load_state_machine_from_file
    from pyfcstm.simulate import SimulationRuntime
@@ -808,12 +926,12 @@ Run this Python code from that directory. It executes in memory and creates no o
    print(runtime.vars["internal"])
    print(list(model.inputs), list(model.output_variables))
 
-Expected output confirms the value is 5, with no external inputs or system outputs in the final model:
-
-.. code-block:: text
+.. testoutput::
 
    5
    [] []
+
+The output confirms the value is 5, with no external inputs or system outputs in the final model.
 
 Changing the parent declaration to ``param int internal = 0`` makes the child ``output`` binding fail with ``E_IMPORT_DUPLICATE_MAPPING``; choose a writable parent target. A numeric type mismatch requires correcting the declarations rather than an implicit conversion. Child input bound to mutable parent state reads the latest value in execution order; reverify properties that relied on cycle-frozen child inputs against the assembled model.
 
@@ -822,32 +940,44 @@ entry points used by import assembly tests and helpers. They are not ordinary
 root-level ``def`` declarations in a normal ``state_machine_dsl`` file. See
 :ref:`dsl-import-preamble-forms` for the exact boundary.
 
-Verify the mapped import from the repository root:
+Verify the mapped import:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
-
-Expected excerpt:
-
-.. code-block:: text
-
-   root: System
-   variables: 3
-   diagnostics: 0 errors / 3 warnings / 0 infos
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/import_host_mapped.fcstm --format human --color never
+   ...
+     root: System
+   ...
+     variables: 3
+   ...
+     diagnostics: 0 errors / 3 warnings / 0 infos
+   ...
 
 Verify the directory-entry import:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/import_host_directory.fcstm --format human --color never
+   ...
+     root: Factory
+   ...
+     diagnostics: 0 errors / 2 warnings / 0 infos
+   ...
+   [WARN] W_LEAF_NO_OUTGOING_TRANSITION
+     Leaf state 'Factory.Line.Robot.Moving' has no outgoing transition.
+   ...
+   [WARN] W_UNREFERENCED_VAR
+     Variable 'Line_line_speed' does not affect any transition guard.
+   ...
 
-Expected excerpt:
+Model parallel work with regions
+--------------------------------
 
-.. code-block:: text
-
-   root: Factory
-   diagnostics: 0 errors / 3 warnings / 0 infos
+A state that runs several ordered parts in the same cycle uses ``region``
+blocks instead of plain substates.  The tasks for them (splitting a state,
+nesting, sharing an event, choosing the writing order, joining, interrupting the
+group, reading another region, aspects and the common errors) are on
+:doc:`/how_to/regions/index`; the syntax is in :doc:`/reference/dsl/index`.
 
 .. _dsl-diagnostics-task:
 
@@ -856,9 +986,18 @@ Diagnose and repair DSL errors
 
 Use inspect diagnostics as a repair loop:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format json
+   ...
+     "diagnostics": [
+       {
+         "code": "W_COMBO_DUPLICATE_EVENT",
+         "message": "Combo trigger repeats event 'ComboDuplicateEvent.A.Go'; this is legal but usually redundant.",
+         "refs": {
+   ...
+         "severity": "warning",
+   ...
 
 A diagnostic has a ``code``, ``severity``, human message, source span, and
 ``refs`` payload. Many diagnostics also carry a suggested fix.
@@ -883,11 +1022,48 @@ A diagnostic has a ``code``, ``severity``, human message, source span, and
      - ``W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE``
      - Treat it as a C/C++ deployment-profile warning for ``c`` / ``c_poll`` / ``cpp`` / ``cpp_poll``. It is not evidence that Python generated code has the same fixed-width risk.
 
+Run the other three files to see their codes:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/guard_vars_never_change.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 2 warnings / 1 infos
+   ...
+   [WARN] W_UNWRITTEN_READ_VAR
+   ...
+   [WARN] W_GUARD_VARS_NEVER_CHANGE
+   ...
+   [INFO] I_TRANSITION_NEVER_EVENT_TRIGGERED
+   ...
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/during_const_assign.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 0 infos
+   ...
+   [WARN] W_DURING_CONST_ASSIGN
+   ...
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/numeric_target_range.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 0 infos
+   ...
+   [WARN] W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE
+   ...
+
 Minimal bad syntax example kept as a text fixture because it is intentionally not parseable as ``*.fcstm``:
 
 .. literalinclude:: ../../tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
    :language: fcstm
    :caption: Intentional parser error; expected excerpt: ``Unexpected token 'if'``.
+
+Inspecting it fails in the parser:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt
+   Failed to parse input DSL file docs/source/tutorials/dsl/event_guard_mixed_invalid.fcstm.txt: Found 1 errors during parsing:
+   Error 1: Syntax error at line 7, column 17, near 'if': Unexpected token 'if'
+   $ echo $?
+   1
 
 It fails because ordinary event syntax and ordinary guard syntax are two separate transition forms. Repair it as combo syntax:
 
@@ -899,13 +1075,12 @@ For code-level details, read :doc:`../../reference/diagnostics_codes/index`.
 
 Verify the intentional warning file:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/combo_duplicate_event.fcstm --format human --color never
+   ...
+     diagnostics: 0 errors / 1 warnings / 1 infos
+   ...
+   [WARN] W_COMBO_DUPLICATE_EVENT
+   ...
 
-Expected excerpt:
-
-.. code-block:: text
-
-   W_COMBO_DUPLICATE_EVENT
-   diagnostics: 0 errors / 1 warnings / 1 infos

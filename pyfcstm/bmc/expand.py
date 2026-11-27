@@ -151,6 +151,8 @@ class _MacroFrontier:
     depth: int = 0
     consumed_events: Tuple[str, ...] = ()
     last_point: Optional[EvaluationPoint] = None
+    # Labels of the transitions the path has committed so far, in order.
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,7 @@ class _MacroOutcome:
     case_kind: str
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     consumed_events: Tuple[str, ...] = ()
+    transitions: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -366,6 +369,20 @@ class _MacroExpander:
         return state
 
     def _expand_frontier(self, frontier: _MacroFrontier) -> _Expansion:
+        prepared = self._prepare_frontier(frontier)
+        if isinstance(prepared, _Expansion):
+            return prepared
+        return self._dispatch_frontier(prepared)
+
+    def _prepare_frontier(
+        self, frontier: _MacroFrontier
+    ) -> Union[_Expansion, _MacroFrontier]:
+        """Check the limits and loops of a frontier before it is expanded.
+
+        Returns an :class:`_Expansion` when the frontier needs no further
+        expansion (an impossible condition, or a loop back to a position already
+        seen on the path); otherwise the frontier with this position recorded.
+        """
         if frontier.depth >= self.options.max_micro_steps:
             raise BmcBuildError(
                 "macro-step expansion exceeded the micro-step safety limit."
@@ -386,13 +403,15 @@ class _MacroExpander:
                 )
             self._remember_failed_guard_requirements(frontier)
             return _Expansion((), (frontier.condition,), ())
-        frontier = self._replace_frontier(
+        return self._replace_frontier(
             frontier,
             path_signatures=frontier.path_signatures
             + ((signature, len(frontier.action_blocks)),),
             depth=frontier.depth + 1,
         )
 
+    def _dispatch_frontier(self, frontier: _MacroFrontier) -> _Expansion:
+        """Expand a prepared frontier according to its top stack frame."""
         if not frontier.stack:
             return _Expansion((self._terminate_outcome(frontier),), (), ())
 
@@ -604,6 +623,7 @@ class _MacroExpander:
             used_events=used_events,
             guard_requirements=guard_requirements,
             last_point=last_point,
+            transitions=frontier.transitions + (transition_label,),
             consumed_events=(
                 frontier.consumed_events + (transition.event.path_name,)
                 if transition.event is not None
@@ -956,12 +976,22 @@ class _MacroExpander:
             active_leaf_path=self._active_leaf_path(frontier, runtime_state_path),
             execution_state_path=runtime_state_path,
             named_ref=named_ref,
+            stack_states=self._stack_states(frontier),
         )
         return self._replace_frontier(
             frontier,
             action_blocks=frontier.action_blocks + (block,),
             last_point=self._record_point(frontier, frontier.condition, block=block),
         )
+
+    def _stack_states(self, frontier: _MacroFrontier) -> Optional[Tuple[str, ...]]:
+        """Return the states on the stack to record with an action block.
+
+        :param frontier: Frontier whose stack is running the block.
+        :return: ``None``: a model without regions never needs more than the
+            path of the leaf the block runs in, which is already recorded.
+        """
+        return None
 
     def _record_point(
         self,
@@ -1136,6 +1166,7 @@ class _MacroExpander:
                 _CASE_KIND_FALLBACK,
                 tuple(failed),
                 outcome.consumed_events,
+                outcome.transitions,
             )
             for outcome in expansion.outcomes
         )
@@ -1153,6 +1184,7 @@ class _MacroExpander:
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _terminate_outcome(self, frontier: _MacroFrontier) -> _MacroOutcome:
@@ -1167,6 +1199,7 @@ class _MacroExpander:
             frontier.priority_exclusions,
             frontier.case_kind,
             consumed_events=frontier.consumed_events,
+            transitions=frontier.transitions,
         )
 
     def _cases_from_outcomes(
@@ -1187,6 +1220,7 @@ class _MacroExpander:
                 guard_requirements=outcome.guard_requirements,
                 priority_exclusions=outcome.priority_exclusions,
                 failed_conditions=outcome.failed_conditions,
+                transitions=outcome.transitions,
                 domain=self.domain,
             )
             for outcome in outcomes
@@ -1300,6 +1334,7 @@ class _MacroExpander:
             "depth": frontier.depth,
             "consumed_events": frontier.consumed_events,
             "last_point": frontier.last_point,
+            "transitions": frontier.transitions,
         }
         values.update(updates)
         return _MacroFrontier(**values)

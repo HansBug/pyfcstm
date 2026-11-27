@@ -1,0 +1,39 @@
+title: A start in which a group is tried several times within one cycle, with aspects already run in between, is
+  still judged correctly and stays a Delta
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - The model was reduced from random testing. No region order lets the root state start here, so both cycles are
+    a Delta. While that is decided the same candidate is judged more than once in a cycle, with the same values
+    but after different aspects have run; an implementation that reuses the first answer for the second situation
+    starts the machine by mistake.
+categories:
+- regions
+- runtime
+exclude_runners:
+- bmc_core
+steps:
+- cycle:
+  - Root.E0
+  - Root.E1
+  inputs:
+    k: 1
+  expect:
+    configuration: Root
+    vars:
+      x: 0
+      y: 1
+    delta: true
+- cycle:
+  - Root.E0
+  - Root.E1
+  - Root.E2
+  inputs:
+    k: 1
+  expect:
+    configuration: Root
+    vars:
+      x: 0
+      y: 1
+    delta: true

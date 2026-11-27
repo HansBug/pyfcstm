@@ -1,0 +1,29 @@
+title: Owner and ancestor aspects run once per cycle, after earlier conditions and before later ones
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: S, R2: U}'
+    vars:
+      tick: 1
+      post: 1
+      own: 1
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: S, R2: V}'
+    vars:
+      tick: 2
+      post: 2
+      own: 2
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: T, R2: V}'
+    vars:
+      tick: 3
+      post: 3
+      own: 3

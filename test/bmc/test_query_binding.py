@@ -1448,3 +1448,40 @@ def test_binding_rejects_unknown_expression_subclasses(predicate, code):
         bind_bmc_query_structure(query)
 
     assert _diagnostic(excinfo).code == code
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("operator", ["&&", "||"])
+def test_a_chain_of_operators_that_nests_too_deeply_is_a_diagnostic_not_a_traceback(
+    operator,
+):
+    from pyfcstm.bmc import compile_bmc_query
+    from pyfcstm.model import load_state_machine_from_text
+
+    model = load_state_machine_from_text(
+        "def int x = 0; state Root { [*] -> A; state A; }"
+    )
+    ok = "check reach <= 1: %s;" % (" %s " % operator).join(["x == 0"] * 90)
+    assert compile_bmc_query(model, ok).kind == "reach"
+    deep = "check reach <= 1: %s;" % (" %s " % operator).join(["x == 0"] * 400)
+    with pytest.raises(InvalidBmcQuery) as refused:
+        compile_bmc_query(model, deep)
+    assert refused.value.diagnostic.code == "expression_too_deep"
+
+
+@pytest.mark.unittest
+def test_a_deeply_nested_assumption_or_call_filter_is_refused_the_same_way():
+    from pyfcstm.bmc import compile_bmc_query
+    from pyfcstm.model import load_state_machine_from_text
+
+    model = load_state_machine_from_text(
+        "def int x = 0; state Root { [*] -> A; state A { during abstract Tick; } }"
+    )
+    chain = " && ".join(["x == 0"] * 400)
+    for text in (
+        "assume always: %s;\ncheck reach <= 1: x == 0;" % chain,
+        'check reach <= 1: called("Root.A.Tick", where %s);' % chain,
+    ):
+        with pytest.raises(InvalidBmcQuery) as refused:
+            compile_bmc_query(model, text)
+        assert refused.value.diagnostic.code == "expression_too_deep"

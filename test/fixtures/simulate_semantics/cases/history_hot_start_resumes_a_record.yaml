@@ -19,6 +19,7 @@ initial:
     wash_initials: 0
     __hist_goto: 0
     __hist_Program: 7
+    __forced_0: 0
 steps:
 - cycle: []
   expect:

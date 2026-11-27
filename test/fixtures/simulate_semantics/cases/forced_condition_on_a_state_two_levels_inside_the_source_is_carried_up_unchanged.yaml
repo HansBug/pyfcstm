@@ -1,0 +1,39 @@
+title: A forced condition that asks about a state two levels inside the source is carried up unchanged
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - Leaving c2 goes through C and then P, and neither level asks again.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.P.C.c1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.P.C.c2
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 3
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 4

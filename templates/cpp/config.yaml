@@ -1,3 +1,5 @@
+features: [region]
+
 expr_styles:
   c_scope_expr:
     base_lang: c
@@ -15,6 +17,30 @@ stmt_styles:
     temp_type_fallback: double
 
 globals:
+  event_paths:
+    type: import
+    from: pyfcstm.render.c_kernel.event_paths
+  action_rows:
+    type: import
+    from: pyfcstm.render.c_kernel.action_rows
+  hook_rows:
+    type: import
+    from: pyfcstm.render.c_kernel.hook_rows
+  render_c_storage_macros:
+    type: import
+    from: pyfcstm.render.c_kernel.render_c_storage_macros
+  render_c_kernel_types:
+    type: import
+    from: pyfcstm.render.c_kernel.render_c_kernel_types
+  render_c_kernel_code:
+    type: import
+    from: pyfcstm.render.c_kernel.render_c_kernel_code
+  render_c_configuration_header:
+    type: import
+    from: pyfcstm.render.c_configuration.render_c_configuration_header
+  render_c_configuration_source:
+    type: import
+    from: pyfcstm.render.c_configuration.render_c_configuration_source
   readonly_value_identifier:
     type: import
     from: pyfcstm.render.c_runtime.readonly_value_identifier
@@ -179,7 +205,7 @@ tests:
     from: pyfcstm.utils.is_c_public_identifier_reserved
 
 ignores:
+  - 'config.yaml'
   - 'README.md'
   - 'README_zh.md'
   - 'template.json'
-  - 'config.yaml'

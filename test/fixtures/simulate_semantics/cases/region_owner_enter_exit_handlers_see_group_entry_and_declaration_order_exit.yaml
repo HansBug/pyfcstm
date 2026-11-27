@@ -1,0 +1,123 @@
+title: Owner and region enter actions run in order, and a forced transition of the owner exits the regions in declaration
+  order with the owner last
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Regions leave one after the other, each through its own transition to the end of the region, so a region that has already left shows as [done] in the configuration text while the later ones are still in their states.
+  - The forced declaration reaches the regions, so the model carries a hidden variable that records that the event was already decided. The state of the first region raises it, the later regions finish when they see it raised, and the declared transition of the owner lowers it again after the exit action of the owner, which therefore sees it raised.
+categories:
+- regions
+- runtime
+handlers:
+- action: Root.P.POn
+  behavior: record_call
+- action: Root.P.POff
+  behavior: record_call
+- action: Root.P.R1.A.AOn
+  behavior: record_call
+- action: Root.P.R1.A.AOff
+  behavior: record_call
+- action: Root.P.R2.B.BOn
+  behavior: record_call
+- action: Root.P.R2.B.BOff
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R1: A, R2: B}'
+    handler_calls:
+    - action: Root.P.POn
+      state: Root.P
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P
+      call_stage: enter
+      abstract_target: Root.P.POn
+      named_ref: null
+      configuration: 'Root.P{R1: [init], R2: [init]}'
+    - action: Root.P.R1.A.AOn
+      state: Root.P.R1.A
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P.R1.A
+      call_stage: enter
+      abstract_target: Root.P.R1.A.AOn
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: [init]}'
+    - action: Root.P.R2.B.BOn
+      state: Root.P.R2.B
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P.R2.B
+      call_stage: enter
+      abstract_target: Root.P.R2.B.BOn
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+- cycle: Root.Stop
+  expect:
+    configuration: Root.Idle
+    handler_calls:
+    - action: Root.P.POn
+      state: Root.P
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P
+      call_stage: enter
+      abstract_target: Root.P.POn
+      named_ref: null
+      configuration: 'Root.P{R1: [init], R2: [init]}'
+    - action: Root.P.R1.A.AOn
+      state: Root.P.R1.A
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P.R1.A
+      call_stage: enter
+      abstract_target: Root.P.R1.A.AOn
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: [init]}'
+    - action: Root.P.R2.B.BOn
+      state: Root.P.R2.B
+      stage: enter
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P.R2.B
+      call_stage: enter
+      abstract_target: Root.P.R2.B.BOn
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+    - action: Root.P.R1.A.AOff
+      state: Root.P.R1.A
+      stage: exit
+      vars:
+        __forced_0: 0
+      active_leaf: Root.P.R1.A
+      call_stage: exit
+      abstract_target: Root.P.R1.A.AOff
+      named_ref: null
+      configuration: 'Root.P{R1: A, R2: B}'
+    - action: Root.P.R2.B.BOff
+      state: Root.P.R2.B
+      stage: exit
+      vars:
+        __forced_0: 1
+      active_leaf: Root.P.R2.B
+      call_stage: exit
+      abstract_target: Root.P.R2.B.BOff
+      named_ref: null
+      configuration: 'Root.P{R1: [done], R2: B}'
+    - action: Root.P.POff
+      state: Root.P
+      stage: exit
+      vars:
+        __forced_0: 1
+      active_leaf: Root.P
+      call_stage: exit
+      abstract_target: Root.P.POff
+      named_ref: null
+      configuration: 'Root.P{R1: [done], R2: [done]}'

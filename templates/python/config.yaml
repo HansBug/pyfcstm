@@ -1,3 +1,5 @@
+features: [region]
+
 expr_styles:
   python_expr:
     # Functions that can reject their argument report it with the runtime's

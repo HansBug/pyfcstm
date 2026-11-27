@@ -144,6 +144,18 @@ class TestHistoryTargetErrors:
         assert "E_HISTORY_TARGET_UNDECLARED" not in codes
         assert any(item.severity == "error" for item in diagnostics)
 
+    def test_inherited_forced_history_target_reports_one_authored_failure(self):
+        _, diagnostics = _collect('''state Root {
+            state Idle;
+            state Group { state A; state B; [*] -> A; A -> B; }
+            state Target { state Leaf; [*] -> Leaf; }
+            [*] -> Group;
+            !* -> Target.[H] : Resume;
+        }''')
+        items = _only(diagnostics, 'E_HISTORY_TARGET_UNDECLARED')
+        assert len(items) == 1
+        assert items[0].refs == {'owner_path': 'Root.Target', 'kind': 'shallow'}
+
 
 @pytest.mark.unittest
 class TestHistoryUnused:
@@ -288,26 +300,21 @@ def test_history_diagnostics_match_the_code_registry(text):
 
 @pytest.mark.unittest
 @pytest.mark.parametrize("mode", ["legend", "note"])
-def test_plantuml_keeps_lowered_history_names_literal(mode):
+def test_plantuml_draws_history_as_written_and_escapes_names_with_underscores(mode):
     from pyfcstm.model import PlantUMLOptions
 
-    machine = load_state_machine_from_text(WASHER)
-    source = machine.to_plantuml(
-        PlantUMLOptions(detail_level="full", variable_display_mode=mode)
-    )
+    options = PlantUMLOptions(detail_level="full", variable_display_mode=mode)
+    source = load_state_machine_from_text(WASHER).to_plantuml(options)
+    # The drawing shows the history of the model, not what it was lowered into.
+    assert "__hist" not in source
+    assert "washer__program : [H] -> Idle" in source
+    assert "washer__program : [H*] -> Wash.Fill" in source
+    assert "washer__program[H]" in source and "washer__program[H*]" in source
     # Creole treats ``__`` as underline markup, so notes, legends and state
-    # descriptions escape every lowered name; link labels are not Creole.
-    creole = []
-    for line in source.splitlines():
-        if "__hist_" not in line or "-->" in line:
-            continue
-        # A state description is ``alias : text``; the alias is an identifier.
-        head, sep, tail = line.partition(" : ")
-        if sep and re.fullmatch(r"\s*\w+", head):
-            line = tail
-        creole.append(line)
-    assert creole
-    assert all("__" not in line.replace("~__", "") for line in creole), creole
-    assert any("~__hist_goto = (~__hist_Program" in line for line in creole)
+    # descriptions escape every name that contains it; link labels are not Creole.
+    tricky = load_state_machine_from_text(
+        "def int __a = 0; state R { state A { enter { __a = __a + 1; } } [*] -> A; }"
+    ).to_plantuml(options)
+    assert "~__a" in tricky
     plain = load_state_machine_from_text("def int a = 0; state R { state A; [*] -> A; }")
-    assert "~" not in plain.to_plantuml(PlantUMLOptions(detail_level="full", variable_display_mode=mode))
+    assert "~" not in plain.to_plantuml(options)

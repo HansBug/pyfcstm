@@ -1,0 +1,328 @@
+title: Abstract aspects on the root, the owner and a region run in order and report the deepest state common to
+  what they wrap
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+handlers:
+- action: Controller.Tick
+  behavior: record_call
+- action: Controller.Running.GroupPre
+  behavior: record_call
+- action: Controller.Running.Safety.SafetyPre
+  behavior: record_call
+- action: Controller.Running.Safety.Normal.Watch
+  behavior: record_call
+- action: Controller.Running.Motion.On.Drive
+  behavior: record_call
+steps:
+- cycle: []
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: Controller.Idle
+    handler_calls:
+    - action: Controller.Tick
+      state: Controller.Idle
+      stage: during
+      vars: {}
+      active_leaf: Controller.Idle
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: Controller.Idle
+- cycle: Controller.Start
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    handler_calls:
+    - action: Controller.Tick
+      state: Controller.Idle
+      stage: during
+      vars: {}
+      active_leaf: Controller.Idle
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: Controller.Idle
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+- cycle: []
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    handler_calls:
+    - action: Controller.Tick
+      state: Controller.Idle
+      stage: during
+      vars: {}
+      active_leaf: Controller.Idle
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: Controller.Idle
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Motion.On.Drive
+      state: Controller.Running.Motion.On
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Motion.On
+      call_stage: during
+      abstract_target: Controller.Running.Motion.On.Drive
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+- cycle: []
+  inputs:
+    fault: 0
+    requested: 1
+  expect:
+    configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    handler_calls:
+    - action: Controller.Tick
+      state: Controller.Idle
+      stage: during
+      vars: {}
+      active_leaf: Controller.Idle
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: Controller.Idle
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: [init]}'
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: Off}'
+    - action: Controller.Running.Motion.On.Drive
+      state: Controller.Running.Motion.On
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Motion.On
+      call_stage: during
+      abstract_target: Controller.Running.Motion.On.Drive
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    - action: Controller.Tick
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Tick
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    - action: Controller.Running.GroupPre
+      state: Controller.Running
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running
+      call_stage: during
+      abstract_target: Controller.Running.GroupPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    - action: Controller.Running.Safety.SafetyPre
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.SafetyPre
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    - action: Controller.Running.Safety.Normal.Watch
+      state: Controller.Running.Safety.Normal
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Safety.Normal
+      call_stage: during
+      abstract_target: Controller.Running.Safety.Normal.Watch
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'
+    - action: Controller.Running.Motion.On.Drive
+      state: Controller.Running.Motion.On
+      stage: during
+      vars: {}
+      active_leaf: Controller.Running.Motion.On
+      call_stage: during
+      abstract_target: Controller.Running.Motion.On.Drive
+      named_ref: null
+      configuration: 'Controller.Running{Safety: Normal, Motion: On}'

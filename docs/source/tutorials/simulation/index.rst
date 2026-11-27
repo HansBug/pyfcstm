@@ -30,22 +30,70 @@ are separated by semicolons, so a short transcript is enough to verify initial
 entry, available events, event-driven transition, current state display and
 history output:
 
-.. code-block:: bash
+The model is ``example1_basic.full.fcstm``. Download
+:download:`example1_basic.full.fcstm <example1_basic.full.fcstm>` into an empty
+directory to run the command there.
 
-   pyfcstm simulate -i ../cli/simple_machine.fcstm \
-     -e "cycle; events; cycle Start; current; cycle Stop; history 3" \
-     --no-color
+.. literalinclude:: example1_basic.full.fcstm
+   :language: fcstm
+   :caption: ``example1_basic.full.fcstm``
 
-The documentation keeps this transcript generated from a real demo script:
+.. code-block:: console
 
-.. literalinclude:: cli_batch.demo.sh.txt
-   :language: text
+   $ pyfcstm simulate -i example1_basic.full.fcstm --no-color \
+     -e "cycle; events; cycle Go; current; cycle; history 3"
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 1
+   Current State: Root.A
+   Variables:
+     counter = 1
 
-The first ``cycle`` initializes the machine at ``SimpleMachine.Idle``.  The
-``events`` command then shows that ``Start`` is available from the current
-state.  After ``cycle Start`` the current state is ``SimpleMachine.Running``;
-``cycle Stop`` reaches ``SimpleMachine.Stopped`` and the short ``history`` table
-shows the three recorded cycles.
+   ────────────────────────────────────────────────────────────
+   >>> events
+   ────────────────────────────────────────────────────────────
+   Available Events:
+     • Go (Root.A.Go)
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle Go
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: Root.B
+   Variables:
+     counter = 11
+
+   ────────────────────────────────────────────────────────────
+   >>> cycle
+   ────────────────────────────────────────────────────────────
+   Cycle: 3
+   Current State: Root.B
+   Variables:
+     counter = 21
+
+   ────────────────────────────────────────────────────────────
+   >>> history 3
+   ────────────────────────────────────────────────────────────
+    Cycle  State   Delta  counter
+   -------------------------------
+      1    Root.A  False     1
+      2    Root.B  False    11
+      3    Root.B  False    21
+
+The first ``cycle`` initializes the machine at ``Root.A``, whose ``during``
+already ran once, so ``counter`` is 1.  The ``events`` command then shows that
+``Go`` is available from the current state.  After ``cycle Go`` the current
+state is ``Root.B``; the plain ``cycle`` after it stays in ``Root.B`` and the
+short ``history`` table shows the three recorded cycles.
 
 Try one Python runtime loop
 ---------------------------
@@ -57,14 +105,50 @@ the same model: parse DSL, build the state-machine model, construct
 ``input_events``, ``consumed_events`` and ``unconsumed_events`` tell you which
 canonical event paths were supplied, used or left unused in that cycle.
 
-.. literalinclude:: basic_usage.demo.py
-   :language: python
-   :caption: Minimal Python simulation loop
+.. testcode::
 
-Output:
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
 
-.. literalinclude:: basic_usage.demo.py.txt
-   :language: text
+   machine = load_state_machine_from_text("""
+   def int counter = 0;
+
+   state System {
+       [*] -> Idle;
+
+       state Idle {
+           during {
+               counter = counter + 1;
+           }
+       }
+
+       state Active {
+           during {
+               counter = counter + 10;
+           }
+       }
+
+       Idle -> Active : if [counter >= 5];
+       Active -> Idle : if [counter >= 50];
+   }
+   """)
+
+   runtime = SimulationRuntime(machine)
+   print("Initial: state=%s, counter=%d" % (".".join(runtime.current_state.path), runtime.vars["counter"]))
+   for i in range(1, 8):
+       runtime.cycle()
+       print("Cycle %d: state=%s, counter=%d" % (i, ".".join(runtime.current_state.path), runtime.vars["counter"]))
+
+.. testoutput::
+
+   Initial: state=System, counter=0
+   Cycle 1: state=System.Idle, counter=1
+   Cycle 2: state=System.Idle, counter=2
+   Cycle 3: state=System.Idle, counter=3
+   Cycle 4: state=System.Idle, counter=4
+   Cycle 5: state=System.Idle, counter=5
+   Cycle 6: state=System.Active, counter=15
+   Cycle 7: state=System.Active, counter=25
 
 The example only prints state and variables.  If you need the exact
 ``CycleResult`` fields, event input forms, export formats or public runtime
@@ -102,13 +186,16 @@ material.  The main topics now live here:
    * - DSL semantic background
      - :doc:`../../explanations/dsl_semantics/index`
 
-The legacy example resources remain in this directory so old links and
-source-output pairs stay stable. The migration log records each resource and
-the final cleanup audit explains why these compatibility resources remain.
-
 Custom numeric input generators
 -------------------------------
 
 For models that read environment values each cycle, follow the executable
 construction and subclass examples in :doc:`../../reference/simulation/inputs`.
 They cover explicit overrides, correlated vectors, and failure-safe advancement.
+
+Where to go next
+----------------
+
+* :doc:`/tutorials/regions/index` runs a model whose states own ordered
+  parallel regions, and shows that the writing order of regions changes the
+  result of a cycle.

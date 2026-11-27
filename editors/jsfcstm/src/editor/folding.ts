@@ -37,6 +37,7 @@ function foldableNodeToRange(node: FcstmAstRangeNode): FcstmFoldingRange | null 
 
     switch (node.kind) {
         case 'stateDefinition':
+        case 'regionDefinition':
         case 'operationBlock':
         case 'ifStatement':
         case 'ifBranch':

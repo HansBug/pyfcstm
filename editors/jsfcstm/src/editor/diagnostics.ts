@@ -1,7 +1,7 @@
 import {pathToFileURL} from 'node:url';
 
 import {getParser, ParseError} from '../dsl/parser';
-import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
+import {inspectModel, isInspectable, type ModelDiagnosticJson} from '../diagnostics';
 import {canonicalizeDiagnosticCode} from '../diagnostics/codes-registry';
 import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument} from '../semantics';
@@ -414,6 +414,9 @@ export function collectInspectModelDiagnostics(
     existingDiagnostics: FcstmDiagnostic[] = [],
     options: CollectInspectModelDiagnosticsOptions = {},
 ): FcstmDiagnostic[] {
+    // The structural inspector does not judge machines with regions or
+    // active() queries, like ``pyfcstm inspect``.
+    if (!isInspectable(model)) return [];
     return collectInspectDiagnosticsFromItems(
         document,
         semantic,
@@ -539,13 +542,16 @@ export async function collectDocumentDiagnosticsByUri(
     // a subtree mounted under an unreachable host state appear reachable.
     if (node?.model && node.modelAuthority === 'assembled') {
         const assembledModel = node.model;
-        const assembledDiagnostics = inspectModel(assembledModel).diagnostics;
+        const assembledDiagnostics = isInspectable(assembledModel) ? inspectModel(assembledModel).diagnostics : [];
         for (const filePath of snapshot.order) {
             const authoredNode = snapshot.nodes[filePath];
+            // Defensive: an assembled model needs every file to have parsed with a root state.
+            /* c8 ignore start */
             if (!authoredNode?.semantic) continue;
             const authoredRootName = authoredNode.semantic.summary.rootStateName
                 || authoredNode.ast?.rootState?.name;
             if (!authoredRootName) continue;
+            /* c8 ignore stop */
             const isRootFile = filePath === snapshot.rootFile || filePath === document.filePath;
             const authoredUri = isRootFile
                 ? rootUri
@@ -567,9 +573,13 @@ export async function collectDocumentDiagnosticsByUri(
                 items,
                 isRootFile ? diagnostics : [],
             );
+            // Defensive: the items were built from diagnostics that survive the same filters.
+            /* c8 ignore next */
             if (authoredDiagnostics.length === 0) continue;
             if (isRootFile) {
                 publications.set(authoredUri, [
+                    // Defensive: the root URI is published before this point.
+                    /* c8 ignore next */
                     ...(publications.get(authoredUri) || []),
                     ...authoredDiagnostics,
                 ]);

@@ -1,0 +1,23 @@
+title: A region that is not written waits for initialization and runs its initial transitions in the first
+  cycle while the written region works
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region B is in place; region A is left out, so Q, W1 and W2 are entered.
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'W.Job{B: Comp.In1}'
+  vars:
+    seq: 0
+    n: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 123
+      n: 10101

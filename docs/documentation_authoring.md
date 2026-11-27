@@ -53,7 +53,7 @@ Before writing or restructuring a module, create a coverage inventory. This can 
 | Reference facts | Parameters, fields, defaults, allowed values, grammar forms, diagnostics, and compatibility facts. | Reference pages become incomplete overviews. |
 | Boundaries and counterexamples | Unsupported forms, common invalid inputs, deployment risks, or edge cases. | Users cannot distinguish safe use from risky use. |
 | Diagnostics and errors | Relevant diagnostic codes, stderr behavior, warning scope, or failure messages. | Error examples are missing or misleading. |
-| Examples and resources | `.fcstm`, `.puml`, `.demo.*`, images, command snippets, expected output, and where they live. | Examples become unverifiable or detached from generation chains. |
+| Examples and resources | `.fcstm`, `.puml`, images, `console` and `testcode` blocks with their expected output, and where they live. | Examples become unverifiable or detached from generation chains. |
 | Migration and landing pages | Where old headings, old URLs, and moved assets now land. | Existing information appears lost. |
 | Verification | Commands or review checks that prove the documentation matches the implementation. | “Done” cannot be audited. |
 
@@ -74,7 +74,7 @@ This example shows the minimum specificity expected for a non-DSL module.
 | Reference facts | CLI options and aliases; built-in template names; template config keys; generated artifact expectations; formatter/linter expectations for generated artifacts. |
 | Boundaries and counterexamples | Do not bypass packaged built-in templates by reading repository `templates/` from unit tests; do not promise C/C++ template behavior without native-toolchain checks; explain when custom template failures are user-template errors. |
 | Diagnostics and errors | CLI errors for unknown template name, missing input, invalid DSL, output conflicts, and template render failures where current implementation exposes them. |
-| Examples and resources | Reuse small checked-in `.fcstm` sources; keep long scripts as `.demo.*`; show short command/output snippets in prose; keep generated outputs produced by the documented build chain. |
+| Examples and resources | Reuse small checked-in `.fcstm` sources; show each command or script together with its expected output in the page, so `make docs_doctest` checks it; keep generated figures produced by the documented build chain. |
 | Migration and landing pages | If old generation tutorial sections move to how-to or reference pages, keep a landing page or migration table that answers where each old heading went. |
 | Verification | `git diff --check`; CLI help comparison if options are documented; focused docs build if Sphinx pages changed; template tests or `make tpl` only when template assets or template docs are materially changed. |
 
@@ -133,8 +133,8 @@ Every task in a how-to page must be runnable or explicitly marked as schematic. 
 6. a link to the relevant reference page for exhaustive facts.
 
 A how-to page that only lists commands is not ready. If a command output is too long, show a small excerpt and say it is
-truncated. If a long workflow is needed, put it in a `.demo.*` or `.demox.*` source file and show only focused snippets in
-prose.
+truncated. If a long workflow is needed, split it into short steps that each show one command and its output, and leave out the
+parts the page does not discuss with `...`.
 
 ### Explanation-page requirements
 
@@ -340,7 +340,7 @@ Minimum capability checklist:
   `during before` / `during after`, pseudo/combo routing, post-exit continuation, hot start, terminal/end handling, and
   speculative validation rollback;
 - which examples are verified through an installed CLI, `PYTHONPATH=. python -m pyfcstm`, `CliRunner`, direct runtime
-  tests, or docs demo generation.
+  tests, or the docs examples run by `make docs_doctest`.
 
 Reference floors:
 
@@ -353,8 +353,7 @@ Reference floors:
 - Runtime-semantics explanations must map fixture families to the behaviors they prove when semantic fixture tests are
   the evidence source. Important families include lifecycle ordering, aspect actions, pseudo chains, combo routing,
   speculative validation rollback, hot start, terminal/end handling, and abstract-handler context.
-- If simulation examples use checked-in `.demo.*` files without a common Makefile target, the page or PR must still
-  record the exact manual command used to regenerate each output; otherwise the output is not auditable.
+- Simulation examples are `console` blocks that `make docs_doctest` runs, so the page and the check cannot drift apart.
 
 ### CLI workflows, installation, and visualization
 
@@ -367,8 +366,8 @@ Required source-fact checklist:
   documenting installation or environment facts;
 - `pyfcstm/model/plantuml.py`, visualization option objects, and visualization entry points when documenting PlantUML
   or image rendering;
-- `test/entry/*`, `test/model/test_plantuml.py`, `test/utils/test_parse.py`, visualization tests, and docs `.demo.*`
-  resources when documenting command behavior, `-c key=value` parsing, or rendered-output behavior.
+- `test/entry/*`, `test/model/test_plantuml.py`, `test/utils/test_parse.py`, visualization tests, and the docs examples that
+  `make docs_doctest` runs when documenting command behavior, `-c key=value` parsing, or rendered-output behavior.
 
 Minimum CLI workflow checklist:
 
@@ -573,7 +572,7 @@ A reference page is not acceptable when it:
 Examples must be small, real, and attached to a clear purpose.
 
 - Prefer one short command plus a short output excerpt over a large embedded shell script.
-- Put long runnable workflows in `.demo.*`, `.demox.*`, or equivalent source files when they need to be regenerated.
+- Write runnable examples as `console` or `testcode` blocks with their output in the page, so `make docs_doctest` checks them; see "Documentation Examples" in `CLAUDE.md`.
 - Mark negative examples explicitly so users do not copy invalid DSL or invalid configuration by mistake.
 - For DSL sugar such as combo transitions or forced transitions, show the authored form and the expanded or effective form when that helps users understand semantics.
 - For diagnostics examples, include enough input and output for a reader or LLM to repair the issue.

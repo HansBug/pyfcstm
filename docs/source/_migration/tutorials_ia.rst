@@ -8,6 +8,11 @@ Purpose
 
 This orphan page is the persistent migration log for the tutorials information-architecture split. It is intentionally outside the public toctree. PR-F through PR-I append their detailed migration records here; PR-J audits this file during final cleanup.
 
+Later change
+------------
+
+The ``.demo.*`` and ``.demox.*`` scripts and their recorded ``*.txt``, ``*.err`` and ``*.exitcode`` outputs named in the records below no longer exist. Pages now carry their examples in the page source, and ``make docs_doctest`` runs them. The records describe the migration as it happened.
+
 Owner boundaries
 ----------------
 

@@ -34,6 +34,11 @@ Expression rendering:
 The module depends on :mod:`jinja2`, :mod:`pyyaml`, and :mod:`pathspec` for
 templating, YAML configuration, and ignore pattern handling.
 
+The module contains:
+
+* :class:`StateMachineCodeRenderer` - Render a state machine model into code
+  files using a template directory
+
 Example::
 
     >>> from pyfcstm.render.render import StateMachineCodeRenderer
@@ -61,7 +66,7 @@ import shutil
 import warnings
 from contextlib import contextmanager
 from functools import partial
-from typing import Dict, Callable, Union, Any, Iterator
+from typing import Dict, Callable, FrozenSet, Union, Any, Iterator
 
 import pathspec
 import yaml
@@ -94,8 +99,12 @@ _CONFIG_ALLOWED_TOP_LEVEL_KEYS = frozenset(
         "filters",
         "tests",
         "ignores",
+        "features",
     }
 )
+#: Features a template may declare in the ``features`` list of its ``config.yaml``.
+#: ``region`` means the template renders models that declare regions.
+_TEMPLATE_FEATURES = ("region",)
 _MISSING = object()
 
 
@@ -136,6 +145,13 @@ class StateMachineCodeRenderer:
     environment, registers expression rendering styles, and maps template files
     to rendering operations or file copying operations.
 
+    A template declares the model features it can render in the ``features``
+    list of its ``config.yaml``. Today the only feature is ``region``: a
+    template that does not declare it is written for a single active path, so
+    :meth:`render` and :meth:`render_one_file` refuse a model that declares
+    regions instead of generating code that silently ignores them. See
+    :attr:`features`.
+
     :param template_dir: Directory containing the templates and configuration
     :type template_dir: str
     :param config_file: Name of the configuration file within the template directory,
@@ -150,6 +166,8 @@ class StateMachineCodeRenderer:
     :vartype env: jinja2.Environment
     :ivar _ignore_patterns: List of git-style ignore patterns
     :vartype _ignore_patterns: List[str]
+    :ivar _features: Features the template declares, see :attr:`features`
+    :vartype _features: FrozenSet[str]
     :ivar _file_mappings: Mapping of relative template paths to render/copy callables
     :vartype _file_mappings: Dict[str, Callable]
 
@@ -181,6 +199,11 @@ class StateMachineCodeRenderer:
         :param config_file: Name of the configuration file within the template directory,
             defaults to ``'config.yaml'``
         :type config_file: str, optional
+        :raises FileNotFoundError: If the configuration file does not exist
+        :raises yaml.YAMLError: If the configuration file contains invalid YAML
+        :raises ValueError: If the configuration root is not a mapping, has
+            unknown top-level keys, or declares a malformed, unknown or
+            duplicated ``features`` entry.
         """
         self.template_dir = os.path.abspath(template_dir)
         self.config_file = os.path.join(self.template_dir, config_file)
@@ -196,18 +219,78 @@ class StateMachineCodeRenderer:
         self._file_mappings: Dict[str, Callable] = {}
         self._prepare_for_file_mapping()
 
+    @property
+    def features(self) -> FrozenSet[str]:
+        """
+        Features the template declares in the ``features`` list of ``config.yaml``.
+
+        ``'region'`` means the template can render models that declare
+        regions. A template without a ``features`` list declares nothing, so
+        every template written before the feature existed keeps working for the
+        models it was written for and is refused for the others.
+
+        :return: Declared feature names, empty when ``config.yaml`` has no
+            ``features`` list.
+        :rtype: FrozenSet[str]
+
+        Example::
+
+            >>> import os, tempfile
+            >>> from pyfcstm.render.render import StateMachineCodeRenderer
+            >>> with tempfile.TemporaryDirectory() as td:
+            ...     with open(os.path.join(td, 'config.yaml'), 'w') as stream:
+            ...         _ = stream.write('features: [region]')
+            ...     sorted(StateMachineCodeRenderer(td).features)
+            ['region']
+            >>> with tempfile.TemporaryDirectory() as td:
+            ...     with open(os.path.join(td, 'config.yaml'), 'w') as stream:
+            ...         _ = stream.write('{}')
+            ...     sorted(StateMachineCodeRenderer(td).features)
+            []
+        """
+        return self._features
+
+    def _require_declared_features(self, model: StateMachine) -> None:
+        """
+        Refuse a model that needs a feature this template does not declare.
+
+        The refusal is the structured ``E_UNSUPPORTED_FEATURE`` diagnostic of
+        :func:`pyfcstm.model.support.require_supported_model`, and its message
+        names this template directory so that a user can tell a template
+        without the feature from a model that was written wrongly. A model
+        without regions never needs a feature.
+
+        :param model: Model about to be rendered.
+        :type model: StateMachine
+        :return: ``None``.
+        :rtype: None
+        :raises pyfcstm.utils.validate.ModelValidationError: If the model
+            declares regions and the template does not declare ``region``.
+        """
+        if "region" in self._features:
+            return
+        from pyfcstm.model.support import require_supported_model
+
+        require_supported_model(
+            model, "generate with template directory '%s'" % self.template_dir
+        )
+
     def _prepare_for_configs(self) -> None:
         """
         Load and process the configuration file.
 
         This method reads the configuration file, sets up expression and
         statement rendering styles, and registers globals, filters, and tests
-        in the Jinja2 environment.
+        in the Jinja2 environment. It also records the features the template
+        declares, see :attr:`features`.
 
+        :return: ``None``.
+        :rtype: None
         :raises FileNotFoundError: If the configuration file does not exist
         :raises yaml.YAMLError: If the configuration file contains invalid YAML
-        :raises ValueError: If the configuration root is not a mapping or
-            contains unknown top-level keys.
+        :raises ValueError: If the configuration root is not a mapping,
+            contains unknown top-level keys, or declares a malformed, unknown or
+            duplicated ``features`` entry.
         """
         with open(self.config_file, "r") as f:
             config_info = yaml.safe_load(f)
@@ -380,6 +463,8 @@ class StateMachineCodeRenderer:
         ignores = list(config_info.pop("ignores", None) or [])
         self._ignore_patterns.extend(ignores)
 
+        self._features = frozenset(config_info.pop("features", None) or [])
+
     def _validate_config_info(self, config_info: Any) -> dict:
         """
         Validate and isolate the renderer configuration mapping.
@@ -451,6 +536,48 @@ class StateMachineCodeRenderer:
                         type(section_value).__name__,
                     )
                 )
+
+        features = config_info.get("features")
+        if features is not None:
+            if isinstance(features, (str, bytes)) or not isinstance(features, list):
+                raise ValueError(
+                    "Renderer config %s top-level key 'features' must be a list "
+                    "of feature names, got %s."
+                    % (
+                        self.config_file,
+                        type(features).__name__,
+                    )
+                )
+            seen_features = set()
+            for index, feature in enumerate(features):
+                if not isinstance(feature, str):
+                    raise ValueError(
+                        "Renderer config %s features[%d] must be a string, got %s."
+                        % (
+                            self.config_file,
+                            index,
+                            type(feature).__name__,
+                        )
+                    )
+                if feature not in _TEMPLATE_FEATURES:
+                    raise ValueError(
+                        "Renderer config %s declares unknown feature %r. "
+                        "Supported features: %s."
+                        % (
+                            self.config_file,
+                            feature,
+                            ", ".join(_TEMPLATE_FEATURES),
+                        )
+                    )
+                if feature in seen_features:
+                    raise ValueError(
+                        "Renderer config %s declares duplicate feature %r."
+                        % (
+                            self.config_file,
+                            feature,
+                        )
+                    )
+                seen_features.add(feature)
 
         ignore_patterns = config_info.get("ignores")
         if ignore_patterns is not None:
@@ -573,15 +700,51 @@ class StateMachineCodeRenderer:
         """
         Render a single template file.
 
+        The template is read with automatic encoding detection and rendered
+        with ``model`` as the only variable passed to the render call. Missing
+        parent directories
+        of ``output_file`` are created, and the result is written as UTF-8 with
+        ``\\n`` line endings, replacing any existing file. :meth:`render` calls
+        this method once for every ``.j2`` file that the ``ignores`` patterns
+        do not exclude.
+
         :param model: The state machine model to render
-        :type model: StateMachine
+        :type model: pyfcstm.model.model.StateMachine
         :param output_file: Path to the output file
         :type output_file: str
         :param template_file: Path to the template file
         :type template_file: str
+        :return: ``None``.
+        :rtype: None
         :raises jinja2.exceptions.TemplateError: If there is an error in the template
+        :raises pyfcstm.utils.validate.ModelValidationError: If the model
+            declares regions and the template does not declare the ``region``
+            feature; nothing is written in that case.
         :raises IOError: If there is an error reading or writing files
+
+        Example::
+
+            >>> import os, tempfile
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.render.render import StateMachineCodeRenderer
+            >>> from pyfcstm.template import extract_template
+            >>> machine = load_state_machine_from_text(
+            ...     'state Demo { [*] -> Idle; state Idle; }'
+            ... )
+            >>> with tempfile.TemporaryDirectory() as work:
+            ...     template_dir = extract_template('python', os.path.join(work, 'tpl'))
+            ...     template_file = os.path.join(work, 'name.txt.j2')
+            ...     with open(template_file, 'w') as stream:
+            ...         _ = stream.write('{{ model.root_state.name }}')
+            ...     output_file = os.path.join(work, 'sub', 'name.txt')
+            ...     StateMachineCodeRenderer(template_dir).render_one_file(
+            ...         machine, output_file, template_file
+            ...     )
+            ...     with open(output_file) as stream:
+            ...         print(stream.read())
+            Demo
         """
+        self._require_declared_features(model)
         tp = self.env.from_string(auto_decode(pathlib.Path(template_file).read_bytes()))
         _ensure_output_parent_dir(output_file)
         with self._statement_default_context(model):
@@ -627,7 +790,13 @@ class StateMachineCodeRenderer:
         :param clear_previous_directory: Whether to clear the output directory before rendering,
             defaults to ``False``
         :type clear_previous_directory: bool, optional
+        :return: ``None``.
+        :rtype: None
         :raises IOError: If there is an error accessing or writing to the output directory
+        :raises pyfcstm.utils.validate.ModelValidationError: If the model
+            declares regions and the template does not declare the ``region``
+            feature; the output directory is left untouched in that case, even
+            with ``clear_previous_directory``.
 
         Example::
 
@@ -647,6 +816,7 @@ class StateMachineCodeRenderer:
             >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
             True
         """
+        self._require_declared_features(model)
         output_dir = os.path.abspath(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         if clear_previous_directory:

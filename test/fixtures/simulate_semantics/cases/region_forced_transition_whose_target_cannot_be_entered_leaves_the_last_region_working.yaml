@@ -1,0 +1,25 @@
+title: A forced transition of the owner whose target cannot be entered finishes the regions before the last one and leaves the last region working, and an ordinary transition of the owner on the same event does not take over
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "Region A finishes: its exit action runs (the digit 8) and the hidden variable stays raised. Region B cannot finish because the owner could not continue into the target, so it keeps working and the owner keeps its group; the owner transition on the same event waits for the last region as any ordinary transition does."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+    vars:
+      seq: 1
+- cycle: Root.Stop
+  expect:
+    configuration: 'Root.P{A: [done], B: B1}'
+    vars:
+      seq: 18
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: [done], B: B1}'
+    vars:
+      seq: 18

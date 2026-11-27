@@ -1,0 +1,22 @@
+title: "A region's first initial candidate fails after a partial entry; its effects are undone and the next candidate is used"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "Inner's enter action runs before its group discovers that region B has no legal entry; the effect must not leak."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: Plain}'
+    vars:
+      leak: 0
+      picked: 1
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: Plain}'
+    vars:
+      leak: 0
+      picked: 1

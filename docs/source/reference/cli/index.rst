@@ -34,7 +34,12 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=inspect option=--enable-verify
 .. cli-ref-option: command=inspect option=--max-complexity-tier choices=structural,smt_linear,smt_nonlinear_decidable,smt_undecidable_heuristic default=structural
 .. cli-ref-option: command=inspect option=--max-call-count-scaling choices=none,one,linear_in_states,linear_in_transitions,linear_in_vars,linear_in_leaves,quadratic_in_outgoing_per_state,quadratic_in_states,vars_times_transitions default=linear_in_transitions
+.. cli-ref-option: command=inspect option=--collect-errors
 .. cli-ref-option: command=inspect option=--smt-timeout-ms
+.. cli-ref-option: command=inspect option=--structure-max-transitions-per-state
+.. cli-ref-option: command=inspect option=--structure-max-unreachable-leaf-rate
+.. cli-ref-option: command=inspect option=--structure-max-unreachable-transition-rate
+.. cli-ref-option: command=inspect option=--no-structure-thresholds
 .. cli-ref-option: command=inspect option=--help
 .. cli-ref-command: name=plantuml
 .. cli-ref-option: command=plantuml option=-i
@@ -49,9 +54,14 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-command: name=diagram
 .. cli-ref-option: command=diagram option=-i
 .. cli-ref-option: command=diagram option=-o
-.. cli-ref-option: command=diagram option=--format choices=json,html
+.. cli-ref-option: command=diagram option=--format choices=json,html,svg,png,pdf
+.. cli-ref-option: command=diagram option=--scale
 .. cli-ref-option: command=diagram option=--open
 .. cli-ref-option: command=diagram option=--help
+.. cli-ref-command: name=expand-svg
+.. cli-ref-option: command=expand-svg option=-i
+.. cli-ref-option: command=expand-svg option=-o
+.. cli-ref-option: command=expand-svg option=--help
 .. cli-ref-command: name=simulate
 .. cli-ref-option: command=simulate option=-i
 .. cli-ref-option: command=simulate option=--input-code
@@ -144,8 +154,12 @@ Top-level command
      - You want a deterministic diagram source file.
    * - ``diagram``
      - FCSTM DSL file
-     - Portable JSON or a self-contained HTML viewer
+     - Portable JSON, a self-contained HTML viewer, or an SVG, PNG or PDF export
      - You want the shared browser diagram without a PlantUML renderer.
+   * - ``expand-svg``
+     - A canonical diagram SVG
+     - A self-contained SVG
+     - You hold an SVG whose labels are ``<text>`` and want one that needs no installed fonts.
    * - ``visualize``
      - FCSTM DSL file or renderer check request
      - Rendered ``png``, ``svg``, or ``pdf`` diagram
@@ -203,9 +217,9 @@ without inventing inputs.
      - ``pyfcstm inspect -i docs/source/tutorials/quick_start/traffic_light.fcstm --format xml``
      - Click rejects the closed ``--format`` choice before writing a report.
    * - ``bmc``
-     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q docs/source/tutorials/bmc/reach_door.fbmcq``
+     - ``pyfcstm bmc -i docs/source/how_to/bmc/bmc_tasks.fcstm -q docs/source/how_to/bmc/reach.fbmcq``
      - The first line is ``BMC reach <= 1: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND`` and replay is verified.
-     - ``pyfcstm bmc -i docs/source/tutorials/bmc/first_check.fcstm -q /tmp/missing.fbmcq``
+     - ``pyfcstm bmc -i docs/source/how_to/bmc/bmc_tasks.fcstm -q /tmp/missing.fbmcq``
      - Query-file reading fails before compilation and emits no partial report.
    * - ``generate``
      - ``pyfcstm generate -i docs/source/tutorials/quick_start/traffic_light.fcstm --template python -o /tmp/traffic-python --clear``
@@ -347,10 +361,30 @@ does not prove generated target code.
      - ``linear_in_transitions``
      - ``none``, ``one``, ``linear_in_states``, ``linear_in_transitions``, ``linear_in_vars``, ``linear_in_leaves``, ``quadratic_in_outgoing_per_state``, ``quadratic_in_states``, ``vars_times_transitions``
      - Maximum model-derived verify call-count scaling accepted by inspect.
+   * - ``--collect-errors``
+     - off
+     - flag
+     - Report every model error instead of stopping at the first one. The command still exits non-zero for an invalid model.
    * - ``--smt-timeout-ms``
      - unset
      - integer ``>= 0``
      - Optional Z3 timeout in milliseconds. ``0`` means no finite timeout.
+   * - ``--structure-max-transitions-per-state``
+     - ``6.0``
+     - float
+     - Advisory maximum of authored transitions per non-pseudo state in the structure statistics.
+   * - ``--structure-max-unreachable-leaf-rate``
+     - ``0.1``
+     - float
+     - Advisory maximum rate of unreachable leaf states.
+   * - ``--structure-max-unreachable-transition-rate``
+     - ``0.1``
+     - float
+     - Advisory maximum rate of unreachable authored transitions.
+   * - ``--no-structure-thresholds``
+     - off
+     - flag
+     - Disable all advisory structure-statistics thresholds.
    * - ``-h, --help``
      - n/a
      - flag
@@ -500,17 +534,19 @@ Typical examples:
 
 .. code-block:: text
 
-   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html] [--open]
+   pyfcstm diagram -i <input-code> [-o <output>] [--format json|html|svg|png|pdf] [--scale <factor>] [--open]
 
-``diagram`` converts an FCSTM file into portable JSON or a self-contained HTML
-viewer. With no ``-o``, JSON is written to standard output. HTML output is
+``diagram`` converts an FCSTM file into portable JSON, a self-contained HTML
+viewer, or an SVG, PNG or PDF export. With no ``-o``, JSON is written to
+standard output; every other format needs ``-o``. HTML output is
 written to the requested path, or, when ``--open`` is used without one, to a
 fresh temporary path, one per invocation. ``--open`` blocks until
 the window is closed and then removes a temporary file, so nothing accumulates;
 pass ``-o`` for a viewer you want to keep.
 
-An output suffix the command cannot produce is a usage error: use ``.json`` or
-``.html``, or pass ``--format`` to choose explicitly. When ``--open`` cannot find
+An output suffix the command cannot produce is a usage error: use ``.json``,
+``.html``, ``.htm``, ``.svg``, ``.png`` or ``.pdf``, or pass ``--format`` to
+choose explicitly. When ``--open`` cannot find
 a browser, a path given with ``-o`` is printed before the error and the file is
 left for you to open by hand. Without ``-o`` there is no such file: the temporary
 one is removed, since nothing ever opened it, and the error says to re-run with
@@ -530,11 +566,15 @@ one is removed, since nothing ever opened it, and the error says to re-run with
    * - ``-o``
      - standard output for JSON
      - path
-     - Destination ``.json`` or ``.html`` file.
+     - Destination ``.json``, ``.html``, ``.svg``, ``.png`` or ``.pdf`` file.
    * - ``--format``
      - inferred from suffix
-     - ``json``, ``html``
-     - Explicit output format.
+     - ``json``, ``html``, ``svg``, ``png``, ``pdf``
+     - Explicit output format. With ``--format`` any suffix is accepted.
+   * - ``--scale``
+     - ``1.0`` for PNG
+     - positive float, at most ``4``
+     - PNG output scale. Valid for PNG output only; any other format is a usage error (``--scale is only supported for PNG output``).
    * - ``--open``
      - off
      - flag
@@ -565,8 +605,53 @@ Output and failure facts:
   detected, and with an installer from python.org the directory's mode is applied
   only from 3.12.4 onwards.
   Use ``-o`` for a document that must not be somewhere shared.
+* SVG, PNG and PDF are produced by the optional rendering runtime. A missing
+  runtime, an out-of-range scale and an export that exceeds the size limits are
+  reported as errors and exit non-zero. These export facts come from
+  ``pyfcstm/entry/diagram.py``; the examples of this page do not
+  run them, because they need the rendering assets.
 * Invalid formats, unknown options, unreadable input, parse/model failures, and
   missing packaged assets exit non-zero with the corresponding error category.
+
+``expand-svg``
+--------------
+
+.. code-block:: text
+
+   pyfcstm expand-svg -i <canonical.svg> [-o <output>]
+
+``expand-svg`` converts a canonical diagram SVG, whose labels are ``<text>``
+elements that name the fonts they want, into a self-contained SVG whose glyphs
+and markers are paths. The result renders the same without installed fonts and
+is no longer editable as text. ``Diagram.to_svg()`` already returns the
+expanded form; this command is for an SVG produced elsewhere, such as the editor
+preview.
+
+.. list-table:: ``expand-svg`` options
+   :header-rows: 1
+
+   * - Option
+     - Default
+     - Values
+     - Meaning
+   * - ``-i``
+     - required
+     - path
+     - Canonical diagram SVG to expand; it must be UTF-8 and contain ``<svg``.
+   * - ``-o``
+     - standard output
+     - path
+     - Destination path.
+   * - ``-h, --help``
+     - n/a
+     - flag
+     - Show command help.
+
+Output and failure facts: an input that does not look like an SVG document is a
+usage error; an unreadable or non-UTF-8 input, an unavailable rendering runtime,
+or a result above the size limit is reported as an error with a non-zero exit
+status. The facts come from ``pyfcstm/entry/diagram.py``; this page does not run
+the command because it needs the rendering assets.
 
 ``visualize``
 -------------
@@ -665,6 +750,284 @@ Typical examples:
    pyfcstm visualize -i machine.fcstm -t svg -o machine.svg --no-open
    pyfcstm visualize -i machine.fcstm --renderer local -p ./plantuml.jar --no-open
    pyfcstm visualize -i machine.fcstm --renderer remote -r http://www.plantuml.com/plantuml --no-open
+
+.. _cli-region-models:
+
+Models with regions
+-------------------
+
+Every subcommand accepts a model with regions. The one refusal left is
+``generate`` with a template that does not declare region support. The table
+lists, for each subcommand, what the command does with such a model, how the
+regions appear in its output, and its exit status. The model of every example is
+the interlock controller of :doc:`/tutorials/regions/index`, whose root state is
+``Controller`` and whose owner ``Controller.Running`` has the regions ``Safety``
+and ``Motion``.
+
+.. list-table:: Region behavior of each subcommand
+   :header-rows: 1
+   :widths: 14 30 36 20
+
+   * - Command
+     - What it does with regions
+     - How regions appear in the output
+     - Exit status
+   * - ``simulate``
+     - Runs the model, cold or hot started; hot start takes a configuration text
+       (see :ref:`sim-region-hot-start`).
+     - The position is configuration text such as
+       ``Controller.Running{Safety: Watching, Motion: Off}`` in ``current``,
+       after ``cycle``, in the history table and in exported files.
+     - ``0``; ``1`` when a command fails (bad ``init`` position, refused event
+       name, missing input).
+   * - ``inspect``
+     - Reports regions and the checks that concern them; ``--enable-verify``
+       judges composite states branch by branch.
+     - The human summary has a ``regions:`` block; the JSON report has a
+       ``regions`` list (``index`` counted from 0, ``name``, ``path``,
+       ``owner_path``, ``substates``, ``initial_targets``, ``aspect_before``,
+       ``aspect_after``). The order diagnostics are ``I_REGION_BACKWARD_READ``
+       (info) and ``W_REGION_BLIND_OVERWRITE`` (warning).
+     - ``0`` also when the report carries warnings; ``1`` when the model is
+       invalid.
+   * - ``bmc``
+     - Checks the model with the region-aware transition relation; ``active()``
+       accepts a position pattern such as
+       ``active("Controller.Running{Motion: On}")``; every SAT witness is
+       replayed.
+     - The human trace has one line per region step and prints the position of
+       each frame; the JSON witness frames carry ``configuration`` and the steps
+       carry ``local_cases`` (see :doc:`/reference/bmc_results/index`).
+     - The BMC statuses of :doc:`/reference/bmc_results/index`: ``0`` when the
+       property holds, ``1`` for a negative verdict.
+   * - ``generate``
+     - Renders with ``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll``. A
+       template directory must list ``region`` under ``features`` in its
+       ``config.yaml``.
+     - Generated files as for any model. A refused run writes nothing: the
+       output directory is not created.
+     - ``0``; ``1`` for the refusal below.
+   * - ``plantuml``
+     - Emits PlantUML source.
+     - A region is a concurrent partition: a note ``**region N: Name**`` opens
+       it (``N`` counts from 1 in written order) and ``--`` separates the
+       partitions of one owner.
+     - ``0``.
+   * - ``diagram``
+     - Emits the portable JSON, or HTML, SVG, PNG or PDF.
+     - Each region is a child of its owner with ``region: true`` and an
+       ``ordinal`` counted from 1 in written order.
+     - ``0``.
+   * - ``visualize``
+     - Builds the same PlantUML source as ``plantuml`` and hands it to the
+       renderer, so a model with regions is drawn like any other model.
+     - The partitions and ``region N: Name`` notes of the ``plantuml`` output
+       appear in the rendered image. This page does not run it: it needs Java
+       and a PlantUML jar or a reachable server.
+     - ``0``; non-zero when no renderer is available.
+
+``expand-svg`` has no row because it reads an SVG file, not a model.
+
+The refusal of ``generate``:
+
+* A custom template whose ``config.yaml`` has no ``features`` list, or a list
+  without ``region``, is refused as soon as the model declares a region, before
+  any file is written. The error is written to standard error with exit status
+  ``1`` and has four parts: the sentence that names the template directory, the
+  count and the first region, a paragraph for the template author (list
+  ``features: [region]`` only when the template really renders regions) and a
+  paragraph for the model author that names the built-in templates that support
+  regions and prints a command with one of them.
+* The same template renders a model without regions as before. Built-in
+  templates are never refused.
+* Listing ``region`` is a promise made by the template author; the CLI does not
+  check that the template renders regions correctly. See
+  :doc:`/reference/template_config/index`.
+
+Acceptance sequence for a model with regions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The commands below run one after another on the controller, in a copy of this page's directory, so no file is left behind. Where only part of an
+output matters, ``...`` stands for the rest; the BMC solver timing is never included.
+
+The commands read these files.  The controller has two regions inside ``Running``; ``Safety`` is written first, so it runs first in each cycle and ``Motion`` sees the permission of the same cycle:
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+The swapped controller is the same model with the two regions written in the opposite order; the emphasized lines are ``Motion``, which now stands in front of ``Safety`` and so sees the permission of the previous cycle:
+
+.. literalinclude:: /_models/controller_swapped.fcstm
+   :language: fcstm
+   :caption: controller_swapped.fcstm
+   :emphasize-lines: 12-18
+
+The two queries of the BMC steps:
+
+.. literalinclude:: motor_reach.fbmcq
+   :language: text
+
+.. literalinclude:: motor_needs_permit.fbmcq
+   :language: text
+
+The template directory ``listed_template`` lists ``region`` under ``features`` and writes the number of states and of regions into one file; ``plain_template``, used in the second record, is the same directory without the ``features`` line:
+
+.. literalinclude:: listed_template/config.yaml
+   :language: yaml
+   :caption: listed_template/config.yaml
+
+.. literalinclude:: listed_template/summary.txt.j2
+   :language: text
+   :caption: listed_template/summary.txt.j2
+
+The first record runs the simulator.  A fault cycle turns the motor off in the same cycle:
+
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle --input fault=1 --input requested=1"
+   ...
+   Cycle: 2
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   ...
+   Cycle: 4
+   Current State: Controller.Running{Safety: Watching, Motion: Off}
+   ...
+
+The next record inspects the controller and then the swapped one:
+
+.. code-block:: console
+
+   $ pyfcstm inspect -i controller.fcstm --color never
+   [WARN] FCSTM Inspect Report: controller.fcstm
+   ...
+     regions: 2
+       Controller.Running.Safety: order 0 in Controller.Running; 1 states
+       Controller.Running.Motion: order 1 in Controller.Running; 2 states
+   ...
+   $ pyfcstm inspect -i controller_swapped.fcstm --color never
+   ...
+   [INFO] I_REGION_BACKWARD_READ
+     Region 'Controller.Running.Motion' reads variable 'permit', which is produced by the later region 'Controller.Running.Safety'; it sees the value from the previous cycle.
+   ...
+
+The next record asks the two BMC questions of the controller:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i controller.fcstm -q motor_reach.fbmcq
+   BMC reach <= 4: PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (WITNESS FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ pyfcstm bmc -i controller.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE
+   ...
+   Property verdict: SATISFIED WITHIN BOUND (NO COUNTEREXAMPLE)
+   ...
+
+The next record generates code.  ``summary.txt`` shows where ``states: 7`` and ``regions: 2`` come from: the template counts ``model.walk_states()``, which yields the six states written in ``controller.fcstm`` and the gate state that the forced transition ``!Running -> Idle`` expands into, and ``model.walk_regions()``, which yields ``Safety`` and ``Motion``:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o out
+   $ LC_ALL=C ls out
+   README.md
+   README_zh.md
+   machine.py
+   $ pyfcstm generate -i controller.fcstm -t listed_template -o listed_out
+   $ cat listed_out/summary.txt
+   states: 7
+   regions: 2
+
+The last record of the sequence prints the PlantUML text:
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+   ...
+
+The ``region`` and ``ordinal`` facts of the diagram are read from the same model with the public API, because ``pyfcstm diagram`` prints the whole portable JSON on one line:
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_file
+
+   diagram = load_state_machine_from_file("controller.fcstm").diagram().to_dict()
+   running = diagram["rootState"]["children"][1]
+   for child in running["children"]:
+       print(child["qualifiedName"], child["region"], child["ordinal"])
+
+.. testoutput::
+
+   Controller.Running.Safety True 1
+   Controller.Running.Motion True 2
+
+What each block establishes:
+
+* ``simulate``: after ``/Start`` the position has both regions; a fault cycle
+  turns the motor off in the same cycle (``Motion`` is back to ``Off``).
+* ``inspect``: two regions in written order; the swapped model reports
+  ``I_REGION_BACKWARD_READ``.
+* ``bmc``: the motor can run, and it never runs without permission; each SAT
+  result is replayed.
+* ``generate``: the packaged Python template writes ``machine.py`` and two
+  README files; the template directory that lists ``region`` renders both the
+  region count and the state count.
+* ``plantuml`` and ``diagram``: the same two regions in written order, 1-based in
+  both outputs.
+
+The sequence does not run the generated ``machine.py`` and does not render the
+PlantUML text or the HTML viewer; the template tests and the diagram checks own
+those.
+
+The commands that fail or report a negative result are in a second record:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t plain_template -o out_plain
+   generate with template directory '...plain_template' does not support region models yet. (line 12)
+   ...
+   $ echo $?
+   1
+   $ test -e out_plain || echo "out_plain was not created"
+   out_plain was not created
+   $ pyfcstm bmc -i controller_swapped.fcstm -q motor_needs_permit.fbmcq
+   BMC forbid <= 4: PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND
+   ...
+   Property verdict: NOT SATISFIED WITHIN BOUND (COUNTEREXAMPLE FOUND)
+   ...
+     Replay: verified (5 frames, 4 steps).
+   ...
+   $ echo $?
+   1
+
+The first command is the refusal: exit status ``1`` and no output directory. The
+second command checks the swapped controller (the regions written in the opposite
+order) against the same property: ``Motion`` runs before ``Safety`` and sees the
+permission of the previous cycle, so the motor can run with ``permit == 0``; the
+negative verdict exits with ``1`` and the witness is replayed.
 
 Command evidence cards
 ----------------------

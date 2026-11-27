@@ -1,0 +1,12 @@
+def int k = 0;
+state Root {
+    event Stop;
+    [*] -> S;
+    state S {
+        [*] -> W : if [k == 0];
+        [*] -> D;
+        state W { region A { [*] -> A1; state A1 { exit { k = 1; } } } }
+        state D { [*] -> X; pseudo state X; X -> [*]; }
+    }
+    !S -> S : /Stop;
+}

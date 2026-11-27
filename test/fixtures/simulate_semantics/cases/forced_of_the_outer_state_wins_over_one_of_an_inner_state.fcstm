@@ -1,0 +1,13 @@
+input int u;
+def int n = 0;
+state Root {
+    [*] -> G;
+    state G {
+        [*] -> P;
+        state P { [*] -> a1; state a1 { during { n = n + 1; } } }
+        state R { during { n = n + 1; } }
+        !P -> R : if [u == 1];
+    }
+    state Q { during { n = n + 1; } }
+    !G -> Q : if [u == 1];
+}

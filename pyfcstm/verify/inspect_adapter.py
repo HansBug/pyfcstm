@@ -5,6 +5,21 @@ automatic inspect runs under a bounded complexity and call-count policy.  It
 also executes eligible algorithms and normalizes their raw results without
 importing diagnostics presentation code.
 
+The module contains:
+
+* :class:`InspectRunResult` - One normalized inspect-adapter result
+* :class:`InspectEligibility` - Inspect admission decision for one registry
+  algorithm
+* :class:`InspectAccessForbiddenError` - Error raised for an invalid inspect
+  policy value
+* :func:`eligible_for_inspect` - Decide whether one metadata entry is allowed
+* :func:`project_inspect_eligibility` - Project every registry entry without
+  executing it
+* :func:`iter_inspect_eligible` - Iterate eligible metadata entries in registry
+  order
+* :func:`run_inspect_algorithms` - Execute eligible algorithms and return
+  normalized results
+
 Examples::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry
@@ -491,7 +506,9 @@ def _iter_model_transitions(machine) -> Iterator[object]:
         >>> len(tuple(_iter_model_transitions(machine)))
         1
     """
-    for state in machine.walk_states():
+    from ..model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             yield transition
 
@@ -704,6 +721,39 @@ def _normalize_algorithm_result(
     )
 
 
+def _inside_region(state) -> bool:
+    """Return whether ``state`` has a region among its ancestors.
+
+    :param state: Model state to check.
+    :type state: State
+    :return: ``True`` when some ancestor namespace of ``state`` is a region.
+    :rtype: bool
+    """
+    from ..model.region import Region
+
+    parent = state.parent
+    while parent is not None:
+        if isinstance(parent, Region):
+            return True
+        parent = parent.parent
+    return False
+
+
+def _region_leaf_skip_result() -> AlgorithmResult:
+    """Return the skip result for a state that lives inside a region.
+
+    The initial-lifecycle analysis follows the single initial path from the
+    root, which does not describe a state entered through a region.
+
+    :return: An ``undecidable_skip`` result stating that reason.
+    :rtype: AlgorithmResult
+    """
+    return AlgorithmResult(
+        kind="undecidable_skip",
+        reason="The state belongs to a region; the initial lifecycle analysis follows a single initial path.",
+    )
+
+
 def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     """Run one SMT algorithm inside a verify-run transition index scope."""
     from .encoding._core import _transition_index_scope
@@ -747,7 +797,9 @@ def _run_smt_algorithm_scoped(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms
         )
     if meta.name == "enter_postcondition_implies_during_precondition":
         return tuple(
-            meta.impl(
+            _region_leaf_skip_result()
+            if _inside_region(state)
+            else meta.impl(
                 state,
                 variables,
                 smt_timeout_ms=smt_timeout_ms,
@@ -810,6 +862,12 @@ def run_inspect_algorithms(
     in registry order, keeps custom ``impl=None`` entries as controlled skip
     results when they are otherwise eligible, and never emits diagnostics-layer
     objects directly.
+
+    A machine with regions is verified like any other: the structural topology
+    algorithms read it as branches (see :mod:`pyfcstm.verify.topology`), the
+    solver-local algorithms visit the transitions of regions as well, and the
+    initial-lifecycle check of a state inside a region returns an
+    ``undecidable_skip`` result.
 
     :param machine: State machine to verify.
     :type machine: StateMachine

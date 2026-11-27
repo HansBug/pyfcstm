@@ -3,6 +3,20 @@ Command processor for the simulation REPL.
 
 This module provides command parsing and execution for the interactive
 state machine simulator.
+
+The module contains:
+
+* :class:`CommandProcessor` - Routes each command line to its handler
+* :class:`CommandResult` - Output and exit code of one command
+* :class:`Settings` - Runtime settings of the simulator
+* :class:`LogLevel` - Log levels that control output verbosity
+
+Example::
+
+    >>> from pyfcstm.entry.simulate.commands import CommandResult
+    >>> result = CommandResult(output='done')
+    >>> result.should_exit, result.exit_code
+    (False, 0)
 """
 
 import re
@@ -16,8 +30,8 @@ from ...simulate import (
     SimulationRuntimeExpressionError,
     SimulationRuntimeInputSourceError,
 )
-from .inputs import _CommandInput, _assignments
-from .display import StateDisplay
+from .inputs import _CommandInput, _assignments, split_init_arguments
+from .display import StateDisplay, format_position
 from .events import get_current_event_display_items
 from .logging import configure_simulate_cli_logger
 
@@ -164,6 +178,31 @@ class CommandProcessor:
     :vartype display: StateDisplay
     :ivar log_level: Current log level
     :vartype log_level: LogLevel
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.simulate import SimulationRuntime
+        >>> machine = load_state_machine_from_text('''
+        ... def int x = 0;
+        ... state Root {
+        ...     event Stop;
+        ...     [*] -> Run;
+        ...     state Run;
+        ...     state Idle;
+        ...     Run -> Idle : /Stop;
+        ... }
+        ... ''')
+        >>> processor = CommandProcessor(
+        ...     SimulationRuntime(machine), state_machine=machine, use_color=False)
+        >>> processor.process('init Root.Run x=5').exit_code
+        0
+        >>> processor.process('cycle Root.Stop').exit_code
+        0
+        >>> processor.runtime.current_state.path
+        ('Root', 'Idle')
+        >>> processor.runtime.vars
+        {'x': 5}
     """
 
     def __init__(
@@ -275,10 +314,28 @@ class CommandProcessor:
         """
         Process a user command.
 
+        ``init`` receives the text after the command with its configuration text
+        kept in one piece; every other command is split on whitespace.
+
         :param user_input: The raw user input string
         :type user_input: str
         :return: Command execution result
         :rtype: CommandResult
+
+        Example::
+
+            >>> from pyfcstm.entry.simulate.commands import CommandProcessor
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'def int n = 0; state Root { [*] -> Run; state Run {'
+            ...     ' region A { [*] -> X; state X; } region B { [*] -> Y; state Y; } } }'
+            ... )
+            >>> processor = CommandProcessor(SimulationRuntime(model))
+            >>> print(processor.process('init Root.Run{A: X, B: [init]} n=0').output.splitlines()[1])
+            Cycle: 0
+            >>> processor.process('init Root.Run{A: [done], B: [done]} n=0').exit_code
+            1
         """
         parts = user_input.strip().split()
         if not parts:
@@ -292,7 +349,7 @@ class CommandProcessor:
         elif command in ('decisions', 'why'):
             return self._handle_decisions(command, args)
         elif command == 'init':
-            return self._handle_init(args)
+            return self._handle_init(split_init_arguments(user_input.strip()[len(command):]))
         elif command == 'clear':
             return self._handle_clear()
         elif command == 'current':
@@ -438,12 +495,17 @@ class CommandProcessor:
         """
         Handle init command to hot start from a specific state.
 
-        Syntax: init <state_path> [var1=value1 var2=value2 ...]
+        Syntax: init <position> [var1=value1 var2=value2 ...]
 
         This command creates a new runtime instance starting from the specified
-        state without executing enter actions. All variables must be provided.
+        position without executing enter actions. The position is a state path or,
+        for a model with regions, a configuration text such as
+        ``Controller.Running{Safety: Watching, Motion: On}``; a region that is
+        left out, and a plain composite state named without a child, wait for
+        initialization. All variables must be provided, hidden ones included,
+        and each of them only once.
 
-        :param args: Command arguments [state_path, var_assignments...]
+        :param args: Command arguments [position, var_assignments...]
         :type args: List[str]
         :return: Command result with new current state
         :rtype: CommandResult
@@ -451,8 +513,9 @@ class CommandProcessor:
         self.last_diagnostics = None
         if not args:
             return CommandResult(
-                "Usage: init <state_path> [var1=value1 ...]\n"
+                "Usage: init <position> [var1=value1 ...]\n"
                 "Example: init System.Active counter=10 flag=1\n"
+                "Regions: init Controller.Running{Safety: Watching, Motion: On} permit=1\n"
                 "Note: All variables must be provided when using init.", exit_code=1,
             )
 
@@ -460,6 +523,12 @@ class CommandProcessor:
             return CommandResult("Initialization requires a fresh input_source; construct a new SimulationRuntime through the Python API.", exit_code=1)
         state_path = args[0]
         var_assignments = args[1:]
+        if state_path.count('{') != state_path.count('}'):
+            return CommandResult(
+                f"Error: the braces of the configuration text '{state_path}' are not "
+                f"balanced. Example: init Controller.Running{{Safety: Watching, "
+                f"Motion: On}} permit=1", exit_code=1,
+            )
 
         # Parse variable assignments
         initial_vars = {}
@@ -472,6 +541,11 @@ class CommandProcessor:
             var_name, var_value_str = assignment.split('=', 1)
             var_name = var_name.strip()
             var_value_str = var_value_str.strip()
+            if var_name in initial_vars:
+                return CommandResult(
+                    f"Error: variable '{var_name}' is assigned more than once.",
+                    exit_code=1,
+                )
 
             # Parse value
             try:
@@ -606,7 +680,7 @@ class CommandProcessor:
                 break
 
             try:
-                state_path = '.'.join(self.runtime.current_state.path)
+                state_path = format_position(self.runtime.current_state)
             except (AttributeError, IndexError):
                 # AttributeError: a non-standard runtime-like object exposed no
                 # current_state path; IndexError: SimulationRuntime.current_state
@@ -692,9 +766,10 @@ class CommandProcessor:
                              - Execute with a complete explicit input vector
                                count: number of cycles (default: 1)
                                Examples: cycle, cycle 5, cycle 3 Start
-  init <state> [vars...]     - Hot start from specific state with variables
+  init <position> [vars...]  - Hot start from a state or configuration with variables
                                All variables must be provided
                                Examples: init System.Active counter=10 flag=1
+                                         init Run{A: X, B: Y} n=0 (models with regions)
                                Supports: hex (0xFF), binary (0b1010), float (3.14)
   decisions [--verbose]      - Show the latest captured candidate checks
   why <id|label> [--verbose] - Explain a check or transition with its context

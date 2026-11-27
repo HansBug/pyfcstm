@@ -141,22 +141,46 @@ class TestModelStatePlant:
     def test_model(self, model):
         assert model.defines == {
             "shared_counter": VarDefine(
-                name="shared_counter", type="int", init=Integer(value=100), doc=None
+                name="shared_counter",
+                type="int",
+                init=Integer(value=100),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "shared_ready": VarDefine(
-                name="shared_ready", type="int", init=Integer(value=1), doc=None
+                name="shared_ready",
+                type="int",
+                init=Integer(value=1),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "left_limit": VarDefine(
-                name="left_limit", type="int", init=Integer(value=5), doc=None
+                name="left_limit",
+                type="int",
+                init=Integer(value=5),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "right_limit": VarDefine(
-                name="right_limit", type="int", init=Integer(value=6), doc=None
+                name="right_limit",
+                type="int",
+                init=Integer(value=6),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "left_result": VarDefine(
-                name="left_result", type="int", init=Integer(value=0), doc=None
+                name="left_result",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "right_result": VarDefine(
-                name="right_result", type="int", init=Integer(value=0), doc=None
+                name="right_result",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "Plant"
@@ -170,33 +194,48 @@ class TestModelStatePlant:
                 type="int",
                 expr=dsl_nodes.Integer(raw="100"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="shared_ready",
                 type="int",
                 expr=dsl_nodes.Integer(raw="1"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
-                name="left_limit", type="int", expr=dsl_nodes.Integer(raw="5"), doc=None
+                name="left_limit",
+                type="int",
+                expr=dsl_nodes.Integer(raw="5"),
+                doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="right_limit",
                 type="int",
                 expr=dsl_nodes.Integer(raw="6"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="left_result",
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="right_result",
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
         ]
         assert ast_node.root_state.name == "Plant"
@@ -205,6 +244,7 @@ class TestModelStatePlant:
         assert state_plant.name == "Plant"
         assert state_plant.path == ("Plant",)
         assert sorted(state_plant.substates.keys()) == ["LeftUnit", "RightUnit"]
+        assert state_plant.regions == {}
         assert state_plant.events == {}
         assert len(state_plant.transitions) == 2
         assert state_plant.transitions[0].from_state == INIT_STATE
@@ -215,6 +255,9 @@ class TestModelStatePlant:
         assert state_plant.transitions[0].doc is None
         assert state_plant.transitions[0].parent_ref().name == "Plant"
         assert state_plant.transitions[0].parent_ref().path == ("Plant",)
+        assert state_plant.transitions[0].target_history is None
+        assert state_plant.transitions[0].history_role is None
+        assert state_plant.transitions[0].history_user_guard is None
         assert state_plant.transitions[1].from_state == "LeftUnit"
         assert state_plant.transitions[1].to_state == "RightUnit"
         assert state_plant.transitions[1].event is None
@@ -223,6 +266,9 @@ class TestModelStatePlant:
         assert state_plant.transitions[1].doc is None
         assert state_plant.transitions[1].parent_ref().name == "Plant"
         assert state_plant.transitions[1].parent_ref().path == ("Plant",)
+        assert state_plant.transitions[1].target_history is None
+        assert state_plant.transitions[1].history_role is None
+        assert state_plant.transitions[1].history_user_guard is None
         assert state_plant.named_functions == {}
         assert state_plant.on_enters == []
         assert state_plant.on_durings == []
@@ -233,6 +279,8 @@ class TestModelStatePlant:
         assert state_plant.extra_name is None
         assert not state_plant.is_pseudo
         assert state_plant.doc is None
+        assert not state_plant.is_history_gate
+        assert not state_plant.is_forced_gate
         assert state_plant.abstract_on_during_aspects == []
         assert state_plant.abstract_on_durings == []
         assert state_plant.abstract_on_enters == []
@@ -246,6 +294,9 @@ class TestModelStatePlant:
         assert state_plant.init_transitions[0].doc is None
         assert state_plant.init_transitions[0].parent_ref().name == "Plant"
         assert state_plant.init_transitions[0].parent_ref().path == ("Plant",)
+        assert state_plant.init_transitions[0].target_history is None
+        assert state_plant.init_transitions[0].history_role is None
+        assert state_plant.init_transitions[0].history_user_guard is None
         assert not state_plant.is_leaf_state
         assert state_plant.is_root_state
         assert not state_plant.is_stoppable
@@ -265,6 +316,9 @@ class TestModelStatePlant:
         assert state_plant.transitions_entering_children[0].parent_ref().path == (
             "Plant",
         )
+        assert state_plant.transitions_entering_children[0].target_history is None
+        assert state_plant.transitions_entering_children[0].history_role is None
+        assert state_plant.transitions_entering_children[0].history_user_guard is None
         assert len(state_plant.transitions_entering_children_simplified) == 1
         assert (
             state_plant.transitions_entering_children_simplified[0].from_state
@@ -285,6 +339,17 @@ class TestModelStatePlant:
         assert state_plant.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Plant",)
+        assert (
+            state_plant.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_plant.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_plant.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_plant.transitions_from) == 1
         assert state_plant.transitions_from[0].from_state == "Plant"
         assert state_plant.transitions_from[0].to_state == EXIT_STATE
@@ -293,6 +358,9 @@ class TestModelStatePlant:
         assert state_plant.transitions_from[0].effects == []
         assert state_plant.transitions_from[0].doc is None
         assert state_plant.transitions_from[0].parent_ref is None
+        assert state_plant.transitions_from[0].target_history is None
+        assert state_plant.transitions_from[0].history_role is None
+        assert state_plant.transitions_from[0].history_user_guard is None
         assert len(state_plant.transitions_to) == 1
         assert state_plant.transitions_to[0].from_state == INIT_STATE
         assert state_plant.transitions_to[0].to_state == "Plant"
@@ -301,6 +369,9 @@ class TestModelStatePlant:
         assert state_plant.transitions_to[0].effects == []
         assert state_plant.transitions_to[0].doc is None
         assert state_plant.transitions_to[0].parent_ref is None
+        assert state_plant.transitions_to[0].target_history is None
+        assert state_plant.transitions_to[0].history_role is None
+        assert state_plant.transitions_to[0].history_user_guard is None
 
     def test_state_plant_to_ast_node(self, state_plant):
         ast_node = state_plant.to_ast_node()
@@ -330,6 +401,8 @@ class TestModelStatePlant:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Busy",
@@ -345,6 +418,8 @@ class TestModelStatePlant:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -355,6 +430,7 @@ class TestModelStatePlant:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -376,6 +452,7 @@ class TestModelStatePlant:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
@@ -401,6 +478,7 @@ class TestModelStatePlant:
                                 ),
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -410,6 +488,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="RightUnit",
@@ -431,6 +511,8 @@ class TestModelStatePlant:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Busy",
@@ -446,6 +528,8 @@ class TestModelStatePlant:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -456,6 +540,7 @@ class TestModelStatePlant:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -477,6 +562,7 @@ class TestModelStatePlant:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
@@ -502,6 +588,7 @@ class TestModelStatePlant:
                                 ),
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -511,6 +598,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -521,6 +610,7 @@ class TestModelStatePlant:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftUnit",
@@ -529,6 +619,7 @@ class TestModelStatePlant:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -538,6 +629,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_list_on_enters(self, state_plant):
@@ -600,6 +693,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.name == "LeftUnit"
         assert state_plant_leftunit.path == ("Plant", "LeftUnit")
         assert sorted(state_plant_leftunit.substates.keys()) == ["Busy", "Idle"]
+        assert state_plant_leftunit.regions == {}
         assert state_plant_leftunit.events == {}
         assert len(state_plant_leftunit.transitions) == 3
         assert state_plant_leftunit.transitions[0].from_state == INIT_STATE
@@ -613,6 +707,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit.transitions[0].target_history is None
+        assert state_plant_leftunit.transitions[0].history_role is None
+        assert state_plant_leftunit.transitions[0].history_user_guard is None
         assert state_plant_leftunit.transitions[1].from_state == "Idle"
         assert state_plant_leftunit.transitions[1].to_state == "Busy"
         assert state_plant_leftunit.transitions[1].event is None
@@ -635,6 +732,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit.transitions[1].target_history is None
+        assert state_plant_leftunit.transitions[1].history_role is None
+        assert state_plant_leftunit.transitions[1].history_user_guard is None
         assert state_plant_leftunit.transitions[2].from_state == "Busy"
         assert state_plant_leftunit.transitions[2].to_state == "Idle"
         assert state_plant_leftunit.transitions[2].event is None
@@ -656,6 +756,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit.transitions[2].target_history is None
+        assert state_plant_leftunit.transitions[2].history_role is None
+        assert state_plant_leftunit.transitions[2].history_user_guard is None
         assert state_plant_leftunit.named_functions == {}
         assert state_plant_leftunit.on_enters == []
         assert state_plant_leftunit.on_durings == []
@@ -667,6 +770,8 @@ class TestModelStatePlant:
         assert state_plant_leftunit.extra_name == "Left Unit"
         assert not state_plant_leftunit.is_pseudo
         assert state_plant_leftunit.doc is None
+        assert not state_plant_leftunit.is_history_gate
+        assert not state_plant_leftunit.is_forced_gate
         assert state_plant_leftunit.abstract_on_during_aspects == []
         assert state_plant_leftunit.abstract_on_durings == []
         assert state_plant_leftunit.abstract_on_enters == []
@@ -683,6 +788,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit.init_transitions[0].target_history is None
+        assert state_plant_leftunit.init_transitions[0].history_role is None
+        assert state_plant_leftunit.init_transitions[0].history_user_guard is None
         assert not state_plant_leftunit.is_leaf_state
         assert not state_plant_leftunit.is_root_state
         assert not state_plant_leftunit.is_stoppable
@@ -709,6 +817,16 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_entering_children[
             0
         ].parent_ref().path == ("Plant", "LeftUnit")
+        assert (
+            state_plant_leftunit.transitions_entering_children[0].target_history is None
+        )
+        assert (
+            state_plant_leftunit.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_plant_leftunit.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_plant_leftunit.transitions_entering_children_simplified) == 1
         assert (
             state_plant_leftunit.transitions_entering_children_simplified[0].from_state
@@ -742,6 +860,24 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Plant", "LeftUnit")
+        assert (
+            state_plant_leftunit.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_plant_leftunit.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_plant_leftunit.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_plant_leftunit.transitions_from) == 1
         assert state_plant_leftunit.transitions_from[0].from_state == "LeftUnit"
         assert state_plant_leftunit.transitions_from[0].to_state == "RightUnit"
@@ -751,6 +887,9 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_from[0].doc is None
         assert state_plant_leftunit.transitions_from[0].parent_ref().name == "Plant"
         assert state_plant_leftunit.transitions_from[0].parent_ref().path == ("Plant",)
+        assert state_plant_leftunit.transitions_from[0].target_history is None
+        assert state_plant_leftunit.transitions_from[0].history_role is None
+        assert state_plant_leftunit.transitions_from[0].history_user_guard is None
         assert len(state_plant_leftunit.transitions_to) == 1
         assert state_plant_leftunit.transitions_to[0].from_state == INIT_STATE
         assert state_plant_leftunit.transitions_to[0].to_state == "LeftUnit"
@@ -760,6 +899,9 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_to[0].doc is None
         assert state_plant_leftunit.transitions_to[0].parent_ref().name == "Plant"
         assert state_plant_leftunit.transitions_to[0].parent_ref().path == ("Plant",)
+        assert state_plant_leftunit.transitions_to[0].target_history is None
+        assert state_plant_leftunit.transitions_to[0].history_role is None
+        assert state_plant_leftunit.transitions_to[0].history_user_guard is None
 
     def test_state_plant_leftunit_to_ast_node(self, state_plant_leftunit):
         ast_node = state_plant_leftunit.to_ast_node()
@@ -783,6 +925,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Busy",
@@ -798,6 +942,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -808,6 +954,7 @@ class TestModelStatePlant:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -829,6 +976,7 @@ class TestModelStatePlant:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
@@ -854,6 +1002,7 @@ class TestModelStatePlant:
                         ),
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -863,6 +1012,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_leftunit_list_on_enters(self, state_plant_leftunit):
@@ -933,6 +1084,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit_idle.name == "Idle"
         assert state_plant_leftunit_idle.path == ("Plant", "LeftUnit", "Idle")
         assert sorted(state_plant_leftunit_idle.substates.keys()) == []
+        assert state_plant_leftunit_idle.regions == {}
         assert state_plant_leftunit_idle.events == {}
         assert state_plant_leftunit_idle.transitions == []
         assert state_plant_leftunit_idle.named_functions == {}
@@ -946,6 +1098,8 @@ class TestModelStatePlant:
         assert state_plant_leftunit_idle.extra_name is None
         assert not state_plant_leftunit_idle.is_pseudo
         assert state_plant_leftunit_idle.doc is None
+        assert not state_plant_leftunit_idle.is_history_gate
+        assert not state_plant_leftunit_idle.is_forced_gate
         assert state_plant_leftunit_idle.abstract_on_during_aspects == []
         assert state_plant_leftunit_idle.abstract_on_durings == []
         assert state_plant_leftunit_idle.abstract_on_enters == []
@@ -994,6 +1148,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit_idle.transitions_from[0].target_history is None
+        assert state_plant_leftunit_idle.transitions_from[0].history_role is None
+        assert state_plant_leftunit_idle.transitions_from[0].history_user_guard is None
         assert len(state_plant_leftunit_idle.transitions_to) == 2
         assert state_plant_leftunit_idle.transitions_to[0].from_state == INIT_STATE
         assert state_plant_leftunit_idle.transitions_to[0].to_state == "Idle"
@@ -1008,6 +1165,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit_idle.transitions_to[0].target_history is None
+        assert state_plant_leftunit_idle.transitions_to[0].history_role is None
+        assert state_plant_leftunit_idle.transitions_to[0].history_user_guard is None
         assert state_plant_leftunit_idle.transitions_to[1].from_state == "Busy"
         assert state_plant_leftunit_idle.transitions_to[1].to_state == "Idle"
         assert state_plant_leftunit_idle.transitions_to[1].event is None
@@ -1031,6 +1191,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit_idle.transitions_to[1].target_history is None
+        assert state_plant_leftunit_idle.transitions_to[1].history_role is None
+        assert state_plant_leftunit_idle.transitions_to[1].history_user_guard is None
 
     def test_state_plant_leftunit_idle_to_ast_node(self, state_plant_leftunit_idle):
         ast_node = state_plant_leftunit_idle.to_ast_node()
@@ -1048,6 +1211,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_leftunit_idle_list_on_enters(self, state_plant_leftunit_idle):
@@ -1129,6 +1294,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit_busy.name == "Busy"
         assert state_plant_leftunit_busy.path == ("Plant", "LeftUnit", "Busy")
         assert sorted(state_plant_leftunit_busy.substates.keys()) == []
+        assert state_plant_leftunit_busy.regions == {}
         assert state_plant_leftunit_busy.events == {}
         assert state_plant_leftunit_busy.transitions == []
         assert state_plant_leftunit_busy.named_functions == {}
@@ -1142,6 +1308,8 @@ class TestModelStatePlant:
         assert state_plant_leftunit_busy.extra_name is None
         assert not state_plant_leftunit_busy.is_pseudo
         assert state_plant_leftunit_busy.doc is None
+        assert not state_plant_leftunit_busy.is_history_gate
+        assert not state_plant_leftunit_busy.is_forced_gate
         assert state_plant_leftunit_busy.abstract_on_during_aspects == []
         assert state_plant_leftunit_busy.abstract_on_durings == []
         assert state_plant_leftunit_busy.abstract_on_enters == []
@@ -1189,6 +1357,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit_busy.transitions_from[0].target_history is None
+        assert state_plant_leftunit_busy.transitions_from[0].history_role is None
+        assert state_plant_leftunit_busy.transitions_from[0].history_user_guard is None
         assert len(state_plant_leftunit_busy.transitions_to) == 1
         assert state_plant_leftunit_busy.transitions_to[0].from_state == "Idle"
         assert state_plant_leftunit_busy.transitions_to[0].to_state == "Busy"
@@ -1214,6 +1385,9 @@ class TestModelStatePlant:
             "Plant",
             "LeftUnit",
         )
+        assert state_plant_leftunit_busy.transitions_to[0].target_history is None
+        assert state_plant_leftunit_busy.transitions_to[0].history_role is None
+        assert state_plant_leftunit_busy.transitions_to[0].history_user_guard is None
 
     def test_state_plant_leftunit_busy_to_ast_node(self, state_plant_leftunit_busy):
         ast_node = state_plant_leftunit_busy.to_ast_node()
@@ -1231,6 +1405,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_leftunit_busy_list_on_enters(self, state_plant_leftunit_busy):
@@ -1312,6 +1488,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.name == "RightUnit"
         assert state_plant_rightunit.path == ("Plant", "RightUnit")
         assert sorted(state_plant_rightunit.substates.keys()) == ["Busy", "Idle"]
+        assert state_plant_rightunit.regions == {}
         assert state_plant_rightunit.events == {}
         assert len(state_plant_rightunit.transitions) == 3
         assert state_plant_rightunit.transitions[0].from_state == INIT_STATE
@@ -1325,6 +1502,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit.transitions[0].target_history is None
+        assert state_plant_rightunit.transitions[0].history_role is None
+        assert state_plant_rightunit.transitions[0].history_user_guard is None
         assert state_plant_rightunit.transitions[1].from_state == "Idle"
         assert state_plant_rightunit.transitions[1].to_state == "Busy"
         assert state_plant_rightunit.transitions[1].event is None
@@ -1347,6 +1527,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit.transitions[1].target_history is None
+        assert state_plant_rightunit.transitions[1].history_role is None
+        assert state_plant_rightunit.transitions[1].history_user_guard is None
         assert state_plant_rightunit.transitions[2].from_state == "Busy"
         assert state_plant_rightunit.transitions[2].to_state == "Idle"
         assert state_plant_rightunit.transitions[2].event is None
@@ -1368,6 +1551,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit.transitions[2].target_history is None
+        assert state_plant_rightunit.transitions[2].history_role is None
+        assert state_plant_rightunit.transitions[2].history_user_guard is None
         assert state_plant_rightunit.named_functions == {}
         assert state_plant_rightunit.on_enters == []
         assert state_plant_rightunit.on_durings == []
@@ -1379,6 +1565,8 @@ class TestModelStatePlant:
         assert state_plant_rightunit.extra_name == "Right Unit"
         assert not state_plant_rightunit.is_pseudo
         assert state_plant_rightunit.doc is None
+        assert not state_plant_rightunit.is_history_gate
+        assert not state_plant_rightunit.is_forced_gate
         assert state_plant_rightunit.abstract_on_during_aspects == []
         assert state_plant_rightunit.abstract_on_durings == []
         assert state_plant_rightunit.abstract_on_enters == []
@@ -1397,6 +1585,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit.init_transitions[0].target_history is None
+        assert state_plant_rightunit.init_transitions[0].history_role is None
+        assert state_plant_rightunit.init_transitions[0].history_user_guard is None
         assert not state_plant_rightunit.is_leaf_state
         assert not state_plant_rightunit.is_root_state
         assert not state_plant_rightunit.is_stoppable
@@ -1423,6 +1614,17 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions_entering_children[
             0
         ].parent_ref().path == ("Plant", "RightUnit")
+        assert (
+            state_plant_rightunit.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_plant_rightunit.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_plant_rightunit.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_plant_rightunit.transitions_entering_children_simplified) == 1
         assert (
             state_plant_rightunit.transitions_entering_children_simplified[0].from_state
@@ -1457,6 +1659,24 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Plant", "RightUnit")
+        assert (
+            state_plant_rightunit.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_plant_rightunit.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_plant_rightunit.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert state_plant_rightunit.transitions_from == []
         assert len(state_plant_rightunit.transitions_to) == 1
         assert state_plant_rightunit.transitions_to[0].from_state == "LeftUnit"
@@ -1467,6 +1687,9 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions_to[0].doc is None
         assert state_plant_rightunit.transitions_to[0].parent_ref().name == "Plant"
         assert state_plant_rightunit.transitions_to[0].parent_ref().path == ("Plant",)
+        assert state_plant_rightunit.transitions_to[0].target_history is None
+        assert state_plant_rightunit.transitions_to[0].history_role is None
+        assert state_plant_rightunit.transitions_to[0].history_user_guard is None
 
     def test_state_plant_rightunit_to_ast_node(self, state_plant_rightunit):
         ast_node = state_plant_rightunit.to_ast_node()
@@ -1490,6 +1713,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Busy",
@@ -1505,6 +1730,8 @@ class TestModelStatePlant:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -1515,6 +1742,7 @@ class TestModelStatePlant:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -1536,6 +1764,7 @@ class TestModelStatePlant:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
@@ -1561,6 +1790,7 @@ class TestModelStatePlant:
                         ),
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1570,6 +1800,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_rightunit_list_on_enters(self, state_plant_rightunit):
@@ -1640,6 +1872,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit_idle.name == "Idle"
         assert state_plant_rightunit_idle.path == ("Plant", "RightUnit", "Idle")
         assert sorted(state_plant_rightunit_idle.substates.keys()) == []
+        assert state_plant_rightunit_idle.regions == {}
         assert state_plant_rightunit_idle.events == {}
         assert state_plant_rightunit_idle.transitions == []
         assert state_plant_rightunit_idle.named_functions == {}
@@ -1653,6 +1886,8 @@ class TestModelStatePlant:
         assert state_plant_rightunit_idle.extra_name is None
         assert not state_plant_rightunit_idle.is_pseudo
         assert state_plant_rightunit_idle.doc is None
+        assert not state_plant_rightunit_idle.is_history_gate
+        assert not state_plant_rightunit_idle.is_forced_gate
         assert state_plant_rightunit_idle.abstract_on_during_aspects == []
         assert state_plant_rightunit_idle.abstract_on_durings == []
         assert state_plant_rightunit_idle.abstract_on_enters == []
@@ -1702,6 +1937,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit_idle.transitions_from[0].target_history is None
+        assert state_plant_rightunit_idle.transitions_from[0].history_role is None
+        assert state_plant_rightunit_idle.transitions_from[0].history_user_guard is None
         assert len(state_plant_rightunit_idle.transitions_to) == 2
         assert state_plant_rightunit_idle.transitions_to[0].from_state == INIT_STATE
         assert state_plant_rightunit_idle.transitions_to[0].to_state == "Idle"
@@ -1717,6 +1955,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit_idle.transitions_to[0].target_history is None
+        assert state_plant_rightunit_idle.transitions_to[0].history_role is None
+        assert state_plant_rightunit_idle.transitions_to[0].history_user_guard is None
         assert state_plant_rightunit_idle.transitions_to[1].from_state == "Busy"
         assert state_plant_rightunit_idle.transitions_to[1].to_state == "Idle"
         assert state_plant_rightunit_idle.transitions_to[1].event is None
@@ -1741,6 +1982,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit_idle.transitions_to[1].target_history is None
+        assert state_plant_rightunit_idle.transitions_to[1].history_role is None
+        assert state_plant_rightunit_idle.transitions_to[1].history_user_guard is None
 
     def test_state_plant_rightunit_idle_to_ast_node(self, state_plant_rightunit_idle):
         ast_node = state_plant_rightunit_idle.to_ast_node()
@@ -1758,6 +2002,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_rightunit_idle_list_on_enters(
@@ -1849,6 +2095,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit_busy.name == "Busy"
         assert state_plant_rightunit_busy.path == ("Plant", "RightUnit", "Busy")
         assert sorted(state_plant_rightunit_busy.substates.keys()) == []
+        assert state_plant_rightunit_busy.regions == {}
         assert state_plant_rightunit_busy.events == {}
         assert state_plant_rightunit_busy.transitions == []
         assert state_plant_rightunit_busy.named_functions == {}
@@ -1862,6 +2109,8 @@ class TestModelStatePlant:
         assert state_plant_rightunit_busy.extra_name is None
         assert not state_plant_rightunit_busy.is_pseudo
         assert state_plant_rightunit_busy.doc is None
+        assert not state_plant_rightunit_busy.is_history_gate
+        assert not state_plant_rightunit_busy.is_forced_gate
         assert state_plant_rightunit_busy.abstract_on_during_aspects == []
         assert state_plant_rightunit_busy.abstract_on_durings == []
         assert state_plant_rightunit_busy.abstract_on_enters == []
@@ -1910,6 +2159,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit_busy.transitions_from[0].target_history is None
+        assert state_plant_rightunit_busy.transitions_from[0].history_role is None
+        assert state_plant_rightunit_busy.transitions_from[0].history_user_guard is None
         assert len(state_plant_rightunit_busy.transitions_to) == 1
         assert state_plant_rightunit_busy.transitions_to[0].from_state == "Idle"
         assert state_plant_rightunit_busy.transitions_to[0].to_state == "Busy"
@@ -1936,6 +2188,9 @@ class TestModelStatePlant:
             "Plant",
             "RightUnit",
         )
+        assert state_plant_rightunit_busy.transitions_to[0].target_history is None
+        assert state_plant_rightunit_busy.transitions_to[0].history_role is None
+        assert state_plant_rightunit_busy.transitions_to[0].history_user_guard is None
 
     def test_state_plant_rightunit_busy_to_ast_node(self, state_plant_rightunit_busy):
         ast_node = state_plant_rightunit_busy.to_ast_node()
@@ -1953,6 +2208,8 @@ class TestModelStatePlant:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_plant_rightunit_busy_list_on_enters(

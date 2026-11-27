@@ -1,0 +1,2 @@
+def int seen = (active("Root.A")) ? 1 : 0;
+state Root { state A; [*] -> A; }

@@ -1,0 +1,7 @@
+state Root {
+    [*] -> P;
+    state P {
+        region R1 { [*] -> Q; pseudo state Q { enter abstract QOn; } state X; Q -> X; }
+        region R2 { [*] -> S; state S; }
+    }
+}

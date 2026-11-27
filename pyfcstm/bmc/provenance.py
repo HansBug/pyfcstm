@@ -20,6 +20,17 @@ or programmatic-model behavior.  Changes to those private names or their
 types must update this module and the model loader together; missing metadata
 is reported as an unavailable path or excerpt rather than guessed.
 
+The module contains:
+
+* :class:`BmcSourceRef` - Stable reference to a FCSTM, FBMCQ, or generated source location
+* :class:`BmcTrackedConstraint` - One source-group occurrence and its Boolean expressions
+* :class:`SourceDocumentRegistry` - Immutable source-text snapshot for provenance excerpts
+* :data:`TRACKED_GROUP_PAIRINGS` - The stage and category pairings a tracked group may carry
+* :func:`normalized_fact_for` - The published domain fact of one tracked source group
+* :func:`json_canonical` - Convert a normalized metadata graph back to plain JSON containers
+* :func:`exact_str`, :func:`exact_int`, :func:`exact_float`, :func:`exact_index` and
+  :func:`exact_optional_index` - Read a metadata value as the exact type it is
+
 Example::
 
     >>> from pyfcstm.bmc.provenance import BmcSourceRef, SourceDocumentRegistry
@@ -1742,7 +1753,6 @@ TRACKED_GROUP_PAIRINGS = frozenset(
         ("assumptions", "assumption.frame"),
         ("assumptions", "definedness"),
         ("initialization", "definedness"),
-        ("initialization", "domain.history_variable"),
         ("initialization", "initial.target"),
         ("initialization", "initial.variable"),
         ("initialization", "initial.where"),

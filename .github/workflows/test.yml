@@ -1630,3 +1630,13 @@ jobs:
           # assertion: a public signature that moved without its RST being
           # regenerated shows up here as a diff.
           git diff --exit-code
+      - name: Check the generated sample tests are current
+        shell: bash
+        # The sample tests are written by ``sample_test_generator.py`` and
+        # asserted a model that no longer existed once a field was added, for
+        # as long as nobody regenerated them. ``sample_clean`` first, because
+        # make would otherwise judge freshly checked-out files up to date.
+        run: |
+          make sample_clean
+          make sample
+          git diff --exit-code -- test/model

@@ -50,8 +50,8 @@ Example::
 
 import math
 import warnings
-from dataclasses import dataclass
-from typing import Iterator, List, Any
+from dataclasses import dataclass, field
+from typing import Iterator, List, Any, Optional
 
 try:
     from typing import Literal
@@ -60,6 +60,7 @@ except ImportError:
 
 from .base import AstExportable
 from ..dsl import node as dsl_nodes
+from ..utils.validate import Span
 
 __all__ = [
     'Expr',
@@ -72,6 +73,7 @@ __all__ = [
     'ConditionalOp',
     'UFunc',
     'Variable',
+    'ActiveStateQuery',
     'parse_expr_node_to_expr',
     'parse_expr_from_string',
     'parse_expr',
@@ -268,6 +270,13 @@ class Expr(AstExportable):
         :return: AST node representation
         :rtype: dsl_nodes.Expr
         :raises NotImplementedError: Must be implemented by subclasses
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Integer
+            >>> node = Integer(3).to_ast_node()
+            >>> str(node)
+            '3'
         """
         raise NotImplementedError  # pragma: no cover
 
@@ -1057,6 +1066,12 @@ class Integer(Expr):
 
         :return: Integer AST node
         :rtype: dsl_nodes.Integer
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Integer
+            >>> str(Integer(3).to_ast_node())
+            '3'
         """
         return dsl_nodes.Integer(raw=str(int(self.value)))
 
@@ -1080,6 +1095,12 @@ class Float(Expr):
 
         :return: Float or Constant AST node
         :rtype: dsl_nodes.Expr
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Float
+            >>> str(Float(1.5).to_ast_node())
+            '1.5'
         """
         const_name = None
         if abs(self.value - math.pi) < 1e-10:
@@ -1117,6 +1138,12 @@ class Boolean(Expr):
 
         :return: Boolean AST node
         :rtype: dsl_nodes.Boolean
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Boolean
+            >>> str(Boolean(True).to_ast_node())
+            'True'
         """
         return dsl_nodes.Boolean(raw=str(self.value).lower())
 
@@ -1263,6 +1290,12 @@ class BinaryOp(Op):
 
         :return: BinaryOp AST node
         :rtype: dsl_nodes.BinaryOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+            >>> str(BinaryOp(x=Variable('x'), op='+', y=Integer(1)).to_ast_node())
+            'x + 1'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
 
@@ -1346,6 +1379,12 @@ class UnaryOp(Op):
 
         :return: UnaryOp AST node
         :rtype: dsl_nodes.UnaryOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import UnaryOp, Variable
+            >>> str(UnaryOp(op='-', x=Variable('x')).to_ast_node())
+            '-x'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
         x_node = self.x.to_ast_node()
@@ -1388,6 +1427,12 @@ class UFunc(Expr):
 
         :return: UFunc AST node
         :rtype: dsl_nodes.UFunc
+
+        Example::
+
+            >>> from pyfcstm.model.expr import UFunc, Variable
+            >>> str(UFunc(func='abs', x=Variable('x')).to_ast_node())
+            'abs(x)'
         """
         return dsl_nodes.UFunc(func=self.func, expr=self.x.to_ast_node())
 
@@ -1437,6 +1482,14 @@ class ConditionalOp(Op):
 
         :return: ConditionalOp AST node
         :rtype: dsl_nodes.ConditionalOp
+
+        Example::
+
+            >>> from pyfcstm.model.expr import BinaryOp, ConditionalOp, Integer, Variable
+            >>> condition = BinaryOp(x=Variable('x'), op='>', y=Integer(0))
+            >>> node = ConditionalOp(cond=condition, if_true=Integer(1), if_false=Integer(2))
+            >>> str(node.to_ast_node())
+            '(x > 0) ? 1 : 2'
         """
         my_pre = _OP_PRECEDENCE[self.op_mark]
 
@@ -1483,8 +1536,69 @@ class Variable(Expr):
 
         :return: Name AST node
         :rtype: dsl_nodes.Name
+
+        Example::
+
+            >>> from pyfcstm.model.expr import Variable
+            >>> str(Variable('x').to_ast_node())
+            'x'
         """
         return dsl_nodes.Name(name=self.name)
+
+
+@dataclass
+class ActiveStateQuery(Expr):
+    """
+    An authored query bound and lowered during model construction.
+
+    Written ``active("Root.Run.Motion.Move")`` in DSL conditions. Model
+    construction binds the path to a state and rewrites the query to a
+    comparison on a hidden flag variable (see :mod:`pyfcstm.model.active`), so
+    models returned to callers no longer contain this node.
+
+    :param path: Full State path or a root-relative path beginning with ``/``.
+    :type path: str
+    :param _span: Source location of the authored query, when available.
+    :type _span: Optional[pyfcstm.utils.validate.Span], optional
+
+    This expression can be inspected or exported before binding. Evaluation
+    requires model lowering; an unbound query is not a runnable expression.
+
+    Example::
+
+        >>> from pyfcstm.model import ActiveStateQuery
+        >>> query = ActiveStateQuery('Root.Run.Motion.Move')
+        >>> query
+        ActiveStateQuery(path='Root.Run.Motion.Move')
+        >>> str(query)
+        'active("Root.Run.Motion.Move")'
+        >>> ActiveStateQuery('/Run.Motion.Move').path
+        '/Run.Motion.Move'
+        >>> query == ActiveStateQuery('Root.Run.Motion.Move')
+        True
+    """
+
+    path: str
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def to_ast_node(self) -> dsl_nodes.ActiveStateQuery:
+        """
+        Convert this query back to its AST node.
+
+        The path spelling and source position are preserved, so exporting an
+        unbound query reproduces what was written.
+
+        :return: The equivalent :class:`pyfcstm.dsl.node.ActiveStateQuery`.
+        :rtype: pyfcstm.dsl.node.ActiveStateQuery
+
+        Example::
+
+            >>> from pyfcstm.model import ActiveStateQuery
+            >>> node = ActiveStateQuery('Root.Run.Motion.Move').to_ast_node()
+            >>> type(node).__name__, str(node)
+            ('ActiveStateQuery', 'active("Root.Run.Motion.Move")')
+        """
+        return dsl_nodes.ActiveStateQuery(self.path, _span=self._span)
 
 
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
@@ -1542,6 +1656,10 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
             func=node.func,
             x=parse_expr_node_to_expr(node.expr),
         )
+    elif isinstance(node, dsl_nodes.ActiveStateQuery):
+        query = ActiveStateQuery(node.path, _span=node._span)
+        query._source_path = getattr(node, '_source_path', None)
+        return query
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
 

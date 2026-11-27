@@ -1,0 +1,21 @@
+title: Only the region that finishes last is judged for leading back to where it started; when that region has no
+  other way the loop is reported, and it is reported at the owner
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region R finishes first without asking what follows, so its second way to Rest is never tried. Region S then
+    finishes last, which only leads back, and S has nothing else.
+categories:
+- regions
+- runtime
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    configuration: Root
+    raises:
+      type: SimulationRuntimeDfsError
+      match: 'suspected loop: Root.Q -> Root.Q'
+      match_kind: substring

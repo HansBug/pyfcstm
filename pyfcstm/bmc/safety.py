@@ -147,10 +147,30 @@ def _environment_up_to(core: BmcCoreFormula, last: int) -> Tuple[z3.BoolRef, ...
     return tuple(selected)
 
 
-def _sites(core: BmcCoreFormula) -> Tuple[BmcRuntimeErrorSite, ...]:
+_Analysis = Tuple[Tuple[z3.BoolRef, Tuple[BmcRuntimeErrorSite, ...]], ...]
+
+
+def _analysis_of(core: BmcCoreFormula) -> Optional[_Analysis]:
+    # A model with regions keeps no sites in its relation: the relation of a
+    # cycle requires every operation to be defined, so the sites come from a
+    # second lowering of each cycle that does not.
+    if not core.region_steps:
+        return None
+    from .region_relation import region_error_analysis
+
+    return region_error_analysis(core)
+
+
+def _sites(
+    core: BmcCoreFormula, analysis: Optional[_Analysis] = None
+) -> Tuple[BmcRuntimeErrorSite, ...]:
     # Initializers run first, then the steps; each step lists its sites in
     # runtime evaluation order, so the first site a model satisfies is the
     # error the runtime raises.
+    if analysis is not None:
+        return tuple(core._initial_error_sites) + tuple(
+            site for _, sites in analysis for site in sites
+        )
     return tuple(core._initial_error_sites) + tuple(
         site for step in core.steps for site in step.runtime_error_sites
     )
@@ -200,26 +220,41 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
         >>> runtime_error_formula(core)
         (False, ())
     """
-    stages = _stages(core)
-    sites = _sites(core)
+    analysis = _analysis_of(core)
+    stages = _stages(core, analysis)
+    sites = _sites(core, analysis)
     if not stages:
         return z3.BoolVal(False), sites
     return (stages[0] if len(stages) == 1 else z3.Or(*stages)), sites
 
 
-def _stages(core: BmcCoreFormula) -> List[z3.BoolRef]:
+def _stages(
+    core: BmcCoreFormula, analysis: Optional[_Analysis] = None
+) -> List[z3.BoolRef]:
     # One formula per place an error can happen, earliest first: the
-    # initializers, then each step.
+    # initializers, then each step.  The sites of a step that has regions refer to
+    # values that flow through the cycle, so its stage also holds the skeleton of
+    # the cycle, which fixes those values without requiring them to be defined.
     stages: List[z3.BoolRef] = []
     initial = [site.condition for site in core._initial_error_sites]
     if initial:
         stages.append(z3.And(core.domain_formula, *_environment_up_to(core, 0), z3.Or(*initial)))
     prefix: List[z3.BoolRef] = [core.domain_formula, core.initial_formula]
     for step in core.steps:
-        step_sites = [site.condition for site in step.runtime_error_sites]
+        if analysis is None:
+            skeleton: Tuple[z3.BoolRef, ...] = ()
+            step_sites = [site.condition for site in step.runtime_error_sites]
+        else:
+            skeleton = (analysis[step.step_index][0],)
+            step_sites = [site.condition for site in analysis[step.step_index][1]]
         if step_sites:
             stages.append(
-                z3.And(*prefix, *_environment_up_to(core, step.step_index), z3.Or(*step_sites))
+                z3.And(
+                    *prefix,
+                    *_environment_up_to(core, step.step_index),
+                    *skeleton,
+                    z3.Or(*step_sites),
+                )
             )
         prefix.append(step.formula)
     return stages
@@ -261,6 +296,18 @@ def check_runtime_safety(
         ... )
         >>> check_runtime_safety(build_bmc_core_formula(context)).status
         'safe'
+        >>> regional = load_state_machine_from_text('''
+        ... input int d;
+        ... def int x = 0;
+        ... state Root {
+        ...     region A { [*] -> P; state P { during { x = 10 % d; } } }
+        ...     region B { [*] -> Q; state Q; }
+        ... }
+        ... ''')
+        >>> result = check_runtime_safety(build_bmc_core_formula(
+        ...     BmcEngine(regional).prepare('check reach <= 1: terminated();')))
+        >>> (result.status, result.error.step, result.error.kind)
+        ('violated', 0, 'modulo_by_zero')
     """
     if not isinstance(core, BmcCoreFormula):
         raise BmcBuildError("core must be BmcCoreFormula.")
@@ -291,7 +338,8 @@ def _check_runtime_safety(
     # The shared budget starts only when a solver check is about to run, so a
     # model without runtime-error sites spends none of it.
     core = _unsliced(core)
-    sites = _sites(core)
+    analysis = _analysis_of(core)
+    sites = _sites(core, analysis)
     if not sites:
         return BmcRuntimeSafetyResult("not_applicable", 0, 0.0), None
     budget = _SolveBudget(timeout_ms)
@@ -301,7 +349,7 @@ def _check_runtime_safety(
     # easier for Z3 than the disjunction of all of them, the first SAT stage
     # holds the earliest error, and a stage Z3 cannot decide does not hide a
     # later one it can.
-    for stage in _stages(core):
+    for stage in _stages(core, analysis):
         solver, _logic = _solver_for_profile(solver_profile, (stage,))
         solver.add(stage)
         status, model, reason, stage_ms, _started = _check_with_budget(solver, budget)

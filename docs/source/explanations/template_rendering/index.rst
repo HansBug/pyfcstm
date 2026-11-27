@@ -363,6 +363,329 @@ syntax, and block syntax. A string echo cannot safely replace that context.
 This is why ``operation_stmt_render`` remains useful for DSL echo text but is not
 a runtime-code shortcut.
 
+Declaring what a template can render
+------------------------------------
+
+A template is written for one execution model. The models it was written for
+have one active path of states at any time. A model with regions has several
+active leaves at once, and its position is a tree, so a template that walks
+``state.transitions`` and tracks a single current state would produce code that
+looks plausible and behaves wrongly. The renderer does not guess. A template
+says what it can render in the ``features`` list of its ``config.yaml``, and
+``region`` is the one feature that exists today. The renderer refuses a model
+with regions before it renders or writes anything when the template does not
+declare it:
+
+.. literalinclude:: region_plain_template/config.yaml
+   :language: yaml
+   :caption: region_plain_template/config.yaml
+
+.. literalinclude:: region_declared_template/config.yaml
+   :language: yaml
+   :caption: region_declared_template/config.yaml
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t region_plain_template -o out
+   generate with template directory '...region_plain_template' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i ...controller.fcstm --template c -o out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test -e out || echo "output directory not created"
+   output directory not created
+   $ pyfcstm generate -i controller.fcstm -t region_declared_template -o declared_out
+   $ cat declared_out/states.txt
+   Controller
+   Idle
+   Running
+   Watching
+   Off
+   On
+   __forced_gate_0
+
+Read the output from the top:
+
+1. The refused template differs from the accepted one by one line, ``features:
+   [region]``. Nothing else about the template changes the verdict.
+2. The command exits with ``1`` and writes a refusal for the unsupported ``region``
+   feature (its diagnostic code is ``E_UNSUPPORTED_FEATURE``; the printed text does not show the code). Its first line names the template directory, so a template author
+   can tell a template without the feature from a model written wrongly. The
+   directory is shown here as ``...``; the real message carries the path you
+   passed. The ``(line 12)`` in the first line is the line of the model that
+   declares the first region.
+3. The message has two readers. The template author is told what to declare and
+   when: only once the template really renders regions. The model author gets a
+   list of built-in templates that support regions and a command that can be
+   copied.
+4. The ``test -e out`` line prints ``output directory not created``, which is the
+   point of refusing early. A refusal
+   after rendering had started could leave a half-written tree that looks like
+   a result.
+5. The second run declares ``region`` and succeeds. The template sees the machine
+   that runs: its state list ends with the generated pseudo state
+   ``__forced_gate_0``, which the forced declaration ``!Running -> Idle : /Stop``
+   was expanded into. A template that declares ``region`` is expected to treat
+   that machine as an ordinary one.
+
+A model without regions never needs a feature, so a template that does not
+declare ``region`` keeps rendering such models exactly as before. Declaring the
+feature is a promise, not a switch: a template that declares ``region`` takes
+over the whole region semantics of its target language and is expected to align
+with ``SimulationRuntime`` on every shared region fixture. The built-in
+``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` templates declare it.
+Why the simulator is the reference is explained in
+:doc:`How a cycle runs a model with regions </explanations/region_semantics/index>`.
+
+The shape of a generated runtime for a model with regions
+---------------------------------------------------------
+
+A runtime that handles regions cannot be one fixed engine with a table of the
+model next to it, because the work of a cycle (trying each region's candidates in
+order, rolling the whole cycle back when no legal position exists) depends on how
+many regions a model has and how they nest. The built-in templates therefore
+generate the kernel for the model.
+
+**Python.** ``machine.py`` is generated for the model: it embeds the machine
+that runs (including the expansion of forced declarations), the region and state
+tables, and the kernel that executes them. It needs no installed ``pyfcstm``
+package, and its size grows with the model.
+
+**C family.** ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` generate a kernel that
+reserves its memory statically. The memory is part of the machine structure
+(``_private[...STORAGE_BYTES]``), so nothing is allocated while a cycle runs.
+Two capacities size it, and they are derived from the model:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o controller_c
+   $ cat controller_c/machine.h
+   ...
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   ...
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
+
+``ARENA_CAPACITY`` bounds how many configurations and pending work items one
+decision of a cycle may examine, and ``TRAIL_CAPACITY`` bounds how many checks may
+be nested; ``STORAGE_BYTES`` is computed from both. The controller needs 108
+and 52, as the header above shows. The same command on other models gives
+different pairs: 8 and 4 for ``region_plain.fcstm`` (no regions, one
+transition), 60 and 36 for ``region_blind_overwrite.fcstm`` (two regions) and
+84 and 44 for ``region_never_completes.fcstm``, the last two from
+:doc:`the diagnostics page </explanations/diagnostics/index>`. The numbers come
+from the model, not from a fixed engine limit. They are the values these four
+models get from this version of the template, not a formula you can rely on
+across template versions.
+
+.. literalinclude:: /_models/region_plain.fcstm
+   :language: fcstm
+   :caption: ``region_plain.fcstm``
+
+.. code-block:: console
+
+   $ pyfcstm generate -i docs/source/_models/region_plain.fcstm --template c -o plain_c
+   $ cat plain_c/machine.h
+   ...
+   #define ROOT_MACHINE_ARENA_CAPACITY 8
+   ...
+   #define ROOT_MACHINE_TRAIL_CAPACITY 4
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_blind_overwrite.fcstm --template c -o blind_c
+   $ cat blind_c/machine.h
+   ...
+   #define DRIVE_MACHINE_ARENA_CAPACITY 60
+   ...
+   #define DRIVE_MACHINE_TRAIL_CAPACITY 36
+   ...
+   $ pyfcstm generate -i docs/source/explanations/diagnostics/region_never_completes.fcstm --template c -o never_c
+   $ cat never_c/machine.h
+   ...
+   #define LINE_MACHINE_ARENA_CAPACITY 84
+   ...
+   #define LINE_MACHINE_TRAIL_CAPACITY 44
+   ...
+
+A cycle that needs more than the capacity fails with a message that names the
+macro. It does not misbehave silently. To raise a capacity, define the same value
+for ``machine.c`` and every file that includes ``machine.h``, because the size of
+a machine depends on it. Two consequences to plan around, both stated in the
+generated README: the size of one machine grows with the number of states and
+regions, so a machine of a large model belongs in static storage and not on the
+stack; and entering a chain of nested owners at once costs time that doubles with
+every nested level on the first cycle that enters the chain.
+
+"No heap" needs one qualification. The kernel itself needs none. The convenience
+functions ``create`` and ``destroy`` use ``calloc`` and ``free`` unless
+``PYFCSTM_GENERATED_NO_HEAP`` is defined, which removes them; a program that owns
+its machine object, as the run below does, never needs them. The ``cpp`` and
+``cpp_poll`` templates wrap the C kernel, and this page ran only ``c`` for the
+evidence below.
+
+One position vocabulary across the simulator and the generated runtimes
+-----------------------------------------------------------------------
+
+The position of a machine with regions is a tree, written as one line of text:
+``Controller.Running{Safety: Watching, Motion: Off}``. Generated runtimes write
+that text exactly as the simulator does and offer the same queries under
+language-appropriate names:
+
+.. list-table:: The position interface in three places
+   :header-rows: 1
+   :widths: 22 26 26 26
+
+   * - Question
+     - Simulator
+     - Python runtime
+     - C runtime
+   * - Where is the machine?
+     - ``runtime.configuration`` (text through ``str``)
+     - ``machine.configuration``
+     - ``ControllerMachine_get_configuration`` and ``..._configuration_format``
+   * - Which leaves are active?
+     - ``configuration.leaves``
+     - ``machine.leaves``
+     - ``..._configuration_leaves``
+   * - Is a state in the position?
+     - ``configuration.is_active(path)``
+     - ``machine.is_active(path)``
+     - ``..._configuration_is_active``
+   * - What is a region doing?
+     - ``configuration.region_status(path)``
+     - ``machine.region_status(path)``
+     - ``..._configuration_region_status``
+   * - Start from a saved position
+     - hot start with a configuration
+     - ``initial_state=`` with the text
+     - ``..._hot_start_at``
+
+The status of a region is one of four words in every place: ``live`` (it holds an
+active state), ``done`` (it finished), ``pending`` (its owner is active and it
+has not been initialized, text ``[init]``) and ``inactive`` (its owner is not in
+the position). The C runtime spells them as constants such as
+``CONTROLLER_MACHINE_REGION_STATUS_LIVE``.
+
+The script below drives the same six cycles of the controller (start it, run
+calmly, raise a fault for two cycles, stop it) through the generated Python
+runtime and through the simulator, and prints the text after each cycle with
+whether the two agree:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o python_out
+   $ ls python_out/machine.py
+   python_out/machine.py
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "python_out")
+   from machine import ControllerMachine
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   steps = [(None, 0, 0), (["/Start"], 0, 1), (None, 0, 1), (None, 1, 1), (None, 1, 1), (["/Stop"], 0, 0)]
+   model = load_state_machine_from_text(open("controller.fcstm").read())
+   simulator = SimulationRuntime(model, input_source={"fault": 0, "requested": 0})
+   generated = ControllerMachine()
+   for events, fault, requested in steps:
+       inputs = {"fault": fault, "requested": requested}
+       simulator.cycle(events, inputs=inputs)
+       generated.cycle(events, inputs=inputs)
+       print(generated.configuration, generated.configuration == str(simulator.configuration))
+   print("leaves:", generated.leaves)
+   print("is_active Controller.Running:", generated.is_active("Controller.Running"))
+
+.. testoutput::
+
+   Controller.Idle True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: On} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Running{Safety: Watching, Motion: Off} True
+   Controller.Idle True
+   leaves: (('Controller', 'Idle'),)
+   is_active Controller.Running: False
+
+The C runtime is driven by the same six cycles. This needs a C compiler, so, unlike every other command and output on this page, the C program and its commands are **not** run by the documentation check. The six lines further down are what these commands printed when they were run once with a C compiler; they are not re-verified here; compare them with the checked Python output above:
+
+.. code-block:: c
+   :caption: app.c
+
+   #include <stdio.h>
+   #include "machine.h"
+
+   static void show(const ControllerMachine *machine)
+   {
+       ControllerMachineConfiguration configuration;
+       char text[128];
+       if (ControllerMachine_get_configuration(machine, &configuration) != CONTROLLER_MACHINE_SUCCESS) {
+           puts("ended");
+           return;
+       }
+       ControllerMachine_configuration_format(&configuration, text, sizeof(text));
+       puts(text);
+   }
+
+   int main(void)
+   {
+       static ControllerMachine machine;
+       ControllerMachineEventId start = CONTROLLER_MACHINE_EVENT_CONTROLLER_START;
+       ControllerMachineEventId stop = CONTROLLER_MACHINE_EVENT_CONTROLLER_STOP;
+       ControllerMachineInputs calm = {0, 1}, fault = {1, 1}, idle = {0, 0};
+
+       ControllerMachine_init(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &idle);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &start, 1, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &calm);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, NULL, 0, &fault);
+       show(&machine);
+       ControllerMachine_cycle_with_inputs(&machine, &stop, 1, &idle);
+       show(&machine);
+       return 0;
+   }
+
+.. code-block:: bash
+
+   pyfcstm generate -i controller.fcstm --template c -o controller_c
+   cc -std=c99 -Wall -Wextra -pedantic -DPYFCSTM_GENERATED_NO_HEAP -Icontroller_c controller_c/machine.c app.c -lm -o app
+   ./app
+
+.. code-block:: text
+
+   Controller.Idle
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: On}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Running{Safety: Watching, Motion: Off}
+   Controller.Idle
+
+The Python runtime agrees with the simulator in every cycle, and the recorded
+C output (not re-verified) is the same six lines. The sequence shows the cycle-by-cycle
+behavior of the controller: the fault in cycle 4 turns the motor region ``Off``
+in the same cycle because ``Safety`` runs first. After ``/Stop`` the machine is
+``Controller.Idle``, and the generated Python runtime reports ``is_active``
+``False`` for ``Controller.Running`` and ``(('Controller', 'Idle'),)`` as its
+leaves.
+
+What this proves and what it does not. It proves that, for this model and these
+six cycles, the generated Python and C runtimes and the simulator agree on the
+text of the position, which is what a caller reads. It does not prove agreement
+on every model. That claim rests on the shared ``regions`` fixtures that every
+region-capable template must pass against ``SimulationRuntime``, and on the
+random-model differential checks kept outside the unit tests; this page does
+not rerun them.
+
 Generated README as machine-specific evidence
 ---------------------------------------------
 
@@ -375,4 +698,4 @@ Use this split when writing or reviewing docs:
 * how-to pages show short commands and representative output snippets;
 * the generated README lists the concrete machine class, C prefix, event ids,
   state ids, hook names, hot-start snippets, and build command for that model;
-* tests and smoke demos prove selected generated README examples still execute.
+* tests and smoke checks prove selected generated README examples still execute.

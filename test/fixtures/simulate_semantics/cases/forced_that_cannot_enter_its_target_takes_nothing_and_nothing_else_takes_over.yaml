@@ -1,0 +1,31 @@
+title: A forced transition whose target cannot be entered takes nothing, and no other transition of the source takes over
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - 'Entered a second time, P has no initial transition that holds. The forced transition therefore does not happen at all: A1 is not left and Reset is not used. The plain expansion left A1 first and then let the unrelated transition P -> Done pick the machine up.'
+categories:
+- runtime
+- event_paths
+steps:
+- cycle: []
+  expect:
+    state: Root.P.A1
+    vars:
+      seq: 1
+- cycle: []
+  expect:
+    state: Root.P.A1
+    vars:
+      seq: 2
+- cycle:
+  - Root.Reset
+  expect:
+    state: Root.P.A1
+    vars:
+      seq: 3
+- cycle: []
+  expect:
+    state: Root.P.A1
+    vars:
+      seq: 4

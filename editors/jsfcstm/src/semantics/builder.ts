@@ -1,4 +1,5 @@
 import {requireVariableRole} from '../ast/variable-roles';
+import {regionAsStateDefinition} from '../ast/region';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -218,7 +219,8 @@ class SemanticBuilder {
 
     private buildState(
         state: FcstmAstStateDefinition,
-        parent: FcstmSemanticState | undefined
+        parent: FcstmSemanticState | undefined,
+        ordinal?: number
     ): FcstmSemanticState {
         const path = parent ? [...parent.identity.path, state.name] : [state.name];
         const semanticState: FcstmSemanticState = {
@@ -231,6 +233,7 @@ class SemanticBuilder {
             ast: state,
             parentStateId: parent?.identity.id,
             childStateIds: [],
+            ...(state.isRegionView ? {isRegion: true, ordinal} : {}),
         };
 
         this.states.push(semanticState);
@@ -256,6 +259,15 @@ class SemanticBuilder {
         switch (statement.kind) {
             case 'stateDefinition':
                 this.buildState(statement, ownerState);
+                break;
+            case 'regionDefinition':
+                // A region is a state-shaped scope; its ordinal is its
+                // declaration order, which is also its execution order.
+                this.buildState(
+                    regionAsStateDefinition(statement),
+                    ownerState,
+                    this.states.filter(item => item.parentStateId === ownerState.identity.id && item.isRegion).length + 1,
+                );
                 break;
             case 'eventDefinition':
                 this.buildEvent(statement, ownerState, 'declared');
@@ -523,12 +535,13 @@ class SemanticBuilder {
         for (let length = ownerStatePath.length; length >= 1; length--) {
             const candidatePath = [...ownerStatePath.slice(0, length), stateName];
             const candidate = this.statesByPath.get(pathKey(candidatePath));
-            if (candidate) {
+            // A region is a scope, not a state, and cannot be a transition target.
+            if (candidate && !candidate.isRegion) {
                 return candidate;
             }
         }
 
-        const globalMatches = this.states.filter(state => state.name === stateName);
+        const globalMatches = this.states.filter(state => state.name === stateName && !state.isRegion);
         return globalMatches.length === 1 ? globalMatches[0] : undefined;
     }
 
@@ -606,8 +619,9 @@ class SemanticBuilder {
         const descendants: FcstmSemanticState[] = [];
 
         for (const childId of root.childStateIds) {
-            const child = this.states.find(state => state.identity.id === childId);
-            if (!child) {
+            const child = this.states.find(state => state.identity.id === childId)!;
+            // A forced transition of an ancestor does not reach into regions.
+            if (child.isRegion) {
                 continue;
             }
             if (child.childStateIds.length === 0) {

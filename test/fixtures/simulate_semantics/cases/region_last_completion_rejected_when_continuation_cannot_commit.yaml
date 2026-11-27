@@ -1,0 +1,50 @@
+title: The last completion is rejected when the owner continuation is not committable
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+steps:
+- cycle: []
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 1
+      b: 1
+- cycle: Workflow.ADone
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 2
+- cycle: Workflow.BDone
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 3
+    delta: false
+- cycle: []
+  inputs:
+    proceed: 1
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 4
+- cycle: Workflow.BDone
+  inputs:
+    proceed: 1
+  expect:
+    configuration: Workflow.Ready
+    vars:
+      a: 1
+      b: 4

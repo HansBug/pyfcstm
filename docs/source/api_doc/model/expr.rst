@@ -82,6 +82,13 @@ Variable
     :members: to_ast_node,name
 
 
+ActiveStateQuery
+-----------------------------------------------------
+
+.. autoclass:: ActiveStateQuery
+    :members: to_ast_node,path
+
+
 parse\_expr\_node\_to\_expr
 -----------------------------------------------------
 

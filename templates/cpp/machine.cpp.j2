@@ -65,6 +65,44 @@ int MachineWrapper::hot_start(StateId state_id, const Vars *initial_vars) {
         initial_vars);
 }
 
+int MachineWrapper::hot_start_at(const Configuration &configuration, const Vars &initial_vars) {
+    return {{ machine_class_name(model) }}_hot_start_at(&machine_, &configuration, &initial_vars);
+}
+
+int MachineWrapper::hot_start_at(const Configuration &configuration, const Vars &initial_vars, const Parameters &parameters) {
+    return {{ machine_class_name(model) }}_hot_start_at_with_parameters(&machine_, &configuration, &initial_vars, &parameters);
+}
+
+int MachineWrapper::get_configuration(Configuration *configuration) const {
+    return {{ machine_class_name(model) }}_get_configuration(&machine_, configuration);
+}
+
+MachineWrapper::RegionStatus MachineWrapper::region_status(const Configuration &configuration, RegionId region) {
+    return {{ machine_class_name(model) }}_configuration_region_status(&configuration, region);
+}
+
+int MachineWrapper::is_active(const Configuration &configuration, StateId state) {
+    return {{ machine_class_name(model) }}_configuration_is_active(&configuration, state);
+}
+
+size_t MachineWrapper::leaves(const Configuration &configuration, StateId *out, size_t capacity) {
+    return {{ machine_class_name(model) }}_configuration_leaves(&configuration, out, capacity);
+}
+
+int MachineWrapper::validate_configuration(const Configuration &configuration, ConfigurationError *error) {
+    return {{ machine_class_name(model) }}_configuration_validate(&configuration, error);
+}
+
+#ifndef PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT
+size_t MachineWrapper::format_configuration(const Configuration &configuration, char *buffer, size_t size) {
+    return {{ machine_class_name(model) }}_configuration_format(&configuration, buffer, size);
+}
+
+int MachineWrapper::parse_configuration(const char *text, Configuration *configuration, ConfigurationError *error) {
+    return {{ machine_class_name(model) }}_configuration_parse(text, configuration, error);
+}
+#endif
+
 void MachineWrapper::set_hooks(const Hooks *hooks, void *user_data) {
     {{ machine_class_name(model) }}_set_hooks(&machine_, hooks, user_data);
 }
@@ -93,14 +131,14 @@ bool MachineWrapper::last_cycle_was_delta() const {
     return {{ machine_class_name(model) }}_last_cycle_was_delta(&machine_) != 0;
 }
 
-MachineWrapper::StateId MachineWrapper::current_state_id() const {
+{% if not model.has_regions %}MachineWrapper::StateId MachineWrapper::current_state_id() const {
     return {{ machine_class_name(model) }}_current_state_id(&machine_);
 }
 
 const char *MachineWrapper::current_state_path() const {
     return {{ machine_class_name(model) }}_current_state_path(&machine_);
 }
-
+{% endif %}
 const char *MachineWrapper::last_error() const {
     return {{ machine_class_name(model) }}_last_error(&machine_);
 }

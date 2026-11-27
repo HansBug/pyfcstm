@@ -48,7 +48,7 @@ Examples::
 
 import math
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Collection, Dict, Iterator, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple
 
 from .analyzers import (
     build_use_def_graph,
@@ -220,6 +220,65 @@ class StateInfo:
     aspect_before: Tuple[str, ...]
     aspect_after: Tuple[str, ...]
     has_abstract_action: bool
+    span: Optional['Span'] = None
+
+
+@dataclass(frozen=True)
+class RegionInfo:
+    """
+    Structural summary of one region of a parallel owner state.
+
+    A region is an ordered namespace inside a state that declares ``region``
+    blocks. Regions run in declaration order every cycle, so :attr:`index`
+    is meaningful: it is the position that the ordering diagnostics compare.
+    Regions appear in :attr:`ModelInspect.regions` only for models that
+    declare at least one region.
+
+    :param path: Dotted path of the region, including the owner state path,
+        e.g. ``'Plant.Run.Sense'``.
+    :type path: str
+    :param name: Region name (last component of ``path``).
+    :type name: str
+    :param owner_path: Dotted path of the state that owns this region.
+    :type owner_path: str
+    :param index: Zero-based declaration (execution) order among the regions
+        of the same owner.
+    :type index: int
+    :param substates: Direct-child state paths of the region, in source order.
+    :type substates: Tuple[str, ...]
+    :param initial_targets: Each item describes one ``[*] -> X`` transition
+        declared in the region, with the same keys as
+        :attr:`StateInfo.initial_targets`.
+    :type initial_targets: Tuple[Mapping[str, Any], ...]
+    :param aspect_before: Labels of the region's ``>> during before`` actions.
+    :type aspect_before: Tuple[str, ...]
+    :param aspect_after: Labels of the region's ``>> during after`` actions.
+    :type aspect_after: Tuple[str, ...]
+    :param span: Source span of the region declaration, when known.
+    :type span: Optional[Span]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... state Root {
+        ...     region Left { state A; [*] -> A; }
+        ...     region Right { state B; [*] -> B; }
+        ... }
+        ... ''')
+        >>> [(r.path, r.index) for r in inspect_model(machine).regions]
+        [('Root.Left', 0), ('Root.Right', 1)]
+    """
+
+    path: str
+    name: str
+    owner_path: str
+    index: int
+    substates: Tuple[str, ...]
+    initial_targets: Tuple[Dict[str, Any], ...]
+    aspect_before: Tuple[str, ...]
+    aspect_after: Tuple[str, ...]
     span: Optional['Span'] = None
 
 
@@ -896,6 +955,21 @@ class ModelInspect:
         The disabled report is populated without importing
         :mod:`pyfcstm.verify`.
     :type verification: InspectVerificationReport
+    :param regions: Every region of the model in pre-order, empty for a model
+        without regions. The serialized report carries a ``regions`` key only
+        when this tuple is not empty.
+    :type regions: Tuple[RegionInfo, ...]
+
+    Example::
+
+        >>> from pyfcstm.diagnostics import inspect_model
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> report = inspect_model(load_state_machine_from_text(
+        ...     'state Root { state A; [*] -> A; }'))
+        >>> report.root_state_path, report.regions
+        ('Root', ())
+        >>> 'regions' in report.to_json()
+        False
     """
 
     root_state_path: str
@@ -920,6 +994,7 @@ class ModelInspect:
     structure_statistics: StructureStatistics = field(
         default_factory=_empty_structure_statistics,
     )
+    regions: Tuple[RegionInfo, ...] = field(default_factory=tuple)
 
     def to_json(self) -> Dict[str, Any]:
         """
@@ -965,6 +1040,41 @@ def _state_path(state: Any) -> str:
         # to avoid masking a downstream rewrite that produced ''.
         return ''
     return '.'.join(p for p in path if p is not None)
+
+
+def _walk_namespaces(machine: 'StateMachine') -> Iterator[Any]:
+    """Yield every state and every region of ``machine`` in declaration order.
+
+    A region owns transitions, events and during aspects just like a state, so
+    analyses that collect those items must visit regions as well. For a model
+    without regions this is exactly :meth:`StateMachine.walk_states`.
+
+    :param machine: State machine to walk.
+    :type machine: pyfcstm.model.model.StateMachine
+    :return: Pre-order iterator over :class:`~pyfcstm.model.model.State` and
+        :class:`~pyfcstm.model.region.Region` objects.
+    :rtype: Iterator[Any]
+    """
+    from ..model.region import walk_namespaces
+
+    return walk_namespaces(machine.root_state)
+
+
+def _action_collections(namespace: Any) -> Tuple[Any, ...]:
+    """Return the four action lists a state or region may own.
+
+    Regions have no ``enter`` / ``during`` / ``exit`` actions, only before and
+    after during aspects, so the missing lists are reported as empty.
+
+    :param namespace: A state or a region.
+    :type namespace: Any
+    :return: Enter, during, exit and aspect action lists, in that order.
+    :rtype: Tuple[Any, ...]
+    """
+    return tuple(
+        getattr(namespace, name, ())
+        for name in ('on_enters', 'on_durings', 'on_exits', 'on_during_aspects')
+    )
 
 
 def _resolve_sibling_path(parent_state: Any, name: str) -> str:
@@ -1289,23 +1399,19 @@ def _event_scope(
 def _state_actions(
         state: Any,
 ) -> Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[str, ...], Tuple[str, ...], Tuple[str, ...], bool]:
-    entries = tuple(_stage_function_label(a) for a in state.on_enters)
-    durings = tuple(_stage_function_label(a) for a in state.on_durings)
-    exits = tuple(_stage_function_label(a) for a in state.on_exits)
+    on_enters, on_durings, on_exits, on_aspects = _action_collections(state)
+    entries = tuple(_stage_function_label(a) for a in on_enters)
+    durings = tuple(_stage_function_label(a) for a in on_durings)
+    exits = tuple(_stage_function_label(a) for a in on_exits)
     asp_before = tuple(
-        _aspect_function_label(a) for a in state.on_during_aspects if a.aspect == 'before'
+        _aspect_function_label(a) for a in on_aspects if a.aspect == 'before'
     )
     asp_after = tuple(
-        _aspect_function_label(a) for a in state.on_during_aspects if a.aspect == 'after'
+        _aspect_function_label(a) for a in on_aspects if a.aspect == 'after'
     )
     has_abstract = any(
         _is_abstract(a)
-        for collection in (
-            state.on_enters,
-            state.on_durings,
-            state.on_exits,
-            state.on_during_aspects,
-        )
+        for collection in _action_collections(state)
         for a in collection
     )
     return entries, durings, exits, asp_before, asp_after, has_abstract
@@ -1342,13 +1448,46 @@ def _is_forced_transition(transition: 'Transition') -> bool:
     ) and getattr(transition, 'forced_origin', None) is not None
 
 
+def _state_depths(states: Sequence[StateInfo]) -> Dict[str, int]:
+    """Return the nesting depth of every state, with the root at depth 0.
+
+    The depth counts ancestor *states*: the ``region`` segment of a path is a
+    namespace, not a level of state nesting, so a state directly inside a
+    region is one level below the state that owns the region.
+
+    :param states: Inspect state records in pre-order, parents first.
+    :type states: Sequence[StateInfo]
+    :return: Mapping from state path to depth.
+    :rtype: Dict[str, int]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { region Work { state A; [*] -> A; } }')
+        >>> _state_depths(_build_state_infos(machine))
+        {'Root': 0, 'Root.Work.A': 1}
+    """
+    depths: Dict[str, int] = {}
+    for state in states:
+        parent = state.parent_path
+        if parent is None:
+            depths[state.path] = 0
+            continue
+        if parent not in depths:
+            # The parent is a region; its owner is the path without the region name.
+            parent = parent.rsplit('.', 1)[0]
+        depths[state.path] = depths[parent] + 1
+    return depths
+
+
 def _hierarchy_depth(states: Tuple[StateInfo, ...]) -> int:
     if not states:  # pragma: no cover
         # Defensive: ``inspect_model`` always builds at least one
         # StateInfo (the root). Empty input would mean a caller used
         # this helper outside the pipeline; keep the fail-soft 0.
         return 0
-    return max(s.path.count('.') for s in states)
+    return max(_state_depths(states).values())
 
 
 def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
@@ -1381,6 +1520,33 @@ def _build_state_infos(machine: 'StateMachine') -> Tuple[StateInfo, ...]:
             aspect_after=asp_after,
             has_abstract_action=has_abstract,
             span=getattr(state, '_span', None),
+        ))
+    return tuple(out)
+
+
+def _build_region_infos(machine: 'StateMachine') -> Tuple[RegionInfo, ...]:
+    """Describe every region of ``machine`` in pre-order."""
+    from ..model.region import Region
+
+    out: List[RegionInfo] = []
+    for namespace in _walk_namespaces(machine):
+        if not isinstance(namespace, Region):
+            continue
+        owner = namespace.parent
+        owner_path = _state_path(owner)
+        entries, durings, exits, asp_before, asp_after, _ = _state_actions(namespace)
+        out.append(RegionInfo(
+            path=_state_path(namespace),
+            name=namespace.name,
+            owner_path=owner_path,
+            index=list(owner.regions).index(namespace.name),
+            substates=tuple(
+                _resolve_sibling_path(namespace, name) for name in namespace.substates
+            ),
+            initial_targets=_initial_targets(namespace),
+            aspect_before=asp_before,
+            aspect_after=asp_after,
+            span=getattr(namespace, '_span', None),
         ))
     return tuple(out)
 
@@ -1460,7 +1626,7 @@ def _build_combo_origin_infos(
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
     out: List[TransitionInfo] = []
     transition_index = 0
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
@@ -1521,12 +1687,7 @@ def _collect_action_reads_writes(state: Any) -> Tuple[Dict[str, bool], Dict[str,
     """Aggregate variable reads/writes across all action blocks of a state."""
     reads: Dict[str, bool] = {}
     writes: Dict[str, bool] = {}
-    for collection in (
-            state.on_enters,
-            state.on_durings,
-            state.on_exits,
-            state.on_during_aspects,
-    ):
+    for collection in _action_collections(state):
         for action in collection:
             if not action.operations:
                 continue
@@ -1547,12 +1708,14 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
 
     sites = {name: {'reads': [], 'writes': []} for name in machine.defines}
 
-    def record(names, mode, site):
+    def _record(names, mode, site):
+        """Append ``site`` to the ``mode`` list of each declared variable in ``names``."""
         for name in dict.fromkeys(names):
             if name in sites:
                 sites[name][mode].append(site)
 
-    def located(owner, node, path):
+    def _located(owner, node, path):
+        """Return ``owner`` relocated to ``node`` at statement ``path``."""
         return replace(
             owner,
             statement_path=path,
@@ -1560,25 +1723,26 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
             span=getattr(node, '_span', owner.span),
         )
 
-    def statements(items, owner, prefix=()):
+    def _statements(items, owner, prefix=()):
+        """Record the reads and writes of a statement list under ``prefix``."""
         for index, statement in enumerate(items):
             path = (*prefix, index)
-            site = located(owner, statement, path)
+            site = _located(owner, statement, path)
             if isinstance(statement, Operation):
-                record([statement.var_name], 'writes', site)
-                record(_walk_expr_variables(statement.expr), 'reads', site)
+                _record([statement.var_name], 'writes', site)
+                _record(_walk_expr_variables(statement.expr), 'reads', site)
             else:
                 for branch_index, branch in enumerate(statement.branches):
                     branch_path = (*path, branch_index)
-                    record(_walk_expr_variables(branch.condition), 'reads',
-                           located(owner, branch, branch_path))
-                    statements(branch.statements, owner, branch_path)
+                    _record(_walk_expr_variables(branch.condition), 'reads',
+                           _located(owner, branch, branch_path))
+                    _statements(branch.statements, owner, branch_path)
 
     transition_index = 0
     action_index = 0
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         path = _state_path(state)
-        for collection in (state.on_enters, state.on_durings, state.on_exits, state.on_during_aspects):
+        for collection in _action_collections(state):
             for action in collection:
                 owner = VariableAccessSite(
                     kind='action', state_path=path,
@@ -1587,7 +1751,7 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                     source_path=getattr(action, '_source_path', machine.source_path),
                     span=getattr(action, '_span', None),
                 )
-                statements(action.operations, owner)
+                _statements(action.operations, owner)
                 action_index += 1
         for transition in state.transitions:
             owner = VariableAccessSite(
@@ -1596,8 +1760,8 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                 source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
             )
-            record(_walk_expr_variables(transition.guard), 'reads', owner)
-            statements(transition.effects, replace(owner, kind='effect'))
+            _record(_walk_expr_variables(transition.guard), 'reads', owner)
+            _statements(transition.effects, replace(owner, kind='effect'))
             transition_index += 1
     return sites
 
@@ -1619,17 +1783,12 @@ def _build_variable_infos(
     }
     state_lookup: Dict[str, StateInfo] = {s.path: s for s in states}
 
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         path = _state_path(state)
         reads, writes = _collect_action_reads_writes(state)
         float_assigns: Dict[str, List[str]] = {}
         float_assign_spans: Dict[str, List[Optional[Span]]] = {}
-        for collection in (
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-        ):
+        for collection in _action_collections(state):
             for action in collection:
                 for stmt in action.operations:
                     _walk_stmt_float_literal_assignments(stmt, float_assigns, float_assign_spans)
@@ -1764,7 +1923,7 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
     event_users: Dict[str, List[Tuple[str, str]]] = {}
     event_scope: Dict[str, str] = {}
     event_declared: Dict[str, bool] = {}
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         for event in state.events.values():
             qn = event.path_name
             event_users.setdefault(qn, [])
@@ -1773,7 +1932,7 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
             )
             event_declared[qn] = bool(getattr(event, 'declared', False))
 
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         for transition in state.transitions:
             qn = _qualified_event_name(transition, state)
             if qn is None:
@@ -1805,7 +1964,7 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
 
 
 def _find_event_by_qualified_name(machine: 'StateMachine', qualified_name: str):
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         for event in state.events.values():
             if event.path_name == qualified_name:
                 return event
@@ -1823,14 +1982,9 @@ def _scope_from_event_origins(origins: List[str]) -> str:
 
 def _build_action_infos(machine: 'StateMachine') -> Tuple[ActionInfo, ...]:
     out: List[ActionInfo] = []
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         path = _state_path(state)
-        for collection in (
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-        ):
+        for collection in _action_collections(state):
             for action in collection:
                 signature = _function_signature(state, path, action)
                 ref_target = (
@@ -2140,8 +2294,14 @@ def _unreachable_transition_reason_keys(
         transitions: Sequence[TransitionInfo],
         diagnostics: Sequence[ModelDiagnostic],
         forced_transitions: Sequence[ForcedTransitionInfo],
+        never_completing_owners: Collection[str] = (),
 ) -> _UnreachableTransitionReasonMap:
-    """Return canonical unreachable reasons for each authored transition."""
+    """Return canonical unreachable reasons for each authored transition.
+
+    ``never_completing_owners`` lists the owners of regions whose regions can
+    not all reach ``[*]``; their ordinary outgoing transitions are reported
+    with the reason ``owner_never_completes``.
+    """
     authored = _authored_transition_keys(transitions, forced_transitions)
     authored_by_key = dict(authored)
     states_by_path = {state.path: state for state in states}
@@ -2253,6 +2413,14 @@ def _unreachable_transition_reason_keys(
             verification_sources_by_key.setdefault(key, set()).update(
                 source_verification_sources(item.from_path),
             )
+
+    for key, item in authored:
+        if (
+                key[0] != "forced"
+                and not item.is_forced
+                and item.from_path in never_completing_owners
+        ):
+            reasons_by_key.setdefault(key, set()).add("owner_never_completes")
 
     event_names = {
         diagnostic.refs.get("event_name")
@@ -2616,8 +2784,10 @@ def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
-) -> Dict[str, Tuple[str, ...]]:
-    """Return the default inspect reachability graph.
+        regions: Sequence[RegionInfo] = (),
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
+) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
+    """Return the default inspect reachability graph and the owners that never complete.
 
     The inspect graph is a guard-agnostic breadth-first closure over normal
     transition endpoints plus composite ``[*]`` initial edges. It is a stable
@@ -2636,8 +2806,21 @@ def _build_reachability_graph(
         re-enter -- an over-approximation of both, so no reachable state is
         left out.
     :type history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]], optional
-    :return: Mapping from every state path to reachable state paths.
-    :rtype: Dict[str, Tuple[str, ...]]
+    :param regions: Region records of the model, defaults to ``()``. Entering a
+        state that owns regions reaches the initial targets of all of its
+        regions. The owner's ordinary outgoing transitions (which run when
+        every region is done) are followed only when each region can reach
+        its ``[*]`` exit; the owner's forced transitions are always followed.
+        A composite state without regions is the case of one region: its own
+        ordinary transitions are followed only when a child of it can reach
+        ``[*]``.
+    :type regions: Sequence[RegionInfo], optional
+    :return: Mapping from every state path to reachable state paths, and the
+        paths of the composite states that can never be over: a state that owns
+        regions of which some can never reach ``[*]``, or a plain composite state
+        none of whose children can (their ordinary outgoing transitions are never
+        taken).
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], Set[str]]
 
     Examples::
 
@@ -2655,10 +2838,123 @@ def _build_reachability_graph(
         >>> machine = parse_dsl_node_to_state_machine(ast)
         >>> states = _build_state_infos(machine)
         >>> transitions = _build_transition_infos(machine)
-        >>> _build_reachability_graph(states, transitions)['Root']
+        >>> graph, never_completing = _build_reachability_graph(states, transitions)
+        >>> graph['Root']
         ('Root.A', 'Root.B')
-        >>> _build_reachability_graph(states, transitions)['Root.A']
+        >>> graph['Root.A']
         ('Root.B',)
+        >>> sorted(never_completing)
+        ['Root']
+    """
+    return _reachability_with_completion(
+        states, transitions, history_defaults, regions, forced_transitions,
+    )
+
+
+def _reachability_with_completion(
+        states: Tuple[StateInfo, ...],
+        transitions: Tuple[TransitionInfo, ...],
+        history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]],
+        regions: Sequence[RegionInfo],
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
+) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
+    """Compute the reachability graph and the owners that can never complete.
+
+    An owner whose regions cannot all reach their ``[*]`` exit never takes its
+    ordinary outgoing transitions. The fixpoint below grows the set of owners
+    that can complete until it is stable, because completing an inner owner
+    can enable the exit of a region that belongs to an outer one.
+
+    :return: The reachability graph and the paths of owners that never complete.
+    """
+    regions_of: Dict[str, List[RegionInfo]] = {}
+    for region in regions:
+        regions_of.setdefault(region.owner_path, []).append(region)
+    # A composite state without regions is the case of one branch: it takes its
+    # own outgoing transitions once its children can leave through ``[*]``.
+    branches_of: Dict[str, List[Any]] = dict(regions_of)
+    for state in states:
+        if state.is_composite and state.path not in regions_of:
+            branches_of[state.path] = [state]
+    owners = set(branches_of)
+    completable: Set[str] = set()
+    while True:
+        graph = _reachability_pass(
+            states, transitions, history_defaults, regions_of, owners, completable,
+        )
+        grown = {
+            owner for owner in owners
+            if owner not in completable
+            and all(
+                _region_can_finish(
+                    branch, transitions, graph, owners, completable, history_defaults,
+                    forced_transitions,
+                )
+                for branch in branches_of[owner]
+            )
+        }
+        if not grown:
+            return graph[0], owners - completable
+        completable |= grown
+
+
+def _region_can_finish(
+        region, transitions, graph, owners, completable, history_defaults=None,
+        forced_transitions=(),
+) -> bool:
+    """Whether some state of ``region`` that is reachable can reach ``[*]``."""
+    mapping, region_entries = graph
+    entries = region_entries.get(region.path)
+    if entries is None:
+        # A composite state without regions: its branch starts at its own initial
+        # targets, and at the child a history default restores when some
+        # transition enters the composite state through that history.
+        entries = {
+            item['target'] for item in region.initial_targets
+            if item['target'] != _EXIT_MARK
+        }
+        for (owner, kind), path in (history_defaults or {}).items():
+            if owner == region.path and any(
+                    transition.to_path == owner and transition.target_history == kind
+                    for transition in transitions
+            ):
+                entries.add(path[0])
+    reachable = set(entries)
+    for start in tuple(reachable):
+        reachable |= set(mapping.get(start, ()))
+    # The expansion of ``!S -> T`` lets every state below ``S`` leave through
+    # ``-> [*]``, next to a forced transition out of ``S`` itself. Those exits
+    # hand the machine to that forced transition, so they do not let ``S`` go on
+    # through its ordinary transitions. A forced exit counts only where a
+    # declaration written in this very scope has ``[*]`` as its target.
+    authored_exits = {
+        (declaration.state_path, declaration.original_raw)
+        for declaration in forced_transitions if declaration.to_path == _EXIT_MARK
+    }
+    for transition in transitions:
+        if transition.to_path != _EXIT_MARK or transition.from_path == _INIT_MARK:
+            continue
+        if transition.from_path.rsplit('.', 1)[0] != region.path:
+            continue
+        if transition.is_forced and (region.path, transition.forced_origin) not in authored_exits:
+            continue
+        if transition.from_path not in reachable:
+            continue
+        if (
+                transition.from_path in owners
+                and not transition.is_forced
+                and transition.from_path not in completable
+        ):
+            continue
+        return True
+    return False
+
+
+def _reachability_pass(states, transitions, history_defaults, regions_of, owners, completable):
+    """One guard-agnostic _closure, with only ``completable`` owners completing.
+
+    :return: The reachability mapping and a function giving the states entered
+        directly when a region starts.
     """
     adjacency: Dict[str, set] = {state.path: set() for state in states}
     initial_edges: Dict[str, set] = {state.path: set() for state in states}
@@ -2672,6 +2968,14 @@ def _build_reachability_graph(
             # Model-built transitions always point at a known source path. The
             # guard keeps hand-built test doubles from crashing this helper.
             continue
+        if (
+                transition.from_path in owners
+                and not transition.is_forced
+                and transition.from_path not in completable
+        ):
+            # An owner takes its ordinary transitions only once every region
+            # is done; until then only its forced transitions can leave it.
+            continue
         adjacency[transition.from_path].add(transition.to_path)
 
     history_entries = [
@@ -2679,16 +2983,30 @@ def _build_reachability_graph(
         if (history_defaults or {}).get((transition.to_path, transition.target_history))
     ]
 
-    def add_edges(transition: TransitionInfo, targets) -> None:
+    region_entries: Dict[str, Set[str]] = {
+        region.path: {
+            item['target'] for item in region.initial_targets
+            if item['target'] != _EXIT_MARK
+        }
+        for owner_regions in regions_of.values()
+        for region in owner_regions
+    }
+
+    def _add_edges(transition: TransitionInfo, targets) -> None:
+        """Add ``targets`` as the entry of the transition's container, or as its edges."""
         if transition.from_path == _INIT_MARK:
-            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(targets)
+            container = transition.to_path.rsplit('.', 1)[0]
+            if container in region_entries:
+                region_entries[container].update(targets)
+            else:
+                initial_edges[container].update(targets)
         elif transition.from_path in adjacency:
             # A source that names no state (a misspelling kept by collect mode)
             # contributes no edge, as in the loop above.
             adjacency[transition.from_path].update(targets)
 
     for transition in history_entries:
-        add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
+        _add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
 
     for state in states:
         if not (state.is_composite and state.initial_targets):
@@ -2698,7 +3016,8 @@ def _build_reachability_graph(
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    def closure(start: str) -> set:
+    def _closure(start: str) -> set:
+        """Return every state path reachable from ``start`` under this pass."""
         seen = set()
         queue = [start]
         while queue:
@@ -2707,6 +3026,8 @@ def _build_reachability_graph(
                 current,
                 set(),
             )
+            for owned in regions_of.get(current, ()):
+                next_paths = next_paths | region_entries[owned.path]
             for next_path in sorted(next_paths):
                 if next_path in seen or next_path == start:
                     continue
@@ -2720,7 +3041,7 @@ def _build_reachability_graph(
         # one. These targets are root-reachable already, so only the rows of
         # the other states gain them.
         by_path = {state.path: state for state in states}
-        reached = closure(states[0].path)
+        reached = _closure(states[0].path)
         restores: Dict[Tuple[str, str], List[str]] = {}
         for transition in history_entries:
             owner, kind = transition.to_path, transition.target_history
@@ -2739,9 +3060,12 @@ def _build_reachability_graph(
                         if any(path == child or path.startswith(child + '.') for path in inside)
                     ]
                 )
-            add_edges(transition, restores[(owner, kind)])
+            _add_edges(transition, restores[(owner, kind)])
 
-    return {state.path: tuple(sorted(closure(state.path))) for state in states}
+    mapping = {state.path: tuple(sorted(_closure(state.path))) for state in states}
+    return mapping, region_entries
+
+
 
 
 def _build_event_emission_map(
@@ -2770,10 +3094,35 @@ def _build_var_dataflow(
 
 def _build_aspect_impact_map(
         states: Tuple[StateInfo, ...],
+        regions: Sequence[RegionInfo] = (),
 ) -> Dict[str, Tuple[str, ...]]:
+    """Map each aspect-carrying composite or region to the leaves its aspects reach.
+
+    :param states: Inspect state records.
+    :type states: Tuple[StateInfo, ...]
+    :param regions: Inspect region records, defaults to ``()``; a region that
+        declares ``>> during`` aspects is keyed by its own path.
+    :type regions: Sequence[RegionInfo], optional
+    :return: Mapping from container path to its descendant non-pseudo leaf paths.
+    :rtype: Dict[str, Tuple[str, ...]]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int n = 0;
+        ... state Root { region Work {
+        ...     >> during before { n = n + 1; }
+        ...     state A { during { n = 0; } }
+        ...     [*] -> A;
+        ... } }
+        ... ''')
+        >>> _build_aspect_impact_map(_build_state_infos(machine), _build_region_infos(machine))
+        {'Root.Work': ('Root.Work.A',)}
+    """
     out: Dict[str, Tuple[str, ...]] = {}
-    for s in states:
-        if not (s.is_composite and (s.aspect_before or s.aspect_after)):
+    for s in (*states, *regions):
+        if not getattr(s, 'is_composite', True) or not (s.aspect_before or s.aspect_after):
             continue
         descendants = tuple(sorted(
             desc.path
@@ -2790,14 +3139,9 @@ def _build_aspect_impact_map(
 def _build_action_ref_graph(machine: 'StateMachine') -> Dict[str, Tuple[str, ...]]:
     """Capture ``ref`` edges between named actions in the model."""
     edges: Dict[str, List[str]] = {}
-    for state in machine.walk_states():
+    for state in _walk_namespaces(machine):
         path = _state_path(state)
-        for collection in (
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-        ):
+        for collection in _action_collections(state):
             for action in collection:
                 source_label = _function_signature(state, path, action)
                 if action.is_ref and action.ref is not None:
@@ -3699,6 +4043,7 @@ def _verify_smt_span(
         states: Sequence[StateInfo],
         transitions: Sequence[TransitionInfo],
         actions: Sequence[ActionInfo],
+        regions: Sequence[RegionInfo] = (),
 ) -> Optional[Span]:
     """Choose a source span for an SMT-local verify diagnostic.
 
@@ -3717,6 +4062,8 @@ def _verify_smt_span(
     :type transitions: Sequence[TransitionInfo]
     :param actions: Inspect action payloads.
     :type actions: Sequence[ActionInfo]
+    :param regions: Inspect region payloads, defaults to ``()``.
+    :type regions: Sequence[RegionInfo], optional
     :return: Best-effort source span, or ``None`` when no source object can
         be matched.
     :rtype: Optional[Span]
@@ -3767,7 +4114,13 @@ def _verify_smt_span(
             data.get('condition_source'),
         )
     if code == 'W_COMPOSITE_INIT_INCOMPLETE':
-        return _state_span_by_path(states, data.get('state'))
+        span = _state_span_by_path(states, data.get('state'))
+        if span is None:
+            span = next(
+                (region.span for region in regions if region.path == data.get('state')),
+                None,
+            )
+        return span
     return None
 
 
@@ -4124,6 +4477,7 @@ def _verify_diagnostics_from_results(
         combo_guard_replacement_keys: Optional[
             Mapping[str, Set[Tuple[str, int]]]
         ] = None,
+        regions: Sequence[RegionInfo] = (),
 ) -> Tuple[ModelDiagnostic, ...]:
     """Convert inspect-adapter results into public model diagnostics.
 
@@ -4146,6 +4500,10 @@ def _verify_diagnostics_from_results(
     :param combo_guard_replacement_keys: Combo-specific guard replacement
         coverage collected before verify diagnostics are appended.
     :type combo_guard_replacement_keys: Mapping[str, Set[Tuple[str, int]]], optional
+    :param regions: Inspect region payloads, defaults to ``()``. A finding that
+        names a region, such as an incomplete region entry, takes the region's
+        source span.
+    :type regions: Sequence[RegionInfo], optional
     :return: Converted verify diagnostics.
     :rtype: Tuple[ModelDiagnostic, ...]
 
@@ -4191,7 +4549,7 @@ def _verify_diagnostics_from_results(
                 diagnostic = _make_verify_diagnostic(
                     code,
                     refs,
-                    _verify_smt_span(code, raw, states, transitions, actions),
+                    _verify_smt_span(code, raw, states, transitions, actions, regions),
                 )
                 if diagnostic is not None:
                     diagnostics.append(diagnostic)
@@ -4332,12 +4690,28 @@ def inspect_model(
 
     A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
     model conversion can also build the model before history lowering, and
-    the report,
-    its findings and the optional verify run describe that model, with each
-    history entry an ordinary transition marked by ``target_history``. The
-    lowered variables, gate states and route initials therefore appear nowhere
-    in the report. For reachability, a history entry also reaches every state on
-    the default path of the kind it names.
+    the report and the findings about what was written describe that model,
+    with each history entry an ordinary transition marked by
+    ``target_history``. The lowered variables, gate states and route initials
+    therefore appear nowhere in the report. For reachability, a history entry
+    also reaches every state on the default path of the kind it names.
+
+    The findings of the verify pipeline (:data:`BEHAVIOR_DIAGNOSTIC_CODES`)
+    are the exception. They say how a machine behaves, so with ``enable_verify``
+    they are judged on the machine that runs, where history, ``active()`` and
+    forced declarations are lowered into plain FCSTM. A model and the text it
+    exports then give the same ones, and they can name what was lowered. Each
+    still points at the construct it was lowered from.
+
+    A machine with ``region`` blocks or ``active()`` queries is also reported
+    as written. Regions are listed in :attr:`ModelInspect.regions`; the
+    transitions, events and actions inside them join the ordinary lists; the
+    reachability graph follows region entry and joint completion; and the two
+    ordering diagnostics ``I_REGION_BACKWARD_READ`` and
+    ``W_REGION_BLIND_OVERWRITE`` judge sibling regions. With ``enable_verify``
+    the topology algorithms run on such a model too, reading every state that
+    owns regions as branches that must all be over before it goes on, and no
+    hidden ``active()`` flag variable appears in the report itself.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4380,6 +4754,17 @@ def inspect_model(
     :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
+    :raises pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: If
+        ``max_complexity_tier`` or ``max_call_count_scaling`` is not a known
+        value, or ``smt_timeout_ms`` is neither ``None`` nor a non-negative
+        integer. This is a :class:`ValueError` subclass.
+    :raises TypeError: If a threshold is a ``bool`` or has a non-numeric type,
+        or ``structure_statistics_policy`` is not a mapping, a
+        :class:`StructureStatisticsPolicy` or ``None``, or names an unknown
+        field.
+    :raises ValueError: If an integer threshold is a non-integral float, a
+        float threshold is not finite, or a structure-statistics value is out
+        of range.
 
     Examples::
 
@@ -4401,7 +4786,20 @@ def inspect_model(
         >>> verify_report = inspect_model(machine, enable_verify=True)
         >>> len(verify_report.diagnostics) >= len(report.diagnostics)
         True
+
+    Invalid policy arguments are rejected before any analysis runs::
+
+        >>> inspect_model(machine, max_complexity_tier='bogus')
+        Traceback (most recent call last):
+        ...
+        pyfcstm.verify.inspect_adapter.InspectAccessForbiddenError: unknown inspect complexity tier: 'bogus'
+        >>> inspect_model(machine, deep_hierarchy_threshold=True)
+        Traceback (most recent call last):
+        ...
+        TypeError: deep_hierarchy_threshold must be an integer threshold, got bool
     """
+    if model_diagnostics is None:
+        model_diagnostics = machine._build_warnings
     _validate_inspect_verification_policy(
         max_complexity_tier,
         max_call_count_scaling,
@@ -4422,12 +4820,130 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
-    if model_diagnostics is None:
-        model_diagnostics = machine._build_warnings
-    # A machine that uses history is judged as written: model conversion keeps
-    # the model before lowering, where a history entry is an ordinary
-    # transition that still carries its ``target_history``.
-    machine = machine._as_written()
+    settings = dict(
+        deep_hierarchy_threshold=deep_hierarchy_threshold,
+        large_composite_threshold=large_composite_threshold,
+        var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
+        structure_statistics_policy=structure_statistics_policy,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        smt_timeout_ms=smt_timeout_ms,
+    )
+    # The report and the findings about what was written are judged on the
+    # model as written: model conversion keeps the model before lowering, where
+    # a history entry is an ordinary transition that still carries its
+    # ``target_history``.
+    written = _inspect_pass(machine._as_written(), model_diagnostics, **settings)
+    running = machine._as_run() if enable_verify else None
+    if running is None:
+        return written.report
+    # The findings about how the machine behaves are judged on the machine
+    # that runs, so that a model and the plain text it exports give the same
+    # ones (see :data:`BEHAVIOR_DIAGNOSTIC_CODES`).
+    return _combine_inspect_passes(
+        written, _inspect_pass(running, (), **settings), settings
+    )
+
+
+class _InspectPass(NamedTuple):
+    """One analysis pass: the report and the verify run it was built from."""
+
+    report: 'ModelInspect'
+    verify_plan: Optional[Sequence['InspectEligibility']]
+    verify_results: Optional[Sequence['InspectRunResult']]
+
+
+#: Findings about how a machine behaves rather than about how it was written:
+#: the codes of the verify pipeline, which the solver and the topology analyses
+#: decide. A model that uses history, activity queries or a forced declaration
+#: is written in terms of constructs that are lowered into plain FCSTM, and the
+#: text it exports is that plain FCSTM, so these findings are judged on the
+#: machine that runs: the model and its exported text then give the same ones.
+#: Every other code describes what was written, and is judged on the model as
+#: written, together with the report itself. ``W_FORCED_GUARD_UNSAT`` judges a
+#: forced declaration and so also belongs to the model as written.
+BEHAVIOR_DIAGNOSTIC_CODES = frozenset(
+    code for code, spec in CODE_REGISTRY.items()
+    if spec.emit_tier == 'verify_pipeline'
+) - {'W_FORCED_GUARD_UNSAT'}
+
+#: Verify algorithms that judge a declaration and so run on the model as written.
+_DECLARATION_VERIFY_ALGORITHMS = frozenset({'forced_guard_unsat_under_init'})
+
+
+def _combine_inspect_passes(
+        written: '_InspectPass',
+        running: '_InspectPass',
+        settings: Mapping[str, Any],
+) -> ModelInspect:
+    """Join the findings of the pass on the model as written and the one on the machine that runs.
+
+    The report, and every finding that is not about behavior, come from the
+    pass on the model as written. The findings in
+    :data:`BEHAVIOR_DIAGNOSTIC_CODES` come from the pass on the machine that
+    runs, and so does the verify run apart from the algorithms that judge a
+    declaration.
+
+    :param written: Pass on the model as written.
+    :type written: _InspectPass
+    :param running: Pass on the machine that runs.
+    :type running: _InspectPass
+    :param settings: Verification settings both passes were run with.
+    :type settings: Mapping[str, Any]
+    :return: The combined report.
+    :rtype: ModelInspect
+    """
+    diagnostics = tuple(
+        item for item in written.report.diagnostics
+        if item.code not in BEHAVIOR_DIAGNOSTIC_CODES
+    ) + tuple(
+        item for item in running.report.diagnostics
+        if item.code in BEHAVIOR_DIAGNOSTIC_CODES
+    )
+    # Both passes ran the verify algorithms: the second one only exists then.
+    declaration = [
+        item for item in written.verify_results
+        if item.algorithm_name in _DECLARATION_VERIFY_ALGORITHMS
+    ]
+    replaced = {item.algorithm_name for item in declaration}
+    merged = [
+        item for item in running.verify_results
+        if item.algorithm_name not in replaced
+    ] + declaration
+    verification = _verification_report_from_results(
+        running.verify_plan,
+        merged,
+        max_complexity_tier=settings['max_complexity_tier'],
+        max_call_count_scaling=settings['max_call_count_scaling'],
+        smt_timeout_ms=settings['smt_timeout_ms'],
+    )
+    return replace(written.report, diagnostics=diagnostics, verification=verification)
+
+
+def _inspect_pass(
+        machine: 'StateMachine',
+        model_diagnostics: Sequence[ModelDiagnostic],
+        *,
+        deep_hierarchy_threshold: int,
+        large_composite_threshold: int,
+        var_to_leaf_ratio_threshold: float,
+        structure_statistics_policy: object,
+        enable_verify: bool,
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
+) -> _InspectPass:
+    """Run every analysis on one machine and return its report and verify run.
+
+    :param machine: The machine to analyze, as written or as it runs.
+    :type machine: pyfcstm.model.StateMachine
+    :param model_diagnostics: Diagnostics of the model build to lead the findings with.
+    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic]
+    :return: The report and, with ``enable_verify``, the verify plan and results.
+    :rtype: _InspectPass
+    """
+    verify_plan = verify_results = None
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4437,7 +4953,8 @@ def inspect_model(
     combo_transitions = _build_combo_transition_infos(transitions)
     combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
-    reachability_graph = _build_reachability_graph(
+    regions = _build_region_infos(machine)
+    reachability_graph, never_completing_owners = _build_reachability_graph(
         states,
         transitions,
         {
@@ -4448,6 +4965,8 @@ def inspect_model(
             for owner in machine.history_owners
             for kind, path in owner.defaults.items()
         },
+        regions,
+        forced_transitions,
     )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect
@@ -4469,6 +4988,7 @@ def inspect_model(
         large_composite_threshold=large_composite_threshold,
         var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
         machine=machine,
+        regions=regions,
     ))
     verification = _disabled_verification_report(
         max_complexity_tier=max_complexity_tier,
@@ -4493,6 +5013,7 @@ def inspect_model(
             events,
             actions,
             combo_guard_replacement_keys=_combo_guard_replacement_keys(diagnostics),
+            regions=regions,
         ))
         verification = _verification_report_from_results(
             verify_plan,
@@ -4506,6 +5027,7 @@ def inspect_model(
         transitions,
         diagnostics,
         forced_transitions,
+        never_completing_owners,
     )
     diagnostics.extend(_build_unreachable_transition_diagnostics(
         states,
@@ -4524,7 +5046,7 @@ def inspect_model(
         structure_statistics_policy,
         reason_by_key,
     )
-    return ModelInspect(
+    report = ModelInspect(
         root_state_path=root_state_path,
         states=states,
         transitions=transitions,
@@ -4538,12 +5060,14 @@ def inspect_model(
         reachability_graph=reachability_graph,
         event_emission_map=_build_event_emission_map(events),
         var_dataflow=_build_var_dataflow(variables),
-        aspect_impact_map=_build_aspect_impact_map(states),
+        aspect_impact_map=_build_aspect_impact_map(states, regions),
         action_ref_graph=_build_action_ref_graph(machine),
         diagnostics=tuple(diagnostics),
         verification=verification,
         structure_statistics=structure_statistics,
+        regions=regions,
     )
+    return _InspectPass(report, verify_plan, verify_results)
 
 
 def _normalize_int_threshold(name: str, value: int) -> int:
@@ -4685,6 +5209,10 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
         'action_ref_graph': {k: list(v) for k, v in report.action_ref_graph.items()},
         'diagnostics': [_diagnostic_to_json(d) for d in report.diagnostics],
         'verification': _to_json_dataclass(report.verification),
+        **(
+            {'regions': [_to_json_dataclass(r) for r in report.regions]}
+            if report.regions else {}
+        ),
     }
 
 

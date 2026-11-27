@@ -264,11 +264,13 @@ describe('duplicate imported declarations', () => {
 
 describe('rendered variable names', () => {
     for (const [name, selector, target] of [
-        ['value', 'value', 'var'],
-        ['value', 'value', 'param'],
-        ['value', 'value', 'state'],
+        ['prefix_var', 'prefix_*', '$1'],
+        ['prefix_param', 'prefix_*', '$1'],
+        ['prefix_state', 'prefix_*', '$1'],
         ['x_', 'x_*', '*$state'],
         ['prefix_input', 'prefix_*', '$1'],
+        ['prefix_region', 'prefix_*', '$1'],
+        ['prefix_active', 'prefix_*', '$1'],
         ['prefix_1', 'prefix_*', '$1'],
         ['value', 'value*', '$1'],
     ]) {

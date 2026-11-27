@@ -1,0 +1,21 @@
+title: The hidden flag of an active() query is an ordinary variable given by the caller; given as the
+  position says, the query is true
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'Root.Run{A: A2, B: B1}'
+  vars:
+    n: 0
+    __active_Root_Run_A_A2: 1
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Run{A: A2, B: B1}'
+    vars:
+      n: 1
+      __active_Root_Run_A_A2: 1

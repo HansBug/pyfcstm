@@ -1,0 +1,9 @@
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P {
+        >> during before { n = n + 1; }
+        region A { [*] -> A1; state A1; }
+        region B { [*] -> B1 : if [n == 1]; state B1; }
+    }
+}

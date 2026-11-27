@@ -1,0 +1,19 @@
+def int seq = 0;
+state Root {
+    event Halt;
+    [*] -> Outer;
+    state Outer {
+        exit { seq = seq * 10 + 5; }
+        region R1 {
+            [*] -> Inner;
+            state Inner {
+                exit { seq = seq * 10 + 4; }
+                region X { [*] -> X1; state X1 { exit { seq = seq * 10 + 1; } } }
+                region Y { [*] -> Y1; state Y1 { exit { seq = seq * 10 + 2; } } }
+            }
+        }
+        region R2 { [*] -> Z1; state Z1 { exit { seq = seq * 10 + 3; } } }
+    }
+    state Off { enter { seq = seq * 10 + 9; } }
+    !Outer -> Off : /Halt;
+}

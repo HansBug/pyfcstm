@@ -121,6 +121,7 @@ _ALLOWED_SUGGESTED_FIX_KINDS = ('insert', 'delete', 'replace')
 #: problem objects plus current import, variable, and expression diagnostics
 #: that already carry source spans.
 _ALLOWED_SPAN_OBJECTS = (
+    'syntax_construct',
     'state_identifier',
     'transition',
     'guard_expression',

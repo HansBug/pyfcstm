@@ -11,6 +11,15 @@ manages multiple subcommands. It exposes the shared PlantUML option resolver
 and source builder used by the ``plantuml`` and ``visualize`` entry points,
 alongside the helper that registers the subcommand.
 
+The module contains:
+
+* :func:`resolve_plantuml_options` - Resolve PlantUML options from generic
+  ``-c`` assignments and the dedicated detail-level option
+* :func:`build_plantuml_output` - Build PlantUML text from a state machine DSL
+  file
+* ``_add_plantuml_subcommand`` - Register the ``plantuml`` subcommand on a
+  Click group
+
 .. note::
    The CLI entry point relies on :func:`pyfcstm.dsl.parse.parse_with_grammar_entry`
    and :func:`pyfcstm.model.model.parse_dsl_node_to_state_machine` to build the
@@ -37,6 +46,7 @@ from click.core import ParameterSource
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
+from ..utils.validate import ModelValidationError
 from ..model.plantuml import PlantUMLOptions
 from ..utils import auto_decode, parse_key_value_pairs
 
@@ -539,6 +549,12 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
     :return: The same CLI group instance with the subcommand registered.
     :rtype: click.Group
 
+    Registration only builds the command and attaches it to ``cli``: no file is
+    read and no template or option is validated until the command runs, so this
+    function raises nothing of its own for an ordinary
+    :class:`click.Group`.  The failures of the command itself are documented on
+    the registered ``plantuml`` function.
+
     Example::
 
         >>> from click import Group
@@ -655,7 +671,11 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             dedicated_detail_level=dedicated_detail_level,
         )
         _emit_plantuml_warnings(warnings)
-        plantuml_output = _render_plantuml_source(input_code_file, options)
+        try:
+            plantuml_output = _render_plantuml_source(input_code_file, options)
+        except ModelValidationError as err:
+            # Model construction rejects invalid or unsupported DSL features.
+            raise ClickErrorException(str(err)) from err
 
         # Write output
         if output_file is not None:

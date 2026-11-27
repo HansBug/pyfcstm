@@ -1770,7 +1770,7 @@ check reach <= 1: active("Root.Done");
 
     assert bmc_entry._human_compact_values(("a", "b", "c", "d")) == ("a,b,c,+1 more")
     unknown_witness = SimpleNamespace(
-        frames=(SimpleNamespace(state=None, sentinel=None),)
+        frames=(SimpleNamespace(configuration=None, state=None, sentinel=None),)
     )
     assert bmc_entry._human_frame_label(unknown_witness, 0) == "unknown"
 

@@ -1,0 +1,16 @@
+title: A forced declaration whose target cannot be entered keeps the group waiting, so a later declaration on the same event does not take it
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Both declarations decide once. The first one raised its variable in region A, which finished; region B cannot finish into Blocked, and the second declaration gives way while the first one is raised. The group leaves when Blocked can be entered. An owner written with a plain composite instead of regions still continues with the second declaration.
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: A1, B: B1}'
+- cycle: Root.Stop
+  expect:
+    configuration: 'Root.P{A: [done], B: B1}'

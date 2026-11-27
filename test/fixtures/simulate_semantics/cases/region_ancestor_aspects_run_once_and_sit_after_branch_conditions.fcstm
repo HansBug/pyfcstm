@@ -1,0 +1,23 @@
+def int tick = 0;
+def int post = 0;
+def int own = 0;
+state Root {
+    >> during before { tick = tick + 1; }
+    >> during after { post = post + 1; }
+    [*] -> P;
+    state P {
+        >> during before { own = own + 1; }
+        region R1 {
+            [*] -> S;
+            state S { during { } }
+            state T { during { } }
+            S -> T : if [tick >= 2];
+        }
+        region R2 {
+            [*] -> U;
+            state U { during { } }
+            state V { during { } }
+            U -> V : if [tick >= 2];
+        }
+    }
+}

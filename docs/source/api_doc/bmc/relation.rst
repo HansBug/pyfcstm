@@ -16,14 +16,14 @@ BmcAbstractCallRecord
 -----------------------------------------------------
 
 .. autoclass:: BmcAbstractCallRecord
-    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot
+    :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot,scope_path,stack_states
 
 
 BmcTraceSymbols
 -----------------------------------------------------
 
 .. autoclass:: BmcTraceSymbols
-    :members: __post_init__,allocate,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters
+    :members: __post_init__,allocate,region_position,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters,region_positions
 
 
 BmcRuntimeErrorSite
@@ -51,7 +51,7 @@ BmcCoreFormula
 -----------------------------------------------------
 
 .. autoclass:: BmcCoreFormula
-    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics,cone_slice
+    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics,cone_slice,region_steps
 
 
 build\_bmc\_core\_formula

@@ -1,0 +1,70 @@
+title: A choice among initial transitions of a composite inside a region is decided the same way while the cycle
+  is tried and while it is taken, so nothing is entered twice and no cycle ends as a Delta after handlers ran
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Leaving C through p would finish the region, let Q continue to itself and arrive at the same choice again, so
+    C takes its second initial transition. Q is entered once and never left.
+categories:
+- regions
+- runtime
+handlers:
+- action: Root.Idle.IdleOut
+  behavior: record_call
+- action: Root.Q.QIn
+  behavior: record_call
+- action: Root.Q.QOut
+  behavior: record_call
+steps:
+- cycle: []
+  expect:
+    configuration: Root.Idle
+    delta: false
+    handler_calls: []
+- cycle: Root.Go
+  expect:
+    configuration: 'Root.Q{R: C.Stay}'
+    delta: false
+    handler_calls:
+    - action: Root.Idle.IdleOut
+      state: Root.Idle
+      stage: exit
+      vars: {}
+      active_leaf: Root.Idle
+      call_stage: exit
+      abstract_target: Root.Idle.IdleOut
+      named_ref: null
+      configuration: Root.Idle
+    - action: Root.Q.QIn
+      state: Root.Q
+      stage: enter
+      vars: {}
+      active_leaf: Root.Q
+      call_stage: enter
+      abstract_target: Root.Q.QIn
+      named_ref: null
+      configuration: 'Root.Q{R: [init]}'
+- cycle: []
+  expect:
+    configuration: 'Root.Q{R: C.Stay}'
+    delta: false
+    handler_calls:
+    - action: Root.Idle.IdleOut
+      state: Root.Idle
+      stage: exit
+      vars: {}
+      active_leaf: Root.Idle
+      call_stage: exit
+      abstract_target: Root.Idle.IdleOut
+      named_ref: null
+      configuration: Root.Idle
+    - action: Root.Q.QIn
+      state: Root.Q
+      stage: enter
+      vars: {}
+      active_leaf: Root.Q
+      call_stage: enter
+      abstract_target: Root.Q.QIn
+      named_ref: null
+      configuration: 'Root.Q{R: [init]}'

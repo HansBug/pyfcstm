@@ -6,8 +6,8 @@ This guide is for changing the `c` template. Downstream integration belongs in `
 
 | Template source | Maintainer role | Generated output |
 | --- | --- | --- |
-| `machine.h.j2` | Public C integration surface template | `machine.h` |
-| `machine.c.j2` | Generated high-performance runtime implementation template | `machine.c` |
+| `machine.h.j2` | Public C integration surface template; opaque machine type, capacity macros, configuration and hot-start declarations | `machine.h` |
+| `machine.c.j2` | Variable-role glue; embeds the per-model kernel from `pyfcstm/render/c_kernel*.py` and `c_configuration.py` | `machine.c` |
 | `README.md.j2` | English generated-output guide | `README.md` |
 | `README_zh.md.j2` | Chinese generated-output guide | `README_zh.md` |
 | `config.yaml` | Renderer configuration, C statement rendering, helper names, and ignore rules | Not copied |
@@ -22,6 +22,7 @@ Generation-time helpers run inside pyfcstm; generated programs must remain self-
 | Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
 | Expression/getter emission | `../../pyfcstm/render/c_runtime.py`, explicit imports in `config.yaml`, C and poll runtimes, both wrappers |
 | Input/parameter identifiers | `readonly_value_identifier`; declarations, getters, providers, README examples and ABI tests |
+| Execution kernel, configuration type or capacity macros | `../../pyfcstm/render/c_kernel.py`, `c_kernel_engine.py`, `c_configuration.py`, both C templates' `machine.h.j2` / `machine.c.j2`, both wrappers, the generated guides, `test/render/test_c_kernel.py`, `test/render/test_c_configuration.py` and the region/alignment tests |
 | Shared native behavior | Update `c` and `c_poll` consistently; changes also affect the `cpp` and `cpp_poll` wrappers |
 
 ## Runtime contracts
@@ -41,6 +42,25 @@ Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, 
 
 `InputProvider` is copied, while its `user_data`, `Hooks` and its data are borrowed. `last_inputs` and `vars` expose instance storage; context pointers are callback-scoped. Cold initialization clears registrations; hot start preserves them. Keep C99, the signed 64-bit `Int` ABI, standard-library-only dependencies, caller-owned objects and `PYFCSTM_GENERATED_NO_HEAP` working. Guard floating-to-integer casts before conversion. Keep instances non-reentrant and resource ownership explicit.
 
+## Specialized kernel
+
+The execution core in `machine.c` is not written in the template: it is emitted for each model by three generators under `../../pyfcstm/render/`, imported by name in `config.yaml`. `machine.c.j2` only keeps the variable-role glue (initialization options, input sampling, hot-start entry points) and calls `render_c_kernel_types`, `render_c_configuration_source` and `render_c_kernel_code`; `machine.h.j2` calls `render_c_storage_macros` and `render_c_configuration_header`.
+
+| Generator | Owns |
+| --- | --- |
+| `c_kernel.py` | The per-model plan: state, region, action and event tables, hook rows, capacity defaults and `..._STORAGE_BYTES`, the private machine type and the hook glue |
+| `c_kernel_engine.py` | The model-independent engine text with `@...@` placeholders: cycle execution and the speculative search on a fixed arena |
+| `c_configuration.py` | The `Configuration` type, region queries, validator and the text formatter and parser |
+
+Invariants to preserve:
+
+- **Simulator alignment.** The engine follows `SimulationRuntime` method by method, including its limits (nesting depth 64, group nesting 64, 1000 steps) and its refusal of a pseudo-state loop as an error rather than a Delta cycle. A change to simulator semantics changes the engine, the shared fixtures and the differential check together.
+- **Text form.** The configuration text is byte-identical to the simulator's own (`pyfcstm/model/configuration.py`); change both sides and their tests in one edit.
+- **Static memory.** All search state lives inside the machine; capacities are the public macros `..._ARENA_CAPACITY` and `..._TRAIL_CAPACITY`. The `extra_bytes` expression passed to `render_c_storage_macros` in `machine.h.j2` must cover the template's own private members passed to `render_c_kernel_types` in `machine.c.j2`; a compile-time `PrivFits` assertion fails the build otherwise. Adding a private member means updating both.
+- **Opaque machine.** The header exposes only an alignment member and `_private[...]`; never document or test against internal fields.
+- **Region models.** `current_state_id`, `current_state_path` and `current_state_name` are generated only when `not model.has_regions`; the generated guides, wrappers and tests must follow that condition.
+- **Guide tables.** The guides take events, abstract actions and action ids from `event_paths`, `hook_rows` and `action_rows`, which include region-declared items. Do not rebuild those lists by scanning `state.events` or state action lists: they miss events and actions declared on a region.
+
 ## Documentation maintenance
 
 Maintain the user journey as a whole. There must be one complete Quick Start, followed by extensions of the same instance, recovery, API reference and advanced integration. A new API belongs in its existing tutorial section and reference table; replace obsolete examples and remove duplicate explanations in the same edit. Do not append a second quick start, final “complete example” or corrective note to compensate for a broken earlier section.
@@ -59,7 +79,10 @@ Run commands from the repository root. `make template_unittest` refreshes packag
 
 ```bash
 make tpl
-PYFCSTM_TEMPLATE_SUITES=c,cpp make template_unittest
+PYFCSTM_TEMPLATE_SUITES=c,c_poll,cpp,cpp_poll make template_unittest
+python -m pytest test/render/test_c_kernel.py test/render/test_c_configuration.py
+make doctest DOCTEST_SCOPE=pyfcstm/render
+make c_kernel_alignment_check
 make test_boundary_check resource_ownership_check
 make rst_auto
 ```
@@ -115,6 +138,6 @@ The benchmark used `cc -O3 -DNDEBUG -std=c99` and measured two workloads:
 | `mixed` | 4,000,000 | Mean speedup was about `6.42x`; median speedup was about `7.25x`. |
 | `validation_heavy` | 8,000,000 | Mean speedup was about `9.59x`; median speedup was about `9.75x`. |
 
-The result supports the current design direction: id-only event input, specialized state dispatch, and reduced-copy validation / rollback materially improve the hot paths that dominate generated C runtime cost.
+This measurement predates the static-memory kernel and has not been repeated for it. The result supports the design direction of that earlier specialized runtime: id-only event input, specialized state dispatch, and reduced-copy validation / rollback materially improve the hot paths that dominate generated C runtime cost.
 
 Benchmark records are evidence for maintenance decisions, not a substitute for semantic regression tests. Do not loosen correctness, rollback, or hook behavior in pursuit of microbenchmarks.

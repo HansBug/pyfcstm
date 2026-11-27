@@ -93,10 +93,13 @@ Renderer 主要实现在 `pyfcstm/render/render.py` 和 `pyfcstm/render/env.py`�
 | `filters` | 通过声明式配置项添加 Jinja2 filters。 | 仅 generation-time。 |
 | `tests` | 通过声明式配置项添加 Jinja2 tests。 | 仅 generation-time。 |
 | `ignores` | 从渲染/复制中排除的 Git-style patterns。 | 仅 generation-time。 |
+| `features` | 模板能渲染的模型特性列表，唯一的成员是 `region`。 | 仅 generation-time。 |
 
 大多数 key 是可选的，默认等价于空配置。Jinja2、PyYAML、`pathspec`、renderer helpers、imported filters 这类 generation-time dependencies 是允许的，因为它们只在 `pyfcstm` 生成阶段运行。除非 generated target language 明确拥有并通过 runtime policy 批准，否则这些依赖不能泄露为 generated runtime dependency。
 
 目标语言专属 helper 应由对应模板通过 `type: import` 显式加载。`to_c_identifier`、`to_c_path_identifier`、`render_c_action_body`、`render_c_condition_body` 等 C-family helper 属于 `c` / `c_poll` / `cpp` / `cpp_poll` 的 config，而不是默认 renderer 环境。
+
+`features` 声明模板能渲染的模型特性，取值是字符串列表，目前唯一的成员是 `region`。没有声明 `region` 的模板遇到含 region 的模型会在写出任何文件之前被拒绝：内置模板报 `generate with built-in template '<name>' does not support region models yet.`，`-t` 指定的目录会写出该目录，诊断码为 `E_UNSUPPORTED_FEATURE`。不含 region 的模型不受声明影响，所以没有声明 `region` 的模板行为和生成物都不变。`pyfcstm generate` 的拒绝信息面向两类读者：写明模型声明了几个 region、第一个在哪里，列出支持 region 的内置模板并给出可直接复制的命令，也建议把 region 从模型里拿掉；对模板目录还会告诉模板作者该声明什么、什么时候声明。内置模板的使用者不会去改它，所以它的拒绝信息没有后面这一段。未知或重复的成员在构造渲染器时报错，`StateMachineCodeRenderer.features` 给出已声明的集合。声明 `region` 的模板要自己承担目标语言上的全部 region 语义，并在所有共享的 `regions` 用例上与 `SimulationRuntime` 对齐；原生 C 系 runner 按这个声明选取这些用例。
 
 当代码新增 `config.yaml` key 时，必须同时更新本手册、受影响的单模板 README 和结构检查。
 
@@ -212,6 +215,22 @@ Generated implementation files 应优先服务模型语义、可预测执行和�
   外部 I/O adapter 和认证表述边界。
 
 C/C++ 生成指南必须在相关用法和构建说明中讲清集成边界。只拿到生成目录的用户， 也应能直接看到 compiler/profile 边界、内存 ownership 选择、event/hook 要求、单实例并发假设、 外部设备 adapter 边界、numeric inspect 入口，以及“工程证据不等于认证”的边界，而不需要阅读本维护手册。
+
+## C 系模板公开接口迁移
+
+四个 C 系模板（`c`、`c_poll`、`cpp`、`cpp_poll`）声明了 `features: [region]`，并共用同一个专用化的静态内存执行核。下文用 `<M>` 表示生成的状态机类前缀，用 `<MACRO>` 表示其宏前缀。这些模板在声明该特性之前会拒绝含区域的模型，因此区域支持本身是新增能力而不是迁移项。只列出现有接口上实际发生的变化；形如 `<M>_...` 的名字在 C++ 封装中对应生成指南里列出的方法。
+
+| 旧接口 | 新接口 | 迁移说明 |
+| --- | --- | --- |
+| 状态机类型公开帧、栈和临时存储成员 | `<M>` 是不透明类型：一个对齐成员加上 `unsigned char _private[<MACRO>_STORAGE_BYTES]` | 只通过公开函数读取状态机；存储仍由调用方拥有，不使用堆 |
+| `<MACRO>_MAX_STACK_DEPTH` 与 `<MACRO>_MAX_DFS_STEPS` | 已删除 | 仿真器的限制（嵌套深度 64、组嵌套 64、1000 步）固定不变，不可配置 |
+| 没有容量宏 | `<MACRO>_ARENA_CAPACITY`、`<MACRO>_TRAIL_CAPACITY` 以及由它们推导的 `<MACRO>_STORAGE_BYTES` | 默认值适合模型；在包含 `machine.h` 之前覆盖，并在所有编译单元使用相同的值。搜索超出容量时以点名对应宏的 `capacity safety limit` 消息失败 |
+| 位置只能读成唯一的当前状态 | `<M>Configuration`、`<M>_get_configuration`、`<M>_hot_start_at`、`<M>_hot_start_at_with_parameters`，以及 `<M>_configuration_region_status` / `_is_active` / `_leaves` / `_validate` 查询 | `<M>_configuration_format` / `_parse` 读写仿真器的文本形式，可用 `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` 去掉 |
+| `<M>_current_state_id`、`_current_state_path`、`_current_state_name` 总是生成 | 只为不含区域的模型生成 | 含区域的模型（这些模板此前会拒绝它）没有唯一的当前状态：用 `get_configuration` 获取，用 `hot_start_at` 恢复；普通的 `hot_start` 仍接受一个位于所有区域之外的状态 |
+| 经过伪状态的闭环以 Delta 周期结束 | 周期以 `suspected loop` 错误失败 | 增加退出、能终止的守卫，或把驱动事件分开 |
+| 生成的 `machine.c` 的内部布局 | 由 `pyfcstm/render/c_kernel.py`、`c_kernel_engine.py` 和 `c_configuration.py` 按模型专用化生成 | 不要依赖任何内部名字或布局 |
+
+除上表之外，不含区域的模型行为不变。
 
 ## Source context contract
 

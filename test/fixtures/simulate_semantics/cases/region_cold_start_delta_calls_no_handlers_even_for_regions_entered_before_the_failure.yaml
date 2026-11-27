@@ -1,0 +1,53 @@
+title: A cold start rejected by a later region calls no handler, and the same machine calls them once the entry
+  succeeds
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+handlers:
+- action: Root.R1.X.XOn
+  behavior: record_call
+- action: Root.R1.X.XWork
+  behavior: record_call
+steps:
+- cycle: []
+  inputs:
+    g: 0
+  expect:
+    configuration: 'Root{R1: [init], R2: [init]}'
+    vars:
+      n: 0
+    delta: true
+    handler_calls: []
+- cycle: []
+  inputs:
+    g: 1
+  expect:
+    configuration: 'Root{R1: X, R2: Y}'
+    vars:
+      n: 0
+    delta: false
+    handler_calls:
+    - action: Root.R1.X.XOn
+      state: Root.R1.X
+      stage: enter
+      vars:
+        n: 0
+      active_leaf: Root.R1.X
+      call_stage: enter
+      abstract_target: Root.R1.X.XOn
+      named_ref: null
+      configuration: 'Root{R1: X, R2: [init]}'
+    - action: Root.R1.X.XWork
+      state: Root.R1.X
+      stage: during
+      vars:
+        n: 0
+      active_leaf: Root.R1.X
+      call_stage: during
+      abstract_target: Root.R1.X.XWork
+      named_ref: null
+      configuration: 'Root{R1: X, R2: [init]}'

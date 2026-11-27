@@ -44,21 +44,56 @@ Prepare an input model
 
 The examples use the same small model as the first tutorial:
 
-.. literalinclude:: ../../tutorials/generation/simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 Generate each built-in template
 -------------------------------
 
-Use one short command per target:
+Download :download:`simple_machine.fcstm </_models/simple_machine.fcstm>` into
+an empty directory. Use one short command per target; the listing shows the
+files each template writes:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
-   pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
-   pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
-   pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear
+   $ LC_ALL=C ls generated/*
+   generated/c:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   generated/c_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   generated/cpp:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/cpp_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   generated/python:
+   README.md
+   README_zh.md
+   machine.py
 
 The ``--clear`` option deletes the previous contents of the output directory
 before rendering. Use it for repeatable examples and CI scratch directories.
@@ -106,40 +141,36 @@ The generated top-level files are:
 Smoke-check Python output
 -------------------------
 
-A minimal Python consumer imports ``machine.py`` and advances through a few
-events:
+A minimal Python consumer imports ``machine.py``.
 
-.. literalinclude:: ../../tutorials/generation/python_runtime.demo.py
-   :language: python
-   :lines: 47-60
+The smoke check below uses the interlock controller of the regions tutorial; download :download:`controller.fcstm </_models/controller.fcstm>` into an empty directory. The generated ``machine.py`` does not depend on ``pyfcstm``, so a plain ``python`` can import it:
 
-The checked-in demo prints:
+.. code-block:: console
 
-.. literalinclude:: ../../tutorials/generation/python_runtime.demo.py.txt
-   :language: text
+   $ pyfcstm generate -i controller.fcstm --template python -o generated/python --clear
+   $ PYTHONPATH=generated/python python -c "import machine; print(machine.ControllerMachine.__name__)"
+   ControllerMachine
 
-This evidence means the generated Python runtime is importable and can execute
-the shown event sequence. Broader simulator alignment is covered by template
-unit tests, not by this one tutorial smoke check.
+This evidence means the generated Python runtime is importable. A consumer that
+sends events and reads the position is the program of the first card in
+`Tasks for models with regions`_. Broader simulator alignment is covered by
+template unit tests, not by this smoke check.
 
 Smoke-check C and C++ outputs
 -----------------------------
 
-The native demonstration in the documentation tree generates ``c``,
-``c_poll``, ``cpp``, and ``cpp_poll`` outputs and builds small drivers when
-``cc``, ``c++``, and ``cmake`` are available. Its output starts with the local
-toolchain snapshot and then prints one section per template:
+The native check needs a C compiler, and the C++ templates also need a C++
+compiler and ``cmake``, so the documentation checks do not run it. The card
+`Set the capacity macros of the C runtime`_ builds the generated ``c`` runtime
+with a small driver; it shows the commands and the output of one
+build.
 
-.. literalinclude:: ../../tutorials/generation/native_runtime.demo.sh.txt
-   :language: text
-   :lines: 1-28
-
-This is a local smoke check. It proves that the generated files compiled and ran
-on the displayed toolchain. It is not a claim that every embedded compiler,
+That card is a local smoke check. It proves that the generated files compiled and
+ran on the toolchain that built it. It is not a claim that every embedded compiler,
 industrial profile, sanitizer profile, or certification environment has been
 validated.
 
-When the native demonstration fails, record the toolchain snapshot first, then
+When a native smoke check fails, record the compiler and ``cmake`` versions first, then
 decide whether the failure is a generator issue, a missing build tool, or a
 custom driver that disagrees with the generated README. Template maintainers
 need the template name, output directory, compiler versions, and smallest driver,
@@ -235,7 +266,9 @@ Task acceptance cards
 
 Use these cards when reviewing whether a generation recipe is complete. Each
 card names the starting input, the command, the success signal, the side effect,
-and the first repair step.
+and the first repair step. The first five rows use ``simple_machine.fcstm`` and
+the commands of the console block in `Generate each built-in template`_, which
+the documentation checks run.
 
 .. list-table:: Built-in generation task cards
    :header-rows: 1
@@ -245,23 +278,23 @@ and the first repair step.
      - Success signal
      - Side effect and first repair
    * - Generate the Python runtime.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template python -o /tmp/pyfcstm-python --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear``
      - ``machine.py`` and generated README files exist; the README names the concrete class.
      - ``--clear`` replaces the scratch output. If it fails, confirm the input parses before inspecting the template.
    * - Generate explicit-event C output.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c -o /tmp/pyfcstm-c --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c -o generated/c --clear``
      - ``machine.h`` and ``machine.c`` exist, and the README shows event ids.
      - A later compiler smoke must use the generated header. If event names are unclear, read the generated README rather than guessing ids.
    * - Generate polling C output.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template c_poll -o /tmp/pyfcstm-c-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template c_poll -o generated/c_poll --clear``
      - ``machine.h`` documents the event-check table shape.
      - Polling requires callbacks for event truth. If events never fire, inspect ``EventChecks`` before editing state-machine logic.
    * - Generate the C++ wrapper.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp -o /tmp/pyfcstm-cpp --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp -o generated/cpp --clear``
      - ``machine.hpp`` and ``machine.cpp`` appear in addition to the C core.
      - User code should include ``machine.hpp``. If a build bypasses the wrapper, the smoke no longer proves the documented C++ surface.
    * - Generate the C++ polling wrapper.
-     - ``pyfcstm generate -i docs/source/tutorials/generation/simple_machine.fcstm --template cpp_poll -o /tmp/pyfcstm-cpp-poll --clear``
+     - ``pyfcstm generate -i simple_machine.fcstm --template cpp_poll -o generated/cpp_poll --clear``
      - Wrapper files plus polling README guidance are emitted.
      - Install wrapper-facing event checks. If a transition stays inactive, verify the callback return values for that cycle.
    * - Re-render into a clean scratch directory.
@@ -336,12 +369,14 @@ Failure drills with exact first checks
 Native smoke policy for docs
 ----------------------------
 
-The checked documentation script ``native_runtime.demo.sh`` is the canonical
-small native smoke for this tutorial family. A PR that changes generation,
-C-family template docs, or native claims should either run it or state the exact
-reason it could not run in that environment.
+The small native smoke for this page is the compile-and-run driver of the
+capacity card; the repository's native-toolchain template tests are the larger
+one (``PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 make template_unittest
+TEMPLATE_UNITTEST_ARGS="--include-suites c --run-native-toolchain"``). A PR that
+changes generation, C-family template docs, or native claims should either run
+one of them or state the exact reason it could not run in that environment.
 
-When it runs, record the toolchain lines and the per-template success section.
+When it runs, record the compiler versions and the per-template result.
 When it cannot run, do not silently convert the claim into prose. State which
 binary is missing, for example ``cmake``, ``cc`` or ``c++``, and keep the claim
 at the generation level rather than the native-runtime level.
@@ -372,7 +407,7 @@ change summary or in the team validation notes:
 * exact pages edited and which reader role each page owns;
 * the ``simple_machine.fcstm`` generation command used for the Python consumer
   smoke;
-* whether ``native_runtime.demo.sh`` ran, and if not, the missing tool or policy
+* whether a native compile-and-run smoke ran, and if not, the missing tool or policy
   reason;
 * the generated files inspected for each template family;
 * the generated README section used as the source for API names;
@@ -384,3 +419,241 @@ change summary or in the team validation notes:
   reserves ``-t`` / ``--template-dir`` for trusted custom templates;
 * confirmation that C-family statements are tied to the C runtime helper facts
   and not described as Python or all-platform behavior.
+
+Tasks for models with regions
+-----------------------------
+
+Every built-in template (``python``, ``c``, ``c_poll``, ``cpp`` and
+``cpp_poll``) generates a runtime for a model with regions.  The cards below
+use the interlock controller of
+:doc:`/tutorials/regions/index` (:download:`controller.fcstm </_models/controller.fcstm>`), and state the same six facts: **Input**,
+**Command or code**, **Expected signal**, **File side effect**, **First
+failure check** and **Reference link**.  The generated runtimes match
+:class:`pyfcstm.simulate.SimulationRuntime` cycle by cycle; the modeling tasks
+are on :doc:`/how_to/regions/index`.
+
+Generate the five runtimes and run the Python one
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** ``controller.fcstm`` and a Python 3.7+ interpreter.  The
+generated ``machine.py`` has no dependency on ``pyfcstm``.
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+Download :download:`region_app.py` next to it.  The generated class
+``ControllerMachine`` has one overridable reader per ``input`` variable, named
+``read_<variable>``: the program subclasses it and implements ``read_fault``
+and ``read_requested`` (the model declares ``input int fault`` and
+``input int requested``).  It then reads the position through ``configuration``,
+``leaves``, ``is_active`` and ``region_status``, restores a hot start and sends
+events.
+
+.. literalinclude:: region_app.py
+   :language: python
+   :caption: region_app.py
+
+**Command or code.**
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o out/python --clear
+   $ pyfcstm generate -i controller.fcstm --template c -o out/c --clear
+   $ pyfcstm generate -i controller.fcstm --template c_poll -o out/c_poll --clear
+   $ pyfcstm generate -i controller.fcstm --template cpp -o out/cpp --clear
+   $ pyfcstm generate -i controller.fcstm --template cpp_poll -o out/cpp_poll --clear
+   $ LC_ALL=C ls out/*
+   out/c:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   out/c_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.h
+
+   out/cpp:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   out/cpp_poll:
+   README.md
+   README_zh.md
+   machine.c
+   machine.cpp
+   machine.h
+   machine.hpp
+
+   out/python:
+   README.md
+   README_zh.md
+   machine.py
+   $ PYTHONPATH=out/python python region_app.py
+   after start: Controller.Running{Safety: Watching, Motion: On}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+     motor=1 permit=1
+   is_active Running: True
+   region_status Safety: live
+   fault raised: Controller.Running{Safety: Watching, Motion: Off}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+     motor=0 permit=0
+   hot start: Controller.Running{Safety: Watching, Motion: On}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.On']
+     motor=1 permit=1
+   hot start, one cycle later: Controller.Running{Safety: Watching, Motion: Off}
+     leaves ['Controller.Running.Safety.Watching', 'Controller.Running.Motion.Off']
+     motor=0 permit=0
+   after /Stop: Controller.Idle
+     leaves ['Controller.Idle']
+     motor=0 permit=0
+
+**Expected signal.** The listing shows the generated files of each
+template.  The program prints the position as text
+(``Controller.Running{Safety: Watching, Motion: On}``), the active leaves, and
+the variables.  A raised ``fault`` turns the motor off in the same cycle.
+The hot start places both regions without any ``enter`` action, and
+``initial_vars`` carries the hidden variable ``__forced_0`` like any other.
+The ``/Stop`` event leaves ``Running`` in one cycle.
+
+**File side effect.** ``pyfcstm generate`` writes the files above into the
+output directory and, with ``--clear``, empties it first.  The commands write
+under ``out/`` in the directory where you run them.
+
+**First failure check.** If the program raises ``SimulationRuntimeEventError``,
+read the message: a name that depends on the position is resolved once for
+every active leaf, so use the full path or ``/Name``.  If a class name or
+method is not what you expected, read the generated ``README.md``: it is
+written for this model.
+
+**Reference link.** :doc:`/reference/builtin_templates/index`.
+
+Set the capacity macros of the C runtime
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** The ``c`` runtime of the same model, a C compiler, and
+:download:`region_capacity_app.c`.  The machine reserves its storage statically; two
+macros in ``machine.h`` size it:
+``CONTROLLER_MACHINE_ARENA_CAPACITY`` (configurations and work items examined
+by one decision) and ``CONTROLLER_MACHINE_TRAIL_CAPACITY`` (nested checks).
+The defaults are computed from the model.  Override them only if a cycle
+fails with the capacity message.  Define an overridden value identically for
+``machine.c`` and every file that includes ``machine.h``.
+
+.. literalinclude:: region_capacity_app.c
+   :language: c
+   :caption: region_capacity_app.c
+
+**Command or code.** The first console block generates the runtime, copies the
+driver next to it and shows the two macros of the header; the documentation
+checks run it:
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o c_out --clear
+   $ cp region_capacity_app.c c_out/app.c
+   $ cat c_out/machine.h
+   ...
+   #ifndef CONTROLLER_MACHINE_ARENA_CAPACITY
+   #define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   #endif
+   #ifndef CONTROLLER_MACHINE_TRAIL_CAPACITY
+   #define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   ...
+
+The second block builds the program three times: with the defaults, with a value
+that is too small (to show the failure), and with larger values.  It needs a C
+compiler (``cc``), so the documentation checks do not run it; skip it on a
+machine without one.  The output shown is what one 64-bit build printed:
+
+.. code-block:: bash
+
+   cd c_out
+   cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app && ./app
+   cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=4 machine.c app.c -lm -o app && ./app
+   cc -std=c99 -Wall -Wextra -pedantic -O2 -DCONTROLLER_MACHINE_ARENA_CAPACITY=480 -DCONTROLLER_MACHINE_TRAIL_CAPACITY=96 machine.c app.c -lm -o app && ./app
+
+.. code-block:: text
+
+   storage bytes: 14272
+   cycle 1: Controller.Idle motor=0
+   cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+   storage bytes: 3040
+   cycle 1: Controller.Idle motor=0
+   cycle 2 failed: Speculative search exceeded the capacity safety limit (4 configurations); define CONTROLLER_MACHINE_ARENA_CAPACITY to a larger value to allow a longer search.
+   storage bytes: 55856
+   cycle 1: Controller.Idle motor=0
+   cycle 2: Controller.Running{Safety: Watching, Motion: Off} motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} motor=1
+
+**Expected signal.** The defaults suffice: three cycles, exit status 0.  With
+``ARENA_CAPACITY=4`` cycle 2 (the one that enters the regions) fails with
+``Speculative search exceeded the capacity safety limit`` and the message names
+the macro; the machine reports the failure instead of misbehaving.  Larger
+values also succeed and make the storage bigger (``storage bytes``).  To confirm
+that a chosen value is enough, run the scenarios you care about with it: a value
+that is too small fails loudly, so a clean run is the evidence.  Storage size is
+platform dependent (the numbers above come from one 64-bit build).
+
+**File side effect.** The commands write the generated sources and the binary
+to ``c_out/``.
+
+**First failure check.** Read the failure message: it names the macro to raise.
+If the program fails only in some builds, check that every translation unit
+sees the same ``-D`` value.
+
+**Reference link.** :doc:`/reference/builtin_templates/index`.
+
+Handle a template that does not declare ``region``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Input.** :download:`plain_template/config.yaml` and :download:`plain_template/summary.txt.j2` in a directory ``plain_template/``, a custom template whose ``config.yaml`` does
+not list ``region`` under ``features``, and a model with regions.  A template
+written for one active path would produce wrong code for regions, so
+``pyfcstm generate`` refuses before it writes anything.  This is a negative
+example.
+
+**Command or code.**
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t plain_template -o refused_out --clear
+   generate with template directory '.../plain_template' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o refused_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+   $ test ! -e refused_out && echo "no output directory was written"
+   no output directory was written
+   $ pyfcstm generate -i controller.fcstm --template python -o refused_out --clear
+   $ LC_ALL=C ls refused_out
+   README.md
+   README_zh.md
+   machine.py
+
+The exit status is 1.  The tool prints the absolute path of the template
+directory; it is left out as ``...`` here.
+
+**Expected signal.** The message names the first region, and gives two ways
+out: if you write the template, declare ``features: [region]`` only after the
+template really renders regions (see :doc:`/how_to/templates/index`); if you
+write the model, use a template that supports regions.  Using a built-in
+template succeeds (the last two commands above).
+
+**File side effect.** None on failure: no output directory is created.
+
+**First failure check.** Read the line that starts ``If you write this
+template`` or ``If you write the model`` and take the branch that applies.
+
+**Reference link.** :doc:`/reference/template_config/index`.

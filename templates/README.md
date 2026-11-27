@@ -93,12 +93,19 @@ The core rendering call currently renders templates as `tp.render(model=model)`.
 | `filters` | Adds Jinja2 filters through declarative config items. | Generation-time only. |
 | `tests` | Adds Jinja2 tests through declarative config items. | Generation-time only. |
 | `ignores` | Git-style patterns excluded from rendering/copying. | Generation-time only. |
+| `features` | List of model features the template can render. The only member is `region`. | Generation-time only. |
 
 Most keys are optional and default to an empty configuration. Generation-time dependencies such as Jinja2, PyYAML, `pathspec`, renderer helpers, and imported filters are allowed because they run inside `pyfcstm` during generation. They must not leak into generated runtime dependencies unless the generated target language explicitly owns that dependency and it is approved by the runtime policy below.
 
 Target-language-specific helpers should be loaded by the owning template through `type: import`. C-family helpers such as `to_c_identifier`, `to_c_path_identifier`, `render_c_action_body`, and `render_c_condition_body` belong to `c` / `c_poll` / `cpp` / `cpp_poll` configs rather than the default renderer environment.
 
 When a new `config.yaml` key is added in code, update this handbook, the affected template-level README files, and the structure checks together.
+
+### Declaring model features
+
+A template is written for one execution model. `features: [region]` states that the template renders models that declare regions (ordered parallel regions inside a state). A template that does not declare it is refused for such a model before anything is written: `pyfcstm generate` fails with `generate with built-in template '<name>' does not support region models yet.` for a built-in template, or names the template directory for `-t`, with diagnostic code `E_UNSUPPORTED_FEATURE`. A model without regions is rendered whatever the declaration, so a template that does not declare `region` keeps its current behaviour and its generated output does not change.
+
+The refusal of `pyfcstm generate` is written for two readers: it says how many regions the model declares and where the first one is, lists the built-in templates that support regions with a command that can be copied, and suggests taking the regions out of the model; for a template directory it also tells the template author what to declare and when. A built-in template is not edited by its users, so its refusal does not tell them to. `features` must be a list of strings; an unknown or duplicated member fails when the renderer is constructed. `StateMachineCodeRenderer.features` exposes the declared set. A template that declares `region` takes over the whole region semantics of its target language and is expected to align with `SimulationRuntime` on every shared `regions` fixture; the native C-family runners pick those fixtures up from the declaration.
 
 ### Strict config keys and declarative item forms
 
@@ -216,6 +223,22 @@ Keep responsibilities separated:
   I/O adapters, and certification wording.
 
 Generated C/C++ family READMEs must explain the integration boundaries alongside the relevant usage and build instructions. A user who only receives generated output should be able to see the compiler/profile boundary, memory-ownership choice, event/hook requirements, single-instance concurrency assumption, external-device adapter boundary, numeric-inspect entry point, and evidence-vs-certification boundary without reading this maintainer handbook.
+
+## C-family public interface migration
+
+The four C-family templates (`c`, `c_poll`, `cpp`, `cpp_poll`) declare `features: [region]` and share one specialized static-memory execution core. `<M>` is the generated machine class prefix and `<MACRO>` its macro prefix. These templates refused models that declare regions before they declared the feature, so region support itself is new rather than a migration. Only changes that actually happened to existing interfaces are listed; names of the form `<M>_...` also exist on the C++ wrappers as the methods named in the generated guides.
+
+| Before | Now | Migration note |
+| --- | --- | --- |
+| The machine type exposed frame, stack and scratch members | `<M>` is opaque: an alignment member plus `unsigned char _private[<MACRO>_STORAGE_BYTES]` | Read a machine only through the public functions; storage stays caller-owned and heap-free |
+| `<MACRO>_MAX_STACK_DEPTH` and `<MACRO>_MAX_DFS_STEPS` | Removed | The simulator limits (nesting depth 64, group nesting 64, 1000 steps) are fixed and not configurable |
+| No capacity macros | `<MACRO>_ARENA_CAPACITY`, `<MACRO>_TRAIL_CAPACITY` and the derived `<MACRO>_STORAGE_BYTES` | Defaults suit the model; override before including `machine.h` with the same value in every translation unit. A search that exceeds a capacity fails with a `capacity safety limit` message naming the macro |
+| Position readable only as one current state | `<M>Configuration`, `<M>_get_configuration`, `<M>_hot_start_at`, `<M>_hot_start_at_with_parameters` and the `<M>_configuration_region_status` / `_is_active` / `_leaves` / `_validate` queries | `<M>_configuration_format` / `_parse` read and write the simulator's text form and can be removed with `PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT` |
+| `<M>_current_state_id`, `_current_state_path` and `_current_state_name` always generated | Generated only for models without regions | A model with regions (refused by these templates before) has no single current state: capture with `get_configuration`, restore with `hot_start_at`. The plain `hot_start` still accepts one state outside every region |
+| A closed loop through pseudo states ended in a Delta cycle | The cycle fails with a `suspected loop` error | Add an exit, a terminating guard or separate the events |
+| Internal layout of generated `machine.c` | Specialized per model by `pyfcstm/render/c_kernel.py`, `c_kernel_engine.py` and `c_configuration.py` | Do not depend on any internal name or layout |
+
+The behavior of models without regions is unchanged apart from these rows.
 
 ## Source context contract
 

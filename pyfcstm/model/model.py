@@ -46,7 +46,7 @@ import io
 import json
 import os
 import weakref
-from dataclasses import InitVar, dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass, replace
 from itertools import chain
 from textwrap import indent
 from types import MappingProxyType
@@ -65,6 +65,7 @@ from typing import (
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .region import Region, namespace_actions, namespace_child, namespace_children, shown_namespace, walk_namespaces
 from .imports import (
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
@@ -110,6 +111,7 @@ from ..utils import aggregate_documentation, sequence_safe, to_identifier
 
 if TYPE_CHECKING:  # pragma: no cover - imported for annotations only.
     from .history import HistoryOwner
+    from .active import ActiveQuery
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:
@@ -179,6 +181,30 @@ def _collect_ast_source_metadata(
 def _attach_model_source_metadata(
     machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram
 ) -> None:
+    """
+    Record where each model object was written, in place.
+
+    Copies the source document each declaration came from (``_source_path``)
+    from the import-assembled AST onto the model's variables, states,
+    regions, events, transitions, actions and operations, and stores the
+    documents themselves on ``machine``. Diagnostics and viewers use this to
+    point at the right file when a model was assembled from several imports.
+
+    Variables are paired with their declarations by name, and states and
+    regions by name while recursing. A transition uses the path it carries,
+    then its span among the declaring state's own transitions, then the
+    whole-program span table, which is what finds the file of a transition a
+    combo or forced declaration expanded into a state from another file.
+    Events, actions and operations take the file of the state that declares
+    them.
+
+    :param machine: Model whose objects receive the metadata; mutated in place.
+    :type machine: StateMachine
+    :param dnode: Import-assembled program the model was built from.
+    :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
+    :return: ``None``.
+    :rtype: None
+    """
     documents: Dict[str, str] = {}
     all_spans: Dict[Any, str] = {}
     _collect_ast_source_metadata(dnode, all_spans, documents)
@@ -226,6 +252,20 @@ def _attach_model_source_metadata(
                 attach_operation(statement, source)
 
     def pair_states(ast_state: Any, model_state: "State") -> None:
+        """
+        Attach source paths to one state and everything declared inside it.
+
+        Handles the state's transitions (and their effects), events and
+        actions, then recurses into every child state or region that has a
+        declaration of the same name in the AST.
+
+        :param ast_state: The state or region declaration.
+        :type ast_state: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param model_state: The model namespace built from it.
+        :type model_state: Union[State, pyfcstm.model.region.Region]
+        :return: ``None``.
+        :rtype: None
+        """
         state_source = getattr(ast_state, "_source_path", None)
         attach(model_state, state_source)
         transition_sources = {
@@ -268,9 +308,7 @@ def _attach_model_source_metadata(
                 # table answers, and when its key is ambiguous it answers with nothing.
                 # A member with no reference is honest; one pointing at a file whose
                 # line at that span belongs to an unrelated statement is not.
-                declared = all_spans.get(transition_key)
-                if declared is not None:
-                    attach(transition, declared)
+                attach(transition)
             # The three tiers above are for the transition alone, and everything
             # below this line takes the host state's file with no tier at all.  That
             # asymmetry is the language's, not an oversight: only a transition can be
@@ -296,19 +334,14 @@ def _attach_model_source_metadata(
                 attach_operation(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
-        for action in [
-            *model_state.on_enters,
-            *model_state.on_durings,
-            *model_state.on_exits,
-            *model_state.on_during_aspects,
-        ]:
+        for action in namespace_actions(model_state):
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
                 attach_operation(operation, state_source)
         ast_children = {
-            child.name: child for child in getattr(ast_state, "substates", ())
+            child.name: child for child in chain(getattr(ast_state, "substates", ()), getattr(ast_state, "regions", ()))
         }
-        for child in model_state.substates.values():
+        for child in namespace_children(model_state):
             ast_child = ast_children.get(child.name)
             if ast_child is not None:
                 pair_states(ast_child, child)
@@ -777,10 +810,15 @@ class Transition(AstExportable):
         known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
     :type event_scope: Optional[str]
     :param is_forced: Whether this transition was expanded from a forced
-        transition declaration.
+        transition declaration. A built machine never sets it: the machine
+        that runs is plain FCSTM and keeps no trace of the declaration, so
+        that it behaves, and is analysed, exactly like the model loaded from
+        its exported text. Only the machine that keeps the plain expansion,
+        which drawings and inspect reports are built from, marks the
+        transitions of a declaration.
     :type is_forced: bool
-    :param forced_origin: Original forced transition text when
-        ``is_forced`` is true.
+    :param forced_origin: Original forced transition text, set where
+        ``is_forced`` is set.
     :type forced_origin: Optional[str]
     :param combo_origin_refs: References from this generated transition back
         to original combo trigger terms.
@@ -870,12 +908,46 @@ class Transition(AstExportable):
         super().__setattr__(name, value)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this transition.
+        Get the namespace that declares this transition.
 
-        :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        The link is held weakly. For a transition written inside a region the
+        parent is that :class:`~pyfcstm.model.region.Region`, otherwise the
+        owning :class:`State`.
+
+        :return: The parent state or region, or None if no parent is set
+        :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.transitions[1].parent.name
+            'Root'
+            >>> type(motion.transitions[1].parent).__name__, motion.transitions[1].parent.name
+            ('Region', 'Motion')
         """
         if self.parent_ref is None:
             return None
@@ -883,12 +955,41 @@ class Transition(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this transition.
+        Set the namespace that declares this transition.
 
-        :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
+        :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> edge = root.transitions[1]
+            >>> edge.parent = None
+            >>> edge.parent is None
+            True
+            >>> edge.parent = root
+            >>> edge.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -973,6 +1074,14 @@ class OnStage(AstExportable):
 
         :return: The parent state or None if no parent is set
         :rtype: Optional['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('def int x = 0; state Root { enter { x = 1; } }')
+            >>> action = model.root_state.on_enters[0]
+            >>> action.parent.name
+            'Root'
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -986,6 +1095,15 @@ class OnStage(AstExportable):
 
         :param new_parent: The new parent state or None to clear the parent
         :type new_parent: Optional['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('def int x = 0; state Root { enter { x = 1; } }')
+            >>> action = model.root_state.on_enters[0]
+            >>> action.parent = model.root_state
+            >>> action.parent is model.root_state
+            True
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1226,12 +1344,46 @@ class OnAspect(AstExportable):
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this aspect action.
+        Get the namespace that declares this aspect action.
 
-        :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        The link is held weakly. An aspect written inside a region has that
+        :class:`~pyfcstm.model.region.Region` as its parent, otherwise the
+        owning :class:`State`.
+
+        :return: The parent state or region, or None if no parent is set
+        :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.on_during_aspects[0].parent.name
+            'Root'
+            >>> type(motion.on_during_aspects[0].parent).__name__
+            'Region'
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -1239,12 +1391,41 @@ class OnAspect(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this aspect action.
+        Set the namespace that declares this aspect action.
 
-        :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
+        :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> aspect = root.on_during_aspects[0]
+            >>> aspect.parent = None
+            >>> aspect.parent is None
+            True
+            >>> aspect.parent = root
+            >>> aspect.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1372,6 +1553,305 @@ class OnAspect(AstExportable):
             raise ValueError(f"Unknown aspect - {self.stage!r}.")  # pragma: no cover
 
 
+def _plantuml_active_paths(namespace) -> Dict[str, str]:
+    """
+    Map hidden activity flag names to the dotted state paths they stand for.
+
+    Model construction lowers ``active("path")`` into a hidden variable that is
+    set in ``enter`` and cleared in ``exit``; exporters use this mapping to
+    show the query as written instead. A state machine without activity
+    queries yields an empty mapping.
+
+    :param namespace: A :class:`State` or :class:`~pyfcstm.model.region.Region`
+        of the model being exported.
+    :return: Flag variable name mapped to the dotted full state path.
+    :rtype: Dict[str, str]
+    """
+    owner = namespace if isinstance(namespace, State) else namespace.parent
+    queries = getattr(owner, "_active_queries", ())
+    return {item.variable_name: ".".join(item.state_path) for item in queries}
+
+
+def _plantuml_visible_actions(actions, active_paths: Dict[str, str]) -> list:
+    """
+    Drop the anonymous flag writes that model construction added for ``active()``.
+
+    :param actions: Lifecycle actions of one state.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :return: The actions the user wrote, in their original order.
+    :rtype: list
+    """
+    return [
+        action
+        for action in actions
+        if not (
+            active_paths
+            and action.name is None
+            and len(action.operations) == 1
+            and isinstance(action.operations[0], Operation)
+            and action.operations[0].var_name in active_paths
+        )
+    ]
+
+
+#: How a drawing refers to the history of a composite state, which a
+#: transition enters and which the composite itself leads to a default state.
+_PLANTUML_HISTORY_MARKS = {"shallow": "[H]", "deep": "[H*]"}
+
+
+def _write_plantuml_transitions(
+    sf, namespace, name_safe, config, event_colors, active_paths, prefix="    "
+) -> None:
+    """
+    Print the transitions owned by a state or region as PlantUML links.
+
+    :param sf: Output stream.
+    :param namespace: Owner whose ``transitions`` are written.
+    :param name_safe: Function turning a child state name (or ``None``) into
+        the PlantUML alias used in this owner's scope.
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param event_colors: Event path to colour mapping.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param prefix: Indentation of every written line; states indent their body
+        by four spaces, regions have no enclosing braces and pass ``""``.
+    :return: ``None``.
+    :rtype: None
+    """
+    from .active import restore_active_expression, restore_active_statements
+
+    for trans in namespace.transitions:
+        with io.StringIO() as tf:
+            print(
+                "[*]"
+                if trans.from_state is dsl_nodes.INIT_STATE
+                else name_safe(trans.from_state),
+                file=tf,
+                end="",
+            )
+
+            # Apply event_visualization_mode colors to arrow
+            arrow_str = " -->"
+            if (
+                config.event_visualization_mode in ("color", "both")
+                and trans.event is not None
+            ):
+                event_path = ".".join(trans.event.path)
+                if event_path in event_colors:
+                    color = event_colors[event_path]
+                    arrow_str = f" -[{color}]->"
+
+            print(arrow_str, file=tf, end=" ")
+            print(
+                "[*]"
+                if trans.to_state is dsl_nodes.EXIT_STATE
+                else name_safe(trans.to_state)
+                + _PLANTUML_HISTORY_MARKS.get(getattr(trans, "target_history", None), ""),
+                file=tf,
+                end="",
+            )
+
+            trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
+
+            # Show event if enabled
+            if config.show_events and trans.event is not None:
+                from .plantuml import format_event_name
+
+                formatted_event = format_event_name(
+                    trans.event,
+                    config.event_name_format,
+                    trans_node=trans_node,
+                )
+                print(f" : {formatted_event}", file=tf, end="")
+            elif config.show_transition_guards and trans.guard is not None:
+                guard = restore_active_expression(trans.guard, active_paths)
+                print(f" : {guard.to_ast_node()}", file=tf, end="")
+
+            # Show transition effects if enabled
+            if config.show_transition_effects and len(trans.effects) > 0:
+                effects = restore_active_statements(trans.effects, active_paths)
+                if config.transition_effect_mode == "note":
+                    print("", file=tf)
+                    print("note on link", file=tf)
+                    print("effect {", file=tf)
+                    for operation in effects:
+                        print(
+                            "    "
+                            + escape_plantuml_creole(str(operation.to_ast_node())),
+                            file=tf,
+                        )
+                    print("}", file=tf)
+                    print("end note", file=tf, end="")
+                elif config.transition_effect_mode == "inline":
+                    # Display effects inline on the transition arrow
+                    effect_strs = [
+                        str(operation.to_ast_node().without_docs())
+                        for operation in effects
+                    ]
+                    effect_text = "; ".join(effect_strs)
+                    # Append to existing label or create new one
+                    print(f" / {effect_text}", file=tf, end="")
+
+            trans_text = tf.getvalue()
+        print(indent(trans_text, prefix=prefix), file=sf)
+
+
+def _plantuml_action_text(config, action_groups, active_paths, hide_empty: bool):
+    """
+    Build the action text that describes a state or region, or ``None``.
+
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param action_groups: ``(enters, durings, exits, aspects)`` action lists;
+        regions pass empty lists for the lifecycle groups they cannot have.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param hide_empty: Whether ``collapse_empty_states`` applies to an element
+        with no user-written action.
+    :return: Creole-escaped, newline-separated action text; ``''`` when the
+        options select actions but every one is filtered out; ``None`` when
+        no action section should be written at all.
+    :rtype: Optional[str]
+    """
+    from .active import restore_active_statements
+    from .plantuml import should_show_action, format_action_text
+    from copy import copy
+
+    enters, durings, exits, aspects = action_groups
+    should_show_actions = not (config.collapse_empty_states and hide_empty) and (
+        (config.show_lifecycle_actions and config.show_enter_actions and enters)
+        or (config.show_lifecycle_actions and config.show_during_actions and durings)
+        or (config.show_lifecycle_actions and config.show_exit_actions and exits)
+        or (config.show_lifecycle_actions and config.show_aspect_actions and aspects)
+    )
+    if not should_show_actions:
+        return None
+
+    def _text(item) -> str:
+        if active_paths and item.operations:
+            item = copy(item)
+            item.operations = restore_active_statements(item.operations, active_paths)
+        return format_action_text(item, config)
+
+    with io.StringIO() as tf:
+        for enabled, group in (
+            (config.show_enter_actions, enters),
+            (config.show_during_actions, durings),
+            (config.show_exit_actions, exits),
+            (config.show_aspect_actions, aspects),
+        ):
+            if enabled:
+                for item in group:
+                    # Apply abstract/concrete filtering
+                    if should_show_action(item, config):
+                        print(_text(item), file=tf)
+
+        return escape_plantuml_creole(
+            tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
+        )
+
+
+def _write_plantuml_actions(
+    sf, alias: str, config, action_groups, active_paths, hide_empty: bool
+) -> None:
+    """
+    Print the action description line of a state.
+
+    :param sf: Output stream.
+    :param alias: PlantUML alias of the described state.
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param action_groups: ``(enters, durings, exits, aspects)`` action lists.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param hide_empty: Whether ``collapse_empty_states`` applies to a state
+        with no user-written action.
+    :return: ``None``.
+    :rtype: None
+    """
+    action_text = _plantuml_action_text(config, action_groups, active_paths, hide_empty)
+    if action_text is None:
+        return
+    print("", file=sf)
+    if action_text:  # Only show if there's actual content
+        # ``json.dumps`` turns line breaks into the ``\n`` PlantUML expects;
+        # a quote inside ``active("...")`` is plain text on a description
+        # line and must not keep its JSON escape.
+        text = json.dumps(action_text)[1:-1].replace('\\"', '"')
+        print(f"{alias} : {text}", file=sf, end="")
+
+
+def _region_to_plantuml(
+    region,
+    options: PlantUMLOptionsInput = None,
+    current_depth: int = 0,
+    event_colors: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Render one region as the body of a PlantUML concurrent section.
+
+    PlantUML concurrent regions are anonymous, so the body starts with a
+    floating note carrying ``region N: Name`` (N is the one-based position
+    among the siblings, which is also the execution order) and, when shown,
+    the region's ``>> during`` aspects. The child states and the region's
+    transitions follow. The owner state joins the bodies of its regions with
+    the ``--`` separator; see :meth:`pyfcstm.model.region.Region.to_plantuml`.
+
+    :param region: Region to render.
+    :type region: pyfcstm.model.region.Region
+    :param options: Configuration input for PlantUML generation.
+    :type options: PlantUMLOptionsInput
+    :param current_depth: Depth of the region; it counts as one level for ``max_depth``.
+    :type current_depth: int
+    :param event_colors: Optional mapping of event paths to color codes.
+    :type event_colors: Optional[Dict[str, str]]
+    :return: PlantUML text of the region body without a trailing newline.
+    :rtype: str
+    """
+    config = PlantUMLOptions.from_value(options).to_config()
+    options = config
+    if event_colors is None:
+        event_colors = {}
+    active_paths = _plantuml_active_paths(region)
+    alias = sequence_safe(region.path)
+    ordinal = list(region.parent.regions).index(region.name) + 1
+
+    def _name_safe(sub_state: str) -> str:
+        return sequence_safe([*region.path, sub_state])
+
+    action_text = _plantuml_action_text(
+        config,
+        ([], [], [], region.on_during_aspects),
+        active_paths,
+        hide_empty=not region.on_during_aspects,
+    )
+    with io.StringIO() as sf:
+        print(f"note as {alias}", file=sf)
+        print(f"    **{escape_plantuml_creole('region %d: %s' % (ordinal, region.name))}**", file=sf)
+        for line in (action_text or "").splitlines():
+            print(f"    {line}", file=sf)
+        print("end note", file=sf)
+        expanded = config.max_depth is None or current_depth < config.max_depth
+        if expanded:
+            for state in region.substates.values():
+                print(
+                    state.to_plantuml(
+                        options,
+                        current_depth=current_depth + 1,
+                        event_colors=event_colors,
+                    ),
+                    file=sf,
+                )
+            # A collapsed region declares no child states, so drawing its
+            # transitions would invent undeclared nodes.
+            _write_plantuml_transitions(
+                sf, region, _name_safe, config, event_colors, active_paths, prefix=""
+            )
+        else:
+            marker_name = json.dumps(config.collapsed_state_marker, ensure_ascii=False)
+            print(
+                f"state {marker_name} as {sequence_safe([*region.path, '__collapsed__'])}",
+                file=sf,
+                end="",
+            )
+        return sf.getvalue().rstrip("\n")
+
+
 @dataclass
 class State(AstExportable, PlantUMLExportable):
     """
@@ -1386,6 +1866,8 @@ class State(AstExportable, PlantUMLExportable):
     :type path: Tuple[str, ...]
     :param substates: Dictionary mapping substate names to State objects
     :type substates: Dict[str, 'State']
+    :param regions: Ordered region namespaces, mutually exclusive with substates
+    :type regions: Dict[str, Region], optional
     :param events: Dictionary mapping event names to Event objects
     :type events: Dict[str, Event]
     :param transitions: List of transitions between substates
@@ -1400,7 +1882,7 @@ class State(AstExportable, PlantUMLExportable):
     :type on_exits: List[OnStage]
     :param on_during_aspects: List of aspect-oriented actions for the during stage
     :type on_during_aspects: List[OnAspect]
-    :param parent_ref: Weak reference to the parent state
+    :param parent_ref: Weak reference to the immediate parent State or Region
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]
@@ -1415,6 +1897,12 @@ class State(AstExportable, PlantUMLExportable):
     :param is_history_gate: Whether this pseudo state was generated by history
         lowering to gate an evented initial transition.
     :type is_history_gate: bool
+    :param is_forced_gate: Whether this pseudo state was generated by forced
+        lowering to make an evented transition give way (see
+        :mod:`pyfcstm.model.forced`). Such a state exists only in the machine
+        that runs: the DSL export of that machine contains it, drawings and
+        inspect reports do not.
+    :type is_forced_gate: bool
     :param doc: Optional opaque documentation attached to this state.
     :type doc: Optional[str]
 
@@ -1432,6 +1920,7 @@ class State(AstExportable, PlantUMLExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, "State"]
+    regions: Dict[str, Region] = field(default_factory=dict)
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
     named_functions: Dict[str, Union[OnStage, OnAspect]] = None
@@ -1454,6 +1943,7 @@ class State(AstExportable, PlantUMLExportable):
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
     is_history_gate: bool = False
+    is_forced_gate: bool = False
 
     def __init__(
         self,
@@ -1475,16 +1965,85 @@ class State(AstExportable, PlantUMLExportable):
         is_combo_relay: bool = False,
         doc: Optional[str] = None,
         is_history_gate: bool = False,
+        regions: Optional[Dict[str, Region]] = None,
+        is_forced_gate: bool = False,
     ) -> None:
-        """Initialize a state while preserving the legacy positional order.
+        """
+        Initialize a state while preserving the legacy positional order.
 
         doc is in the dataclass public-field section before the private span,
         but remains the final optional constructor argument so callers using
         historical positional span/relay arguments do not change meaning.
+
+        States are normally built by
+        :func:`~pyfcstm.model.model.parse_dsl_node_to_state_machine`. Optional
+        containers passed as ``None`` become fresh empty containers, and
+        :attr:`substate_name_to_id` is always recomputed from ``substates``.
+
+        :param name: The name of the state
+        :type name: str
+        :param path: The full path to this state in the hierarchy
+        :type path: Tuple[str, ...]
+        :param substates: Child states in declaration order
+        :type substates: Dict[str, State]
+        :param events: Events declared by this state, defaults to ``None``
+        :type events: Dict[str, Event], optional
+        :param transitions: Transitions between this state's children,
+            defaults to ``None``
+        :type transitions: List[Transition], optional
+        :param named_functions: Named lifecycle and aspect actions, defaults to
+            ``None``
+        :type named_functions: Dict[str, Union[OnStage, OnAspect]], optional
+        :param on_enters: Enter actions, defaults to ``None``
+        :type on_enters: List[OnStage], optional
+        :param on_durings: During actions, defaults to ``None``
+        :type on_durings: List[OnStage], optional
+        :param on_exits: Exit actions, defaults to ``None``
+        :type on_exits: List[OnStage], optional
+        :param on_during_aspects: ``>> during before/after`` aspect actions,
+            defaults to ``None``
+        :type on_during_aspects: List[OnAspect], optional
+        :param parent_ref: Weak reference to the parent, defaults to ``None``;
+            normally set through :attr:`parent`
+        :type parent_ref: Optional[weakref.ReferenceType], optional
+        :param substate_name_to_id: Ignored; recomputed from ``substates``
+            during initialization, defaults to ``None``
+        :type substate_name_to_id: Dict[str, int], optional
+        :param extra_name: Display name from the DSL ``named`` clause, defaults
+            to ``None``
+        :type extra_name: Optional[str], optional
+        :param is_pseudo: Whether this is a pseudo state, defaults to ``False``
+        :type is_pseudo: bool, optional
+        :param _span: Source location, defaults to ``None``
+        :type _span: Optional[pyfcstm.utils.validate.Span], optional
+        :param is_combo_relay: Whether this is a generated combo relay state,
+            defaults to ``False``
+        :type is_combo_relay: bool, optional
+        :param doc: Source documentation, defaults to ``None``
+        :type doc: Optional[str], optional
+        :param is_history_gate: Whether this is a generated history gate state,
+            defaults to ``False``
+        :type is_history_gate: bool, optional
+        :param regions: Ordered region namespaces of a parallel owner, mutually
+            exclusive with ``substates``; defaults to ``None`` (no regions)
+        :type regions: Optional[Dict[str, pyfcstm.model.region.Region]], optional
+        :param is_forced_gate: Whether this is a gate generated by forced
+            lowering, defaults to ``False``
+        :type is_forced_gate: bool, optional
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model.model import State
+            >>> state = State('Idle', ('Root', 'Idle'), {})
+            >>> state.is_leaf_state, state.events, state.transitions
+            (True, {}, [])
         """
         self.name = name
         self.path = path
         self.substates = substates
+        self.regions = regions or {}
         self.events = events
         self.transitions = transitions
         self.named_functions = named_functions
@@ -1500,11 +2059,15 @@ class State(AstExportable, PlantUMLExportable):
         self.doc = doc
         self._span = _span
         self.is_history_gate = is_history_gate
+        self.is_forced_gate = is_forced_gate
         self.__post_init__()
 
     def __post_init__(self) -> None:
         """
         Initialize default values for optional fields after instance creation.
+
+        :return: ``None``.
+        :rtype: None
         """
         self.events = self.events or {}
         self.transitions = self.transitions or []
@@ -1520,12 +2083,40 @@ class State(AstExportable, PlantUMLExportable):
     @property
     def is_leaf_state(self) -> bool:
         """
-        Check if this state is a leaf state (has no substates).
+        Check if this state is a leaf state (has no substates or regions).
 
         :return: True if this is a leaf state, False otherwise
         :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.is_leaf_state, run.is_leaf_state, motion.substates['Stop'].is_leaf_state
+            (False, False, True)
         """
-        return len(self.substates) == 0
+        return not self.substates and not self.regions
 
     @property
     def is_stoppable(self) -> bool:
@@ -1538,12 +2129,46 @@ class State(AstExportable, PlantUMLExportable):
         return self.is_leaf_state and not self.is_pseudo
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
-        Get the parent state of this state.
+        Get the namespace that contains this state.
 
-        :return: The parent state or None if this is the root state
-        :rtype: Optional['State']
+        The link is held weakly. A state declared inside a region has that
+        :class:`~pyfcstm.model.region.Region` as its parent; every other
+        non-root state has its owning :class:`State`.
+
+        :return: The parent state or region, or None if this is the root state
+        :rtype: Optional[Union['State', Region]]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> root.parent is None, run.parent.name
+            (True, 'Root')
+            >>> type(motion.substates['Stop'].parent).__name__
+            'Region'
         """
         if self.parent_ref is None:
             return None
@@ -1551,12 +2176,40 @@ class State(AstExportable, PlantUMLExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
-        Set the parent state of this state.
+        Set the namespace that contains this state.
 
-        :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :param new_parent: The new parent state or region, or None to clear
+            the parent
+        :type new_parent: Optional[Union['State', Region]]
+        :return: ``None``.
+        :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> run.parent = None
+            >>> run.parent is None
+            True
+            >>> run.parent = root
+            >>> run.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -2026,17 +2679,52 @@ class State(AstExportable, PlantUMLExportable):
 
     @classmethod
     def transition_to_ast_node(
-        cls, self: Optional["State"], transition: Transition
+        cls, self: Optional[Union["State", Region]], transition: Transition
     ) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
-        :param self: The parent state, or None
-        :type self: Optional['State']
+        Event paths are written relative to ``self`` when the event lives
+        below it and as absolute paths otherwise, which is why the owning
+        namespace is needed: the same transition exports differently from a
+        different context.
+
+        :param self: The parent state or region, or None
+        :type self: Optional[Union['State', Region]]
         :param transition: The transition to convert
         :type transition: Transition
         :return: A transition definition AST node
         :rtype: dsl_nodes.TransitionDefinition
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> str(State.transition_to_ast_node(root, root.transitions[1]))
+            'Run -> Off :: Halt;'
+            >>> str(State.transition_to_ast_node(motion, motion.transitions[1]))
+            'Stop -> Move :: Go;'
         """
         if self:
             cur_path = self.path
@@ -2101,8 +2789,59 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to an AST node.
 
+        Children, regions, events, transitions and actions keep their
+        declaration order, so printing the node reproduces the model's state.
+        After history or ``active()`` lowering this includes the generated
+        hidden variables, actions and rewritten guards, not the authored
+        spelling.
+
         :return: A state definition AST node
         :rtype: dsl_nodes.StateDefinition
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> print(run.to_ast_node())
+            state Run {
+                region Motion {
+                    >> during after {
+                        x = x + 2;
+                    }
+                    state Stop {
+                        event Go;
+                    }
+                    state Move;
+                    [*] -> Stop;
+                    Stop -> Move :: Go;
+                }
+                region Guard {
+                    state Watch;
+                    [*] -> Watch;
+                }
+                event Halt;
+            }
         """
         substate_nodes = [
             substate.to_ast_node() for _, substate in self.substates.items()
@@ -2113,6 +2852,7 @@ class State(AstExportable, PlantUMLExportable):
             **_ast_doc_kwargs(dsl_nodes.StateDefinition, self.doc),
             events=[event.to_ast_node() for _, event in self.events.items()],
             substates=substate_nodes,
+            regions=[region.to_ast_node() for region in self.regions.values()],
             transitions=[
                 self.to_transition_ast_node(trans) for trans in self.transitions
             ],
@@ -2136,21 +2876,78 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to PlantUML notation.
 
-        :param options: Configuration input for PlantUML generation
+        The result is the PlantUML fragment for this state only: a ``state``
+        declaration, and for a composite state its nested states and
+        transitions. It is not a complete document; use
+        :meth:`StateMachine.to_plantuml` for one that starts with
+        ``@startuml``. The detail level in ``options`` controls how much of
+        the state is shown, for example whether lifecycle actions are listed.
+
+        A state that owns regions is drawn as one composite whose regions are
+        PlantUML concurrent sections, in declaration order, separated by
+        ``--``. PlantUML sections are anonymous, so each one starts with a note
+        reading ``region N: Name`` (and the region's ``>> during`` aspects).
+        Activity queries are shown as written: ``active("...")`` is restored in
+        guards and operations, and the hidden flag writes that model
+        construction added to ``enter`` / ``exit`` are not listed.
+
+        :param options: Configuration input for PlantUML generation: a
+            :class:`pyfcstm.model.plantuml.PlantUMLOptions`, one of the detail
+            level strings ``'minimal'``, ``'normal'`` or ``'full'``, or ``None``
+            for the defaults, defaults to ``None``
         :type options: PlantUMLOptionsInput
-        :param current_depth: Current depth in the state hierarchy (for max_depth support)
+        :param current_depth: Current depth in the state hierarchy; a region counts as one level (for ``max_depth``)
         :type current_depth: int
         :param event_colors: Optional mapping of event paths to color codes
         :type event_colors: Optional[Dict[str, str]]
         :return: PlantUML representation of the state
         :rtype: str
+        :raises TypeError: If ``options`` is not a supported type or an
+            unknown detail level string.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'def int x = 0; state Root { state A { enter { x = 1; } } [*] -> A; }'
+            ... )
+            >>> state = machine.root_state.substates['A']
+            >>> state.to_plantuml('minimal')
+            'state "A" as root__a'
+            >>> 'root__a : enter' in state.to_plantuml('full')
+            True
+            >>> state.to_plantuml('bogus')
+            Traceback (most recent call last):
+            ...
+            TypeError: Invalid detail level value 'bogus', expected one of 'minimal', 'normal', 'full'.
+
+            A state that owns regions is drawn as concurrent sections::
+
+                >>> regional = load_state_machine_from_text(
+                ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }')
+                >>> print(regional.root_state.to_plantuml('minimal'))
+                state "Root" as root <<composite>> {
+                    note as root__a
+                        **region 1: A**
+                    end note
+                    state "X" as root__a__x
+                    [*] --> root__a__x
+                    --
+                    note as root__b
+                        **region 2: B**
+                    end note
+                    state "Y" as root__b__y
+                    [*] --> root__b__y
+                }
         """
-        # Resolve configuration
+        shown = shown_namespace(self)
+        if shown is not self:
+            return shown.to_plantuml(options, current_depth, event_colors)
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
-
         if event_colors is None:
             event_colors = {}
+        active_paths = _plantuml_active_paths(self)
 
         def _name_safe(sub_state: Optional[str] = None) -> str:
             subpath = [*self.path]
@@ -2158,11 +2955,14 @@ class State(AstExportable, PlantUMLExportable):
                 subpath.append(sub_state)
             return sequence_safe(subpath)
 
+        on_enters = _plantuml_visible_actions(self.on_enters, active_paths)
+        on_exits = _plantuml_visible_actions(self.on_exits, active_paths)
+
         # Check if this is an empty state (for collapse_empty_states)
         is_empty_state = (
-            not self.on_enters
+            not on_enters
             and not self.on_durings
-            and not self.on_exits
+            and not on_exits
             and not self.on_during_aspects
         )
 
@@ -2216,6 +3016,20 @@ class State(AstExportable, PlantUMLExportable):
                             ),
                             file=sf,
                         )
+                    for index, region in enumerate(self.regions.values()):
+                        if index:
+                            print("    --", file=sf)
+                        print(
+                            indent(
+                                region.to_plantuml(
+                                    options,
+                                    current_depth=current_depth + 1,
+                                    event_colors=event_colors,
+                                ),
+                                prefix="    ",
+                            ),
+                            file=sf,
+                        )
                 else:
                     # Collapsed: show marker state
                     marker_name = config.collapsed_state_marker
@@ -2225,143 +3039,32 @@ class State(AstExportable, PlantUMLExportable):
                         file=sf,
                     )
 
-                for trans in self.transitions:
-                    with io.StringIO() as tf:
-                        print(
-                            "[*]"
-                            if trans.from_state is dsl_nodes.INIT_STATE
-                            else _name_safe(trans.from_state),
-                            file=tf,
-                            end="",
-                        )
-
-                        # Apply event_visualization_mode colors to arrow
-                        arrow_str = " -->"
-                        if (
-                            config.event_visualization_mode in ("color", "both")
-                            and trans.event is not None
-                        ):
-                            event_path = ".".join(trans.event.path)
-                            if event_path in event_colors:
-                                color = event_colors[event_path]
-                                arrow_str = f" -[{color}]->"
-
-                        print(arrow_str, file=tf, end=" ")
-                        print(
-                            "[*]"
-                            if trans.to_state is dsl_nodes.EXIT_STATE
-                            else _name_safe(trans.to_state),
-                            file=tf,
-                            end="",
-                        )
-
-                        trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
-
-                        # Show event if enabled
-                        if config.show_events and trans.event is not None:
-                            from .plantuml import format_event_name
-
-                            formatted_event = format_event_name(
-                                trans.event,
-                                config.event_name_format,
-                                trans_node=trans_node,
-                            )
-                            print(f" : {formatted_event}", file=tf, end="")
-                        elif config.show_transition_guards and trans.guard is not None:
-                            print(f" : {trans.guard.to_ast_node()}", file=tf, end="")
-
-                        # Show transition effects if enabled
-                        if config.show_transition_effects and len(trans.effects) > 0:
-                            if config.transition_effect_mode == "note":
-                                print("", file=tf)
-                                print("note on link", file=tf)
-                                print("effect {", file=tf)
-                                for operation in trans.effects:
-                                    print(
-                                        "    "
-                                        + escape_plantuml_creole(
-                                            str(operation.to_ast_node())
-                                        ),
-                                        file=tf,
-                                    )
-                                print("}", file=tf)
-                                print("end note", file=tf, end="")
-                            elif config.transition_effect_mode == "inline":
-                                # Display effects inline on the transition arrow
-                                effect_strs = [
-                                    str(operation.to_ast_node().without_docs())
-                                    for operation in trans.effects
-                                ]
-                                effect_text = "; ".join(effect_strs)
-                                # Append to existing label or create new one
-                                print(f" / {effect_text}", file=tf, end="")
-
-                        trans_text = tf.getvalue()
-                    print(indent(trans_text, prefix="    "), file=sf)
-
+                _write_plantuml_transitions(
+                    sf, self, _name_safe, config, event_colors, active_paths
+                )
                 print("}", file=sf, end="")
-
-            # Show lifecycle actions if enabled (skip if collapse_empty_states is True and state is empty)
-            should_show_actions = not (
-                config.collapse_empty_states and is_empty_state
-            ) and (
-                (
-                    config.show_lifecycle_actions
-                    and config.show_enter_actions
-                    and self.on_enters
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_during_actions
-                    and self.on_durings
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_exit_actions
-                    and self.on_exits
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_aspect_actions
-                    and self.on_during_aspects
-                )
-            )
-
-            if should_show_actions:
-                from .plantuml import should_show_action, format_action_text
-
-                print("", file=sf)
-                with io.StringIO() as tf:
-                    if config.show_enter_actions:
-                        for enter_item in self.on_enters:
-                            # Apply abstract/concrete filtering
-                            if should_show_action(enter_item, config):
-                                formatted_text = format_action_text(enter_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_during_actions:
-                        for during_item in self.on_durings:
-                            if should_show_action(during_item, config):
-                                formatted_text = format_action_text(during_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_exit_actions:
-                        for exit_item in self.on_exits:
-                            if should_show_action(exit_item, config):
-                                formatted_text = format_action_text(exit_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_aspect_actions:
-                        for during_aspect_item in self.on_during_aspects:
-                            if should_show_action(during_aspect_item, config):
-                                formatted_text = format_action_text(
-                                    during_aspect_item, config
-                                )
-                                print(formatted_text, file=tf)
-
-                    action_text = escape_plantuml_creole(
-                        tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
+            for kind, mark in (("shallow", "[H]"), ("deep", "[H*]")):
+                default = getattr(self, "history_defaults", {}).get(kind)
+                if default is not None:
+                    # PlantUML cannot draw an arrow out of the history of a
+                    # state that another transition enters (the deep one in
+                    # every release, the shallow one in 1.2023), so where it
+                    # leads by default is a line of the state's description.
+                    print("", file=sf)
+                    print(
+                        "%s : %s -> %s" % (_name_safe(), mark, ".".join(default)),
+                        file=sf,
+                        end="",
                     )
-                    if action_text:  # Only show if there's actual content
-                        text = json.dumps(action_text).strip('"')
-                        print(f"{_name_safe()} : {text}", file=sf, end="")
+
+            _write_plantuml_actions(
+                sf,
+                _name_safe(),
+                config,
+                (on_enters, self.on_durings, on_exits, self.on_during_aspects),
+                active_paths,
+                hide_empty=is_empty_state,
+            )
 
             return sf.getvalue()
 
@@ -2369,12 +3072,85 @@ class State(AstExportable, PlantUMLExportable):
         """
         Iterate through this state and all its substates recursively.
 
+        States inside regions are included, in declaration order; region
+        containers are not yielded (see :meth:`walk_regions`).
+
         :yield: Each state in the hierarchy, starting with this one
         :rtype: Iterator['State']
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [state.name for state in root.walk_states()]
+            ['Root', 'Run', 'Stop', 'Move', 'Watch', 'Off']
         """
         yield self
-        for _, substate in self.substates.items():
-            yield from substate.walk_states()
+        for child in namespace_children(self):
+            yield from child.walk_states()
+
+    def walk_regions(self) -> Iterator[Region]:
+        """
+        Yield descendant regions in declaration preorder.
+
+        :yield: Each region below this state, outer regions before the regions
+            nested inside them. A state without regions below it yields nothing.
+        :rtype: Iterator[pyfcstm.model.region.Region]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [region.name for region in root.walk_regions()]
+            ['Motion', 'Guard']
+            >>> list(motion.substates['Stop'].walk_regions())
+            []
+        """
+        for namespace in walk_namespaces(self):
+            if isinstance(namespace, Region):
+                yield namespace
 
     def resolve_event(
         self,
@@ -2628,14 +3404,14 @@ class State(AstExportable, PlantUMLExportable):
         # Navigate to the target state
         current_state = root_state
         for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
                     f"while resolving event reference {event_ref!r}",
                     searched_from=".".join(self.path),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -2736,6 +3512,58 @@ class VarDefine(AstExportable):
         return dsl_nodes.Name(self.name)
 
 
+class _PlainForcedView:
+    """
+    The machine a model with lowered forced declarations is shown as.
+
+    A drawing shows a forced declaration as one transition on every state it
+    applies to, which is not what runs (see :mod:`pyfcstm.model.forced`). This
+    object holds what is needed to build that other machine and builds it on
+    first use. The machine and every state and region of it share one holder,
+    so any of them keeps showing the declarations as written when the machine
+    object, or the states above it, are no longer referenced, and no reference
+    leads from a state back to its machine.
+
+    :param program: Import-assembled program the machine was built from.
+    :type program: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param history_as_written: Whether the machine is built as written, with
+        history left as the ``target_history`` of the transitions that enter it,
+        because the model uses history. Otherwise history and activity queries
+        are lowered as usual and only the forced declarations stay plain.
+    :type history_as_written: bool
+    """
+
+    def __init__(
+        self, program: dsl_nodes.StateMachineDSLProgram, history_as_written: bool
+    ) -> None:
+        self._program = program
+        self._history_as_written = history_as_written
+        self._machine: Optional["StateMachine"] = None
+
+    def machine(self) -> "StateMachine":
+        """
+        Return the machine with forced declarations in their plain expansion.
+
+        For a model that uses history the machine is built as written: a
+        history entry is an ordinary transition marked by ``target_history``,
+        and the lowered variables, gate states and routes do not exist in it.
+        Otherwise history and activity queries are lowered as usual. It is
+        built once and kept, so later edits of the model it was made for do not
+        reach it.
+
+        :return: The machine to show.
+        :rtype: StateMachine
+        """
+        if self._machine is None:
+            self._machine = _build_assembled_state_machine(
+                self._program,
+                DiagnosticSink(collect=True),
+                lower=not self._history_as_written,
+                plain_forced=True,
+            )
+        return self._machine
+
+
 @dataclass
 class StateMachine(AstExportable, PlantUMLExportable):
     """
@@ -2751,6 +3579,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
         transitions, and this metadata maps those variables back to
         source-level records.
     :type history_owners: Tuple[pyfcstm.model.history.HistoryOwner, ...]
+    :param active_queries: One entry per state queried by ``active("...")``,
+        pairing the state path with the hidden flag variable that replaced the
+        query; empty for a machine without activity queries. See
+        :mod:`pyfcstm.model.active`.
+    :type active_queries: Tuple[pyfcstm.model.active.ActiveQuery, ...]
 
     Example::
 
@@ -2800,12 +3633,20 @@ class StateMachine(AstExportable, PlantUMLExportable):
     history_owners: Tuple["HistoryOwner", ...] = field(
         default_factory=tuple, compare=False, repr=False
     )
-    # The import-assembled program of a machine that lowered history, and the
+    # The import-assembled program of a machine that lowered history/activity, and the
     # model built from it without lowering once ``_as_written`` needs it.
     _assembled_program: Optional[dsl_nodes.StateMachineDSLProgram] = field(
         default=None, compare=False, repr=False
     )
     _authored_view: Optional["StateMachine"] = field(
+        default=None, compare=False, repr=False
+    )
+    # The hidden variables of the forced declarations that were lowered, and
+    # the holder of the machine built from the same program with those
+    # declarations kept in their plain expansion, which every view of the
+    # model as written uses. Every state and region shares the holder.
+    _forced_flags: Tuple[str, ...] = field(default=(), compare=False, repr=False)
+    _plain_forced_view: Optional[_PlainForcedView] = field(
         default=None, compare=False, repr=False
     )
     # The warnings and infos a strict build emitted while converting the
@@ -2815,8 +3656,24 @@ class StateMachine(AstExportable, PlantUMLExportable):
     )
 
     _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+    active_queries: Tuple["ActiveQuery", ...] = field(default_factory=tuple, repr=False, compare=False)
 
     def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        """
+        Reject model operations that write inputs or parameters.
+
+        Walks every transition effect and action body, including those inside
+        regions, and reports ``E_INPUT_WRITE`` or ``E_PARAM_WRITE`` for each
+        assignment to an input or parameter variable.
+
+        :param _validation_sink: Where the diagnostics go; ``None`` raises
+            :class:`~pyfcstm.utils.validate.ModelValidationError` on the first.
+        :type _validation_sink: Optional[pyfcstm.diagnostics.sink.DiagnosticSink]
+        :return: ``None``.
+        :rtype: None
+        :raises pyfcstm.utils.validate.ModelValidationError: If an operation
+            writes an input or parameter and the sink is strict.
+        """
         readonly = {
             name: (
                 "E_INPUT_WRITE"
@@ -2845,15 +3702,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         )
                     )
 
-        for state in self.walk_states():
+        for state in walk_namespaces(self.root_state):
             for transition in state.transitions:
                 check(transition.effects)
-            for action in chain(
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-            ):
+            for action in namespace_actions(state):
                 check(action.operations)
         for diagnostic in diagnostics:
             _emit_or_raise(_validation_sink, diagnostic)
@@ -2954,9 +3806,82 @@ class StateMachine(AstExportable, PlantUMLExportable):
         path = item.decode(variables.get(item.record_variable, 0))
         return None if path is None else ".".join(path)
 
+    def active_variables(self, configuration) -> Dict[str, int]:
+        """
+        Derive hidden activity flags from a configuration of this machine.
+
+        Every ``active("...")`` query of the model owns one hidden variable
+        (see :attr:`active_queries`); its value is ``1`` while the queried
+        state is active in ``configuration`` and ``0`` otherwise. Models without
+        queries yield an empty mapping.
+
+        :param configuration: Immutable Configuration bound to this machine.
+        :type configuration: pyfcstm.model.configuration.Configuration
+        :return: Hidden variable names mapped to integer zero or one.
+        :rtype: Dict[str, int]
+        :raises ValueError: If the configuration belongs to another machine.
+
+        Example::
+
+            >>> from pyfcstm.model import Configuration, load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off : if [active("Root.Run.Motion.Move")];
+            ... }
+            ... ''')
+            >>> moving = Configuration.parse(model, 'Root.Run{Motion: Move, Guard: Watch}')
+            >>> stopped = Configuration.parse(model, 'Root.Run{Motion: Stop, Guard: Watch}')
+            >>> model.active_variables(moving), model.active_variables(stopped)
+            ({'__active_Root_Run_Motion_Move': 1}, {'__active_Root_Run_Motion_Move': 0})
+        """
+        if configuration._model is not self:
+            raise ValueError('Configuration belongs to a different state machine.')
+        return {item.variable_name: int(configuration.is_active(item.state_path))
+                for item in self.active_queries}
+
+    def _as_run(self) -> Optional["StateMachine"]:
+        """
+        Return this machine without what it remembers of its lowered constructs.
+
+        History, activity queries and forced declarations are lowered into
+        plain FCSTM, and this machine still carries records of them: the
+        history owners, the activity queries, the forced declarations and the
+        program they were built from. A machine that took the plain text it
+        exports for its source carries none of them. The analysis of how a
+        machine behaves must not read them, or the model and its exported text
+        would be judged differently, so it is made on this view: the same
+        states and transitions, spans included, without the records.
+
+        :return: The view, or ``None`` when nothing was lowered and the machine
+            is its own view.
+        :rtype: Optional[StateMachine]
+        """
+        if not (self.history_owners or self.active_queries or self.forced_transitions):
+            return None
+        return replace(
+            self,
+            forced_transitions=(),
+            history_owners=(),
+            active_queries=(),
+            _assembled_program=None,
+            _authored_view=None,
+            _plain_forced_view=None,
+            _forced_flags=(),
+            _build_warnings=(),
+            # Python 3.7's ``dataclasses.replace`` insists on every init-only
+            # field; ``None`` makes a copy of a valid machine raise as usual.
+            _validation_sink=None,
+        )
+
     def _as_written(self) -> "StateMachine":
         """
-        Return this model as written, before history lowering.
+        Return this model as written, before history, activity and forced lowering.
 
         Static analyses judge this model (see
         :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
@@ -2964,9 +3889,14 @@ class StateMachine(AstExportable, PlantUMLExportable):
         no lowered variable, gate state, route or record-writing exit exists.
         It is built from the same import-assembled program on first use; its
         diagnostics repeat those of the original build and are dropped. A
-        machine that lowered no history is its own model as written.
+        machine that lowered no history, activity or forced transition is its own
+        model as written. A forced transition keeps its plain expansion here,
+        which stops at the owners.
 
-        :return: The model before history lowering
+        Activity queries retain their source expressions, and no generated
+        activity flags or lifecycle writes exist in this view.
+
+        :return: The model before history and activity lowering
         :rtype: StateMachine
         """
         if self._assembled_program is None:
@@ -2976,6 +3906,71 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 self._assembled_program, DiagnosticSink(collect=True), lower=False
             )
         return self._authored_view
+
+    @property
+    def forced_variables(self) -> Tuple[str, ...]:
+        """
+        Names of the hidden variables that forced declarations were lowered into.
+
+        A forced declaration whose source is a composite state or owns regions
+        is carried out with one hidden ``int`` variable (see
+        :mod:`pyfcstm.model.forced`). The variable is raised only while the
+        declaration is being carried out inside one cycle, so it is ``0``
+        whenever the machine rests. It is an ordinary variable of the machine,
+        like the variables history is lowered into: a hot start supplies it
+        with the others, and a model loaded from the exported text of this
+        one lists it among its ordinary variables.
+
+        :return: The variable names in the order the declarations were
+            resolved; empty for a machine without such a declaration.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     event Stop;
+            ...     [*] -> Run;
+            ...     state Run { region A { [*] -> A1; state A1; } }
+            ...     state Idle;
+            ...     !Run -> Idle : /Stop;
+            ... }
+            ... ''')
+            >>> model.forced_variables
+            ('__forced_0',)
+            >>> load_state_machine_from_text('state Root { [*] -> A; state A; }').forced_variables
+            ()
+        """
+        return self._forced_flags
+
+    def _with_plain_forced(self) -> "StateMachine":
+        """
+        Return the machine that keeps forced declarations in their plain expansion.
+
+        A forced declaration whose source has states or regions inside it is
+        lowered into a hidden variable, relay transitions and gates, and inside
+        regions a follower on every state that can be rested in (see
+        :mod:`pyfcstm.model.forced`). That
+        is what runs; a reader of the model expects one transition on every
+        state the declaration applies to. Drawings and inspect reports
+        therefore use this machine instead: it is built from the same
+        import-assembled program with history and activity queries lowered as
+        usual and forced declarations in their plain expansion. It is built on
+        first use and kept, like :meth:`_as_written`, so later edits of this
+        model do not reach it.
+
+        The machine that runs carries no mark of a declaration, so which of its
+        transitions came from one is told by this machine only (see
+        :attr:`Transition.is_forced`).
+
+        :return: This machine when it has no forced declaration, otherwise the
+            machine with plain forced expansion.
+        :rtype: StateMachine
+        """
+        if self._plain_forced_view is None:
+            return self
+        return self._plain_forced_view.machine()
 
     @property
     def control_variables(self) -> Mapping[str, VarDefine]:
@@ -3036,8 +4031,32 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to an AST node.
 
+        The export is the machine that runs: what history, activity queries
+        and forced declarations were lowered into is written out as the plain
+        FCSTM it is, hidden variables and gate states included, so loading the
+        text gives a machine that takes the same cycles.
+
         :return: A state machine DSL program AST node
         :rtype: dsl_nodes.StateMachineDSLProgram
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     event Stop;
+            ...     [*] -> Run;
+            ...     state Run { region A { [*] -> A1; state A1; } }
+            ...     state Idle;
+            ...     !Run -> Idle : /Stop;
+            ... }
+            ... ''')
+            >>> text = str(model.to_ast_node())
+            >>> '__forced_0' in text, 'A1 -> [*]' in text
+            (True, True)
+            >>> again = load_state_machine_from_text(text)
+            >>> list(again.defines) == list(model.defines)
+            True
         """
         return dsl_nodes.StateMachineDSLProgram(
             definitions=[
@@ -3050,14 +4069,70 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to PlantUML notation.
 
-        :param options: Configuration input for PlantUML generation
+        The result is a complete PlantUML document from ``@startuml`` to
+        ``@enduml``, containing the optional variable definitions, the state
+        hierarchy and the transitions. Rendering it to an image needs a
+        PlantUML processor, which this method does not invoke.
+
+        A state with regions is drawn as one composite whose regions are
+        PlantUML concurrent sections in declaration order, separated by
+        ``--``, each introduced by a ``region N: Name`` note. Activity queries
+        are shown as written (``active("Root.A")``); the hidden flag variables
+        and the flag writes that model construction added are not part of the
+        output. Models without regions and without activity queries are
+        exported exactly as before.
+
+        :param options: Configuration input for PlantUML generation: a
+            :class:`pyfcstm.model.plantuml.PlantUMLOptions`, one of the detail
+            level strings ``'minimal'``, ``'normal'`` or ``'full'``, or ``None``
+            for the defaults, defaults to ``None``
         :type options: PlantUMLOptionsInput
         :return: PlantUML representation of the state machine
         :rtype: str
+        :raises TypeError: If ``options`` is not a supported type or an
+            unknown detail level string.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { [*] -> A; state A; state B; A -> B :: Go; }'
+            ... )
+            >>> text = machine.to_plantuml()
+            >>> text.splitlines()[0], text.splitlines()[-1]
+            ('@startuml', '@enduml')
+            >>> 'root__a --> root__b : A.Go' in text
+            True
+            >>> machine.to_plantuml(5)
+            Traceback (most recent call last):
+            ...
+            TypeError: Invalid plantuml options type int, expected PlantUMLOptions, detail level string, or None.
+
+            Regions become concurrent sections, and activity queries keep their
+            written form::
+
+                >>> regional = load_state_machine_from_text(
+                ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }')
+                >>> text = regional.to_plantuml('minimal')
+                >>> 'region 1: A' in text and 'region 2: B' in text
+                True
+                >>> guarded = load_state_machine_from_text(
+                ...     'state Root { state A; state B; [*] -> A; A -> B : if [active("Root.B")]; }')
+                >>> '__active_' in guarded.to_plantuml('full')
+                False
         """
+        shown = self._with_plain_forced()
+        if shown is not self:
+            return shown.to_plantuml(options)
         # Resolve configuration
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
+        # Hidden activity flags are an implementation detail of ``active()``.
+        shown_defines = {
+            name: item
+            for name, item in self.defines.items()
+            if name not in {query.variable_name for query in self.active_queries}
+        }
 
         with io.StringIO() as sf:
             print("@startuml", file=sf)
@@ -3075,11 +4150,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 print("", file=sf)
 
             # Show variable definitions if enabled
-            if config.show_variable_definitions and self.defines:
+            if config.show_variable_definitions and shown_defines:
                 if config.variable_display_mode == "note":
                     print("note as DefinitionNote", file=sf)
                     print("defines {", file=sf)
-                    for def_item in self.defines.values():
+                    for def_item in shown_defines.values():
                         # PlantUML is a semantic display and must not embed
                         # source documentation blocks.
                         print(
@@ -3100,13 +4175,13 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     print(f"legend {config.variable_legend_position}", file=sf)
                     show_roles = any(
                         item.role is not VariableRole.CONTROL
-                        for item in self.defines.values()
+                        for item in shown_defines.values()
                     )
                     role_header = "= Role |" if show_roles else ""
                     print(
                         f"|= Variable |= Type |= Initial Value |{role_header}", file=sf
                     )
-                    for def_item in self.defines.values():
+                    for def_item in shown_defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
                         var_init = (
@@ -3166,10 +4241,115 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Iterate through all states in the state machine.
 
-        :yield: Each state in the hierarchy
+        :yield: Each state in the hierarchy, parents before children
         :rtype: Iterator[State]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [state.name for state in model.walk_states()]
+            ['Root', 'Run', 'Stop', 'Move', 'Watch', 'Off']
         """
         yield from self.root_state.walk_states()
+
+    @property
+    def has_regions(self) -> bool:
+        """
+        Whether this model declares any region, including nested regions.
+
+        :return: ``True`` if at least one region exists anywhere in the model.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> model.has_regions
+            True
+            >>> load_state_machine_from_text('state Root { [*] -> A; state A; }').has_regions
+            False
+        """
+        return next(self.walk_regions(), None) is not None
+
+    def walk_regions(self) -> Iterator[Region]:
+        """
+        Yield all regions in declaration preorder.
+
+        :yield: Each region of the model, outer regions before nested ones.
+        :rtype: Iterator[pyfcstm.model.region.Region]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Move;
+            ...             Stop -> Move :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> [region.path for region in model.walk_regions()]
+            [('Root', 'Run', 'Motion'), ('Root', 'Run', 'Guard')]
+        """
+        yield from self.root_state.walk_regions()
 
     def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
         """
@@ -3440,7 +4620,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         # Navigate through the remaining state path
         for i, state_name in enumerate(state_path_parts[1:], 1):
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State '{state_name}' not found in state "
                     f"'{'.'.join(state_path_parts[:i])}' "
@@ -3448,7 +4628,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     searched_from=".".join(state_path_parts[:i]),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -3541,11 +4721,29 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
+    if any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+           for item in sink.diagnostics):
+        # Strict mode raises at emission. Collect mode must not expose a model
+        # assembled with invalid region structure or imported subtrees omitted.
+        return None, sink.diagnostics
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
-    if machine.history_owners:
-        # Inspect and verify judge the model as written; keep what is needed
-        # to build it on first use (see ``StateMachine._as_written``).
+    if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
+        return None, sink.diagnostics
+    if machine.history_owners or machine.active_queries or machine.forced_transitions:
+        # Inspect judges the model as written; keep what is needed to build it
+        # on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
+    if machine.forced_transitions or machine.history_owners:
+        # A state or region is shown through the machine as written (see
+        # ``StateMachine._with_plain_forced``). The machine and every state and
+        # region of it share the holder: whichever of them a caller keeps still
+        # shows the declarations as written, and nothing leads from a state back
+        # to its machine.
+        machine._plain_forced_view = _PlainForcedView(
+            dnode, history_as_written=bool(machine.history_owners)
+        )
+        for namespace in walk_namespaces(machine.root_state):
+            namespace._plain_forced_view = machine._plain_forced_view
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the
@@ -3569,19 +4767,34 @@ def _build_assembled_state_machine(
     sink: DiagnosticSink,
     *,
     lower: bool,
+    plain_forced: bool = False,
 ) -> StateMachine:
     """
     Build the model of an import-assembled program.
+
+    This is the single construction routine behind every public loader: it
+    builds states and regions, resolves transitions, events, forced and combo
+    transitions and action references, validates them, and lowers history and
+    ``active()`` queries. Diagnostics go to ``sink``: a strict sink turns the
+    first error into an exception, a collecting sink keeps going and the
+    returned machine may be partial.
 
     :param dnode: Program AST after import assembly
     :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
     :param sink: Sink that receives every diagnostic of the build
     :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
-    :param lower: Whether to lower history constructs; when ``False`` the
-        history owners are still validated and described
+    :param lower: Whether to lower history constructs and ``active()``
+        queries; when ``False`` both are still validated and described, but no
+        hidden variable, action or rewrite is installed
     :type lower: bool
+    :param plain_forced: Whether to keep forced declarations in their plain
+        expansion instead of lowering them (see :mod:`pyfcstm.model.forced`),
+        defaults to ``False``
+    :type plain_forced: bool, optional
     :return: The built machine
     :rtype: StateMachine
+    :raises pyfcstm.utils.validate.ModelValidationError: If ``sink`` is strict
+        and the program violates a model rule.
     """
     d_defines: Dict[str, VarDefine] = {}
     # Track first-declaration spans so duplicate diagnostics can point at
@@ -3641,7 +4854,8 @@ def _build_assembled_state_machine(
             if isinstance(op_item, dsl_nodes.OperationAssignment):
                 if op_item.name not in d_defines:
                     accum.add(op_item.name)
-            elif isinstance(op_item, dsl_nodes.OperationIf):
+            else:
+                # An operation block holds assignments and ``if`` blocks only.
                 for branch in op_item.branches:
                     _collect_block_local_names(branch.statements, accum)
 
@@ -3822,12 +5036,36 @@ def _build_assembled_state_machine(
         current_path: Tuple[str, ...],
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
+        """
+        Build the model namespace of one declaration and, recursively, its children.
+
+        Creates the object, its child states and regions, events and actions,
+        and reports duplicate children and reserved-name problems. Transitions
+        are resolved later by :func:`_recursive_finish_states`, once every
+        state exists.
+
+        :param node: A state declaration or a region declaration.
+        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param current_path: Path of the parent namespace; the node's own name
+            is appended.
+        :type current_path: Tuple[str, ...]
+        :param owner_node: Declaration of the parent, used to recognize
+            generated combo relay states. Defaults to ``None``.
+        :type owner_node: Optional[pyfcstm.dsl.node.StateDefinition], optional
+        :return: A :class:`State` for a state declaration, or a
+            :class:`~pyfcstm.model.region.Region` for a region declaration.
+        :rtype: Union[State, pyfcstm.model.region.Region]
+        """
         current_path = tuple((*current_path, node.name))
-        is_combo_relay_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
-        is_reserved_combo_pseudo = (
-            node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
+        is_region = isinstance(node, dsl_nodes.RegionDefinition)
+        is_pseudo = bool(getattr(node, "is_pseudo", False))
+        is_combo_relay_pseudo = (
+            not is_region and _is_exported_combo_pseudo_node(node, owner_node)
         )
-        if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
+        is_reserved_combo_pseudo = (
+            node.name.startswith(_COMBO_STATE_PREFIX) and is_pseudo
+        )
+        if not is_region and node.name.startswith(_COMBO_STATE_PREFIX) and not is_pseudo:
             sink.emit(
                 ModelDiagnostic(
                     code="W_COMBO_RESERVED_PREFIX_STATE_KIND",
@@ -3875,6 +5113,11 @@ def _build_assembled_state_machine(
                     )
                 )
 
+        d_regions = {
+            item.name: _recursive_build_states(item, current_path, node)
+            for item in getattr(node, "regions", ())
+        }
+
         named_functions = {}
 
         def _ast_action_kinds(node: dsl_nodes.StateDefinition) -> List[str]:
@@ -3890,8 +5133,7 @@ def _build_assembled_state_machine(
             return kinds
 
         on_enters = []
-        for enter_item in node.enters:
-            on_stage = None
+        for enter_item in getattr(node, "enters", ()):
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = _parse_operation_block(
                     enter_item.operations,
@@ -3925,7 +5167,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(enter_item),
                 )
-            elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="enter",
                     aspect=None,
@@ -3946,38 +5188,36 @@ def _build_assembled_state_machine(
                     _span=_node_span(enter_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        # I1 from PR-110: first-wins tiebreaker — keep the
-                        # initial declaration so collect/strict modes resolve
-                        # ``ref X`` identically (strict raises before the
-                        # overwrite would have happened).
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(enter_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "enter",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    # Keep the first declaration so collect/strict modes resolve
+                    # ``ref X`` identically (strict raises before the
+                    # overwrite would have happened).
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(enter_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "enter",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_enters.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_enters.append(on_stage)
 
         on_durings = []
-        for during_item in node.durings:
+        for during_item in getattr(node, "durings", ()):
             if (
-                not d_substates
+                not (d_substates or d_regions)
                 and during_item.aspect is not None
                 and not is_reserved_combo_pseudo
             ):
@@ -3998,7 +5238,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            if d_substates and during_item.aspect is None:
+            if (d_substates or d_regions) and during_item.aspect is None:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4017,7 +5257,6 @@ def _build_assembled_state_machine(
                     )
                 )
 
-            on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
                 during_operations = _parse_operation_block(
                     during_item.operations,
@@ -4051,7 +5290,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_item),
                 )
-            elif isinstance(during_item, dsl_nodes.DuringRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="during",
                     aspect=during_item.aspect,
@@ -4072,33 +5311,31 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_durings.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_durings.append(on_stage)
 
         on_exits = []
-        for exit_item in node.exits:
-            on_stage = None
+        for exit_item in getattr(node, "exits", ()):
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = _parse_operation_block(
                     exit_item.operations,
@@ -4132,7 +5369,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(exit_item),
                 )
-            elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="exit",
                     aspect=None,
@@ -4153,29 +5390,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(exit_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(exit_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "exit",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(exit_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "exit",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_exits.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_exits.append(on_stage)
 
         on_during_aspects = []
         for during_aspect_item in node.during_aspects:
@@ -4183,7 +5419,7 @@ def _build_assembled_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates and not is_reserved_combo_pseudo:
+            if not (d_substates or d_regions) and not is_reserved_combo_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4202,7 +5438,6 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(
                     during_aspect_item.operations,
@@ -4236,7 +5471,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_aspect_item),
                 )
-            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_aspect = OnAspect(
                     stage="during",
                     aspect=during_aspect_item.aspect,
@@ -4257,29 +5492,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_aspect_item),
                 )
 
-            if on_aspect is not None:
-                if on_aspect.name:
-                    if on_aspect.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_aspect.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_aspect_item, "_span", None),
-                                refs={
-                                    "function_name": on_aspect.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during_aspect",
-                                },
-                            )
+            if on_aspect.name:
+                if on_aspect.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_aspect.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_aspect_item, "_span", None),
+                            refs={
+                                "function_name": on_aspect.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during_aspect",
+                            },
                         )
-                    else:
-                        named_functions[on_aspect.name] = on_aspect
-                on_during_aspects.append(on_aspect)
+                    )
+                else:
+                    named_functions[on_aspect.name] = on_aspect
+            on_during_aspects.append(on_aspect)
 
         d_events = {}
         for event in node.events:
@@ -4293,22 +5527,20 @@ def _build_assembled_state_machine(
                 _span=_node_span(event),
             )
 
-        my_state = State(
-            name=node.name,
-            extra_name=node.extra_name,
-            doc=getattr(node, "doc", None),
-            events=d_events,
-            path=current_path,
-            substates=d_substates,
-            is_pseudo=bool(node.is_pseudo),
-            is_combo_relay=is_combo_relay_pseudo,
-            on_enters=on_enters,
-            on_durings=on_durings,
-            on_exits=on_exits,
-            on_during_aspects=on_during_aspects,
-            named_functions=named_functions,
+        common = dict(
+            name=node.name, path=current_path, substates=d_substates,
+            events=d_events, doc=getattr(node, "doc", None),
+            on_during_aspects=on_during_aspects, named_functions=named_functions,
             _span=_node_span(node),
         )
+        if is_region:
+            my_state = Region(**common)
+        else:
+            my_state = State(
+                **common, regions=d_regions, extra_name=node.extra_name,
+                is_pseudo=is_pseudo, is_combo_relay=is_combo_relay_pseudo,
+                on_enters=on_enters, on_durings=on_durings, on_exits=on_exits,
+            )
         if is_reserved_combo_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
@@ -4331,7 +5563,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-        if my_state.is_pseudo and not my_state.is_leaf_state:
+        if is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
                     code="E_PSEUDO_NOT_LEAF",
@@ -4347,295 +5579,74 @@ def _build_assembled_state_machine(
                     },
                 )
             )
-        for func_item in [
-            *my_state.on_enters,
-            *my_state.on_durings,
-            *my_state.on_exits,
-            *my_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(my_state):
             func_item.parent = my_state
-        for _, substate in d_substates.items():
-            substate.parent = my_state
+        for child in namespace_children(my_state):
+            child.parent = my_state
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
-    forced_transition_declarations = []
+
+    # Forced declarations are resolved and expanded in one place; the walk
+    # below only says where and passes on what each namespace inherits.
+    from .forced import ForcedExpansion
+
+    forced_expansion = ForcedExpansion(
+        root_state, d_defines, sink, lower=lower, plain=plain_forced
+    )
 
     def _recursive_finish_states(
         node: dsl_nodes.StateDefinition,
         current_state: State,
         current_path: Tuple[str, ...],
-        force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
+        force_transitions: Optional[List[Any]] = None,
     ) -> None:
+        """
+        Resolve transitions, forced transitions and events of one namespace, then recurse.
+
+        Runs after :func:`_recursive_build_states`, when every state and
+        region exists. Hands the forced declarations of the namespace
+        (including those inherited from enclosing states) to
+        :class:`pyfcstm.model.forced.ForcedExpansion`, repeats the process for
+        each child with what that child inherits, and then resolves transition
+        events against the event scope rules, builds :class:`Transition`
+        objects and attaches them.
+
+        :param node: Declaration being finished.
+        :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+        :param current_state: The model namespace built for ``node``.
+        :type current_state: Union[State, pyfcstm.model.region.Region]
+        :param current_path: Path of the parent namespace.
+        :type current_path: Tuple[str, ...]
+        :param force_transitions: Forced declarations inherited from the
+            enclosing namespace, as
+            :meth:`pyfcstm.model.forced.ForcedExpansion.expand` returned them
+            for this child; passed back to it unread. Defaults to ``None``
+            (none).
+        :type force_transitions: Optional[List[Any]], optional
+        :return: ``None``; the model is updated in place.
+        :rtype: None
+        """
         current_path = tuple((*current_path, current_state.name))
-        force_transitions = list(force_transitions or [])
-
-        force_transition_tuples_to_inherit = []
-        local_force_ids = {id(item) for item in node.force_transitions}
-        for f_transnode in [*force_transitions, *node.force_transitions]:
-            # I3 from PR-110: if either side of a forced transition is
-            # unresolved, skip the rest of the per-transition processing
-            # AND the inherit-tuple append. Otherwise collect mode keeps a
-            # bad ``(from_state, to_state, ...)`` tuple that quietly
-            # corrupts the inheritance phase (bad to_state being attached
-            # to a real substate's transitions).
-            unresolved = False
-            if f_transnode.from_state == dsl_nodes.ALL:
-                from_state = dsl_nodes.ALL
-            else:
-                from_state = f_transnode.from_state
-                if from_state not in current_state.substates:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_FORCED_TRANSITION_EXPANSION",
-                            severity="error",
-                            message=(
-                                f"Unknown from state {from_state!r} of force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "original_raw": str(f_transnode.without_docs()),
-                                "reason": "src_not_found",
-                            },
-                        )
-                    )
-                    unresolved = True
-
-            if f_transnode.to_state is dsl_nodes.EXIT_STATE:
-                to_state = dsl_nodes.EXIT_STATE
-            else:
-                to_state = f_transnode.to_state
-                if to_state not in current_state.substates:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_FORCED_TRANSITION_EXPANSION",
-                            severity="error",
-                            message=(
-                                f"Unknown to state {to_state!r} of force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "original_raw": str(f_transnode.without_docs()),
-                                "reason": "tgt_not_found",
-                            },
-                        )
-                    )
-                    unresolved = True
-
-            if unresolved:
-                continue
-
-            my_event_id, trans_event = None, None
-            if f_transnode.event_id is not None:
-                my_event_id = f_transnode.event_id
-                source_state = from_state if isinstance(from_state, str) else None
-                origin = _event_origin_from_id(
-                    my_event_id,
-                    f_transnode.event_scope,
-                    source_state=source_state,
-                )
-                if not my_event_id.is_absolute:
-                    my_event_id = dsl_nodes.ChainID(
-                        path=[*current_state.path[1:], *my_event_id.path],
-                        is_absolute=True,
-                    )
-                start_state = root_state
-                base_path = (root_state.name,)
-                # Walk the event-id state segments. On a missing segment
-                # we emit the diagnostic and skip the suffix resolution —
-                # without this guard, collect mode would silently fabricate
-                # an Event in whatever partial state ``start_state`` landed
-                # on (C1 from PR-110 review).
-                path_resolved = True
-                for seg in my_event_id.path[:-1]:
-                    if seg in start_state.substates:
-                        start_state = start_state.substates[seg]
-                    else:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_MISSING_STATE",
-                                severity="error",
-                                message=(
-                                    f"Cannot find state "
-                                    f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
-                                    "for transition:\n"
-                                    f"{str(f_transnode.without_docs())}"
-                                ),
-                                span=getattr(f_transnode, "_span", None),
-                                refs={
-                                    "state_path": ".".join(
-                                        (*base_path, *my_event_id.path[:-1])
-                                    ),
-                                    "referenced_from": ".".join(current_path),
-                                    "reason": "event_path_not_found",
-                                },
-                            )
-                        )
-                        path_resolved = False
-                        break
-
-                if path_resolved:
-                    suffix_name = my_event_id.path[-1]
-                    if suffix_name not in start_state.events:
-                        start_state.events[suffix_name] = Event(
-                            name=suffix_name,
-                            state_path=start_state.path,
-                            # The event is synthesized from a transition
-                            # trigger, so the source documentation belongs to
-                            # the transition rather than this new owner.
-                            doc=None,
-                            origins=[origin],
-                            _span=_node_span(f_transnode),
-                        )
-                    else:
-                        if origin not in start_state.events[suffix_name].origins:
-                            start_state.events[suffix_name].origins.append(origin)
-                    trans_event = start_state.events[suffix_name]
-
-            condition_expr, guard = f_transnode.condition_expr, None
-            if f_transnode.condition_expr is not None:
-                guard = parse_expr_node_to_expr(f_transnode.condition_expr)
-                unknown_vars = []
-                for var in guard.list_variables():
-                    if var.name not in d_defines:
-                        unknown_vars.append(var.name)
-                for unknown_var in unknown_vars:
-                    sink.emit(
-                        ModelDiagnostic(
-                            code="E_UNDEFINED_VAR",
-                            severity="error",
-                            message=(
-                                f"Unknown guard variable "
-                                f"{unknown_var} in force "
-                                "transition:\n"
-                                f"{str(f_transnode.without_docs())}"
-                            ),
-                            span=getattr(f_transnode, "_span", None),
-                            refs={
-                                "var_name": unknown_var,
-                                "referenced_in": "guard",
-                                "state_path": ".".join(current_path),
-                                "expr_text": str(f_transnode.condition_expr),
-                            },
-                        )
-                    )
-
-            if id(f_transnode) in local_force_ids:
-                if from_state is dsl_nodes.ALL:
-                    source_path = "*"
-                    expansion_count = len(node.substates)
-                else:
-                    source_path = ".".join((*current_path, from_state))
-                    expansion_count = 1
-                forced_transition_declarations.append(
-                    {
-                        "state_path": ".".join(current_path),
-                        "from_path": source_path,
-                        "to_path": (
-                            "[*]"
-                            if to_state is dsl_nodes.EXIT_STATE
-                            else ".".join((*current_path, to_state))
-                        ),
-                        "event": trans_event.path_name
-                        if trans_event is not None
-                        else None,
-                        "event_scope": (
-                            f_transnode.event_scope if trans_event is not None else None
-                        ),
-                        "guard": str(condition_expr)
-                        if condition_expr is not None
-                        else None,
-                        "original_raw": str(f_transnode.without_docs()),
-                        "expansion_count": expansion_count,
-                        "span": _node_span(f_transnode),
-                    }
-                )
-
-            force_transition_tuples_to_inherit.append(
-                (
-                    from_state,
-                    to_state,
-                    my_event_id,
-                    trans_event,
-                    condition_expr,
-                    guard,
-                    f_transnode.event_scope,
-                    getattr(f_transnode, "source_raw", None)
-                    or str(f_transnode.without_docs()),
-                    _node_span(f_transnode),
-                    # The file the declaration was written in, carried with its
-                    # span.  An expansion lands on states from other files, and a
-                    # span alone cannot say which document it belongs to -- two
-                    # modules that put a statement of the same length at the same
-                    # place share a key.  Asking the declaration directly is exact.
-                    getattr(f_transnode, "_source_path", None),
-                    getattr(f_transnode, "doc", None),
-                    getattr(f_transnode, "target_history", None),
-                )
-            )
+        inherited = forced_expansion.expand(
+            node, current_state, current_path, force_transitions
+        )
 
         transitions = current_state.transitions
-        for subnode in node.substates:
-            _inner_force_transitions = []
-            for (
-                from_state,
-                to_state,
-                my_event_id,
-                trans_event,
-                condition_expr,
-                guard,
-                event_scope,
-                forced_origin,
-                forced_span,
-                forced_source_path,
-                forced_doc,
-                forced_target_history,
-            ) in force_transition_tuples_to_inherit:
-                if from_state is dsl_nodes.ALL or from_state == subnode.name:
-                    transitions.append(
-                        Transition(
-                            from_state=subnode.name,
-                            to_state=to_state,
-                            event=trans_event,
-                            guard=guard,
-                            effects=[],
-                            doc=forced_doc,
-                            event_scope=event_scope,
-                            is_forced=True,
-                            forced_origin=forced_origin,
-                            _span=forced_span,
-                            target_history=forced_target_history,
-                        )
-                    )
-                    if forced_source_path is not None:
-                        setattr(transitions[-1], "_source_path", forced_source_path)
-                    inherited = dsl_nodes.ForceTransitionDefinition(
-                        from_state=dsl_nodes.ALL,
-                        to_state=dsl_nodes.EXIT_STATE,
-                        event_id=my_event_id,
-                        condition_expr=condition_expr,
-                        event_scope=event_scope,
-                        source_raw=forced_origin,
-                        _span=forced_span,
-                    )
-                    if forced_source_path is not None:
-                        # This node is synthesised to carry the declaration one
-                        # level deeper, and it keeps the declaration's span, so it
-                        # has to keep its file too.  Without this the descent stops
-                        # having an answer after the first level, and the span alone
-                        # cannot supply one across documents.
-                        setattr(inherited, "_source_path", forced_source_path)
-                    _inner_force_transitions.append(inherited)
-
+        for subnode, carried in zip(node.substates, inherited.per_substate):
             _recursive_finish_states(
                 node=subnode,
                 current_state=current_state.substates[subnode.name],
                 current_path=current_path,
-                force_transitions=_inner_force_transitions,
+                force_transitions=carried,
+            )
+
+        for region_node in getattr(node, "regions", ()):
+            _recursive_finish_states(
+                region_node,
+                current_state.regions[region_node.name],
+                current_path,
+                force_transitions=inherited.for_region(),
             )
 
         def _emit_dangling_transition_diagnostics(transnode) -> bool:
@@ -4731,6 +5742,29 @@ def _build_assembled_state_machine(
             event_scope: Optional[str],
             source_state_name: Optional[str],
         ) -> Tuple[Optional[str], Optional[Event]]:
+            """
+            Resolve the event a transition names, creating it when it is not
+            declared yet.
+
+            Determines the effective scope (``local``, ``chain`` or
+            ``absolute``) from the written event path, walks the path from the
+            right starting namespace and returns the matching or newly
+            created event. Failures are reported to the sink.
+
+            :param transnode: Transition declaration being resolved, used for
+                diagnostics.
+            :type transnode: pyfcstm.dsl.node.TransitionDefinition
+            :param event_id: Event path as written.
+            :type event_id: pyfcstm.dsl.node.ChainID
+            :param event_scope: Scope recorded by the grammar, if any.
+            :type event_scope: Optional[str]
+            :param source_state_name: Name of the transition's source state,
+                or ``None`` for initial transitions.
+            :type source_state_name: Optional[str]
+            :return: ``(effective scope, event)``; the event is ``None`` after
+                a reported error.
+            :rtype: Tuple[Optional[str], Optional[Event]]
+            """
             event_scope = _event_origin_from_id(
                 event_id,
                 event_scope,
@@ -4752,8 +5786,8 @@ def _build_assembled_state_machine(
 
             path_resolved = True
             for seg in effective_event_id.path[:-1]:
-                if seg in start_state.substates:
-                    start_state = start_state.substates[seg]
+                if namespace_child(start_state, seg) is not None:
+                    start_state = namespace_child(start_state, seg)
                 else:
                     sink.emit(
                         ModelDiagnostic(
@@ -5035,6 +6069,11 @@ def _build_assembled_state_machine(
                 collision_name = (
                     f"{_COMBO_STATE_PREFIX}{slug}_h{digest[:_COMBO_DIGEST_MAX_SIZE]}"
                 )
+                # Defensive, and not reachable from a DSL text: a request carries
+                # its own run anchor and duplicate discriminator, so a payload is
+                # never requested twice and the two lookups below never find an
+                # earlier answer. They keep one pseudo state per payload should
+                # a caller ever repeat one.
                 name = combo_exhausted_payload_names.get(payload)
                 if name is None:
                     if collision_name not in combo_exhausted_names:
@@ -5084,6 +6123,8 @@ def _build_assembled_state_machine(
                     )
                 combo_name_payloads[name] = payload
 
+            # Defensive, for the same reason: a pseudo state is made once per
+            # payload, so the name is never taken when it gets here.
             if name in current_state.substates:
                 return current_state.substates[name]
 
@@ -5219,11 +6260,9 @@ def _build_assembled_state_machine(
             i = 0
             while i < len(alternatives):
                 alternative = alternatives[i]
+                # Every alternative handed to a deeper level had more than one
+                # term left on the level above, so at least one is left here.
                 remaining = len(alternative.terms) - term_index
-                if remaining <= 0:
-                    i += 1
-                    continue
-
                 term = alternative.terms[term_index]
                 term_key = _combo_term_semantic_key(alternative.transnode, term)
                 if remaining == 1:
@@ -5358,6 +6397,10 @@ def _build_assembled_state_machine(
                 and trusted_combo_metadata.projection_key is not None
             ):
                 projection_key = trusted_combo_metadata.projection_key
+                # Only a projection key that names a source state says which
+                # state a local event belongs to; the others keep the source.
+                # A generated transition only arrives with trusted metadata
+                # through a model loaded from an export, so this stays untested.
                 if (
                     len(projection_key) >= 3
                     and projection_key[1] == "state"
@@ -5557,17 +6600,12 @@ def _build_assembled_state_machine(
                 )
             )
 
-        for func_item in [
-            *current_state.on_enters,
-            *current_state.on_durings,
-            *current_state.on_exits,
-            *current_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(current_state):
             if func_item.ref_state_path is not None:
                 state = root_state
                 walk_failed = False
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
-                    if segment not in state.substates:
+                    if namespace_child(state, segment) is None:
                         # M1 from PR-110 review: the named-function ref AST
                         # nodes don't carry their own spans yet, so fall back
                         # to the owning state's span. State-level anchoring
@@ -5594,7 +6632,7 @@ def _build_assembled_state_machine(
                         )
                         walk_failed = True
                         break
-                    state = state.substates[segment]
+                    state = namespace_child(state, segment)
                 if walk_failed:
                     continue
 
@@ -5635,14 +6673,16 @@ def _build_assembled_state_machine(
     history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
 
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
-        for func_item in [
-            *state.on_enters,
-            *state.on_durings,
-            *state.on_exits,
-            *state.on_during_aspects,
-        ]:
-            yield func_item
-        for substate in state.substates.values():
+        """
+        Yield every lifecycle and aspect action in a subtree, parents first.
+
+        :param state: State or region whose subtree is scanned.
+        :type state: Union[State, pyfcstm.model.region.Region]
+        :return: The namespace's own actions, then those of each child.
+        :rtype: Iterator[Union[OnStage, OnAspect]]
+        """
+        yield from namespace_actions(state)
+        for substate in namespace_children(state):
             for func_item in _iter_lifecycle_actions(substate):
                 yield func_item
 
@@ -5676,11 +6716,26 @@ def _build_assembled_state_machine(
 
     _validate_action_ref_cycles()
 
+    from .active import lower_active
+
+    active_queries = lower_active(root_state, d_defines, sink, apply=lower)
+
+    # Forced transitions decide their event and guard once. The expansion only
+    # recorded something to lower when ``lower`` is true and the build does
+    # not keep the plain expansion.
+    forced_flags = forced_expansion.lower(d_defines)
+    # A drawing writes where the history of an owner leads by default, so the
+    # owner remembers where each kind of its history leads by default.
+    states_by_path = {state.path: state for state in root_state.walk_states()}
+    for owner in history_owners:
+        states_by_path[owner.owner_path].history_defaults = dict(owner.defaults)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,
-        forced_transitions=tuple(forced_transition_declarations),
+        forced_transitions=tuple(forced_expansion.declarations),
         history_owners=history_owners,
+        active_queries=active_queries,
+        _forced_flags=forced_flags,
         _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)

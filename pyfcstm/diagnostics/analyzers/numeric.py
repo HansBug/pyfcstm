@@ -15,6 +15,23 @@ The module contains:
    The analyzer deliberately avoids variable range solving, cross-statement
    propagation, SMT checks, and generated-code policy changes. Those belong
    to the verify and code-generation tracks.
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.diagnostics.analyzers.numeric import collect_numeric_warnings
+    >>> source = '''
+    ... def int x = 0;
+    ... state Root {
+    ...     state A {
+    ...         during { x = 1 / 0; }
+    ...     }
+    ...     [*] -> A;
+    ... }
+    ... '''
+    >>> machine = load_state_machine_from_text(source)
+    >>> [item.code for item in collect_numeric_warnings(machine)]
+    ['W_NUMERIC_CONSTANT_DIVISION_BY_ZERO']
 """
 
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple
@@ -100,6 +117,9 @@ def collect_numeric_warnings(
     """
     Collect C/C++ deployment-profile numeric warnings for a model.
 
+    Expressions in states **and regions** are examined: guards, effects,
+    lifecycle actions and region aspects alike.
+
     :param machine: State-machine model to inspect. ``None`` is accepted so
         callers can mirror other analyzer entry points during defensive
         composition.
@@ -155,7 +175,9 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
             var_name=var_name,
         )
 
-    for state in machine.walk_states():
+    from ...model.region import walk_namespaces
+
+    for state in walk_namespaces(machine.root_state):
         for transition in state.transitions:
             if transition.guard is not None:
                 yield _Context(
@@ -177,16 +199,13 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
 
 
 def _iter_concrete_actions(state):
-    for collection in (
-        state.on_enters,
-        state.on_durings,
-        state.on_exits,
-        state.on_during_aspects,
-    ):
-        for action in collection:
-            if action.is_abstract or action.is_ref:
-                continue
-            yield action
+    """Yield concrete actions owned by a state or a region (aspects only)."""
+    from ...model.region import namespace_actions
+
+    for action in namespace_actions(state):
+        if action.is_abstract or action.is_ref:
+            continue
+        yield action
 
 
 def _iter_statement_expression_contexts(

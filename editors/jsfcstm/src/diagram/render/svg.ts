@@ -94,6 +94,22 @@ export interface RenderOptions {
     cjkLocale?: CjkLocale;
 }
 
+/**
+ * Draw a laid-out graph as SVG.
+ *
+ * A graph that has regions (a state that runs several ordered regions) must be
+ * laid out with ``layoutFcstmGraph``, not with ``elk.layout`` directly: that
+ * function keeps the regions in declaration order, tiles them over their owner
+ * with equal height (equal width for a left-to-right diagram) and records where
+ * the dashed dividers go. This renderer draws a region without a border and
+ * draws a divider only where the layout asked for one, so a graph laid out by
+ * ``elk.layout`` alone shows its regions as plain areas with no dividers. A
+ * graph without regions can be laid out either way.
+ *
+ * @param canvas The laid-out graph.
+ * @param options Resolved preview options (direction).
+ * @param renderOptions Palette, mode and CJK locale.
+ */
 export function renderSvg(
     canvas: PreviewElkNode,
     options: PreviewResolvedOptions,
@@ -170,6 +186,11 @@ function drawNode(
             `<circle cx="${cx}" cy="${cy}" r="${Math.max(0, r - 4)}" fill="${P.exitInnerFill}"/>` +
             `</g>`
         );
+        return;
+    }
+
+    if (meta.region) {
+        drawRegion(node, x, y, depth, out, P, crossings);
         return;
     }
 
@@ -355,6 +376,83 @@ function drawNode(
 }
 
 /**
+ * Draw an ordered region of a state that runs several of them.
+ *
+ * A region has no border: it fills a slice of its owner's body and a dashed
+ * divider on the edge it shares with the previous region (``dividerBefore``,
+ * set by ``layoutFcstmGraph``) is all that separates the two. The invisible
+ * ``fcstm-region-hit`` rectangle keeps the whole slice clickable and is what
+ * the viewer tints when the region is hovered or selected, now that there is
+ * no outline to recolour. ``pointer-events="all"`` is what lets a rectangle
+ * with no fill take the click.
+ */
+function drawRegion(
+    node: PreviewElkNode,
+    x: number,
+    y: number,
+    depth: number,
+    out: string[],
+    P: SvgPalette,
+    crossings: CrossingIndex,
+): void {
+    const w = node.width as number;
+    const h = node.height as number;
+    const meta = node.fcstm!;
+    const id = meta.qualifiedName as string;
+    out.push(
+        `<g ${attr('data-fcstm-kind', meta.composite && !meta.collapsed ? 'composite-state' : 'state')} ` +
+        `${attr('data-fcstm-id', id)} ` +
+        `${attr('data-fcstm-variant', 'region')} ` +
+        `${attr('data-fcstm-pseudo', 'false')} ` +
+        `${attr('data-fcstm-composite', String(Boolean(meta.composite)))} ` +
+        `${attr('data-fcstm-collapsed', String(Boolean(meta.collapsed)))} ` +
+        `${rangeAttrs('fcstm-range', meta.sourceRange)}>`
+    );
+    out.push(
+        `<rect class="fcstm-region-hit" x="${x}" y="${y}" width="${w}" height="${h}" ` +
+        `fill="none" stroke="none" pointer-events="all" />`
+    );
+    if (meta.dividerBefore) {
+        const to = meta.dividerBefore === 'vertical' ? `${x},${y + h}` : `${x + w},${y}`;
+        out.push(
+            `<path d="M${x},${y} L${to}" fill="none" stroke="${P.compositeStroke}" ` +
+            `stroke-width="1.4" stroke-dasharray="${P.pseudoDash}" />`
+        );
+    }
+    out.push(
+        `<text x="${x + 16}" y="${y + 21}" fill="${P.titleColor}" ` +
+        `font-weight="700" font-size="14">${escapeXml(node.labels![0].text)}</text>`
+    );
+    const btnW = 30, btnH = 22;
+    const btnX = x + w - btnW - 6;
+    const btnY = y + 5;
+    const cx = btnX + btnW / 2;
+    const cy = btnY + btnH / 2;
+    const chevron = meta.collapsed
+        ? `M${cx - 4},${cy - 2} l4,4 l4,-4`
+        : `M${cx - 4},${cy + 2} l4,-4 l4,4`;
+    out.push(
+        `<g data-fcstm-kind="chevron" ` +
+        `${attr('data-fcstm-id', id)} ` +
+        `${rangeAttrs('fcstm-range', meta.sourceRange)}>` +
+        `<rect x="${btnX}" y="${btnY}" width="${btnW}" height="${btnH}" ` +
+        `rx="6" ry="6" fill="${P.chevronBtnFill}" stroke="${P.chevronBtnStroke}" stroke-width="1"/>` +
+        `<path d="${chevron}" fill="none" stroke="${P.titleColor}" ` +
+        `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `</g>`
+    );
+    out.push('</g>');
+    if (!meta.collapsed) {
+        for (const child of node.children || []) {
+            drawNode(child, x, y, depth + 1, out, P, crossings);
+        }
+        for (const edge of node.edges || []) {
+            drawEdge(edge, x, y, out, P, crossings);
+        }
+    }
+}
+
+/**
  * Emit a single polyline as an SVG path, with drawio-style hop arcs
  * over any recorded crossings on vertical segments.
  */
@@ -407,6 +505,8 @@ function drawEdge(
     crossings: CrossingIndex,
 ): void {
     const meta = edge.fcstm;
+    // Order edges only steer the layout; they have no visual form.
+    if (meta?.kind === 'regionOrder') return;
     const kind = meta?.transitionKind || 'normal';
     const forced = Boolean(meta?.forced);
     const color = meta?.eventColor || P.edgeStroke;

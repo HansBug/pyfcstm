@@ -1,0 +1,21 @@
+input int fault;
+output int motor = 0;
+
+state Line {
+    [*] -> Work;
+    state Work {
+        region Safety {
+            [*] -> Watch;
+            state Watch;
+            Watch -> [*] : if [fault != 0];
+        }
+        region Motion {
+            [*] -> Spin;
+            state Spin {
+                during { motor = 1; }
+            }
+        }
+    }
+    state Stopped;
+    Work -> Stopped : if [fault != 0];
+}

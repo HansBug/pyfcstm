@@ -1,0 +1,59 @@
+title: A finished region stays done and the last completion continues the owner in the same cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- inputs
+steps:
+- cycle: []
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: Working, B: Working}'
+    vars:
+      a: 1
+      b: 1
+- cycle: Workflow.ADone
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 2
+      aexit: 1
+- cycle: []
+  inputs:
+    proceed: 0
+  expect:
+    configuration: 'Workflow.Job{A: [done], B: Working}'
+    vars:
+      a: 1
+      b: 3
+      aexit: 1
+- cycle: Workflow.BDone
+  inputs:
+    proceed: 0
+  expect:
+    configuration: Workflow.AwaitPermission
+    vars:
+      a: 1
+      b: 3
+      aexit: 1
+      w: 1
+- cycle: []
+  inputs:
+    proceed: 0
+  expect:
+    configuration: Workflow.AwaitPermission
+    vars:
+      w: 2
+- cycle: []
+  inputs:
+    proceed: 1
+  expect:
+    configuration: Workflow.Ready
+    vars:
+      w: 2

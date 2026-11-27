@@ -42,6 +42,30 @@ Static analyses judge the model as written: model conversion can also build
 the machine before lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`),
 where a history entry is an ordinary transition that still carries its
 ``target_history``.
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> source = '''
+    ... state Root {
+    ...     state Work {
+    ...         [*] -> A;
+    ...         [H] -> A;
+    ...         state A;
+    ...         state B;
+    ...         A -> B :: Next;
+    ...     }
+    ...     state Pause;
+    ...     [*] -> Work;
+    ...     Work -> Pause :: Stop;
+    ...     Pause -> Work.[H] :: Resume;
+    ... }
+    ... '''
+    >>> machine = load_state_machine_from_text(source)
+    >>> list(machine.defines)
+    ['__hist_goto', '__hist_Work']
+    >>> machine.history_owners[0].owner_path
+    ('Root', 'Work')
 """
 
 import re
@@ -49,6 +73,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterator, List, Mapping, Optional, Set, Tuple
 
 from .expr import BinaryOp, ConditionalOp, Expr, Integer, Variable
+from .region import namespace_actions, walk_namespaces
 from ..dsl import node as dsl_nodes
 from ..utils.validate import ModelDiagnostic
 
@@ -141,20 +166,58 @@ class HistoryOwner:
 
 
 def _walk(state: "State") -> Iterator["State"]:
-    yield state
-    for child in state.substates.values():
-        for item in _walk(child):
-            yield item
+    """
+    Iterate a built state and every state below it, parents before children.
+
+    This is :meth:`pyfcstm.model.model.State.walk_states`: states inside regions
+    are included in declaration order, region containers are not yielded.  The
+    order is the preorder that lowering uses to number states, so the ids it
+    assigns make every subtree one contiguous range.
+
+    :param state: Root of the walk.
+    :type state: pyfcstm.model.model.State
+    :return: Lazily iterated states, starting with ``state``.
+    :rtype: Iterator[pyfcstm.model.model.State]
+    """
+    yield from state.walk_states()
 
 
 def _walk_ast(
     node: dsl_nodes.StateDefinition, path: _Path = ()
 ) -> Iterator[Tuple[_Path, dsl_nodes.StateDefinition]]:
+    """
+    Iterate the state declarations of an AST subtree together with their paths.
+
+    The walk is a preorder: a node, then its child states, then its regions.
+    Region declarations are traversed but never yielded, yet their names are part
+    of the path of every state below them, matching
+    :attr:`pyfcstm.model.model.State.path` of the built model.
+
+    :param node: State (or region) declaration to start from.
+    :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
+    :param path: Path of the parent of ``node``, defaults to ``()``
+    :type path: Tuple[str, ...], optional
+    :return: Lazily iterated ``(path, declaration)`` pairs, one per state.
+    :rtype: Iterator[Tuple[Tuple[str, ...], pyfcstm.dsl.node.StateDefinition]]
+
+    Example::
+
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model.history import _walk_ast
+        >>> program = parse_with_grammar_entry('''
+        ... state Root {
+        ...     [*] -> Run;
+        ...     state Run { region Motion { [*] -> Stop; state Stop; } }
+        ... }
+        ... ''', entry_name='state_machine_dsl')
+        >>> [".".join(path) for path, _ in _walk_ast(program.root_state)]
+        ['Root', 'Root.Run', 'Root.Run.Motion.Stop']
+    """
     path = (*path, node.name)
-    yield path, node
-    for child in node.substates:
-        for item in _walk_ast(child, path):
-            yield item
+    if isinstance(node, dsl_nodes.StateDefinition):
+        yield path, node
+    for child in [*node.substates, *getattr(node, 'regions', ())]:
+        yield from _walk_ast(child, path)
 
 
 def _operations(statements) -> Iterator:
@@ -167,16 +230,25 @@ def _operations(statements) -> Iterator:
             yield statement
 
 
-def _state_operations(state: "State") -> Iterator:
-    for action in [
-        *state.on_enters,
-        *state.on_durings,
-        *state.on_exits,
-        *state.on_during_aspects,
-    ]:
+def _namespace_operations(namespace) -> Iterator:
+    """
+    Iterate every operation a built state or region executes.
+
+    Operations come from the namespace's actions (see
+    :func:`pyfcstm.model.region.namespace_actions`: enter, during, exit, then
+    aspect actions), followed by the effects of its own transitions.  Conditional
+    statements are flattened: the statements of every branch are yielded, and
+    the conditional itself is not.
+
+    :param namespace: State or region of the built model.
+    :type namespace: Union[pyfcstm.model.model.State, pyfcstm.model.region.Region]
+    :return: Lazily iterated operation statements.
+    :rtype: Iterator[object]
+    """
+    for action in namespace_actions(namespace):
         for item in _operations(action.operations):
             yield item
-    for transition in state.transitions:
+    for transition in namespace.transitions:
         for item in _operations(transition.effects):
             yield item
 
@@ -207,6 +279,26 @@ class _Lowering:
         )
 
     def _check_reserved_names(self, uses_history: bool) -> None:
+        """
+        Report identifiers that collide with names history lowering generates.
+
+        Variables, states and block-local temporaries (assignment targets that
+        are not declared variables) are examined, each ``(identifier, kind)``
+        pair at most once.  The rule depends on ``uses_history``: when it is
+        true, an identifier matching the permissive pattern ``_+hist_`` at its
+        start (any run of underscores, because target-language identifier
+        conversion collapses them) is an ``E_HISTORY_RESERVED_PREFIX`` error;
+        when it is false, an identifier that literally starts with ``__hist_``
+        is only a ``W_HISTORY_RESERVED_PREFIX`` warning.  Diagnostics go to the
+        sink; nothing is returned or raised here beyond what the sink does.
+
+        :param uses_history: Whether the machine declares or enters any history.
+        :type uses_history: bool
+        :return: ``None``.
+        :rtype: None
+        :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in
+            strict mode and a diagnostic is emitted.
+        """
         seen: Set[Tuple[str, str]] = set()
 
         def check(identifier: str, kind: str, span) -> None:
@@ -236,8 +328,8 @@ class _Lowering:
             check(name, "variable", define._span)
         for state in self.states.values():
             check(state.name, "state", state._span)
-        for state in self.states.values():
-            for operation in _state_operations(state):
+        for namespace in walk_namespaces(self.root):
+            for operation in _namespace_operations(namespace):
                 if operation.var_name not in self.defines:
                     check(operation.var_name, "temporary", operation._span)
 
@@ -296,10 +388,30 @@ class _Lowering:
         return declared
 
     def _targets(self, declared) -> List[Tuple["Transition", _Path, str]]:
-        """Validate every transition that enters a history."""
+        """
+        Collect the transitions that enter a declared history and report the rest.
+
+        Every transition of every state and region that has a
+        ``target_history`` is looked at.  If its target owner declares that kind
+        in ``declared``, the transition is kept.  Otherwise
+        ``E_HISTORY_TARGET_UNDECLARED`` is emitted, once per
+        ``(owner, kind, transition span)``, unless the owner's declaration of
+        that kind was already reported invalid (``self.invalid``), in which case
+        the entry is dropped silently.  Dropped transitions are left unchanged.
+
+        :param declared: Valid declarations as returned by
+            :meth:`_declarations`: owner path, then kind, then
+            ``(default path, declaration)``.
+        :type declared: Dict[Tuple[str, ...], Dict[str, Tuple[Tuple[str, ...], object]]]
+        :return: ``(transition, owner path, kind)`` triples for every entry that
+            targets a declared history, in namespace walk order.
+        :rtype: List[Tuple[pyfcstm.model.model.Transition, Tuple[str, ...], str]]
+        :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in
+            strict mode and a diagnostic is emitted.
+        """
         found = []
         reported = set()
-        for scope in self.states.values():
+        for scope in walk_namespaces(self.root):
             for transition in scope.transitions:
                 kind = transition.target_history
                 if kind is None:
@@ -424,12 +536,45 @@ class _Lowering:
         return tags
 
     def run(self) -> Tuple[HistoryOwner, ...]:
-        from .model import OnStage, State, Transition, VarDefine
+        """
+        Validate history use and, unless ``apply`` is false, rewrite the machine.
 
+        The steps are:
+
+        1. Decide whether history is used at all (any ``[H]`` / ``[H*]``
+           declaration in the AST or any transition with a ``target_history``)
+           and check reserved names.  If unused, return ``()``.
+        2. Validate declarations and entering transitions, and warn
+           (``W_HISTORY_UNUSED``) about declarations nobody enters.  If no
+           valid entry remains, return ``()`` and leave the machine unchanged.
+        3. Build one :class:`HistoryOwner` per entered owner, in preorder, with
+           a collision-free variable tag per owner.  With ``apply`` false the
+           owners are returned here; the machine and ``defines`` stay as
+           written.
+        4. Otherwise rewrite in place: add the hidden ``int`` variables to
+           ``defines`` (initial value ``0``); append a record-writing exit
+           action to every stoppable leaf below an owner; append the restore
+           target assignment to each entering transition's effects; and, for
+           every composite a restore may pass through (in state-id order),
+           merge, gate or route its initial transitions, creating pseudo gate
+           states for evented initials.  ``history_role`` and
+           ``history_user_guard`` are set on the touched transitions.
+
+        Reachable ids and the preorder numbering come from the states of the
+        built machine, so the result depends on the machine being fully built
+        (forced and combo transitions already expanded).
+
+        :return: Metadata of every owner that is entered by some transition, in
+            preorder.
+        :rtype: Tuple[HistoryOwner, ...]
+        :raises pyfcstm.utils.validate.ModelValidationError: If the sink is in
+            strict mode and a diagnostic is emitted.
+        """
+        from .model import OnStage, State, Transition, VarDefine
         uses_history = any(node.histories for _, node in _walk_ast(self.ast_root)) or any(
             t.target_history is not None
-            for state in self.states.values()
-            for t in state.transitions
+            for namespace in walk_namespaces(self.root)
+            for t in namespace.transitions
         )
         self._check_reserved_names(uses_history)
         if not uses_history:
@@ -513,11 +658,16 @@ class _Lowering:
 
         # 3 + 4. routes and gates on every composite a restore passes through
         hops: Dict[_Path, List[str]] = {}
+        # What a route or a gate added on a composite points back to: the
+        # history declaration of the first owner whose restore passes through.
+        pointed_at: Dict[_Path, object] = {}
         restore_targets: Set[_Path] = set()
         for owner_path, owner in owners.items():
+            declaration = getattr(next(iter(declared[owner_path].values()))[1], "_span", None)
             for target in self._possible_targets(owner, used[owner_path]):
                 restore_targets.add(target)
                 for depth in range(len(owner_path), len(target)):
+                    pointed_at.setdefault(target[:depth], declaration)
                     bucket = hops.setdefault(target[:depth], [])
                     if target[depth] not in bucket:
                         bucket.append(target[depth])
@@ -575,6 +725,7 @@ class _Lowering:
                     substates={},
                     is_pseudo=True,
                     is_history_gate=True,
+                    _span=transition._span,
                 )
                 gate_state.parent = comp
                 comp.substates[gate_name] = gate_state
@@ -605,6 +756,7 @@ class _Lowering:
                     guard=self._in_subtree(child.path),
                     effects=[self._assign(self.goto, Integer(0))] if child.is_leaf_state else [],
                     history_role="route",
+                    _span=pointed_at.get(comp_path),
                 )
                 route.parent = comp
                 routes.append(route)

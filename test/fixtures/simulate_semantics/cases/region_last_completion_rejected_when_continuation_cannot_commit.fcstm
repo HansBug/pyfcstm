@@ -1,0 +1,32 @@
+input int proceed;
+def int a = 0;
+def int b = 0;
+def int aexit = 0;
+def int w = 0;
+state Workflow {
+    event ADone;
+    event BDone;
+    event Cancel;
+    [*] -> Job;
+    state Job {
+        region A {
+            [*] -> Working;
+            state Working {
+                during { a = a + 1; }
+                exit { aexit = aexit + 1; }
+            }
+            Working -> [*] : /ADone;
+        }
+        region B {
+            [*] -> Working;
+            state Working { during { b = b + 1; } }
+            Working -> [*] : /BDone;
+        }
+    }
+    state AwaitPermission { during { w = w + 1; } }
+    state Ready;
+    state Idle;
+    Job -> Ready : if [proceed != 0];
+    AwaitPermission -> Ready : if [proceed != 0];
+    !Job -> Idle : /Cancel;
+}

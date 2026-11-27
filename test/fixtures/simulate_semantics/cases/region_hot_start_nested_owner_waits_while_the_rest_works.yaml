@@ -1,0 +1,23 @@
+title: A nested owner written without its regions waits for initialization; its own enter does not run,
+  its regions initialize in writing order
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Q is hot-started, so its enter (1) does not run; W1 (2) and W2 (3) are entered.
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'W.Job{A: Q, B: Comp.In1}'
+  vars:
+    seq: 0
+    n: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 23
+      n: 10101

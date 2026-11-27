@@ -8,6 +8,7 @@ import {
 } from '@vicons/ionicons5';
 import {renderSvg, type RenderedSvg} from '../render/svg';
 import {smoothGraphEdges} from '../../../../jsfcstm/src/diagram/render/edge-smoother';
+import {layoutFcstmGraph} from '../../../../jsfcstm/src/diagram/region-order';
 import type {PaletteId, PaletteMode} from '../../../../jsfcstm/src/diagram/render/palette';
 import {getElk} from '../composables/useElk';
 import {asPointerKind, decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
@@ -179,8 +180,9 @@ async function relayout() {
     try {
         // ELK mutates its input; deep-clone so repeated runs on the
         // same payload.graph can't poison each other.
-        const graphCopy = JSON.parse(JSON.stringify(payload.graph));
-        const laid = await getElk().layout(graphCopy) as PreviewElkNode;
+        // ``layoutFcstmGraph`` clones the graph itself and keeps the regions
+        // of one owner in declaration order.
+        const laid = await layoutFcstmGraph(getElk() as never, payload.graph as never) as unknown as PreviewElkNode;
         if (token !== layoutToken) return;
         // ELK's orthogonal router occasionally lands the last segment
         // of an edge within a handful of pixels of the target port,
@@ -905,14 +907,27 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
 }
 /* Hover brightness on the body rect only, never on the halo ring —
    otherwise hovering a selected composite would tint the halo too. */
-.fcstm-stage__inner [data-fcstm-kind="state"]:hover > rect:not(.fcstm-halo),
-.fcstm-stage__inner [data-fcstm-kind="composite-state"]:hover > rect:not(.fcstm-halo) {
+.fcstm-stage__inner [data-fcstm-kind="state"]:hover > rect:not(.fcstm-halo):not(.fcstm-region-hit),
+.fcstm-stage__inner [data-fcstm-kind="composite-state"]:hover > rect:not(.fcstm-halo):not(.fcstm-region-hit) {
     filter: brightness(1.03);
+}
+/* A region has no outline to recolour: it is a slice of its owner's body
+   marked off by dashed dividers, so hover, selection and the editor-side
+   hover feedback tint the whole slice through its invisible hit rectangle
+   (the SVG gives that rectangle ``fill="none"``; these rules override it). */
+.fcstm-stage__inner [data-fcstm-variant="region"]:hover > .fcstm-region-hit {
+    fill: rgba(45, 106, 168, 0.06);
+}
+.fcstm-stage__inner [data-fcstm-variant="region"].fcstm-source-hover > .fcstm-region-hit {
+    fill: rgba(45, 106, 168, 0.14);
+}
+.fcstm-stage__inner [data-fcstm-variant="region"].fcstm-selected > .fcstm-region-hit {
+    fill: rgba(200, 118, 26, 0.16);
 }
 /* Leaves and pseudo-exit circles keep the stroke-override approach:
    no title bar to cover them, so the body stroke can be recolored
    directly. Composites use a dedicated halo ring instead (see below). */
-.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-selected > rect,
+.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-selected > rect:not(.fcstm-region-hit),
 .fcstm-stage__inner [data-fcstm-kind].fcstm-selected > circle {
     stroke: #c8761a !important;
     stroke-width: 2.6 !important;
@@ -945,7 +960,7 @@ body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-
     stroke-width: 3.2 !important;
     filter: none !important;
 }
-.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-source-hover > rect:not(.fcstm-halo),
+.fcstm-stage__inner [data-fcstm-kind="state"].fcstm-source-hover > rect:not(.fcstm-halo):not(.fcstm-region-hit),
 .fcstm-stage__inner [data-fcstm-kind="composite-state"].fcstm-source-hover > .fcstm-halo {
     stroke: #2d6aa8 !important;
     stroke-width: 2.4 !important;

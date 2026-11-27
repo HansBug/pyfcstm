@@ -1,0 +1,10 @@
+state Root {
+    region R {
+        region Inner {
+            [*] -> X;
+            state X;
+        }
+        [*] -> Y;
+        state Y;
+    }
+}

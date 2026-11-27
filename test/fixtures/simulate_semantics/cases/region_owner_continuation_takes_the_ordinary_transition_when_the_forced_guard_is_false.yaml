@@ -1,0 +1,20 @@
+title: "When the forced guard is still false after the region's exit action, the owner continues through its ordinary transition"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "The exit action leaves a at 2, so the forced guard a < 0 stays false."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: W}'
+    vars:
+      a: 5
+- cycle: Root.Finish
+  expect:
+    configuration: 'Root.ViaOrdinary'
+    vars:
+      a: 2

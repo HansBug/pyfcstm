@@ -1,0 +1,5 @@
+state Root {
+    state A;
+    region R { state Idle; [*] -> Idle; }
+    [*] -> A;
+}

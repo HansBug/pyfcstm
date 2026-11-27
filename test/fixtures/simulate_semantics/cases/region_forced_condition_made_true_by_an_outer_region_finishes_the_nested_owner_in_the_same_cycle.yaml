@@ -1,0 +1,28 @@
+title: A forced condition that a region of the outer group makes true finishes the nested owner that follows it in the same cycle, and the rest of the group in the next cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - Region R1 raises x to 2 in the second cycle. Region R2 runs after R1 in the same cycle; the leaves of the nested owner see x = 2, both nested regions finish and so does R2. R1 finishes in the third cycle and the outer owner continues.
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Outer{R1: A1, R2: Inner{X: X1, Y: Y1}}'
+    vars:
+      x: 1
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.Outer{R1: A1, R2: [done]}'
+    vars:
+      x: 2
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      x: 2
+    delta: false

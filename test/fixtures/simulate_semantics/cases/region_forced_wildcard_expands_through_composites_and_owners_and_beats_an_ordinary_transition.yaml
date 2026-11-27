@@ -1,0 +1,29 @@
+title: A forced wildcard transition reaches the regions below a composite with a pseudo state and wins over an ordinary transition of the same state on the same event
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "Exit actions in order: region A, region B, then the owner state P."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P.Work{A: A1, B: B1}'
+    vars:
+      seq: 0
+    delta: false
+- cycle:
+  - Root.Stop
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 123
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Off
+    vars:
+      seq: 123
+    delta: false

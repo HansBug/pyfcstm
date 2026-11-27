@@ -297,6 +297,84 @@ jobs:
                   raise SystemExit('CODE_REGISTRY runtime value leaked into {0}'.format(page))
           PY
 
+      - name: Package the bilingual HTML for local viewing
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=.ci/docs-html/pyfcstm-docs-html
+          if [ ! -f /tmp/pyfcstm-docs-check-en/index.html ] || [ ! -f /tmp/pyfcstm-docs-check-zh/index.html ]; then
+            echo "The HTML builds are missing, so there is nothing to package." >&2
+            exit 0
+          fi
+          mkdir -p "${package}"
+          cp -a /tmp/pyfcstm-docs-check-en "${package}/en"
+          cp -a /tmp/pyfcstm-docs-check-zh "${package}/zh"
+          cat > "${package}/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>pyfcstm documentation</title>
+            <style>
+              body { font-family: sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
+              a { display: block; margin: 1rem 0; padding: 1rem; border: 1px solid #888; border-radius: 6px; text-decoration: none; }
+            </style>
+          </head>
+          <body>
+            <h1>pyfcstm documentation</h1>
+            <a href="en/index.html">English documentation</a>
+            <a href="zh/index.html">中文文档</a>
+            <p>Open this page from a browser. Every link is relative, so the folder works offline wherever you unpack it.</p>
+          </body>
+          </html>
+          HTML
+          {
+            echo '## Bilingual HTML package'
+            echo
+            echo "* Download the \`docs-html-bilingual\` artifact, unpack it and open \`pyfcstm-docs-html/index.html\`."
+            echo "* Size: \`$(du -sh "${package}" | cut -f1)\` unpacked."
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload the bilingual HTML package
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-html-bilingual
+          if-no-files-found: warn
+          retention-days: 14
+          path: .ci/docs-html
+
+  docs_examples:
+    name: Docs examples
+    runs-on: ubuntu-22.04
+    needs: detect_docs_routes
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 20
+          submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Set up python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install docs dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-doc.txt
+          make build_assets
+          python -m pip install -e . --no-deps
+      - name: Run the examples written in the documentation pages
+        shell: bash
+        run: |
+          make docs_doctest
+
   docs_pdf:
     name: Docs PDF
     runs-on: ubuntu-24.04
@@ -382,6 +460,32 @@ jobs:
             echo "* English: \`${en_seconds}s\`, \`${en_pdf}\`"
             echo "* Chinese: \`${zh_seconds}s\`, \`${zh_pdf}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Collect the finished PDFs
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/docs-pdf-final
+          for language in en zh; do
+            # The book is the PDF that sits next to the main .tex file; the folder also
+            # holds small PDFs of figures, so a plain *.pdf search can pick the wrong one.
+            tex="$(find "docs/build/pdf/${language}/latex" -maxdepth 1 -type f -name '*.tex' -print -quit 2>/dev/null || true)"
+            pdf="${tex%.tex}.pdf"
+            if [ -n "${tex}" ] && [ -f "${pdf}" ]; then
+              cp "${pdf}" ".ci/docs-pdf-final/pyfcstm-${language}.pdf"
+            else
+              echo "No ${language} PDF was produced." >&2
+            fi
+          done
+          ls -l .ci/docs-pdf-final
+      - name: Upload the finished PDFs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-pdf-bilingual
+          if-no-files-found: warn
+          retention-days: 14
+          path: .ci/docs-pdf-final/*.pdf
       - name: Upload PDF build evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -498,15 +602,7 @@ jobs:
               '.puml.svg',
               '.gv.png',
               '.gv.svg',
-              '.demo.py.txt',
-              '.demox.py.txt',
-              '.demox.py.err',
-              '.demox.py.exitcode',
               '.plot.py.svg',
-              '.demo.sh.txt',
-              '.demox.sh.txt',
-              '.demox.sh.err',
-              '.demox.sh.exitcode',
               '.result.ipynb',
           )
 
@@ -527,6 +623,19 @@ jobs:
           def changed_file_exists(path):
               return Path(path).exists()
 
+          page_texts = None
+
+          def is_drawn(model_path):
+              # A model is drawn only when some page names its picture, as docs/source/fcstms.mk decides.
+              global page_texts
+              if page_texts is None:
+                  page_texts = '\n'.join(
+                      page.read_text(encoding='utf-8')
+                      for pattern in ('*.rst', '*.inc')
+                      for page in Path('docs/source').rglob(pattern)
+                  )
+              return (Path(model_path).name + '.puml.') in page_texts
+
           for changed_path in changed_paths:
               if changed_path.startswith('logos/'):
                   add_present('docs/source/_static/logos')
@@ -536,39 +645,30 @@ jobs:
               source_exists = changed_file_exists(changed_path)
               if changed_path.endswith('.full.fcstm'):
                   stem = changed_path[:-len('.full.fcstm')]
-                  add_for_source(stem + '.full.fcstm.puml', source_exists)
-                  add_for_source(stem + '.full.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.full.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.full.fcstm.puml', source_exists)
+                      add_for_source(stem + '.full.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.full.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.minimal.fcstm'):
                   stem = changed_path[:-len('.minimal.fcstm')]
-                  add_for_source(stem + '.minimal.fcstm.puml', source_exists)
-                  add_for_source(stem + '.minimal.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.minimal.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.minimal.fcstm.puml', source_exists)
+                      add_for_source(stem + '.minimal.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.minimal.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.fcstm'):
                   stem = changed_path[:-len('.fcstm')]
-                  add_for_source(stem + '.fcstm.puml', source_exists)
-                  add_for_source(stem + '.fcstm.puml.png', source_exists)
-                  add_for_source(stem + '.fcstm.puml.svg', source_exists)
+                  if is_drawn(changed_path) or not source_exists:
+                      add_for_source(stem + '.fcstm.puml', source_exists)
+                      add_for_source(stem + '.fcstm.puml.png', source_exists)
+                      add_for_source(stem + '.fcstm.puml.svg', source_exists)
               elif changed_path.endswith('.puml'):
                   add_for_source(changed_path + '.png', source_exists)
                   add_for_source(changed_path + '.svg', source_exists)
               elif changed_path.endswith('.gv'):
                   add_for_source(changed_path + '.png', source_exists)
                   add_for_source(changed_path + '.svg', source_exists)
-              elif changed_path.endswith('.demo.py'):
-                  add_for_source(changed_path + '.txt', source_exists)
-              elif changed_path.endswith('.demox.py'):
-                  add_for_source(changed_path + '.txt', source_exists)
-                  add_for_source(changed_path + '.err', source_exists)
-                  add_for_source(changed_path + '.exitcode', source_exists)
               elif changed_path.endswith('.plot.py'):
                   add_for_source(changed_path + '.svg', source_exists)
-              elif changed_path.endswith('.demo.sh'):
-                  add_for_source(changed_path + '.txt', source_exists)
-              elif changed_path.endswith('.demox.sh'):
-                  add_for_source(changed_path + '.txt', source_exists)
-                  add_for_source(changed_path + '.err', source_exists)
-                  add_for_source(changed_path + '.exitcode', source_exists)
               elif changed_path.endswith('.ipynb'):
                   add_for_source(changed_path[:-len('.ipynb')] + '.result.ipynb', source_exists)
               elif changed_path.endswith('.fcstm.puml.png'):
@@ -592,32 +692,8 @@ jobs:
               elif changed_path.endswith('.gv.svg'):
                   source = changed_path[:-len('.gv.svg')] + '.gv'
                   add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demo.py.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.err'):
-                  source = changed_path[:-len('.err')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.py.exitcode'):
-                  source = changed_path[:-len('.exitcode')]
-                  add_for_source(changed_path, changed_file_exists(source))
               elif changed_path.endswith('.plot.py.svg'):
                   source = changed_path[:-len('.svg')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demo.sh.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.txt'):
-                  source = changed_path[:-len('.txt')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.err'):
-                  source = changed_path[:-len('.err')]
-                  add_for_source(changed_path, changed_file_exists(source))
-              elif changed_path.endswith('.demox.sh.exitcode'):
-                  source = changed_path[:-len('.exitcode')]
                   add_for_source(changed_path, changed_file_exists(source))
               elif changed_path.endswith('.result.ipynb'):
                   source = changed_path[:-len('.result.ipynb')] + '.ipynb'

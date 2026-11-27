@@ -87,6 +87,7 @@ Allowed categories:
 - `validation`
 - `lifecycle`
 - `history`
+- `regions`
 
 ## Construction
 
@@ -102,6 +103,7 @@ initial:
 Allowed fields:
 
 - `initial.state`: dot-separated state path string or `null`
+- `initial.configuration`: start position of a regions case (see "Hot start of a region model")
 - `initial.vars`: control-variable initial values or `null`
 - `initial.outputs`: output initial values
 - `initial.expect.raises`: constructor exception expectation
@@ -110,7 +112,7 @@ Without `initial.state`, initial values may be partial: supplied values bypass
 those variables' default initializers; omitted values use DSL initialization.
 Normal entry actions still run when the machine starts cycling.
 
-With `initial.state`, `vars` and `outputs` together must supply every persistent
+With `initial.state` or `initial.configuration`, `vars` and `outputs` together must supply every persistent
 variable. The simulator restores the state hierarchy without replaying entry
 actions. A leaf target resumes active execution; a composite target still needs
 its internal initial transition. Parameters are supplied only at top level;
@@ -122,7 +124,7 @@ is also legal and means no hot-start target is provided. `cycle: null` is still
 rejected; `null` is only meaningful for explicit state sentinels such as
 `initial.state` and `expect.state`.
 
-When `initial.expect` is present, `initial.state` and at least one of
+When `initial.expect` is present, `initial.state` (`initial.configuration` in a regions case) and at least one of
 `initial.vars` / `initial.outputs` must be explicit. Constructor-failure fixtures
 must use `steps: []`.
 
@@ -219,7 +221,7 @@ cycles leave persistent state unchanged; the next step explicitly supplies its
 own external input frame. Provider caching, advancement and override ergonomics
 belong in dedicated simulator unit tests.
 
-Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All 17 role cases run in the simulator and all five generated runtimes. Sixteen run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
+Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All 27 role cases run in the simulator and all five generated runtimes. Twenty-six run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
 
 When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.
@@ -233,7 +235,8 @@ and event-object descriptors such as
 
 | Field | Meaning |
 |---|---|
-| `state` | Expected current state path as a dot-separated string, or `null` for ended runtime. |
+| `state` | Expected current state path as a dot-separated string, or `null` for ended runtime. Models that declare regions use `configuration` instead. |
+| `configuration` | Expected position as configuration text, for example `Root.P{R1: X, R2: [done]}`. The text must equal `str(runtime.configuration)`; it is compared as written, so write it in canonical form. |
 | `vars` | Partial control-variable value assertion: check only the named keys. |
 | `outputs` | Partial output value assertion: check only the named keys. |
 | `ended` | Expected `runtime.is_ended`. |
@@ -270,6 +273,143 @@ Rules:
   private state IDs remain rejected. Runtime count/history and event-ledger
   fields remain simulator-only; only `delta` is shared.
 
+## Region cases
+
+A case in the `regions` category exercises a model that declares regions. It
+always runs in the simulator and in the generated Python runner. The `bmc_core`
+runner takes a region case once its relation reports the configuration, the
+variables and the Delta classification of every cycle. It does not report the
+call fields of a handler call, so it checks such a case without its
+`handler_calls` and says so in `test/bmc/semantic_fixture_policy.py`; every
+other field must be one it checks. A case that hot-starts keeps `bmc_core`
+excluded, because the relation only starts cold, and so does a case whose cycle
+the runtime refuses with an error, because a bounded relation has no run to
+compare: such a case sets `exclude_runners: [bmc_core]`. The native C-family
+runners are not named in `exclude_runners`: a native template runs every
+`regions` case when it declares the `region` feature in its `config.yaml`, and
+none otherwise. A region case that
+hot-starts names the start position with `initial.configuration` (see below)
+instead of `initial.state`.
+
+### Hot start of a region model
+
+A region case may declare `initial` to hot-start the runtime. Because the start
+position of a model with regions is a tree, it is written with
+`initial.configuration` instead of `initial.state`: a non-empty string handed to
+`SimulationRuntime(initial_state=...)` as it stands. The string is anything that
+argument accepts for a model with regions, for example a configuration text such
+as `Root.P{A: A1, B: [init]}`, a region left out so that it waits for
+initialization, or a plain state path. `initial.state` is rejected in a region
+case and `initial.configuration` in any other case. `initial.vars` must still
+list every persistent variable, hidden ones included, and `initial.expect.raises`
+works as for any other case: it asserts that constructing the runtime fails.
+
+```yaml
+initial:
+  configuration: "Root.P{A: A2, B: [init]}"
+  vars:
+    n: 0
+```
+
+### Position
+
+A model with regions can rest in several leaves at once, so a region case never
+uses `state`. Every step asserts the whole position instead:
+
+- `configuration`: the text of `str(runtime.configuration)`, for example
+  `Root.P{A: K.L, B: [done]}`; or
+- `ended: true` for a machine that has terminated. The two cannot be combined.
+
+The loader rejects a region case with a step that asserts neither, that uses
+`state`, or that combines a configuration with `ended: true`. It also rejects
+`configuration`, in `expect` or in a handler-call record, in any other case:
+those cases keep `state`, and their runners are not asked to produce
+configuration text.
+
+Before a region case runs, `check_configuration_texts` parses every
+configuration text against the model. A text must be in canonical form: an
+owner lists all of its regions in declaration order as `name: position`
+separated by `, `, a finished region is `[done]` and a region that has not
+started is `[init]`. The position after a step must be one the machine can rest
+in, or the not-yet-started position that a cold start begins from and a
+cold-start Delta keeps. The position recorded for a handler call may also be an
+intermediate one, for example `Root.P{A: A1, B: [init]}` while a group is being
+entered. A text that names no position of the model, or that is not canonical,
+is reported as a fixture error before any cycle runs, so a runner that parses
+the text can rely on it.
+
+### Order of actions
+
+The corpus has no trace observation, because not every runner has one. The
+order of actions is pinned through a witness variable: each action of interest
+appends one digit with `seq = seq * 10 + k`, so the expected value spells the
+expected order. A case that pins an order says in a comment or note which
+action writes which digit.
+
+### Handler calls
+
+Records of a region case may add a `configuration` string, the configuration
+text at the moment of the call. `state` and `active_leaf` name the deepest state
+common to everything the action wraps: the leaf for an action of a leaf or of a
+scope that wraps one branch, including an owner of a single region, and the
+owner for an aspect that wraps several regions.
+
+### What a runner needs to run region cases
+
+A runner can drop itself from `exclude_runners` once it can report, after every
+cycle, the canonical configuration text or termination, the variables, whether
+the cycle was a Delta, and for every handler call the fields above. It needs no
+trace, event accounting or single-path state for these cases. A runner that does
+not report the handler calls may still take a case, provided it lists the
+observation it leaves out in its own policy instead of passing over it
+silently.
+
+### Rules the region cases pin
+
+The comments in `pyfcstm/simulate/runtime.py` state the rules; each has at least
+one case in this corpus, and `region_*` case titles say which.
+
+- Order: regions start and work in declaration order, a nested group completely
+  before the next outer region; a later region sees the writes of an earlier
+  one in the same cycle and the last writer wins.
+- Completion: a finished region waits as `[done]`; the last region to finish is
+  accepted only if the owner can continue in the same cycle, judged with the
+  owner's plain `during after` applied, before the completing transition and
+  along the chain of enclosing owners; finishing through a composite counts.
+  Regions that all finish while the group is entered continue at once.
+- Continuation candidates: all outgoing transitions of the owner in the model's
+  `transitions_from` order, so forced expansions precede ordinary transitions.
+- Group preemption: only forced transitions of the owner or of an ancestor take
+  a working group, checked before any region works, the first declared one
+  that can commit; ordinary transitions of the owner do not. Leaving exits
+  regions in reverse order, the deepest state first, a nested group before its
+  owner, each composite and the owner running their plain `during after` before
+  their `exit`; finished regions have nothing to exit. A forced transition
+  declared inside a region moves only that region.
+- Aspects: "during work" means the leaf ran its during step, declared action or
+  not; pseudo states never count. `before` actions run once per scope and
+  cycle, outermost first, ahead of the first work below the scope. `after`
+  actions run at the end of a region branch and at the end of the cycle, deeper
+  scopes first, and never in a Delta cycle. A rejected candidate leaves no
+  record of the aspects it ran while being tried.
+- Plain `during before` of the owner: once per entry, after the effect of the
+  first initial transition that enters a real state and before that state is
+  entered; a region that finishes through pseudo states does not use it up.
+- Group entry: later regions never make earlier regions try other candidates; a
+  failed entry rejects that candidate, only a cold start is a Delta, and a
+  failed start is not repeated on the values it left behind.
+- Handlers: nothing is called while a cycle is tried or when it ends as a Delta;
+  while a group is left, regions that already left show as `[done]`.
+- Loops: a loop back to the same position and values is a dead path, also when
+  it runs through an owner finishing and being entered again, so the next
+  candidate is taken; it is reported as `SimulationRuntimeDfsError`, at the
+  owner, only when nothing else is left to try. Only the region that finishes
+  last is judged for leading back; an earlier region finishes without asking
+  what follows. What is decided while a cycle is tried is what the cycle does;
+  changing values make it unbounded, which ends in the same error class. A
+  group that is re-entered a bounded number of times within one cycle is judged
+  on the current values each time.
+
 ## Exceptions
 
 ```yaml
@@ -291,6 +431,10 @@ Allowed exception type names:
 - `SimulationRuntimeEventError`
 - `SimulationRuntimeExpressionError`
 - `ValueError`
+
+`type` names the nearest public class of the exception. A runtime may raise a
+private subclass, whose name starts with an underscore, for a more specific
+situation; the fixture names the class a caller would catch.
 
 `match_kind` and `cause_match_kind` may be `substring` or `regex`; default is
 `substring`. `cause_match_kind` requires `cause_match`.
@@ -353,7 +497,8 @@ alignment runner checks construction outcomes and, after every step:
 
 - `is_ended`
 - variables
-- current state path
+- current state path, or for a model with regions the whole `configuration`
+  text (the generated runtime exposes it as `configuration`, a string)
 - `delta` (simulator `CycleResult.delta` versus the generated runtime's public
   `last_cycle_was_delta` getter)
 - expected exception class names, messages, and causes

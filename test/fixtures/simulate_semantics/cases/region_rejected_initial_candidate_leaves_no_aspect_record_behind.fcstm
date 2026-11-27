@@ -1,0 +1,16 @@
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P {
+        >> during before { n = n + 1; }
+        region A {
+            [*] -> Q;
+            [*] -> A1;
+            state Q {
+                region X { [*] -> x1; state x1; }
+                region Y { [*] -> y1 : if [n == 99]; state y1; }
+            }
+            state A1;
+        }
+    }
+}

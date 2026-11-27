@@ -10,9 +10,12 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from test.template.native_role_utils import NativeRoleSupport
+from test.template.native_role_utils import event_paths_in_id_order
+from test.template.native_role_utils import namespace_action_groups
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model.region import walk_namespaces
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template
 from pyfcstm.utils import (
@@ -67,7 +70,11 @@ def _runtime_exception_from_message(message):
     if (
         'structural stack-depth safety limit' in message
         or 'step safety limit' in message
+        or 'safety limit' in message
+        or 'suspected loop' in message
     ):
+        # The simulator's search failures: a closed loop, or a safety limit on
+        # the speculative steps, the stack depth or the nesting of group entries.
         return SimulationRuntimeDfsError(message), None
     if 'operation block writeback' in message:
         # A failed writeback is a runtime error of the cycle, reported without
@@ -85,6 +92,8 @@ def _runtime_exception_from_message(message):
     if (
         'outside signed 64-bit range' in message
         or 'cannot reach a stoppable state' in message
+        or 'All regions are Done' in message
+        or 'Invalid configuration' in message
     ):
         return ValueError(message), None
     return RuntimeError(message), None
@@ -288,16 +297,8 @@ def _load_runtime_library(shared_lib):
 def _collect_hook_info_rows(model):
     rows = []
     seen_abstract_paths = set()
-    for state in model.walk_states():
-        groups = [
-            state.list_on_enters(with_ids=True),
-            state.list_on_durings(aspect=None, with_ids=True),
-            state.list_on_exits(with_ids=True),
-            state.list_on_durings(aspect='before', with_ids=True),
-            state.list_on_durings(aspect='after', with_ids=True),
-            state.list_on_during_aspects(aspect='before', with_ids=True),
-            state.list_on_during_aspects(aspect='after', with_ids=True),
-        ]
+    for scope in walk_namespaces(model.root_state):
+        groups = namespace_action_groups(scope)
         for group in groups:
             for _, item in group:
                 resolved = item
@@ -326,16 +327,8 @@ def _collect_hook_info_rows(model):
 def _collect_action_paths(model):
     paths = []
     seen_paths = set()
-    for state in model.walk_states():
-        groups = [
-            state.list_on_enters(with_ids=True),
-            state.list_on_durings(aspect=None, with_ids=True),
-            state.list_on_exits(with_ids=True),
-            state.list_on_durings(aspect='before', with_ids=True),
-            state.list_on_durings(aspect='after', with_ids=True),
-            state.list_on_during_aspects(aspect='before', with_ids=True),
-            state.list_on_during_aspects(aspect='after', with_ids=True),
-        ]
+    for scope in walk_namespaces(model.root_state):
+        groups = namespace_action_groups(scope)
         for group in groups:
             for _, item in group:
                 if item.func_name in seen_paths:
@@ -369,13 +362,20 @@ class _ExecutionContextView:
     def get_full_state_path(self):
         return self.state_path
 
+    @property
+    def configuration(self):
+        # Read through the generated runtime while the hook runs: it reports the
+        # position of the cycle being executed, not the committed one.
+        return self._runtime.configuration
+
 
 class _EventContextView:
     def __init__(self, runtime, ctx_struct):
         self._runtime = runtime
         self._vars_ptr = ctx_struct.vars
         self.event_path = runtime._event_path_from_id(ctx_struct.event_id) or ''
-        self.current_state_path = runtime._state_path_from_id(ctx_struct.current_state_id) or ''
+        state_id = getattr(ctx_struct, 'current_state_id', None)
+        self.current_state_path = runtime._state_path_from_id(state_id) or '' if state_id is not None else ''
 
     def get_var(self, name):
         return self._runtime._get_var_from_vars_ptr(self._vars_ptr, name)
@@ -416,10 +416,7 @@ class _CPollRuntime(NativeRoleSupport):
         self._state_ids = {
             path: index for index, path in enumerate(self._state_paths)
         }
-        self._event_paths = []
-        for state in model.walk_states():
-            for event in state.events.values():
-                self._event_paths.append(event.path_name)
+        self._event_paths = event_paths_in_id_order(model)
         self._event_ids = {
             path: index for index, path in enumerate(self._event_paths)
         }
@@ -456,9 +453,12 @@ class _CPollRuntime(NativeRoleSupport):
             argtypes=[ctypes.c_void_p],
             restype=ctypes.POINTER(self._vars_struct),
         )
-        self._current_state_path = self._bind_function(
-            '{prefix}_current_state_path', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
-        )
+        if not model.has_regions:
+            # A model with regions has no single current state, so its runtime
+            # does not export the single-state queries.
+            self._current_state_path = self._bind_function(
+                '{prefix}_current_state_path', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
+            )
         self._is_ended = self._bind_function(
             '{prefix}_is_ended', argtypes=[ctypes.c_void_p], restype=ctypes.c_int
         )
@@ -490,12 +490,15 @@ class _CPollRuntime(NativeRoleSupport):
                 ('named_ref_id', ctypes.c_int),
             ]
 
+        # A model with regions has no single current state, so its event
+        # context carries no state id.
+        event_context_fields = [('event_id', ctypes.c_int)]
+        if not model.has_regions:
+            event_context_fields.append(('current_state_id', ctypes.c_int))
+        event_context_fields.append(('vars', ctypes.c_void_p))
+
         class _EventContextStruct(ctypes.Structure):
-            _fields_ = [
-                ('event_id', ctypes.c_int),
-                ('current_state_id', ctypes.c_int),
-                ('vars', ctypes.c_void_p),
-            ]
+            _fields_ = event_context_fields
 
         self._context_struct = _ContextStruct
         self._event_context_struct = _EventContextStruct
@@ -620,6 +623,9 @@ class _CPollRuntime(NativeRoleSupport):
         if not event_ref:
             raise ValueError('event items cannot be empty strings.')
 
+        if self._model.has_regions and not self.is_ended:
+            return self._resolve_event_id_by_configuration(event_ref)
+
         current_path_tuple = self.current_state_path
         current_path = '.'.join(current_path_tuple) if current_path_tuple is not None else None
         root_path = '.'.join(self._model.root_state.path)
@@ -660,6 +666,12 @@ class _CPollRuntime(NativeRoleSupport):
         if set(initial_vars.keys()) != set(self._var_names):
             raise ValueError('initial_vars must provide all variables exactly once.')
         values = self._create_initial_vars(initial_vars)
+        if self._model.has_regions and isinstance(initial_state, str) and '{' in initial_state:
+            # The position of a model with regions is a tree, written as
+            # configuration text and parsed by the generated runtime itself.
+            # A plain state path names one state and goes through its id.
+            self.hot_start_at(initial_state, values, parameters)
+            return
         state_id = self._resolve_state_id(initial_state)
         self._hot_start_with_parameters(state_id, values, parameters)
 
@@ -817,6 +829,8 @@ class _CPollRuntime(NativeRoleSupport):
 
     @property
     def current_state_path(self):
+        if self._model.has_regions:
+            raise AttributeError('a model with regions has no single current state')
         value = self._current_state_path(self._machine)
         if not value:
             return None

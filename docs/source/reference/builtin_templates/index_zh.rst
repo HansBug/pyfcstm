@@ -103,6 +103,509 @@
 
 每个内置模板都会生成 ``README.md`` 和 ``README_zh.md``。这些文件由模型生成，应视为该生成机器的具体集成契约。它们提供本通用参考无法完全预知的名称和编号：类名、C 前缀、钩子名、事件编号、状态编号、热启动例子和目标构建片段。
 
+.. _sec-reference-builtin-templates-regions-zh:
+
+含区域的模型
+------------
+
+五套内置模板的 ``config.yaml`` 都声明了 ``features: [region]``\ （见 :ref:`sec-reference-template-config-features-zh`），所以 ``pyfcstm generate --template <name>`` 能渲染声明了 ``region`` 块的模型，嵌套的区域（region）也不例外。自定义模板目录遇到这样的模型会被拒绝，除非它自己声明了这个特性。拒绝的文字见 :doc:`/reference/template_config/index_zh`。生成的运行时遵循模拟器对区域的规则：区域的拥有者（owner）按书写顺序推进各个区域，靠后的区域能读到靠前区域在同一周期写入的值，机器的位置是一棵树而不是一条路径，由配置（configuration）值表示。这些规则见 :doc:`/explanations/region_semantics/index_zh`。
+
+下面的事实取自 ``pyfcstm generate --template X`` 为 ``controller.fcstm``\ （``Running`` 里有两个区域）和 ``plain_no_region.fcstm``\ （没有区域）写出的文件，以及各自生成的 ``README.md``。仓库的模板测试把 118 个共享区域用例（``test/fixtures/simulate_semantics/cases`` 下的 ``region_*.yaml``）对每个内置模板运行一遍：Python 模板与 ``SimulationRuntime`` 对比，四套 C 家族模板则编译后运行并与它对比。本页没有重跑这些测试套件。
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+   :caption: controller.fcstm
+
+.. literalinclude:: /_models/plain_no_region.fcstm
+   :language: fcstm
+   :caption: plain_no_region.fcstm
+
+位置与查询
+~~~~~~~~~~
+
+.. list-table:: 按模板和模型种类读取位置
+   :header-rows: 1
+
+   * - 模板
+     - 含区域的模型
+     - 不含区域的模型
+   * - ``python``
+     - ``configuration``\ （位置文本）、``leaves``\ （路径元组的元组）、``is_active(path)``、``region_status(path)``。没有 ``current_state_path``，也没有 ``current_state_name``：读取其中任何一个都是 ``AttributeError``。
+     - 同样四个成员，另有 ``current_state_path``\ （元组，终止后为 ``None``）和 ``current_state_name``。``region_status`` 不存在。
+   * - ``c``、``c_poll``
+     - ``<Prefix>_get_configuration`` 填充一个 ``<Prefix>Configuration`` 值（``at`` 加每个区域一个槽位）；该值有查询、校验、格式化与解析函数。``machine.h`` 里没有声明 ``<Prefix>_current_state_id``、``_path`` 和 ``_name``，调用它们无法通过编译。
+     - 配置函数同样存在；``<Prefix>_current_state_id``、``_path`` 和 ``_name`` 也存在。
+   * - ``cpp``、``cpp_poll``
+     - ``MachineWrapper::get_configuration`` 加静态的 ``region_status``、``is_active``、``leaves``、``validate_configuration``、``format_configuration`` 和 ``parse_configuration``。没有声明 ``current_state_id()`` 和 ``current_state_path()``。
+     - 同样的成员，另有 ``current_state_id()`` 和 ``current_state_path()``。
+
+位置文本与 ``SimulationRuntime`` 打印的一致。``Controller.Idle`` 是不含区域的位置；``Controller.Running{Safety: Watching, Motion: On}`` 写出每个区域最深的状态；``[done]`` 代替已完成区域的状态，``[init]`` 代替等待初始转换的区域（等待初始化）。Python 的 ``region_status(path)`` 返回四个字符串之一，C 里对应的四个值是 ``<PREFIX>_REGION_STATUS_*`` 宏：
+
+.. list-table:: 区域状态值
+   :header-rows: 1
+
+   * - Python 字符串
+     - C 宏（取值）
+     - 含义
+   * - ``'live'``
+     - ``..._REGION_STATUS_LIVE``\ （2）
+     - 拥有者活动，区域里有一个活动状态。
+   * - ``'done'``
+     - ``..._REGION_STATUS_DONE``\ （3）
+     - 区域已完成，直到拥有者再次进入之前一直保持已完成。
+   * - ``'pending'``
+     - ``..._REGION_STATUS_PENDING``\ （1）
+     - 拥有者活动，区域还没有执行初始转换（文本 ``[init]``）。
+   * - ``'inactive'``
+     - ``..._REGION_STATUS_INACTIVE``\ （0）
+     - 拥有者不在位置里。
+
+``region_status`` 对状态路径抛出 ``ValueError``\ （``region_status requires a Region path.``），对不存在的路径也抛出 ``ValueError``\ （``Unknown configuration path: 'Controller.Nowhere'.``）。
+
+Python 运行时
+~~~~~~~~~~~~~
+
+.. list-table:: Python 生成运行时的公开接口
+   :header-rows: 1
+
+   * - 成员
+     - 约定
+   * - ``Machine(initial_state=None, initial_vars=None, *, parameters=None)``
+     - 冷启动构造；给出 ``initial_state`` 时是完整的热启动恢复。
+   * - ``initial_state``
+     - 位置文本、点路径或名字元组。含区域的模型：写出的叶子直接就位，不执行 enter 动作；没写出的部分等待初始化（``[init]``），在第一个周期执行它们的初始转换。写成 ``[done]`` 的区域保持已完成；拥有者的区域全部是 ``[done]`` 时抛出 ``ValueError``。
+   * - ``initial_vars``
+     - 热启动时给出全部变量，``__forced_0`` 这样的隐藏变量也不例外。冷启动接受只含控制变量和输出变量的部分映射。
+   * - ``cycle(events=None, *, inputs=None)``
+     - 返回 ``None``。通过 ``configuration``、``vars``、``is_ended``、``last_cycle_was_delta`` 观察结果。
+   * - ``vars``
+     - 已提交变量的只读映射视图；没有 ``variables`` 别名。
+   * - ``ABSTRACT_HOOKS``、``get_abstract_hook_map()``
+     - DSL 抽象动作到覆写方法名的只读映射；``get_abstract_hook_map()`` 返回副本。
+   * - 钩子上下文 ``ctx``
+     - ``vars``、``inputs``、``parameters``、``state_path``、``active_leaf``、``action_name``、``abstract_target``、``action_stage``、``call_stage``、``named_ref`` 和 ``configuration``。对包住多个区域的动作，``state_path`` 与 ``active_leaf`` 是所有分支共有的最深状态，例如拥有者。
+   * - 事件名
+     - 绝对路径、以 ``/`` 开头的路径、以 ``.`` 开头的相对路径，或短名。含区域的模型里，短名对每个活动叶子各解析一次；一个都找不到抛出 ``SimulationRuntimeEventError``，找到的相同则使用，找到的不同则报歧义并列出全部候选。处于 ``[init]`` 的区域没有活动叶子，不参与解析。
+
+下面的命令为三个模型生成 Python 运行时，其后的脚本驱动生成出的 ``machine.py``\ 。
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template python -o controller_py
+   $ pyfcstm generate -i region_probe.fcstm --template python -o probe_py
+   $ pyfcstm generate -i plain_no_region.fcstm --template python -o plain_py
+
+第一个脚本冷启动控制器，读取 ``/Start`` 事件前后的位置文本、四种区域状态，以及 ``/Stop`` 之后的隐藏变量：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   sensors = {"fault": 0, "requested": 1}
+   machine.cycle(inputs=sensors)
+   print("first cycle:", machine.configuration)
+   machine.cycle("/Start", inputs=sensors)
+   print("after /Start:", machine.configuration)
+   machine.cycle(inputs=sensors)
+   print("next cycle:", machine.configuration)
+   print("motor:", machine.vars["motor"])
+   print("leaves:", machine.leaves)
+   print("is_active(Controller.Running):", machine.is_active("Controller.Running"))
+   print("is_active(Controller.Idle):", machine.is_active("Controller.Idle"))
+   for path in ("Controller.Running.Safety", "Controller.Running.Motion"):
+       print("region_status(%s): %s" % (path, machine.region_status(path)))
+   machine.cycle("/Stop", inputs=sensors)
+   print("after /Stop:", machine.configuration)
+   print("region_status(Controller.Running.Safety):", machine.region_status("Controller.Running.Safety"))
+   print("hidden variable __forced_0:", machine.vars["__forced_0"])
+
+.. testoutput::
+
+   first cycle: Controller.Idle
+   after /Start: Controller.Running{Safety: Watching, Motion: Off}
+   next cycle: Controller.Running{Safety: Watching, Motion: On}
+   motor: 1
+   leaves: (('Controller', 'Running', 'Safety', 'Watching'), ('Controller', 'Running', 'Motion', 'On'))
+   is_active(Controller.Running): True
+   is_active(Controller.Idle): False
+   region_status(Controller.Running.Safety): live
+   region_status(Controller.Running.Motion): live
+   after /Stop: Controller.Idle
+   region_status(Controller.Running.Safety): inactive
+   hidden variable __forced_0: 0
+
+第二个脚本展示区域模型上不存在的 ``current_state_path`` 和被拒绝的路径：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   machine = ControllerMachine()
+   try:
+       machine.current_state_path
+   except AttributeError as err:
+       print("AttributeError:", err)
+   for path in ("Controller.Idle", "Controller.Nowhere"):
+       try:
+           machine.region_status(path)
+       except ValueError as err:
+           print("ValueError:", err)
+
+.. testoutput::
+
+   AttributeError: 'ControllerMachine' object has no attribute 'current_state_path'
+   ValueError: region_status requires a Region path.
+   ValueError: Unknown configuration path: 'Controller.Nowhere'.
+
+第三个脚本给出 ``initial_state`` 的六种写法及其位置，以及所有区域都是 ``[done]`` 时的拒绝：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "controller_py")
+   from machine import ControllerMachine
+
+   base_vars = {"permit": 0, "motor": 0, "__forced_0": 0}
+   spellings = [
+       ("configuration text", "Controller.Running{Safety: Watching, Motion: On}"),
+       ("text, region left out", "Controller.Running{Motion: On}"),
+       ("text, region [init]", "Controller.Running{Safety: Watching, Motion: [init]}"),
+       ("dotted path through a region", "Controller.Running.Motion.On"),
+       ("owner path only", "Controller.Running"),
+       ("tuple", ("Controller", "Running", "Motion", "On")),
+   ]
+   for label, state in spellings:
+       m = ControllerMachine(initial_state=state, initial_vars=dict(base_vars))
+       print("%s: %s | Safety=%s Motion=%s" % (
+           label, m.configuration,
+           m.region_status("Controller.Running.Safety"),
+           m.region_status("Controller.Running.Motion")))
+   try:
+       ControllerMachine(
+           initial_state="Controller.Running{Safety: [done], Motion: [done]}",
+           initial_vars=dict(base_vars))
+   except ValueError as err:
+       print("ValueError:", err)
+
+.. testoutput::
+
+   configuration text: Controller.Running{Safety: Watching, Motion: On} | Safety=live Motion=live
+   text, region left out: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   text, region [init]: Controller.Running{Safety: Watching, Motion: [init]} | Safety=live Motion=pending
+   dotted path through a region: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   owner path only: Controller.Running{Safety: [init], Motion: [init]} | Safety=pending Motion=pending
+   tuple: Controller.Running{Safety: [init], Motion: On} | Safety=pending Motion=live
+   ValueError: All regions are Done at 'Controller.Running'; a finished owner cannot be hot-started.
+
+第四个脚本是一个包住两个区域的动作的钩子上下文，模型如下：
+
+.. literalinclude:: region_probe.fcstm
+   :language: fcstm
+   :caption: region_probe.fcstm
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "probe_py")
+   from machine import LineMachine
+
+
+   class Probe(LineMachine):
+       def read_fault(self):
+           return 0
+
+       def _log(self, name, ctx):
+           print("%s: state_path=%s active_leaf=%s configuration=%s" % (
+               name, ".".join(ctx.state_path), ".".join(ctx.active_leaf), ctx.configuration))
+
+       def _abstract_hook_Line_Boot(self, ctx):
+           self._log("Boot", ctx)
+
+       def _abstract_hook_Line_Work_Left_L_Tick(self, ctx):
+           self._log("Tick", ctx)
+
+       def _abstract_hook_Line_Work_Settle(self, ctx):
+           self._log("Settle", ctx)
+
+
+   probe = Probe()
+   probe.cycle()
+   print("cycle 1 configuration:", probe.configuration)
+   probe.cycle()
+
+.. testoutput::
+
+   Boot: state_path=Line active_leaf=Line configuration=Line
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: [init]}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+   cycle 1 configuration: Line.Work{Left: L, Right: R}
+   Tick: state_path=Line.Work.Left.L active_leaf=Line.Work.Left.L configuration=Line.Work{Left: L, Right: R}
+   Settle: state_path=Line.Work active_leaf=Line.Work configuration=Line.Work{Left: L, Right: R}
+
+最后一个脚本展示不含区域的模型上的同样成员：
+
+.. testcode::
+
+   import sys
+
+   sys.path.insert(0, "plain_py")
+   from machine import PlainMachine
+
+   plain = PlainMachine()
+   plain.cycle()
+   print("current_state_path:", plain.current_state_path)
+   print("current_state_name:", plain.current_state_name)
+   print("configuration:", plain.configuration)
+   print("leaves:", plain.leaves)
+   print("has region_status:", hasattr(plain, "region_status"))
+
+.. testoutput::
+
+   current_state_path: ('Plain', 'Idle')
+   current_state_name: Idle
+   configuration: Plain.Idle
+   leaves: (('Plain', 'Idle'),)
+   has region_status: False
+
+读输出时注意：
+
+* 第一个周期只是进入 ``Controller.Idle``；第二个周期收到的 ``/Start`` 事件让机器进入 ``Controller.Running{Safety: Watching, Motion: Off}``，第三个周期才打开电机，所以位置文本里每个区域各占一项；
+* ``/Stop`` 之后拥有者被离开，两个区域都报告 ``inactive``，隐藏变量 ``__forced_0`` 回到 ``0``；
+* ``initial_state`` 的六种写法只产生四种不同的位置：被省略的区域、通过点路径穿过另一个区域的写法，以及只写拥有者的路径，都会让没写出的区域处于 ``[init]``；显式写成 ``[init]`` 的区域同样是 ``pending``；
+* 热启动不是一个周期：位置被设定，不执行任何 enter 动作，之后的第一个周期才初始化等待中的区域；
+* 在探针模型里，``Tick`` 位于 ``Left`` 内部，报告那个叶子；``Settle`` 包住两个区域，报告拥有者 ``Line.Work``。第一个周期里 ``Tick`` 看到 ``Right`` 是 ``[init]``，因为 ``Left`` 先进入，而 ``ctx.configuration`` 是调用那一刻的位置。
+
+这次运行没有展示已完成的区域。``region_status`` 对它返回 ``'done'`` 由共享区域用例覆盖，不由本页覆盖。
+
+C 家族运行时
+~~~~~~~~~~~~
+
+四套 C 家族模板共用一套内核发射器：``c`` 和 ``cpp`` 以编号传入事件，``c_poll`` 和 ``cpp_poll`` 查询事件检查表，C++ 模板包装 C 核心。对含区域的模型：
+
+.. list-table:: C 家族生成运行时的公开接口（``<Prefix>`` 是生成的前缀，例如 ``ControllerMachine``）
+   :header-rows: 1
+
+   * - 成员
+     - 约定
+   * - ``<Prefix>Configuration``
+     - 普通值：``at`` 是所有区域之外最深的活动状态，``regions[r]`` 是区域 ``r`` 最深的活动状态、``<PREFIX>_REGION_SLOT_PENDING``\ （0）或 ``<PREFIX>_REGION_SLOT_DONE``\ （-1）。合法值只有一种表示，所以可以用 ``memcmp`` 比较两个值；C++ 包装层另外提供 ``operator==`` 和 ``operator!=``。
+   * - ``<Prefix>_get_configuration(machine, &cfg)``
+     - 写出当前位置；机器结束之后返回 0。
+   * - ``<Prefix>_hot_start_at(machine, &cfg, &vars)``、``..._hot_start_at_with_parameters(...)``
+     - 恢复位置和完整的变量快照，不执行 enter 动作。按状态编号的 ``hot_start`` 仍然存在，用于所有区域之外的状态。
+   * - ``configuration_region_status``、``configuration_is_active``、``configuration_leaves``
+     - 接受配置值、不需要机器的查询。``configuration_leaves(cfg, NULL, 0u)`` 用来数叶子。
+   * - ``configuration_validate(cfg, &err)``
+     - 值合法返回 1，否则返回 0 并填写 ``<Prefix>ConfigurationError``：``kind``\ （``<PREFIX>_CONFIGURATION_ERROR_*``，1 到 11）、字节 ``position`` 和 ``message``。
+   * - ``configuration_format(cfg, buf, size)``、``configuration_parse(text, &cfg, &err)``
+     - 文本形式，与模拟器逐字节相同。``format`` 按 ``size`` 截断并返回完整长度。``parse`` 失败时不改动 ``cfg``；文本里省略的区域是等待初始化。为 ``machine.c`` 和每个使用者定义 ``PYFCSTM_GENERATED_NO_CONFIGURATION_TEXT`` 时，两者都被省略。
+   * - ``<PREFIX>_REGION_COUNT``、``<PREFIX>_REGION_<path>``
+     - 区域个数，以及每个区域一个区域编号，按拥有者顺序、同一拥有者内按书写顺序。
+   * - ``<Prefix>ExecutionContext``
+     - ``state_id`` 与 ``active_leaf_state_id`` 取同一个值：区域内的动作是它自己的状态，切面或拥有者的动作是它包住的全部内容共有的最深状态。含区域的模型没有唯一的叶子，所以用 ``get_configuration`` 读位置。
+   * - ``<PREFIX>_ARENA_CAPACITY``、``<PREFIX>_TRAIL_CAPACITY``、``<PREFIX>_STORAGE_BYTES``
+     - 机器的静态容量；见下面的容量表。
+
+``c`` / ``cpp`` 与 ``c_poll`` / ``cpp_poll`` 有两处不同：
+
+* ``c``：``<Prefix>_cycle(machine, event_ids, count)`` 与 ``<Prefix>_cycle_with_inputs(machine, event_ids, count, &inputs)``；``cpp``：``cycle()``、``cycle(event_id)``、``cycle(ids, count)`` 与 ``cycle_with_inputs(inputs, ids, count)``；
+* ``c_poll``：``<Prefix>_set_event_checks(machine, &checks, user_data)`` 配一张 ``<Prefix>EventChecks`` 表（每个事件一个 ``check_<event>`` 函数，对本模型用 ``CONTROLLERMACHINE_EVENT_CHECKS_INIT`` 初始化，即大写的类型名，不带分隔符），再用 ``<Prefix>_cycle(machine)`` 与 ``<Prefix>_cycle_with_inputs(machine, &inputs)``；``cpp_poll``：``set_event_checks`` 与 ``cycle_with_inputs(inputs)``。检查函数拿到的 ``<Prefix>EventContext`` 有 ``event_id`` 和 ``vars``；不含区域的模型还有 ``current_state_id``，含区域的模型没有它。
+
+.. list-table:: C 家族生成运行时的容量宏
+   :header-rows: 1
+
+   * - 宏
+     - ``controller.fcstm``
+     - ``plain_no_region.fcstm``
+     - 含义
+   * - ``<PREFIX>_ARENA_CAPACITY``
+     - 108
+     - 8
+     - 一个周期的一次判定最多能检查多少个配置和待办项。默认值取决于模型：``controller.fcstm`` 是 ``max(24, 12 * scopes)``，降级后有 7 个状态和 2 个区域，共 9。
+   * - ``<PREFIX>_TRAIL_CAPACITY``
+     - 52
+     - 4
+     - 最多能嵌套多少层检查。默认值取决于模型。
+   * - ``<PREFIX>_STORAGE_BYTES``
+     - 14272（``c`` 与 ``cpp`` 是 ``944 + 108 * 108 + 52 * 32``；``c_poll`` 与 ``cpp_poll`` 的常数项是 976）
+     - ``c`` 与 ``cpp`` 是 ``848 + 8 * 68 + 4 * 32``；``c_poll`` 与 ``cpp_poll`` 的常数项是 880
+     - 由前两个宏推出；机器类型就是这么多字节的静态、不透明存储。
+
+这些宏取代了运行时不再定义的 ``MAX_STACK_DEPTH`` 与 ``MAX_DFS_STEPS``。机器的大小取决于它们，所以改动后的值要对 ``machine.c`` 和每个包含 ``machine.h`` 的文件一致地定义，例如 ``-DCONTROLLER_MACHINE_ARENA_CAPACITY=480``。某个周期需要更多空间时会失败，``last_error()`` 以 ``Speculative search exceeded the capacity safety limit`` 开头并点出要调大的宏。由模型决定的深度和步数上限（``Speculative DFS exceeded the structural stack-depth safety limit``、``Group initialization nested deeper than the structural safety limit``、``Speculative DFS exceeded the step safety limit``）是固定的。永远停不下来的闭环报告 ``Cannot reach a stoppable state in the same cycle; suspected loop.``
+
+.. literalinclude:: region_c_runtime.c
+   :language: c
+   :caption: region_c_runtime.c（``c`` 模板的驱动程序）
+
+.. literalinclude:: region_c_hooks.c
+   :language: c
+   :caption: region_c_hooks.c（含两个区域的模型里的钩子上下文）
+
+.. literalinclude:: region_cpp_runtime.cpp
+   :language: cpp
+   :caption: region_cpp_runtime.cpp（``cpp`` 模板的驱动程序）
+
+.. literalinclude:: region_c_poll_runtime.c
+   :language: c
+   :caption: region_c_poll_runtime.c（``c_poll`` 模板的驱动程序）
+
+.. literalinclude:: region_cpp_poll_runtime.cpp
+   :language: cpp
+   :caption: region_cpp_poll_runtime.cpp（``cpp_poll`` 模板的驱动程序）
+
+头文件里的事实不需要编译器。下面的命令为两个模型生成 ``c`` 运行时，并从 ``machine.h`` 读出容量宏、区域个数和 ``current_state_`` 函数：
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm --template c -o out_c
+   $ pyfcstm generate -i plain_no_region.fcstm --template c -o out_plain_c
+
+.. testcode::
+
+   import re
+
+   macro = re.compile(r"#define .*_(ARENA_CAPACITY|TRAIL_CAPACITY|STORAGE_BYTES|REGION_COUNT) ")
+   for path in ("out_c/machine.h", "out_plain_c/machine.h"):
+       text = open(path).read()
+       for line in text.splitlines():
+           if macro.match(line):
+               print(path + ":" + line)
+       print(path, "declares current_state_ functions:", "current_state_" in text)
+
+.. testoutput::
+
+   out_c/machine.h:#define CONTROLLER_MACHINE_ARENA_CAPACITY 108
+   out_c/machine.h:#define CONTROLLER_MACHINE_TRAIL_CAPACITY 52
+   out_c/machine.h:#define CONTROLLER_MACHINE_STORAGE_BYTES (944 + (CONTROLLER_MACHINE_ARENA_CAPACITY) * 108 + (CONTROLLER_MACHINE_TRAIL_CAPACITY) * 32)
+   out_c/machine.h:#define CONTROLLER_MACHINE_REGION_COUNT 2
+   out_c/machine.h declares current_state_ functions: False
+   out_plain_c/machine.h:#define PLAIN_MACHINE_ARENA_CAPACITY 8
+   out_plain_c/machine.h:#define PLAIN_MACHINE_TRAIL_CAPACITY 4
+   out_plain_c/machine.h:#define PLAIN_MACHINE_STORAGE_BYTES (848 + (PLAIN_MACHINE_ARENA_CAPACITY) * 68 + (PLAIN_MACHINE_TRAIL_CAPACITY) * 32)
+   out_plain_c/machine.h:#define PLAIN_MACHINE_REGION_COUNT 0
+   out_plain_c/machine.h declares current_state_ functions: True
+
+编译并运行驱动程序需要 C 和 C++ 编译器，所以下面的命令不在文档检查里运行。它们生成每个模板、编译上面为它列出的驱动程序并运行；命令之后的输出是这个版本的一次真实运行记录，而 C 家族运行时与仿真器是否一致，由模板测试检查。
+
+.. code-block:: bash
+
+   # c: generate, compile as C99 and run the driver
+   pyfcstm generate -i controller.fcstm --template c -o out_c
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c out_c/machine.c region_c_runtime.c -lm -o c_driver
+   echo "== c: model with regions (controller.fcstm)"
+   ./c_driver
+
+   # c: the hook context driver, on the model of region_probe.fcstm
+   pyfcstm generate -i region_probe.fcstm --template c -o out_hooks
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_hooks out_hooks/machine.c region_c_hooks.c -lm -o hooks_driver
+   echo "== c: hook context (region_probe.fcstm)"
+   ./hooks_driver
+
+   # cpp: the C++98 wrapper over the same C core
+   pyfcstm generate -i controller.fcstm --template cpp -o out_cpp
+   cc -std=c99 -O1 -c out_cpp/machine.c -o out_cpp/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp out_cpp/machine.cpp region_cpp_runtime.cpp out_cpp/machine_c.o -lm -o cpp_driver
+   echo "== cpp: wrapper over the same core"
+   ./cpp_driver
+
+   # c_poll: event checks are queried during the cycle
+   pyfcstm generate -i controller.fcstm --template c_poll -o out_c_poll
+   cc -std=c99 -Wall -Wextra -pedantic -O1 -I out_c_poll out_c_poll/machine.c region_c_poll_runtime.c -lm -o c_poll_driver
+   echo "== c_poll: event checks are queried during the cycle"
+   ./c_poll_driver
+
+   # cpp_poll: the C++98 wrapper over the polling core
+   pyfcstm generate -i controller.fcstm --template cpp_poll -o out_cpp_poll
+   cc -std=c99 -O1 -c out_cpp_poll/machine.c -o out_cpp_poll/machine_c.o
+   c++ -std=c++98 -Wall -Wextra -pedantic -O1 -I out_cpp_poll out_cpp_poll/machine.cpp region_cpp_poll_runtime.cpp out_cpp_poll/machine_c.o -lm -o cpp_poll_driver
+   echo "== cpp_poll: wrapper over the polling core"
+   ./cpp_poll_driver
+
+下面是同一顺序的输出记录（以 ``==`` 开头的行标明各次运行）：
+
+.. code-block:: text
+
+   == c: model with regions (controller.fcstm)
+   cycle 1: Controller.Idle | at=1 regions=[0, 0] | motor=0
+   cycle 2 (/Start): Controller.Running{Safety: Watching, Motion: Off} | at=2 regions=[3, 4] | motor=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   REGION_COUNT = 2
+   Safety status = 2 (LIVE is 2)
+   Running active = 1, Idle active = 0
+   leaf count = 2
+   leaf ids = 3, 5
+   parsed: Controller.Running{Safety: [init], Motion: On}
+   refused: kind=5 position=0 message=Path passes through the regions of 'Controller.Running' at byte 0.
+   refused: kind=6 position=19 message=Unknown region 'Speed' at byte 19.
+   refused: kind=7 position=31 message=Duplicate region 'Motion' at byte 31.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   cycle after hot start: Controller.Running{Safety: Watching, Motion: On} | at=2 regions=[3, 5] | motor=1
+   ARENA_CAPACITY = 108, TRAIL_CAPACITY = 52, STORAGE_BYTES = 14272
+   sizeof(machine) >= STORAGE_BYTES: 1
+   == c: hook context (region_probe.fcstm)
+   Boot: state_id=0 active_leaf_state_id=0 configuration=Line
+   Tick: state_id=2 active_leaf_state_id=2 configuration=Line.Work{Left: L, Right: [init]}
+   state ids: Line=0 Work=1 Left.L=2 Right.R=3
+   == cpp: wrapper over the same core
+   after three cycles: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   Safety status = 2
+   valid = 1
+   saved == parsed: 0
+   saved != parsed: 1
+   refused: kind=3 message=Unknown name 'Idle' at byte 27.
+   after hot start: Controller.Running{Safety: Watching, Motion: On} | motor=1
+   == c_poll: event checks are queried during the cycle
+   cycle 1: Controller.Idle | start checks so far=0 stop checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1 stop checks so far=0
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2 stop checks so far=0
+   == cpp_poll: wrapper over the polling core
+   cycle 1: Controller.Idle | start checks so far=0
+   cycle 2: Controller.Idle | start checks so far=1
+   cycle 3: Controller.Running{Safety: Watching, Motion: Off} | start checks so far=2
+
+读输出时注意：
+
+* ``at=2 regions=[3, 5]`` 是文本 ``Controller.Running{Safety: Watching, Motion: On}`` 背后的配置值：``2`` 是 ``Running``，``3`` 和 ``5`` 是 ``Safety`` 与 ``Motion`` 的活动叶子，区域槽位为 ``0`` 表示等待初始化；``cycle 1`` 里拥有者不活动，所以两个槽位都是 ``0``；
+* ``parse`` 接受省略了某个区域的文本并给它 ``[init]``，拒绝穿过区域的点路径（kind 5，路径穿过了拥有者的区域）、未知区域（kind 6）和重复的区域（kind 7）；每个错误都带有出错位置的字节偏移；
+* ``hot_start_at`` 让机器回到保存的位置，下一个周期从那里继续；热启动之后显示的位置没有执行任何 enter 动作；
+* 钩子驱动程序对 ``Line`` 的 enter 动作报告拥有者层的状态（``state_id=0``），对区域内的动作报告叶子 ``Left.L``，两种情况下 ``active_leaf_state_id`` 都等于 ``state_id``；
+* ``c_poll`` 与 ``cpp_poll`` 在机器停在 ``Idle`` 时每个周期调用一次 ``Start`` 检查，并且从不在那里调用 ``Stop`` 检查（运行只展示了计数，没有展示原因，所以本页不为此写规则）；``cpp`` 驱动程序用 ``-std=c++98`` 编译，C 核心用 ``-std=c99``；
+* 不含区域的模型在 ``machine.h`` 里保留 ``current_state_name`` 与 ``current_state_path``；含区域的模型一个也没有声明。
+
+这次运行没有检查 ``PYFCSTM_GENERATED_NO_HEAP``、消毒器（sanitizer）构建或 ``native-toolchain`` 矩阵；它们属于模板测试套件。
+
+旧集成的名称变化
+~~~~~~~~~~~~~~~~
+
+.. list-table:: 已不存在的接口
+   :header-rows: 1
+
+   * - 旧的集成代码
+     - 当前生成的运行时
+   * - Python ``machine.variables``
+     - 已删除；用 ``machine.vars``\ （只读视图）。
+   * - Python ``machine.vars['x'] = 1``
+     - 不受支持；``vars`` 是只读视图。要写入就在 DSL 里表达。
+   * - 把 Python ``ABSTRACT_HOOKS`` 当字典来改
+     - 是只读映射；``get_abstract_hook_map()`` 返回副本。
+   * - 含区域的模型上的 Python ``current_state_path``
+     - ``AttributeError``；读 ``configuration`` 或 ``leaves``。
+   * - C ``MAX_STACK_DEPTH``、``MAX_DFS_STEPS``
+     - 已删除；用 ``ARENA_CAPACITY`` 与 ``TRAIL_CAPACITY`` 宏。
+   * - 含区域的模型上的 C ``<Prefix>_current_state_id``
+     - 没有声明，调用无法通过编译；用 ``get_configuration``。
+   * - 把 C 机器当作透明结构体
+     - 机器是 ``<PREFIX>_STORAGE_BYTES`` 字节的不透明存储；用 ``machine.h`` 里的函数。
+
 模板契约
 --------
 
@@ -111,9 +614,9 @@
 
 * 生成文件：``machine.py``、``README.md`` 和 ``README_zh.md``。
 * 入口：从 ``machine.py`` 导入生成机器类。教程模型的类名是 ``SimpleMachineMachine``。
-* 事件模型：``cycle(events=None)`` 接受无事件、一个事件字符串或事件字符串集合。
+* 事件模型：``cycle(events=None, *, inputs=None)`` 接受无事件、一个事件字符串，或事件字符串的列表、元组、集合；``inputs`` 为该周期提供数值输入。
 * 扩展点：继承生成类，覆写生成 README 中列出的受保护抽象钩子方法。
-* 生命周期概念：构造、初始 ``cycle()``、后续 ``cycle(...)``、通过构造参数热启动、读取当前状态和变量快照。
+* 生命周期概念：构造、初始 ``cycle()``、后续 ``cycle(...)``、通过构造参数（``initial_state``、``initial_vars``、``parameters``）热启动、读取位置和变量。含区域的模型通过 ``configuration`` 读取位置；见 :ref:`sec-reference-builtin-templates-regions-zh`。
 * 目标边界：Python 3.7+ 标准库运行时；生成代码不应导入 ``pyfcstm``。
 * 证据边界：Python 模板测试和语义对齐测试覆盖受支持生成行为；教程冒烟检查只是第一次成功信号。
 
@@ -154,7 +657,7 @@
 ~~~~~~~~~~~~
 
 * 生成文件：``machine.h``、``machine.c``、``machine.hpp``、``machine.cpp``、``README.md`` 和 ``README_zh.md``。
-* 入口：包含 ``machine.hpp``，构造 ``pyfcstm_generated::<Machine>_cpp::MachineWrapper``，安装包装层钩子和事件检查，然后调用 ``cycle()``。
+* 入口：包含 ``machine.hpp``，构造 ``pyfcstm_generated::<Machine>_cpp_poll::MachineWrapper``\ （注意命名空间是 ``_cpp_poll``），安装包装层钩子和事件检查，然后调用 ``cycle()``。
 * 事件模型：复用的 C 轮询核心调用已安装事件检查函数；C++ 包装层提供别名和设置方法。
 * 扩展点：抽象钩子和事件检查都通过包装层接口安装。
 * 生命周期概念：包装层构造、钩子/事件检查安装、周期、变量/状态读取、按文档通过底层公开接口热启动，以及包装层持有的初始化。
@@ -297,4 +800,5 @@ C++ 模板按设计复用 C 核心。``cpp`` 复用 C99 核心；``cpp_poll`` �
 * 事件输入模型：生成 README、运行时模板和模板测试；
 * C 家族辅助和固定宽度代码体事实：``pyfcstm/render/c_runtime.py``；
 * 包装层事实：``templates/cpp``、``templates/cpp_poll`` 源模板和包装层冒烟测试；
+* 区域支持：每个 ``templates/<name>/config.yaml`` 里的 ``features``、C 内核发射器 ``pyfcstm/render/c_kernel.py``、``pyfcstm/render/c_kernel_engine.py`` 与 ``pyfcstm/render/c_configuration.py``，以及 ``pyfcstm generate --template <name>`` 为 ``controller.fcstm`` 和 ``plain_no_region.fcstm`` 写出的文件；
 * 当前证据边界：模板单元测试、语义对齐测试、格式化检查，以及主机工具链可用时的本机冒烟检查。

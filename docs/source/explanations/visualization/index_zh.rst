@@ -283,6 +283,213 @@ Windows 上只是只读标志。
 由此得出的建议与共享那一节一致：不希望文档落在共享位置、或需要一个只有自己能删除的文档时，
 请显式指定输出路径。
 
+区域怎样绘制
+------------
+
+拥有者（owner）是带有区域（region）的状态，它按书写顺序依次推进各区域，见\ :doc:`含区域的模型怎样执行一个周期 </explanations/region_semantics/index_zh>`\ 。因此区域不是状态：它不会成为任何转换的目标，没有自己的进入和退出，也不像状态那样“处于活动”。它是拥有者的一个有名字、有顺序的部分。每种输出都这样画它：画成拥有者被分割出来的一块区域，而不是一个独立的方框。
+
+.. list-table:: 每种输出怎样表示一个区域
+   :header-rows: 1
+   :widths: 26 74
+
+   * - 输出
+     - 区域的形式
+   * - PlantUML（\ ``pyfcstm plantuml``\ ）
+     - 并发分区：同一个拥有者的各区域用 ``--`` 分隔，每个区域以一条写着 ``region N: Name`` 的注释开头。
+   * - 图快照（\ ``to_dict`` / ``to_json``\ 、\ ``pyfcstm diagram``\ ）
+     - 拥有者的一个子节点，带 ``region: true`` 和 ``ordinal``\ 。
+   * - HTML 查看器与 VS Code 预览
+     - 各区域在拥有者外框内并排，以虚线分割线分隔，没有自己的边框，标题同样是 ``region N: Name``\ 。
+
+.. code-block:: console
+
+   $ pyfcstm plantuml -i controller.fcstm
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "Watching" as controller__running__safety__watching
+           [*] --> controller__running__safety__watching
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "Off" as controller__running__motion__off
+           state "On" as controller__running__motion__on
+           [*] --> controller__running__motion__off
+           controller__running__motion__off --> controller__running__motion__on : permit != 0 && requested != 0
+           controller__running__motion__on --> controller__running__motion__off : permit == 0 || requested == 0
+       }
+   ...
+   $ pyfcstm plantuml -i controller_swapped.fcstm
+   ...
+               **region 1: Motion**
+   ...
+           --
+           note as controller__running__safety
+               **region 2: Safety**
+   ...
+   $ pyfcstm plantuml -i controller.fcstm -c max_depth=2
+   ...
+       state "Running" as controller__running <<composite>> {
+           note as controller__running__safety
+               **region 1: Safety**
+           end note
+           state "..." as controller__running__safety___collapsed_
+           --
+           note as controller__running__motion
+               **region 2: Motion**
+           end note
+           state "..." as controller__running__motion___collapsed_
+       }
+   ...
+
+依次读这段输出的三个部分：
+
+1. 第一块里 ``--`` 把 ``Safety`` 和 ``Motion`` 分开。每个区域有自己的 ``[*]`` 初始箭头和自己的转换，两个区域之间没有箭头，因为不可能有。
+2. 第二块是把同样两个区域按另一种顺序书写。变化的只有编号和分区的先后：\ ``N`` 是源码里的位置，也就是区域运行的顺序。所以读图的人可以直接从图上读出执行顺序。
+3. 第三块里 ``max_depth=2`` 折叠了区域内部的内容，但保留区域。区域像状态一样占一层深度。
+
+快照把同样的事实表示成数据：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+
+   def outline(node, depth=0):
+       mark = "  region ordinal=%d" % node["ordinal"] if node.get("region") else ""
+       print("  " * depth + node["id"] + mark)
+       for child in node["children"]:
+           outline(child, depth + 1)
+
+
+   for name in ("controller", "controller_swapped"):
+       machine = load_state_machine_from_text(open(name + ".fcstm").read())
+       print("==", name)
+       outline(machine.diagram().to_dict()["rootState"])
+
+.. testoutput::
+
+   == controller
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Safety  region ordinal=1
+         Controller.Running.Safety.Watching
+       Controller.Running.Motion  region ordinal=2
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+   == controller_swapped
+   Controller
+     Controller.Idle
+     Controller.Running
+       Controller.Running.Motion  region ordinal=1
+         Controller.Running.Motion.Off
+         Controller.Running.Motion.On
+       Controller.Running.Safety  region ordinal=2
+         Controller.Running.Safety.Watching
+
+``Controller.Running`` 的子节点按书写顺序出现，\ ``ordinal`` 从一开始。下面的布局步骤依赖的正是这个字段。
+
+查看器画的是同一个结构。下面这幅示意图是手绘的，用来表现形态，不是查看器的输出：
+
+.. code-block:: text
+
+   示意图，自上而下：
+
+   +-- Running ----------------------------------------------+
+   |  region 1: Safety       :  region 2: Motion               |
+   |                         :                                 |
+   |  [*] -> (Watching)      :  [*] -> (Off) <-> (On)          |
+   +----------------------------------------------------------+
+                             ^ 虚线分割线
+
+为什么画成分割的区域而不是状态：状态形状的方框会让人以为箭头可以指向它，或者拥有者像“处于某个状态”那样“处于”这个区域。分割线表达的恰恰相反：这些区域是同一个整体的部分，从一块到另一块没有路径，从左到右或从上到下的顺序是它们之间唯一的关系。早先的形式给每个区域画一个虚线框，分割线的形式取代了它，让各区域读起来是同一个拥有者的部分。
+
+**不**\ 画的，是只因降级才存在的一切。用 ``active("...")`` 写的条件保留完整路径，隐藏的标志变量和对它们的自动写入不会出现。
+
+这些命令不在文档检查里运行，因为模型文件属于诊断页，不属于本页。下面的文字是它们记录下来的输出的摘选：PlantUML 文本里的图例和条件行，以及快照里的变量名和条件标签。
+
+.. code-block:: bash
+
+   pyfcstm plantuml -i region_written_vs_running.fcstm
+   pyfcstm diagram -i region_written_vs_running.fcstm
+
+.. code-block:: text
+
+   | go | int | N/A | input |
+   | lamp | int | 0 | output |
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed")
+       panel__lamp__dark --> panel__lamp__lit : active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed")
+
+   variables: go, lamp
+   guards: active("Panel.Switch.Pressed"), active("Panel.Switch.Pressed") && !active("Panel.Switch.Pressed"), go != 0, go == 0
+
+这个模型取自\ :doc:`诊断解释 </explanations/diagnostics/index_zh>`\ 。图例和快照的变量列表里都没有 ``__active_*`` 变量，而 ``--enable-verify`` 的一条发现会点出其中一个。图展示的是书写的模型；运行的机器不是读者需要看到的东西。没有任何输出标出一次运行的当前配置：运行态叠加不在这些输出的能力之内。
+
+顺序怎样得到保证
+----------------
+
+同一个拥有者的各区域之间没有转换，布局引擎没有任何依据让它们保持顺序。给查看器和预览做布局的 ELK 可以为减少边交叉而移动它们，实际也会这样：一个含区域 A、B、C 的模型曾被排成 C、A、B。它自己的排序选项对渲染器使用的嵌套布局要么不起作用，要么让它崩溃，所以不向引擎要求顺序，而是在布局之后恢复顺序。
+
+.. list-table:: 区域的布局步骤
+   :header-rows: 1
+   :widths: 6 40 54
+
+   * - 步骤
+     - 做什么
+     - 为什么安全
+   * - 1
+     - ELK 对整张图做布局。
+     - 位置来自引擎，区域的先后是它自己选的。
+   * - 2
+     - 每个拥有者的各区域按 ``ordinal`` 排序，依次放回引擎给出的位置槽里，保持每个区域的大小和它们之间的间隔。
+     - 区域不与自身之外的任何东西相连，横向移动它不会扰动任何边，拥有者的大小也不变。
+   * - 3
+     - 如果某个拥有者的各区域没有排在同一行（从左向右的图里是同一列），就在相邻区域之间加一串不可见的边，重新布局一次，把顺序固定下来。
+     - 代价是图变长，而且只在这种情形下才发生。渲染器会跳过这些边（\ ``kind`` 为 ``regionOrder``\ ）。
+   * - 4
+     - 各区域被平铺在拥有者的主体上，相邻区域之间画一条虚线分割线。
+     - 两条路径的最后一步相同，所以无论第 3 步是否执行，画面看起来一样。
+
+顺序沿图的方向排开：自上而下的图里是同一行内从左到右，自左向右的图里是同一列内从上到下。HTML 查看器和 VS Code 预览调用同一个布局函数，所以两者不会在这一点上不一致。PlantUML 完全不用这段代码：pyfcstm 按书写顺序把分区交给它，如上面的输出所示，其余由 PlantUML 布局。
+
+四个入口，一套约定
+------------------
+
+观看一个模型的四种方式只共享约定，不共享别的东西。
+
+.. list-table:: 各入口及各自的限制
+   :header-rows: 1
+   :widths: 22 26 52
+
+   * - 入口
+     - 命令或接口
+     - 它特有的
+   * - PlantUML 文本
+     - ``pyfcstm plantuml``
+     - 可以纳入版本控制的文本。布局由 PlantUML 完成，不是 pyfcstm。PlantUML 内置的 Smetana 布局不支持并发分区，会丢掉第一个之后的所有区域；pyfcstm 不输出布局指令，所以只有强制使用那种布局时才会遇到。请使用默认的 Graphviz 布局。
+   * - 图快照
+     - ``StateMachine.diagram()``\ 、\ ``pyfcstm diagram``
+     - 不含布局的可移植数据。它与模型脱钩，之后编辑模型不会改变它。
+   * - HTML 查看器
+     - ``Diagram.to_html`` / ``save`` / ``show``\ 、\ ``pyfcstm diagram -o x.html`` / ``--open``
+     - 一个自包含文件，用 ELK 和上面的重排做布局；\ ``--open`` 需要 Chromium 系浏览器并且会阻塞。
+   * - VS Code 预览
+     - 编辑器扩展
+     - 同一个布局函数，由编辑器自己对打开文档建立的模型驱动，而不是 Python 给出的快照。
+
+共享的约定就是上面那些：\ ``region N: Name`` 的标题，\ ``N`` 是书写顺序；\ ``active("...")`` 按书写显示；不出现隐藏变量；区域在 ``max_depth`` 里占一层。它们之所以共享，是因为读者为同一个模型在这些入口之间来回切换；约定上的差异看起来就会像模型的差异。
+
+区域外观上已知的缺口，都不改变模型的行为：
+
+* 折叠后的区域仍保持展开时的大小，拥有者不会随之缩小。
+* 除预览外，编辑器以三种方式支持区域：报告 ``E_REGION_STRUCTURE``\ 、``E_DUPLICATE_REGION`` 与 ``E_ACTIVE_QUERY_TARGET``\ ，折叠 ``region`` 块，以及格式化它们。没有的是符号（大纲与面包屑）、悬停、引用与重命名里的区域专用处理：这些功能背后的代码没有区域分支，记录下来的行为是区域像状态一样出现、详情里写 ``composite``\ 、重命名状态不会更新引用它的 ``active("...")`` 字符串、悬停没有内容。写本页时没有在运行中的编辑器里重新核对这些记录下来的行为。
+* 使用历史的模型，PlantUML 和 Python 快照按书写绘制，编辑器预览仍画展开后的机器，见 `issue #590 <https://github.com/HansBug/pyfcstm/issues/590>`_\ 。
+* 标题宽度是估算的而不是测量的，所以约五十个字符的区域名可能让标题末尾压到折叠按钮上一两个像素。
+
 下一步
 ------
 

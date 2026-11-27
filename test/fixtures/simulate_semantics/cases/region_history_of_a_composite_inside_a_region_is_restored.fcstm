@@ -1,0 +1,21 @@
+state Root {
+    event Out;
+    event Back;
+    [*] -> P;
+    state P {
+        region A {
+            [*] -> K;
+            state K {
+                [H] -> K1;
+                [*] -> K1;
+                state K1;
+                state K2;
+                K1 -> K2;
+            }
+            state Idle;
+            !K -> Idle : /Out;
+            Idle -> K.[H] : /Back;
+        }
+        region B { [*] -> B1; state B1; }
+    }
+}

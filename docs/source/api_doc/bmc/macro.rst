@@ -44,7 +44,7 @@ ActionBlock
 -----------------------------------------------------
 
 .. autoclass:: ActionBlock
-    :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract,active_leaf_path,execution_state_path,named_ref
+    :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract,active_leaf_path,execution_state_path,named_ref,stack_states
 
 
 EvaluationPoint
@@ -58,7 +58,7 @@ CycleCase
 -----------------------------------------------------
 
 .. autoclass:: CycleCase
-    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,consumed_events,domain
+    :members: __post_init__,to_canonical,kind,source_state_id,source_state_path,target_state_id,target_state_path,label,condition,action_blocks,used_events,guard_requirements,priority_exclusions,failed_conditions,consumed_events,domain,transitions
 
 
 PartitionCheckResult

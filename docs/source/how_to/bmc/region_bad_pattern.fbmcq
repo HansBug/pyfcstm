@@ -1,0 +1,2 @@
+init state("Controller.Idle");
+check reach <= 1: active("Controller.Running{Safety: Nope}");

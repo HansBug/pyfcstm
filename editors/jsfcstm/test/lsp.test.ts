@@ -375,6 +375,7 @@ describe('jsfcstm lsp core', () => {
             'state Child {',
             '    state Reach;',
             '    [*] -> Reach;',
+            '    Reach -> [*];',
             '}',
         ].join('\n'));
         const hostText = [

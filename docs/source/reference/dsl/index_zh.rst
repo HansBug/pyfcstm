@@ -56,6 +56,9 @@ DSL 参考
    * - 状态
      - ``state A;`` / ``state A { ... }`` / ``pseudo state P;``
      - :ref:`dsl-state-forms-zh`
+   * - 区域
+     - 状态里的 ``region Name { ... }``；``active("Path")``
+     - :ref:`dsl-region-forms-zh`、:ref:`dsl-region-active-zh`
    * - 转换
      - 普通、事件、守卫、守卫 + 效果、组合、强制、初始、退出
      - :ref:`dsl-transition-forms-zh`
@@ -99,12 +102,20 @@ DSL 参考
      - ``/* ... */``、``// ...``、``# ...``
      - 紧邻受支持声明前的多行块注释属于该声明；行注释仍然只是注释。
    * - 关键字（keyword）
-     - ``def``、``state``、``pseudo``、``event``、``import``、``enter``、``during``、``exit``、``abstract``、``ref``
+     - ``def``、``state``、``region``、``active``、``pseudo``、``event``、``import``、``enter``、``during``、``exit``、``abstract``、``ref``
      - 关键字由词法规则保留，不能作为普通标识符使用。
    * - 紧凑导入词法符号
      - 选择器模式与目标模板
      - 紧凑形式在导入专用词法模式中切分，对空白敏感；``$0`` /
        ``$1`` / ``${1}`` / ``*`` 模板详见 :ref:`dsl-import-forms-zh`。
+
+标识符区分大小写。包括 ``region`` 和 ``active`` 在内的保留字不能用作名字或路径片段；
+导入别名、精确映射选择器和精确映射目标也遵守这一规则。``Active``、``region_count`` 和
+``active_flag`` 仍是合法名字。旧模型中与保留字完全相同的标识符需要改名，并同步修改引用。
+字符串和注释中的原文保持不变。
+
+紧凑导入模式与目标模板可以包含关键字文本，例如 ``prefix_* -> $1``；展开后的目标仍须是合法
+标识符。若展开结果为 ``active`` 或 ``region``，导入装配会报错。
 
 .. _dsl-documentation-forms-zh:
 
@@ -270,11 +281,489 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
    * - 伪复合语法形状
      - ``pseudo state Name { ... }``
      - 解析形状存在，但模型验证会用 ``E_PSEUDO_NOT_LEAF`` 拒绝非叶伪状态。
+   * - 区域拥有者
+     - ``state Name { region A { ... } region B { ... } }``
+     - 拥有区域而不是子状态；见 :ref:`dsl-region-forms-zh`。
 
 部分带路径的形式会通过 ``chain_id`` 使用点分标识符，例如事件作用域、导入映射或动作引用。转换的 ``from_state`` 和
 ``to_state`` 端点则不同：它们是在拥有状态作用域中解析的普通标识符，不是点分路径。若需要进入嵌套叶状态，应把转换写在拥有该叶状态的复合状态内部，
 或转换到复合状态并让它的初始转换选择子状态。历史目标 ``Owner.[H]`` / ``Owner.[H*]`` 同样不是点分路径：\ ``Owner``\ 是普通的兄弟标识符，
 标记只决定以什么方式进入它。只有历史声明的默认目标（\ ``[H*] -> Wash.Fill;``\ ）是点分路径，并且相对所有者解析。
+
+.. _dsl-region-forms-zh:
+
+区域形式
+------------------------------
+
+区域（region）是写在拥有者（owner）状态里的、有名字且有顺序的状态容器。同一个拥有者的各区域按书写顺序在同一个周期内依次运行。本节列出确切的写法；
+:doc:`../../explanations/region_semantics/index_zh`\ 解释一个周期怎样运行它们，\ :doc:`../region_model/index_zh`\ 列出 Python 对象与位置值。语法规则如下：
+
+.. code-block:: text
+
+   composite state   : ... STATE ID (NAMED STRING)? LBRACE
+                         state_owner_statement*
+                         ( state_child_statement state_inner_statement*
+                         | region_definition (state_owner_statement | region_definition)* )?
+                       RBRACE
+   region_definition : MULTILINE_COMMENT? REGION ID LBRACE region_inner_statement* RBRACE
+   region_inner_statement : state_definition | transition_definition
+                          | transition_force_definition | during_aspect_definition
+                          | event_definition | SEMI
+   state_owner_statement  : enter_definition | during_definition | exit_definition
+                          | during_aspect_definition | event_definition | SEMI
+
+.. list-table:: 区域语法形式
+   :header-rows: 1
+   :widths: 24 34 42
+
+   * - 形式
+     - 语法
+     - 边界
+   * - 拥有者状态
+     - ``state Owner { region A { ... } region B { ... } }``
+     - 第一条不是拥有者语句的声明决定这个状态拥有什么。写出第一个 ``region`` 之后，只能再写区域和拥有者语句；同一状态里再写普通子状态、转换、强制转换、导入或历史都是语法错误。
+   * - 区域
+     - ``region Name { ... }``
+     - ``Name`` 是标识符；紧挨在 ``region`` 前的块注释是该区域的文档。区域体必须包含一个状态和一条初始转换 ``[*] -> State;``。
+   * - 单个区域
+     - ``state Owner { region A { ... } }``
+     - 合法，也不产生警告。只有一个区域的拥有者与普通复合状态行为相同。
+   * - 拥有者语句
+     - ``enter``、``exit``、``during before``、``during after``、``>> during before``、``>> during after``、``event``、``;``
+     - 可以写在区域之前、之间和之后。复合拥有者上的普通 ``during`` 与所有复合状态一样，会被 ``E_DURING_ASPECT_INVALID`` 拒绝。见 :ref:`dsl-region-owner-actions-zh`。
+   * - 嵌套
+     - 区域里的状态 ``state Cell { region X { ... } }``
+     - 并行结构经过状态嵌套。``region`` 直接写在 ``region`` 里是语法错误。
+   * - 顺序
+     - 区域的书写顺序
+     - 书写顺序就是执行顺序，属于语义的一部分。调换区域顺序可能改变结果（见 :doc:`../../tutorials/regions/index_zh`\ 中的示例模型及其调换版本）。
+   * - 保留字
+     - ``region``、``active``
+     - 词法关键字，不能作变量、状态、事件、动作、区域或别名的名字。``Active``、``Region``、``region_count`` 是普通名字。
+
+合法形式
+~~~~~~~~~~~~~~~~~~~~
+
+最小的模型只有一个区域。``Active`` 与 ``region_count`` 合法，因为只有小写的两个词是保留字：
+
+.. literalinclude:: region_single.fcstm
+   :language: fcstm
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i region_single.fcstm --no-color -e "cycle"
+   ...
+   Cycle: 1
+   Current State: Root{Active: region_count}
+
+含两个区域的控制器，以及在拥有者自己的作用域里放事件与强制转换的写法（教程里的模型）：
+
+.. literalinclude:: /_models/controller.fcstm
+   :language: fcstm
+
+区域里含有带区域的状态（经 ``Cell`` 嵌套）、写在区域内的强制转换、区域内普通状态里的历史，以及经过两段区域名的活动查询：
+
+.. literalinclude:: region_nested_active.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_nested_active.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(list(model.defines))
+   for query in model.active_queries:
+       print('.'.join(query.state_path), '->', query.variable_name)
+
+.. testoutput::
+
+   ['__hist_goto', '__hist_Job_Panel_On', '__active_Plant_Job_Line_Cell_Feed_Busy', '__forced_0']
+   Plant.Job.Line.Cell.Feed.Busy -> __active_Plant_Job_Line_Cell_Feed_Busy
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_nested_active.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   runtime.cycle()
+   print(runtime.cycle_count, runtime.configuration)
+   for event in ['/Go', '/Trip', '/Stop', '/Resume']:
+       runtime.cycle(event)
+       print(runtime.cycle_count, event, runtime.configuration)
+
+.. testoutput::
+
+   1 Plant.Job{Line: Cell{Feed: Idle, Check: Watch}, Panel: On.Quiet}
+   2 /Go Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Quiet}
+   3 /Trip Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
+   4 /Stop Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: Off}
+   5 /Resume Plant.Job{Line: Cell{Feed: Busy, Check: Alarm}, Panel: On.Loud}
+
+输出逐周期给出配置的位置文本：区域块按书写顺序列出各区域，``Cell{Feed: Busy, Check: Alarm}`` 是嵌套的拥有者。``Check`` 在 ``Feed`` 改变的同一周期就读到了变化，
+因为 ``Feed`` 写在前面；把两者对调，``Check`` 要晚一个周期才看到。输出第一行的隐藏变量见 :ref:`dsl-region-active-zh`。
+
+区域体
+~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 区域里可以写什么
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - 区域体里的语句
+     - 是否允许
+     - 不允许或缺失时的结果
+   * - ``[*] -> State;``
+     - 必需，至少一条
+     - 缺少时报 ``E_INITIAL_TRANSITION_INVALID``，``reason: missing_entry``。
+   * - ``state``、``pseudo state``
+     - 允许；至少一个状态
+     - 没有状态的区域报 ``E_REGION_STRUCTURE``\ （``empty_region``）。
+   * - 普通、事件、条件与组合转换，``State -> [*]``
+     - 允许；端点是区域内的名字
+     - ``State -> [*];`` 使该区域进入已完成（见 :doc:`../../explanations/region_semantics/index_zh`）。
+   * - ``!State -> Target ...;``、``!* -> Target ...;``
+     - 允许
+     - 见 :ref:`dsl-region-forced-zh`。
+   * - ``event Name;``
+     - 允许；事件归该区域
+     - 见 :ref:`dsl-region-events-zh`。
+   * - ``>> during before`` / ``>> during after``
+     - 允许；只作用于本区域
+     - 见 :ref:`dsl-region-owner-actions-zh`。
+   * - ``enter``、``during``、``exit``
+     - 不允许
+     - 语法错误。把动作写在拥有者或区域内的某个状态上。
+   * - ``def`` / ``input`` / ``param`` / ``output`` 声明
+     - 不允许
+     - 语法错误。变量要在根状态之前声明。
+   * - ``import``
+     - 不允许
+     - 语法错误。在区域内的普通状态里导入。
+   * - ``[H] -> Child;`` / ``[H*] -> ...;``
+     - 不能直接写
+     - 语法错误。区域内的状态可以拥有历史。
+   * - 把区域作为转换的源或目标
+     - 不允许
+     - ``Run.A -> Idle;`` 是语法错误；``Idle -> A;`` 报 ``E_DANGLING_TRANSITION``。
+
+名字、路径与区域的边界
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+区域是拥有者与状态之间一层有名字的命名空间。所有状态路径与事件路径都经过区域名，所以 ``Controller.Running.Motion.On`` 是 ``Running`` 的区域 ``Motion`` 里的状态 ``On``。
+不同区域可以有同名状态：``Root.A.Idle`` 与 ``Root.B.Idle`` 是两个状态。
+
+转换端点是普通标识符，在持有该转换的作用域里解析；写在区域里时，这个作用域就是区域。由此得到区域的边界：
+
+* 区域内的转换只能到达本区域的状态（不能跳进另一个区域）；
+* 拥有者的父作用域里的转换只能指向拥有者，不能指向它某个区域内部的状态，进入时由拥有者按书写顺序初始化全部区域；
+* 区域不能写成端点。
+
+以上都是错误，诊断码和原因见下文的报告。跨区域写法 ``L -> M;`` 与从外部写普通名字 ``Idle -> Leaf;`` 都报 ``E_DANGLING_TRANSITION``，``reason: tgt_not_found``，
+因为这个名字不在持有该转换的作用域里。点分写法 ``Idle -> Run.A.Leaf;`` 与 ``Run.A -> Idle;`` 是语法错误：端点从来不是点分路径。
+
+.. _dsl-region-events-zh:
+
+事件归属
+~~~~~~~~~~~~~~~~~~~~
+
+区域拥有写在它里面的事件。``: Name`` 转换的事件归持有该转换的区域；不会向拥有者或祖先查找同名事件。
+
+.. list-table:: 区域内的事件写法
+   :header-rows: 1
+   :widths: 24 28 48
+
+   * - 写在区域里
+     - 使用的事件
+     - 边界
+   * - ``event Go;``
+     - ``Plant.Job.Left.Go``\ （区域自己的事件）
+     - 另一个区域里的同名声明是另一个事件。
+   * - ``: Go``
+     - 写在区域 ``Left`` 里时是 ``Plant.Job.Left.Go``
+     - 未声明时在首次使用处创建。它找不到拥有者上声明的 ``Go``。
+   * - ``:: Back``
+     - 写在离开 ``L2`` 的转换上时是 ``Plant.Job.Left.L2.Back``
+     - 事件归源状态。
+   * - ``: /Job.Left.Go``
+     - ``Plant.Job.Left.Go``，在任何区域里都一样
+     - 在区域之间共用同一个事件的唯一办法：每个区域都写同一条从根开始的路径。
+   * - ``: /Job.Abort``
+     - ``Plant.Job.Abort``\ （声明在拥有者上）
+     - 区域使用拥有者事件的唯一办法。
+   * - ``: Job.Abort``
+     - 无
+     - 链式路径从区域开始，``Job`` 被当作区域里的状态查找，报 ``E_MISSING_STATE``\ （``reason: event_path_not_found``）。
+
+.. literalinclude:: region_events.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_events.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   for state in model.walk_states():
+       for event in state.events.values():
+           print('state', event.path_name)
+   for region in model.walk_regions():
+       for event in region.events.values():
+           print('region', event.path_name)
+
+.. testoutput::
+
+   state Plant.Reset
+   state Plant.Job.Abort
+   state Plant.Job.Left.L2.Back
+   region Plant.Job.Left.Go
+   region Plant.Job.Right.Go
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_events.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   runtime.cycle()
+   print(runtime.configuration)
+   for event in ['/Job.Left.Go', 'Plant.Job.Right.Go', 'Plant.Job.Abort', '/Job.Abort']:
+       result = runtime.cycle(event)
+       print(event, runtime.configuration, list(result.consumed_events))
+
+.. testoutput::
+
+   Plant.Job{Left: L1, Right: R1}
+   /Job.Left.Go Plant.Job{Left: L2, Right: R2} ['Plant.Job.Left.Go', 'Plant.Job.Left.Go']
+   Plant.Job.Right.Go Plant.Job{Left: L2, Right: R1} ['Plant.Job.Right.Go']
+   Plant.Job.Abort Plant.Job{Left: L2, Right: R2} ['Plant.Job.Abort']
+   /Job.Abort Plant.Job{Left: L2, Right: R2} []
+
+第一个脚本显示每个事件归哪个命名空间：``Left`` 与 ``Right`` 各自拥有一个 ``Go``。第二个脚本的周期里，``/Job.Left.Go`` 同时推动两个区域，
+因为 ``Right`` 里的 ``R1 -> R2`` 写成了根路径，所以用的是 ``Left`` 的事件，它在 ``consumed_events`` 里出现两次（每个用到它的区域一次）；
+``Plant.Job.Right.Go`` 只推动 ``Right``；``/Job.Abort`` 什么也没消耗，因为 ``R2`` 没有对应的转换。这些输出能确定有哪些事件、谁消耗它们，
+不能说明各区域的运行顺序，那部分见 :doc:`../../explanations/region_semantics/index_zh`。
+
+.. _dsl-region-owner-actions-zh:
+
+拥有者动作与切面
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+拥有者保留自己的生命周期动作。区域本身没有生命周期动作，只有切面（aspect）。
+
+.. list-table:: 拥有者与区域的动作何时运行
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 动作
+     - 何时运行
+   * - 拥有者 ``enter`` / ``exit``
+     - 每次实际进入、离开拥有者各运行一次，不是每个区域一次。重新进入拥有者会让所有区域重新开始；持久变量保持原值。
+   * - 拥有者 ``during before``
+     - 运行一次，绑定整组区域的初始化：在拥有者 ``enter`` 之后、任何区域进入第一个非伪状态之前。
+   * - 拥有者 ``during after``
+     - 运行一次，在整组区域把控制交还给拥有者的已提交路径上（全部区域已完成且拥有者继续）。
+   * - 拥有者或祖先上的 ``>> during before`` / ``>> during after``
+     - 每个周期运行一次，包住整组区域，不按活动叶子计次。
+   * - 区域上的 ``>> during before`` / ``>> during after``
+     - 只作用于该区域，并且只在区域内有 ``during`` 工作的周期里运行。
+   * - 切面的位置
+     - 状态或区域的 ``before`` 切面在它里面本周期第一次 ``during`` 工作之前运行，排在所在分支转换条件判断之后；``after`` 切面在最后一次 ``during`` 工作之后运行。
+       里面没有 ``during`` 工作的周期两者都不运行。``before`` 与 ``after`` 成对嵌套。
+
+.. literalinclude:: region_owner_actions.fcstm
+   :language: fcstm
+
+模型给每个动作分配了一个代码，所以一个周期里打印出的代码，就是这些动作运行的顺序。
+
+.. list-table:: ``region_owner_actions.fcstm`` 的动作代码
+   :header-rows: 1
+   :widths: 12 38 12 38
+
+   * - 代码
+     - 动作
+     - 代码
+     - 动作
+   * - ``10``
+     - ``Job`` 的 ``enter``
+     - ``32``
+     - ``A1`` 的 ``enter``
+   * - ``11``
+     - ``Job`` 的 ``during before``
+     - ``33``
+     - ``A1`` 的 ``during``
+   * - ``12``
+     - ``Job`` 的 ``during after``
+     - ``34``
+     - ``A1`` 的 ``exit``
+   * - ``13``
+     - ``Job`` 的 ``exit``
+     - ``42``
+     - ``B1`` 的 ``enter``
+   * - ``20``
+     - ``Job`` 的 ``>> during before``
+     - ``43``
+     - ``B1`` 的 ``during``
+   * - ``21``
+     - ``Job`` 的 ``>> during after``
+     - ``44``
+     - ``B1`` 的 ``exit``
+   * - ``30``
+     - ``A`` 的 ``>> during before``
+     - ``90``
+     - ``Done`` 的 ``enter``
+   * - ``31``
+     - ``A`` 的 ``>> during after``
+     -
+     -
+
+.. testcode::
+
+   import textwrap
+
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.simulate import SimulationRuntime
+
+   with open('region_owner_actions.fcstm') as stream:
+       runtime = SimulationRuntime(load_state_machine_from_text(stream.read()))
+   for event in [None, None, '/Fin']:
+       runtime.vars['seq'] = 0
+       runtime.cycle(event)
+       print(runtime.configuration, ' '.join(textwrap.wrap(str(runtime.vars['seq']), 2)))
+
+.. testoutput::
+
+   Root.Job{A: A1, B: B1} 10 11 32 20 30 33 31 42 43 21
+   Root.Job{A: A1, B: B1} 20 30 33 31 43 21
+   Root.Done 34 44 12 13 90
+
+脚本为每个周期打印配置和该周期里运行的动作的代码。周期 1 进入拥有者（``10``），运行它的普通 ``during before``\ （``11``），进入 ``A1``\ （``32``）；随后区域 ``A`` 在拥有者切面（``20``、``21``）和自己的切面（``30``、``31``）之间工作，
+区域 ``B`` 在同一周期接着工作。``B`` 没有切面，所以 ``43`` 单独出现。周期 2 是稳态：拥有者的切面对整组只出现一次，而不是每个叶子一次。周期 3 是退出：
+两个区域都由 ``/Fin`` 结束，``A1`` 与 ``B1`` 按书写顺序退出（``34``、``44``），整组把控制交还时拥有者的普通 ``during after`` 运行一次（``12``），
+随后拥有者退出（``13``）并进入 ``Done``\ （``90``）。周期 3 没有切面运行，因为拥有者之下没有 ``during`` 工作。这条轨迹不包含推测检查中被拒绝的候选转换；被拒绝的候选不留痕迹。
+
+.. _dsl-region-active-zh:
+
+活动查询
+~~~~~~~~~~~~~~~~~~~~
+
+``active("Path")`` 是一个条件：指定状态在当前配置里时为真。凡是能写条件的位置都可以用：守卫、效果里的 ``if`` 条件、生命周期动作与切面。持久变量的初始值里不能用。
+
+.. list-table:: 活动查询的路径
+   :header-rows: 1
+   :widths: 34 30 36
+
+   * - 写法
+     - 含义
+     - 结果
+   * - ``active("Plant.Job.Line.Cell.Feed.Busy")``
+     - 完整路径：根状态名，然后每一层命名空间，包括每个区域。
+     - 接受。
+   * - ``active("/Job.Line.Cell.Feed.Busy")``
+     - 相对根：``/`` 代表根状态。
+     - 接受；与完整路径是同一个状态。
+   * - ``active("Plant.Job")``
+     - 任何非伪状态，包括复合拥有者。
+     - 接受；拥有者在配置里时为真。
+   * - ``active("Root.A")``，其中 ``A`` 是区域
+     - 区域不是状态。
+     - ``E_ACTIVE_QUERY_TARGET``，``reason: region``。
+   * - ``active("Root.Leaf")``，跳过区域那一段
+     - 路径必须包含区域。
+     - ``E_ACTIVE_QUERY_TARGET``，``reason: not_found``。
+   * - ``active("Root.A.Relay")``，指向伪状态
+     - 伪状态不是停驻位置。
+     - ``E_ACTIVE_QUERY_TARGET``，``reason: pseudo``。
+   * - ``active("A.Leaf")``
+     - 既不以根状态名开头也不以 ``/`` 开头的路径。
+     - ``E_ACTIVE_QUERY_TARGET``，``reason: invalid_path``。
+
+模型构建把每个被查询的状态转成一个隐藏的 ``int`` 变量 ``__active_<路径用 _ 连接>``。标志在该状态 ``enter`` 的最前面置位，在 ``exit`` 的最后面清零。
+它在仿真器、生成代码与 BMC 里都是普通变量，``StateMachine.active_variables(config)`` 按位置算出它的值（见 :doc:`../simulation/index_zh`）。
+被查询的状态由 ``StateMachine.active_queries`` 列出。靠前的区域查询靠后区域里的状态，读到的是上一个周期的值；inspect 的 ``I_REGION_BACKWARD_READ`` 会报告这种写法。
+
+.. _dsl-region-diagnostics-zh:
+
+区域诊断
+~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 区域诊断
+   :header-rows: 1
+   :widths: 30 12 58
+
+   * - 诊断码
+     - 严重级别
+     - 触发条件
+   * - ``E_REGION_STRUCTURE``
+     - error
+     - 引用字段 ``namespace_path`` 与 ``reason``：``empty_region``\ （区域里没有状态）和 ``history_boundary``\ （拥有历史的状态，其子树里任何位置有区域）。
+       ``mixed_children``\ （一个状态里同时有状态与区域）与 ``owner_statements``\ （拥有者自己带转换、导入或历史）在手工构造的语法树上检查；语法本身已经把它们当作语法错误拒绝。
+   * - ``E_DUPLICATE_REGION``
+     - error
+     - 同一拥有者里有两个同名区域。引用字段 ``region_name``、``owner_path`` 与 ``previous_span``。
+   * - ``E_ACTIVE_QUERY_TARGET``
+     - error
+     - 引用字段 ``state_path`` 与 ``reason``：``invalid_path``、``not_found``、``region``、``pseudo``\ （以及持久变量初始值里的查询 ``initializer``，语法写不出这种情形）。
+   * - ``E_DANGLING_TRANSITION``
+     - error
+     - 转换端点不是持有它的作用域里的名字（见区域的边界）。
+   * - ``E_MISSING_STATE``
+     - error
+     - 链式事件路径的第一段不是该作用域里的状态。
+   * - ``E_INITIAL_TRANSITION_INVALID``
+     - error
+     - 区域缺少初始转换。
+
+下面的脚本加载上表的每个诊断码各一个用例，再加上上一节讲到的区域边界的几个用例，用 ``load_state_machine_from_text`` 加载并打印它报告的内容。
+语法错误单独报告，并掩盖同一文本里的全部模型错误。每个用例都是一段完整的模型文本，每个结果占一行：诊断码及其 ``reason`` 引用，或第一条语法错误。
+
+.. testcode::
+
+   from pyfcstm.dsl.error import GrammarParseError
+   from pyfcstm.model import load_state_machine_from_text
+   from pyfcstm.utils.validate import ModelValidationError
+
+   outside = 'state Root { [*] -> Idle; state Idle; state Run { region A { state Leaf; [*] -> Leaf; } } %s }'
+   cases = {
+       'empty_region': 'state Root { region Empty { } }',
+       'duplicate_region': 'state Root { region A { state Leaf; [*] -> Leaf; } region A { state Leaf; [*] -> Leaf; } }',
+       'active_region': 'state Root { during before { if [active("Root.A")] { } } region A { state Leaf; [*] -> Leaf; } }',
+       'across_regions': 'state Root { region A { state L; [*] -> L; L -> M; } region B { state M; [*] -> M; } }',
+       'plain_name_from_outside': outside % 'Idle -> Leaf;',
+       'event_of_owner_by_bare_name': 'state Root { [*] -> Job; state Job { event Abort; region A { [*] -> L1; state L1; state L2; L1 -> L2 : Job.Abort; } } }',
+       'region_without_initial': 'state Root { region A { state Leaf; } }',
+       'region_inside_region': 'state Root { region A { region B { state Leaf; [*] -> Leaf; } } }',
+       'dotted_into_region': outside % 'Idle -> Run.A.Leaf;',
+       'dotted_out_of_region': outside % 'Run.A -> Idle;',
+   }
+   for name, text in cases.items():
+       try:
+           load_state_machine_from_text(text)
+       except GrammarParseError as error:
+           print(name, '-> GrammarParseError:', error.errors[0])
+       except ModelValidationError as error:
+           for item in error.diagnostics:
+               print(name, '->', item.code, item.refs.get('reason'))
+
+.. testoutput::
+
+   empty_region -> E_REGION_STRUCTURE empty_region
+   duplicate_region -> E_DUPLICATE_REGION None
+   active_region -> E_ACTIVE_QUERY_TARGET region
+   across_regions -> E_DANGLING_TRANSITION tgt_not_found
+   plain_name_from_outside -> E_DANGLING_TRANSITION tgt_not_found
+   event_of_owner_by_bare_name -> E_MISSING_STATE event_path_not_found
+   region_without_initial -> E_INITIAL_TRANSITION_INVALID missing_entry
+   region_inside_region -> GrammarParseError: Syntax error at line 1, column 24, near 'region': Unexpected token 'region'
+   dotted_into_region -> GrammarParseError: Syntax error at line 1, column 102, near 'A': Unexpected token 'A'
+   dotted_out_of_region -> GrammarParseError: Syntax error at line 1, column 93, near '.': Invalid syntax - check for missing semicolons, braces, or operators
+
+命令行打印同样的消息但不带诊断码：对无效模型运行 ``pyfcstm inspect -i`` 以状态 1 退出，输出一条以 ``Invalid state machine model in <file>:`` 开头、可能占多行的消息；
+加 ``--collect-errors`` 会报告全部模型错误而不是在第一个处停止。各诊断码在注册表里的条目见 :doc:`../diagnostics_codes/index_zh`。
+
 
 .. _dsl-transition-forms-zh:
 
@@ -337,6 +826,8 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
      - ``... -> Owner.[H] ...;`` 或 ``... -> Owner.[H*] ...;``
      - 除强制形式外允许
      - 普通转换、初始转换和强制转换（\ ``!State`` / ``!*``\ ）都接受，触发写法不限；通过历史进入 ``Owner``\ 。
+
+写在区域里时，这些形式的拥有者作用域就是区域：区域内的初始、普通、退出与强制转换只指向本区域的状态，``State -> [*];`` 使该区域已完成（:ref:`dsl-region-forms-zh`）。
 
 组合转换细节：
 
@@ -536,6 +1027,209 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
 应看到 ``forced_transitions`` 摘要和多条带 ``forced_origin`` 的展开边。展开后的边仍是普通转换，因此来源状态的 ``exit`` 动作和目标状态的
 ``enter`` 动作照常遵循运行时顺序；强制转换本身不会绕过生命周期语义。
 
+.. _dsl-region-forced-zh:
+
+强制转换触达区域
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+源状态拥有区域的强制转换，只用语言里已有的写法展开：每个区域由普通的 ``State -> [*]`` 转换结束，之后拥有者再经普通转换继续。
+没有整组一次性抢占，也没有拥有者上的特判。模型导出的文本（``StateMachine.to_ast_node()``）给出的是实际运行的机器，
+所以它就是“书写形式与展开形式”的对照；``forced_transitions`` 为每条书写的声明保留一条记录。
+
+.. list-table:: 书写形式与展开形式
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 书写形式
+     - 展开形式（取自下面的输出）
+   * - ``!Running -> Idle : /Stop;``，其中 ``Running`` 拥有 ``Safety`` 与 ``Motion``
+     - 区域之下每个可以停驻的状态得到一条跟随转换 ``Watching -> [*] : if [__forced_0 == 1];`` 和一条起始转换
+       ``Watching -> [*] : /Stop effect { __forced_0 = 1; }``；拥有者作用域里得到
+       ``Running -> Idle : if [__forced_0 == 1] effect { __forced_0 = 0; }``，在最后一个区域结束后继续；
+       还有 ``Running -> __forced_gate_0 : Stop;`` 与 ``__forced_gate_0 -> Idle : if [__forced_0 == 0];``。
+   * - 拥有者作用域里的 ``!* -> Safe : /Fault;``，作用域里有普通状态、区域拥有者和目标自身
+     - 每个来源一条展开：``Idle -> Safe : Fault;``、``Safe -> Safe : Fault;``，以及 ``Run`` 的整组展开（同上）。
+   * - 写在区域里的 ``!On -> Off : /Stop;``，``On`` 是普通复合状态
+     - ``On`` 的每个叶子得到 ``Quiet -> [*] : /Stop effect { __forced_0 = 1; }``，区域里再有带门状态的
+       ``On -> Off : if [__forced_0 == 1] ...``；其他区域不受影响。
+
+隐藏变量 ``__forced_<n>`` 是 ``int``，在运行停驻的每个时刻都为 ``0``；模型已用的名字会被跳过，``StateMachine.forced_variables`` 列出这些名字。
+门状态 ``__forced_gate_<n>`` 出现在 ``walk_states()`` 里。它们与 ``__hist_*``、``__active_*`` 一样，在仿真器、生成代码和 BMC 里都是普通变量和状态；热启动必须给出该变量。
+
+这种写法带来的后果：
+
+* 声明的事件和条件在每个区域轮到它时检查一次，取的是机器停驻的状态；向上走的途中不再重新询问。
+* 区域按书写顺序离开：第一个区域的退出动作最先运行，嵌套的拥有者在自己的区域之后离开，拥有者最后退出。
+* 条件在区域工作的中途才成立时，排在使它成立的区域之后的区域当周期结束，排在它之前的区域下一个周期结束。
+* 目标无法进入时，已结束的区域保持结束，最后一个区域带着变量继续工作，整组在目标可以进入的第一个周期离开。
+* 同一拥有者的两条声明竞争整组：先抬起变量的那条占住整组，第二条在此期间不会被尝试。不含区域的模型会改试下一条声明（差别记录在
+  `issue #591 <https://github.com/HansBug/pyfcstm/issues/591>`_\ ）。区域里叶子的其他转换在变量抬起时照常工作；只有声明所在层的状态、中间的复合状态和拥有者的出边让位。
+* 强制声明不能带 ``effect``，也不能使用组合 ``+`` 触发。
+
+.. literalinclude:: region_forced_wildcard.fcstm
+   :language: fcstm
+
+.. literalinclude:: region_forced_in_region.fcstm
+   :language: fcstm
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('controller.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'], list(model.forced_variables))
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1 ['__forced_0']
+   ...
+           region Safety {
+   ...
+               Watching -> [*] : if [__forced_0 == 1];
+               Watching -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+           region Motion {
+   ...
+               Off -> [*] : if [__forced_0 == 1];
+               Off -> [*] : /Stop effect {
+                   __forced_0 = 1;
+               }
+   ...
+       pseudo state __forced_gate_0;
+   ...
+       Running -> Idle : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Running -> __forced_gate_0 : Stop;
+   ...
+       __forced_gate_0 -> Idle : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_wildcard.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   3
+   def int __forced_0 = 0;
+   state Plant {
+       state Idle;
+       state Run {
+           region A {
+               state A1;
+               A1 -> [*] : if [__forced_0 == 1];
+               A1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> A1;
+           }
+           region B {
+               state B1;
+               state B2;
+               B1 -> [*] : if [__forced_0 == 1];
+               B1 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               B2 -> [*] : if [__forced_0 == 1];
+               B2 -> [*] : /Fault effect {
+                   __forced_0 = 1;
+               }
+               [*] -> B1;
+               B1 -> B2 : /Next;
+           }
+       }
+       state Safe;
+       pseudo state __forced_gate_0;
+       event Fault;
+       event Next;
+       event Go;
+       Idle -> Safe : Fault;
+       Run -> Safe : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       Run -> __forced_gate_0 : Fault;
+       Safe -> Safe : Fault;
+       [*] -> Idle;
+       Idle -> Run : Go;
+       __forced_gate_0 -> Safe : if [__forced_0 == 0];
+   }
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   with open('region_forced_in_region.fcstm') as stream:
+       model = load_state_machine_from_text(stream.read())
+   print(model.forced_transitions[0]['expansion_count'])
+   print(model.to_ast_node())
+
+.. testoutput::
+
+   1
+   def int __forced_0 = 0;
+   state Plant {
+       state Job {
+           region Panel {
+               state On {
+                   state Quiet;
+                   state Loud;
+                   Quiet -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   Loud -> [*] : /Stop effect {
+                       __forced_0 = 1;
+                   }
+                   [*] -> Quiet;
+                   Quiet -> Loud : /Trip;
+               }
+               state Off;
+               pseudo state __forced_gate_0;
+               On -> Off : if [__forced_0 == 1] effect {
+                   __forced_0 = 0;
+               }
+               On -> __forced_gate_0 : /Stop;
+               [*] -> On;
+               __forced_gate_0 -> Off : if [__forced_0 == 0];
+           }
+   ...
+
+.. code-block:: console
+
+   $ pyfcstm simulate -i controller.fcstm --no-color -e "\
+   cycle --input fault=0 --input requested=1; \
+   cycle /Start --input fault=0 --input requested=1; \
+   cycle --input fault=0 --input requested=1; \
+   cycle /Stop --input fault=0 --input requested=1"
+   ...
+   Cycle: 3
+   Current State: Controller.Running{Safety: Watching, Motion: On}
+   Variables:
+     __forced_0 = 0
+   ...
+   Cycle: 4
+   Current State: Controller.Idle
+   Variables:
+     __forced_0 = 0
+   ...
+
+第一个脚本展开教程里的控制器（:download:`controller.fcstm </_models/controller.fcstm>`），两个区域是 ``Safety`` 与 ``Motion``：两个区域都得到跟随与起始转换；输出里显示了上表引用的那部分导出文本，
+末尾的终端记录显示 ``/Stop`` 在一个周期内结束两个区域并离开 ``Running``，``__forced_0`` 回到 ``0``。第二个脚本是上面的 ``!*`` 模型，``!*`` 展开成三条转换（``expansion_count`` 为 3）。
+第三个脚本展开写在区域里的声明。输出能确定展开的形式，不能说明退出的运行顺序，那部分由共享语义用例
+``region_forced_transition_of_an_owner_takes_the_outermost_group_and_the_nested_one_in_declaration_order``
+与 ``region_group_preemption_skips_exit_of_finished_region`` 固定。
+
+PlantUML、图形查看器与 ``pyfcstm inspect`` 仍按书写的模型，把一条强制声明画成、报成“每个适用的状态一条转换”。
+
 .. _dsl-history-reference-zh:
 
 历史展开准规范
@@ -700,6 +1394,34 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
 
 在 JSON 报告中，没有任何名字以 ``__hist_`` 开头，进入 ``Program.[H]`` 与 ``Program.[H*]`` 的转换带有 ``target_history``\ （\ ``shallow`` 与 ``deep``\ ），其 ``to_path`` 为 ``Washer.Program``\ 。
 
+.. _dsl-history-regions-zh:
+
+历史与区域
+~~~~~~~~~~~~~~~~~~~~
+
+历史只记住拥有者之下的一个叶子，所以无法描述铺在多个区域上的位置。
+
+.. list-table:: 区域附近的历史
+   :header-rows: 1
+   :widths: 40 20 40
+
+   * - 形式
+     - 结果
+     - 说明
+   * - 区域内、子树里没有区域的状态拥有 ``[H]`` / ``[H*]``\ （``region_nested_active.fcstm`` 里的 ``On``）
+     - 合法
+     - 在同一区域里从兄弟状态用 ``On.[H]`` 进入；记录变量 ``__hist_<owner>`` 是普通变量。
+   * - 拥有历史的状态，其子树里任何位置有区域拥有者
+     - ``E_REGION_STRUCTURE``，``reason: history_boundary``
+     - 报在拥有历史的状态上；:ref:`region-limits-run-zh` 里的脚本会打印它。
+   * - 直接写在区域体里的 ``[H] -> Child;``
+     - 语法错误
+     - 区域不是历史的拥有者；把状态包进一个普通状态。
+
+区域内的历史与其他历史一样被降级：变成普通变量、叶子的 ``exit`` 动作和它拥有者的带条件初始转换（见上文的“展开生成的名字”）。
+``region_nested_active.fcstm`` 的模型与从它的 ``to_ast_node()`` 文本重新加载得到的模型，在上面那段运行的事件序列之后再加一轮触发、停止与恢复，
+产生相同的配置与变量。
+
 .. _dsl-events-scopes-zh:
 
 事件与作用域
@@ -723,8 +1445,11 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
    * - 根事件
      - ``: /Name`` 或 ``: /Path.Event``
      - 从根状态开始的绝对事件路径。
+   * - 区域事件
+     - ``region`` 里的 ``event Name;`` 或 ``: Name``
+     - 归该区域；另一个区域里的同名事件是另一个事件。在区域之间共用事件要写根路径。见 :ref:`dsl-region-events-zh`。
 
-``chain_id`` 是可选 ``/`` 后接一个或多个点分标识符。来源私有信号使用本地事件，包含协议使用链式路径，全局拥有的事件使用根路径。
+``chain_id`` 是可选 ``/`` 后接一个或多个点分标识符。来源私有信号使用本地事件，包含协议使用链式路径，全局拥有的事件使用根路径。裸名字从不向外层作用域查找：在区域里写 ``: Abort`` 会创建 ``Region.Abort``，而不是找到声明在拥有者上的 ``Abort``。
 
 .. _dsl-operation-blocks-zh:
 
@@ -963,6 +1688,12 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
    * - 引用切面
      - ``>> during after ref Path;``
      - 复用命名动作。
+   * - 区域拥有者或祖先上的切面
+     - 拥有者上的 ``>> during before { ... }``
+     - 每个周期运行一次，包住整组区域，不按活动叶子计次。
+   * - 区域上的切面
+     - ``region A`` 里的 ``>> during after { ... }``
+     - 只作用于该区域，并且只在区域之下有 ``during`` 工作的周期里运行。见 :ref:`dsl-region-owner-actions-zh`。
    * - 组合伪中继
      - N/A
      - 切面动作不在组合伪中继链内执行。
@@ -1071,6 +1802,9 @@ Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；�
    * - 伪状态形状
      - ``E_PSEUDO_NOT_LEAF``
      - 解析形状不等于模型有效性。
+   * - 区域与活动查询
+     - ``E_REGION_STRUCTURE``、``E_DUPLICATE_REGION``、``E_ACTIVE_QUERY_TARGET``
+     - 用 ``reason`` 指明违反的规则；见 :ref:`dsl-region-diagnostics-zh`。
    * - 数值字面量 / 操作风险
      - ``W_NUMERIC_*`` 和数值分析器
      - 除非其他目标有自己的证据，否则描述为 ``c``、``c_poll``、``cpp``、``cpp_poll`` 的 C/C++ 部署配置风险。
@@ -1550,6 +2284,78 @@ DSL 覆盖矩阵
      - :ref:`dsl-expression-separation-zh`
      - 风险措辞行级审计
      - 已同步
+   * - ``dsl-region-forms``
+     - 区域
+     - ``region_definition`` / ``state_owner_statement``
+     - :doc:`/tutorials/regions/index_zh`
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-forms-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - ``region_single.fcstm`` 仿真
+     - 已同步
+   * - ``dsl-region-body-borders``
+     - 区域
+     - ``region_inner_statement`` / ``validate_region_structure``
+     - :doc:`/tutorials/regions/index_zh`
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-forms-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - 区域诊断脚本的输出
+     - 已同步
+   * - ``dsl-region-events``
+     - 区域
+     - ``pyfcstm/model/model.py`` 里的事件解析
+     - N/A：教程只用一条事件路径
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-events-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - ``region_events.fcstm`` 事件表与周期
+     - 已同步
+   * - ``dsl-region-owner-actions``
+     - 区域
+     - ``pyfcstm/simulate/runtime.py`` 里拥有者生命周期与切面的执行
+     - N/A：教程只用最少的动作
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-owner-actions-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - ``region_owner_actions.fcstm`` 解码后的轨迹
+     - 已同步
+   * - ``dsl-region-active``
+     - 区域
+     - ``activeExprCond`` / ``ActiveStateQuery``
+     - N/A：教程不涉及活动查询
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-active-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - ``region_nested_active.fcstm`` 隐藏变量
+     - 已同步
+   * - ``dsl-region-forced``
+     - 区域
+     - ``pyfcstm/model/model.py`` 里的强制转换展开
+     - :doc:`/tutorials/regions/index_zh`
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-forced-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - 在 :ref:`dsl-region-forced-zh` 下打印的导出文本
+     - 已同步
+   * - ``dsl-region-history``
+     - 区域
+     - 历史展开与 ``history_boundary``
+     - N/A：教程不涉及历史
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-history-regions-zh`
+     - :ref:`dsl-history-semantics-zh`
+     - ``region_nested_active.fcstm`` 运行与 :ref:`region-limits-run-zh` 里的历史脚本
+     - 已同步
+   * - ``dsl-region-diagnostics``
+     - 诊断
+     - ``pyfcstm/diagnostics/codes.yaml`` 里区域诊断码的条目
+     - N/A：教程不展示错误码
+     - :doc:`/how_to/regions/index_zh`
+     - :ref:`dsl-region-diagnostics-zh`
+     - :doc:`/explanations/region_semantics/index_zh`
+     - 在 :ref:`dsl-region-diagnostics-zh` 下打印的加载报告
+     - 已同步
 
 .. _dsl-fact-check-notes-zh:
 
@@ -1560,4 +2366,7 @@ DSL 覆盖矩阵
 * AST 形状与导出细节来自 ``pyfcstm/dsl/node.py`` 和 ``pyfcstm/dsl/listener.py``。
 * 导入组装事实来自 ``pyfcstm/model/imports.py``。
 * 目标风险诊断来自 ``pyfcstm/diagnostics/codes.yaml`` 和 ``pyfcstm/diagnostics/analyzers/``。
+* 区域语法来自 ``GrammarParser.g4`` 里的 ``region_definition`` 与 ``state_owner_statement``；区域结构检查来自
+  ``pyfcstm/model/region.py`` 的 ``validate_region_structure``；:ref:`dsl-region-forms-zh` 及之后各区域小节里的示例都针对本检出运行，输出原样收录。
+* 强制与历史的展开文本来自 ``StateMachine.to_ast_node()``；隐藏变量的名字来自 ``forced_variables``、``active_queries`` 与 ``history_owners``。
 * 面向 LLM 的语法指南在 ``pyfcstm/llm/fcstm_grammar_guide.md`` 中。本页不修改该打包指南。

@@ -99,16 +99,32 @@ class TestModelStateFleet:
     def test_model(self, model):
         assert model.defines == {
             "LeftMotor_counter": VarDefine(
-                name="LeftMotor_counter", type="int", init=Integer(value=0), doc=None
+                name="LeftMotor_counter",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "LeftMotor_limit": VarDefine(
-                name="LeftMotor_limit", type="int", init=Integer(value=3), doc=None
+                name="LeftMotor_limit",
+                type="int",
+                init=Integer(value=3),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "RightMotor_counter": VarDefine(
-                name="RightMotor_counter", type="int", init=Integer(value=0), doc=None
+                name="RightMotor_counter",
+                type="int",
+                init=Integer(value=0),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
             "RightMotor_limit": VarDefine(
-                name="RightMotor_limit", type="int", init=Integer(value=3), doc=None
+                name="RightMotor_limit",
+                type="int",
+                init=Integer(value=3),
+                doc=None,
+                role=VariableRole.CONTROL,
             ),
         }
         assert model.root_state.name == "Fleet"
@@ -122,24 +138,32 @@ class TestModelStateFleet:
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="LeftMotor_limit",
                 type="int",
                 expr=dsl_nodes.Integer(raw="3"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="RightMotor_counter",
                 type="int",
                 expr=dsl_nodes.Integer(raw="0"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
             dsl_nodes.DefAssignment(
                 name="RightMotor_limit",
                 type="int",
                 expr=dsl_nodes.Integer(raw="3"),
                 doc=None,
+                role=VariableRole.CONTROL,
+                spelling="def",
             ),
         ]
         assert ast_node.root_state.name == "Fleet"
@@ -148,6 +172,7 @@ class TestModelStateFleet:
         assert state_fleet.name == "Fleet"
         assert state_fleet.path == ("Fleet",)
         assert sorted(state_fleet.substates.keys()) == ["LeftMotor", "RightMotor"]
+        assert state_fleet.regions == {}
         assert state_fleet.events == {}
         assert len(state_fleet.transitions) == 2
         assert state_fleet.transitions[0].from_state == INIT_STATE
@@ -158,6 +183,9 @@ class TestModelStateFleet:
         assert state_fleet.transitions[0].doc is None
         assert state_fleet.transitions[0].parent_ref().name == "Fleet"
         assert state_fleet.transitions[0].parent_ref().path == ("Fleet",)
+        assert state_fleet.transitions[0].target_history is None
+        assert state_fleet.transitions[0].history_role is None
+        assert state_fleet.transitions[0].history_user_guard is None
         assert state_fleet.transitions[1].from_state == "LeftMotor"
         assert state_fleet.transitions[1].to_state == "RightMotor"
         assert state_fleet.transitions[1].event is None
@@ -166,6 +194,9 @@ class TestModelStateFleet:
         assert state_fleet.transitions[1].doc is None
         assert state_fleet.transitions[1].parent_ref().name == "Fleet"
         assert state_fleet.transitions[1].parent_ref().path == ("Fleet",)
+        assert state_fleet.transitions[1].target_history is None
+        assert state_fleet.transitions[1].history_role is None
+        assert state_fleet.transitions[1].history_user_guard is None
         assert state_fleet.named_functions == {}
         assert state_fleet.on_enters == []
         assert state_fleet.on_durings == []
@@ -176,6 +207,8 @@ class TestModelStateFleet:
         assert state_fleet.extra_name is None
         assert not state_fleet.is_pseudo
         assert state_fleet.doc is None
+        assert not state_fleet.is_history_gate
+        assert not state_fleet.is_forced_gate
         assert state_fleet.abstract_on_during_aspects == []
         assert state_fleet.abstract_on_durings == []
         assert state_fleet.abstract_on_enters == []
@@ -189,6 +222,9 @@ class TestModelStateFleet:
         assert state_fleet.init_transitions[0].doc is None
         assert state_fleet.init_transitions[0].parent_ref().name == "Fleet"
         assert state_fleet.init_transitions[0].parent_ref().path == ("Fleet",)
+        assert state_fleet.init_transitions[0].target_history is None
+        assert state_fleet.init_transitions[0].history_role is None
+        assert state_fleet.init_transitions[0].history_user_guard is None
         assert not state_fleet.is_leaf_state
         assert state_fleet.is_root_state
         assert not state_fleet.is_stoppable
@@ -208,6 +244,9 @@ class TestModelStateFleet:
         assert state_fleet.transitions_entering_children[0].parent_ref().path == (
             "Fleet",
         )
+        assert state_fleet.transitions_entering_children[0].target_history is None
+        assert state_fleet.transitions_entering_children[0].history_role is None
+        assert state_fleet.transitions_entering_children[0].history_user_guard is None
         assert len(state_fleet.transitions_entering_children_simplified) == 1
         assert (
             state_fleet.transitions_entering_children_simplified[0].from_state
@@ -228,6 +267,17 @@ class TestModelStateFleet:
         assert state_fleet.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Fleet",)
+        assert (
+            state_fleet.transitions_entering_children_simplified[0].target_history
+            is None
+        )
+        assert (
+            state_fleet.transitions_entering_children_simplified[0].history_role is None
+        )
+        assert (
+            state_fleet.transitions_entering_children_simplified[0].history_user_guard
+            is None
+        )
         assert len(state_fleet.transitions_from) == 1
         assert state_fleet.transitions_from[0].from_state == "Fleet"
         assert state_fleet.transitions_from[0].to_state == EXIT_STATE
@@ -236,6 +286,9 @@ class TestModelStateFleet:
         assert state_fleet.transitions_from[0].effects == []
         assert state_fleet.transitions_from[0].doc is None
         assert state_fleet.transitions_from[0].parent_ref is None
+        assert state_fleet.transitions_from[0].target_history is None
+        assert state_fleet.transitions_from[0].history_role is None
+        assert state_fleet.transitions_from[0].history_user_guard is None
         assert len(state_fleet.transitions_to) == 1
         assert state_fleet.transitions_to[0].from_state == INIT_STATE
         assert state_fleet.transitions_to[0].to_state == "Fleet"
@@ -244,6 +297,9 @@ class TestModelStateFleet:
         assert state_fleet.transitions_to[0].effects == []
         assert state_fleet.transitions_to[0].doc is None
         assert state_fleet.transitions_to[0].parent_ref is None
+        assert state_fleet.transitions_to[0].target_history is None
+        assert state_fleet.transitions_to[0].history_role is None
+        assert state_fleet.transitions_to[0].history_user_guard is None
 
     def test_state_fleet_to_ast_node(self, state_fleet):
         ast_node = state_fleet.to_ast_node()
@@ -273,6 +329,8 @@ class TestModelStateFleet:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Running",
@@ -288,6 +346,8 @@ class TestModelStateFleet:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -298,6 +358,7 @@ class TestModelStateFleet:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -319,6 +380,7 @@ class TestModelStateFleet:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -336,6 +398,7 @@ class TestModelStateFleet:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -345,6 +408,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="RightMotor",
@@ -366,6 +431,8 @@ class TestModelStateFleet:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                         dsl_nodes.StateDefinition(
                             name="Running",
@@ -381,6 +448,8 @@ class TestModelStateFleet:
                             force_transitions=[],
                             is_pseudo=False,
                             doc=None,
+                            histories=[],
+                            regions=[],
                         ),
                     ],
                     transitions=[
@@ -391,6 +460,7 @@ class TestModelStateFleet:
                             condition_expr=None,
                             post_operations=[],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -412,6 +482,7 @@ class TestModelStateFleet:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -429,6 +500,7 @@ class TestModelStateFleet:
                                 )
                             ],
                             doc=None,
+                            target_history=None,
                         ),
                     ],
                     enters=[],
@@ -438,6 +510,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -448,6 +522,7 @@ class TestModelStateFleet:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftMotor",
@@ -456,6 +531,7 @@ class TestModelStateFleet:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -465,6 +541,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_list_on_enters(self, state_fleet):
@@ -527,6 +605,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.name == "LeftMotor"
         assert state_fleet_leftmotor.path == ("Fleet", "LeftMotor")
         assert sorted(state_fleet_leftmotor.substates.keys()) == ["Idle", "Running"]
+        assert state_fleet_leftmotor.regions == {}
         assert state_fleet_leftmotor.events == {}
         assert len(state_fleet_leftmotor.transitions) == 3
         assert state_fleet_leftmotor.transitions[0].from_state == INIT_STATE
@@ -540,6 +619,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor.transitions[0].target_history is None
+        assert state_fleet_leftmotor.transitions[0].history_role is None
+        assert state_fleet_leftmotor.transitions[0].history_user_guard is None
         assert state_fleet_leftmotor.transitions[1].from_state == "Idle"
         assert state_fleet_leftmotor.transitions[1].to_state == "Running"
         assert state_fleet_leftmotor.transitions[1].event is None
@@ -562,6 +644,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor.transitions[1].target_history is None
+        assert state_fleet_leftmotor.transitions[1].history_role is None
+        assert state_fleet_leftmotor.transitions[1].history_user_guard is None
         assert state_fleet_leftmotor.transitions[2].from_state == "Running"
         assert state_fleet_leftmotor.transitions[2].to_state == "Idle"
         assert state_fleet_leftmotor.transitions[2].event is None
@@ -579,6 +664,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor.transitions[2].target_history is None
+        assert state_fleet_leftmotor.transitions[2].history_role is None
+        assert state_fleet_leftmotor.transitions[2].history_user_guard is None
         assert state_fleet_leftmotor.named_functions == {}
         assert state_fleet_leftmotor.on_enters == []
         assert state_fleet_leftmotor.on_durings == []
@@ -590,6 +678,8 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.extra_name is None
         assert not state_fleet_leftmotor.is_pseudo
         assert state_fleet_leftmotor.doc is None
+        assert not state_fleet_leftmotor.is_history_gate
+        assert not state_fleet_leftmotor.is_forced_gate
         assert state_fleet_leftmotor.abstract_on_during_aspects == []
         assert state_fleet_leftmotor.abstract_on_durings == []
         assert state_fleet_leftmotor.abstract_on_enters == []
@@ -608,6 +698,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor.init_transitions[0].target_history is None
+        assert state_fleet_leftmotor.init_transitions[0].history_role is None
+        assert state_fleet_leftmotor.init_transitions[0].history_user_guard is None
         assert not state_fleet_leftmotor.is_leaf_state
         assert not state_fleet_leftmotor.is_root_state
         assert not state_fleet_leftmotor.is_stoppable
@@ -634,6 +727,17 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_entering_children[
             0
         ].parent_ref().path == ("Fleet", "LeftMotor")
+        assert (
+            state_fleet_leftmotor.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_fleet_leftmotor.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_fleet_leftmotor.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_fleet_leftmotor.transitions_entering_children_simplified) == 1
         assert (
             state_fleet_leftmotor.transitions_entering_children_simplified[0].from_state
@@ -668,6 +772,24 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Fleet", "LeftMotor")
+        assert (
+            state_fleet_leftmotor.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_fleet_leftmotor.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_fleet_leftmotor.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert len(state_fleet_leftmotor.transitions_from) == 1
         assert state_fleet_leftmotor.transitions_from[0].from_state == "LeftMotor"
         assert state_fleet_leftmotor.transitions_from[0].to_state == "RightMotor"
@@ -677,6 +799,9 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_from[0].doc is None
         assert state_fleet_leftmotor.transitions_from[0].parent_ref().name == "Fleet"
         assert state_fleet_leftmotor.transitions_from[0].parent_ref().path == ("Fleet",)
+        assert state_fleet_leftmotor.transitions_from[0].target_history is None
+        assert state_fleet_leftmotor.transitions_from[0].history_role is None
+        assert state_fleet_leftmotor.transitions_from[0].history_user_guard is None
         assert len(state_fleet_leftmotor.transitions_to) == 1
         assert state_fleet_leftmotor.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_leftmotor.transitions_to[0].to_state == "LeftMotor"
@@ -686,6 +811,9 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_to[0].doc is None
         assert state_fleet_leftmotor.transitions_to[0].parent_ref().name == "Fleet"
         assert state_fleet_leftmotor.transitions_to[0].parent_ref().path == ("Fleet",)
+        assert state_fleet_leftmotor.transitions_to[0].target_history is None
+        assert state_fleet_leftmotor.transitions_to[0].history_role is None
+        assert state_fleet_leftmotor.transitions_to[0].history_user_guard is None
 
     def test_state_fleet_leftmotor_to_ast_node(self, state_fleet_leftmotor):
         ast_node = state_fleet_leftmotor.to_ast_node()
@@ -709,6 +837,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Running",
@@ -724,6 +854,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -734,6 +866,7 @@ class TestModelStateFleet:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -755,6 +888,7 @@ class TestModelStateFleet:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -771,6 +905,7 @@ class TestModelStateFleet:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -780,6 +915,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_leftmotor_list_on_enters(self, state_fleet_leftmotor):
@@ -850,6 +987,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.name == "Idle"
         assert state_fleet_leftmotor_idle.path == ("Fleet", "LeftMotor", "Idle")
         assert sorted(state_fleet_leftmotor_idle.substates.keys()) == []
+        assert state_fleet_leftmotor_idle.regions == {}
         assert state_fleet_leftmotor_idle.events == {}
         assert state_fleet_leftmotor_idle.transitions == []
         assert state_fleet_leftmotor_idle.named_functions == {}
@@ -863,6 +1001,8 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.extra_name is None
         assert not state_fleet_leftmotor_idle.is_pseudo
         assert state_fleet_leftmotor_idle.doc is None
+        assert not state_fleet_leftmotor_idle.is_history_gate
+        assert not state_fleet_leftmotor_idle.is_forced_gate
         assert state_fleet_leftmotor_idle.abstract_on_during_aspects == []
         assert state_fleet_leftmotor_idle.abstract_on_durings == []
         assert state_fleet_leftmotor_idle.abstract_on_enters == []
@@ -912,6 +1052,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor_idle.transitions_from[0].target_history is None
+        assert state_fleet_leftmotor_idle.transitions_from[0].history_role is None
+        assert state_fleet_leftmotor_idle.transitions_from[0].history_user_guard is None
         assert len(state_fleet_leftmotor_idle.transitions_to) == 2
         assert state_fleet_leftmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_leftmotor_idle.transitions_to[0].to_state == "Idle"
@@ -927,6 +1070,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor_idle.transitions_to[0].target_history is None
+        assert state_fleet_leftmotor_idle.transitions_to[0].history_role is None
+        assert state_fleet_leftmotor_idle.transitions_to[0].history_user_guard is None
         assert state_fleet_leftmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_leftmotor_idle.transitions_to[1].to_state == "Idle"
         assert state_fleet_leftmotor_idle.transitions_to[1].event is None
@@ -947,6 +1093,9 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor_idle.transitions_to[1].target_history is None
+        assert state_fleet_leftmotor_idle.transitions_to[1].history_role is None
+        assert state_fleet_leftmotor_idle.transitions_to[1].history_user_guard is None
 
     def test_state_fleet_leftmotor_idle_to_ast_node(self, state_fleet_leftmotor_idle):
         ast_node = state_fleet_leftmotor_idle.to_ast_node()
@@ -964,6 +1113,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_leftmotor_idle_list_on_enters(
@@ -1055,6 +1206,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.name == "Running"
         assert state_fleet_leftmotor_running.path == ("Fleet", "LeftMotor", "Running")
         assert sorted(state_fleet_leftmotor_running.substates.keys()) == []
+        assert state_fleet_leftmotor_running.regions == {}
         assert state_fleet_leftmotor_running.events == {}
         assert state_fleet_leftmotor_running.transitions == []
         assert state_fleet_leftmotor_running.named_functions == {}
@@ -1068,6 +1220,8 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.extra_name is None
         assert not state_fleet_leftmotor_running.is_pseudo
         assert state_fleet_leftmotor_running.doc is None
+        assert not state_fleet_leftmotor_running.is_history_gate
+        assert not state_fleet_leftmotor_running.is_forced_gate
         assert state_fleet_leftmotor_running.abstract_on_during_aspects == []
         assert state_fleet_leftmotor_running.abstract_on_durings == []
         assert state_fleet_leftmotor_running.abstract_on_enters == []
@@ -1112,6 +1266,11 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor_running.transitions_from[0].target_history is None
+        assert state_fleet_leftmotor_running.transitions_from[0].history_role is None
+        assert (
+            state_fleet_leftmotor_running.transitions_from[0].history_user_guard is None
+        )
         assert len(state_fleet_leftmotor_running.transitions_to) == 1
         assert state_fleet_leftmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_leftmotor_running.transitions_to[0].to_state == "Running"
@@ -1138,6 +1297,11 @@ class TestModelStateFleet:
             "Fleet",
             "LeftMotor",
         )
+        assert state_fleet_leftmotor_running.transitions_to[0].target_history is None
+        assert state_fleet_leftmotor_running.transitions_to[0].history_role is None
+        assert (
+            state_fleet_leftmotor_running.transitions_to[0].history_user_guard is None
+        )
 
     def test_state_fleet_leftmotor_running_to_ast_node(
         self, state_fleet_leftmotor_running
@@ -1157,6 +1321,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_leftmotor_running_list_on_enters(
@@ -1250,6 +1416,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.name == "RightMotor"
         assert state_fleet_rightmotor.path == ("Fleet", "RightMotor")
         assert sorted(state_fleet_rightmotor.substates.keys()) == ["Idle", "Running"]
+        assert state_fleet_rightmotor.regions == {}
         assert state_fleet_rightmotor.events == {}
         assert len(state_fleet_rightmotor.transitions) == 3
         assert state_fleet_rightmotor.transitions[0].from_state == INIT_STATE
@@ -1263,6 +1430,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor.transitions[0].target_history is None
+        assert state_fleet_rightmotor.transitions[0].history_role is None
+        assert state_fleet_rightmotor.transitions[0].history_user_guard is None
         assert state_fleet_rightmotor.transitions[1].from_state == "Idle"
         assert state_fleet_rightmotor.transitions[1].to_state == "Running"
         assert state_fleet_rightmotor.transitions[1].event is None
@@ -1285,6 +1455,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor.transitions[1].target_history is None
+        assert state_fleet_rightmotor.transitions[1].history_role is None
+        assert state_fleet_rightmotor.transitions[1].history_user_guard is None
         assert state_fleet_rightmotor.transitions[2].from_state == "Running"
         assert state_fleet_rightmotor.transitions[2].to_state == "Idle"
         assert state_fleet_rightmotor.transitions[2].event is None
@@ -1302,6 +1475,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor.transitions[2].target_history is None
+        assert state_fleet_rightmotor.transitions[2].history_role is None
+        assert state_fleet_rightmotor.transitions[2].history_user_guard is None
         assert state_fleet_rightmotor.named_functions == {}
         assert state_fleet_rightmotor.on_enters == []
         assert state_fleet_rightmotor.on_durings == []
@@ -1313,6 +1489,8 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.extra_name is None
         assert not state_fleet_rightmotor.is_pseudo
         assert state_fleet_rightmotor.doc is None
+        assert not state_fleet_rightmotor.is_history_gate
+        assert not state_fleet_rightmotor.is_forced_gate
         assert state_fleet_rightmotor.abstract_on_during_aspects == []
         assert state_fleet_rightmotor.abstract_on_durings == []
         assert state_fleet_rightmotor.abstract_on_enters == []
@@ -1331,6 +1509,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor.init_transitions[0].target_history is None
+        assert state_fleet_rightmotor.init_transitions[0].history_role is None
+        assert state_fleet_rightmotor.init_transitions[0].history_user_guard is None
         assert not state_fleet_rightmotor.is_leaf_state
         assert not state_fleet_rightmotor.is_root_state
         assert not state_fleet_rightmotor.is_stoppable
@@ -1359,6 +1540,17 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions_entering_children[
             0
         ].parent_ref().path == ("Fleet", "RightMotor")
+        assert (
+            state_fleet_rightmotor.transitions_entering_children[0].target_history
+            is None
+        )
+        assert (
+            state_fleet_rightmotor.transitions_entering_children[0].history_role is None
+        )
+        assert (
+            state_fleet_rightmotor.transitions_entering_children[0].history_user_guard
+            is None
+        )
         assert len(state_fleet_rightmotor.transitions_entering_children_simplified) == 1
         assert (
             state_fleet_rightmotor.transitions_entering_children_simplified[
@@ -1395,6 +1587,24 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions_entering_children_simplified[
             0
         ].parent_ref().path == ("Fleet", "RightMotor")
+        assert (
+            state_fleet_rightmotor.transitions_entering_children_simplified[
+                0
+            ].target_history
+            is None
+        )
+        assert (
+            state_fleet_rightmotor.transitions_entering_children_simplified[
+                0
+            ].history_role
+            is None
+        )
+        assert (
+            state_fleet_rightmotor.transitions_entering_children_simplified[
+                0
+            ].history_user_guard
+            is None
+        )
         assert state_fleet_rightmotor.transitions_from == []
         assert len(state_fleet_rightmotor.transitions_to) == 1
         assert state_fleet_rightmotor.transitions_to[0].from_state == "LeftMotor"
@@ -1405,6 +1615,9 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions_to[0].doc is None
         assert state_fleet_rightmotor.transitions_to[0].parent_ref().name == "Fleet"
         assert state_fleet_rightmotor.transitions_to[0].parent_ref().path == ("Fleet",)
+        assert state_fleet_rightmotor.transitions_to[0].target_history is None
+        assert state_fleet_rightmotor.transitions_to[0].history_role is None
+        assert state_fleet_rightmotor.transitions_to[0].history_user_guard is None
 
     def test_state_fleet_rightmotor_to_ast_node(self, state_fleet_rightmotor):
         ast_node = state_fleet_rightmotor.to_ast_node()
@@ -1428,6 +1641,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
                 dsl_nodes.StateDefinition(
                     name="Running",
@@ -1443,6 +1658,8 @@ class TestModelStateFleet:
                     force_transitions=[],
                     is_pseudo=False,
                     doc=None,
+                    histories=[],
+                    regions=[],
                 ),
             ],
             transitions=[
@@ -1453,6 +1670,7 @@ class TestModelStateFleet:
                     condition_expr=None,
                     post_operations=[],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -1474,6 +1692,7 @@ class TestModelStateFleet:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -1490,6 +1709,7 @@ class TestModelStateFleet:
                         )
                     ],
                     doc=None,
+                    target_history=None,
                 ),
             ],
             enters=[],
@@ -1499,6 +1719,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_rightmotor_list_on_enters(self, state_fleet_rightmotor):
@@ -1569,6 +1791,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.name == "Idle"
         assert state_fleet_rightmotor_idle.path == ("Fleet", "RightMotor", "Idle")
         assert sorted(state_fleet_rightmotor_idle.substates.keys()) == []
+        assert state_fleet_rightmotor_idle.regions == {}
         assert state_fleet_rightmotor_idle.events == {}
         assert state_fleet_rightmotor_idle.transitions == []
         assert state_fleet_rightmotor_idle.named_functions == {}
@@ -1582,6 +1805,8 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.extra_name is None
         assert not state_fleet_rightmotor_idle.is_pseudo
         assert state_fleet_rightmotor_idle.doc is None
+        assert not state_fleet_rightmotor_idle.is_history_gate
+        assert not state_fleet_rightmotor_idle.is_forced_gate
         assert state_fleet_rightmotor_idle.abstract_on_during_aspects == []
         assert state_fleet_rightmotor_idle.abstract_on_durings == []
         assert state_fleet_rightmotor_idle.abstract_on_enters == []
@@ -1631,6 +1856,11 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor_idle.transitions_from[0].target_history is None
+        assert state_fleet_rightmotor_idle.transitions_from[0].history_role is None
+        assert (
+            state_fleet_rightmotor_idle.transitions_from[0].history_user_guard is None
+        )
         assert len(state_fleet_rightmotor_idle.transitions_to) == 2
         assert state_fleet_rightmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_rightmotor_idle.transitions_to[0].to_state == "Idle"
@@ -1646,6 +1876,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor_idle.transitions_to[0].target_history is None
+        assert state_fleet_rightmotor_idle.transitions_to[0].history_role is None
+        assert state_fleet_rightmotor_idle.transitions_to[0].history_user_guard is None
         assert state_fleet_rightmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_rightmotor_idle.transitions_to[1].to_state == "Idle"
         assert state_fleet_rightmotor_idle.transitions_to[1].event is None
@@ -1666,6 +1899,9 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor_idle.transitions_to[1].target_history is None
+        assert state_fleet_rightmotor_idle.transitions_to[1].history_role is None
+        assert state_fleet_rightmotor_idle.transitions_to[1].history_user_guard is None
 
     def test_state_fleet_rightmotor_idle_to_ast_node(self, state_fleet_rightmotor_idle):
         ast_node = state_fleet_rightmotor_idle.to_ast_node()
@@ -1683,6 +1919,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_rightmotor_idle_list_on_enters(
@@ -1776,6 +2014,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_running.name == "Running"
         assert state_fleet_rightmotor_running.path == ("Fleet", "RightMotor", "Running")
         assert sorted(state_fleet_rightmotor_running.substates.keys()) == []
+        assert state_fleet_rightmotor_running.regions == {}
         assert state_fleet_rightmotor_running.events == {}
         assert state_fleet_rightmotor_running.transitions == []
         assert state_fleet_rightmotor_running.named_functions == {}
@@ -1792,6 +2031,8 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_running.extra_name is None
         assert not state_fleet_rightmotor_running.is_pseudo
         assert state_fleet_rightmotor_running.doc is None
+        assert not state_fleet_rightmotor_running.is_history_gate
+        assert not state_fleet_rightmotor_running.is_forced_gate
         assert state_fleet_rightmotor_running.abstract_on_during_aspects == []
         assert state_fleet_rightmotor_running.abstract_on_durings == []
         assert state_fleet_rightmotor_running.abstract_on_enters == []
@@ -1838,6 +2079,12 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor_running.transitions_from[0].target_history is None
+        assert state_fleet_rightmotor_running.transitions_from[0].history_role is None
+        assert (
+            state_fleet_rightmotor_running.transitions_from[0].history_user_guard
+            is None
+        )
         assert len(state_fleet_rightmotor_running.transitions_to) == 1
         assert state_fleet_rightmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_rightmotor_running.transitions_to[0].to_state == "Running"
@@ -1864,6 +2111,11 @@ class TestModelStateFleet:
             "Fleet",
             "RightMotor",
         )
+        assert state_fleet_rightmotor_running.transitions_to[0].target_history is None
+        assert state_fleet_rightmotor_running.transitions_to[0].history_role is None
+        assert (
+            state_fleet_rightmotor_running.transitions_to[0].history_user_guard is None
+        )
 
     def test_state_fleet_rightmotor_running_to_ast_node(
         self, state_fleet_rightmotor_running
@@ -1883,6 +2135,8 @@ class TestModelStateFleet:
             force_transitions=[],
             is_pseudo=False,
             doc=None,
+            histories=[],
+            regions=[],
         )
 
     def test_state_fleet_rightmotor_running_list_on_enters(

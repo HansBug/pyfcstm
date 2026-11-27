@@ -742,11 +742,22 @@ class ActionBlock:
         not name the call, so a chain starting from an anonymous ``ref``
         reports ``None``. Defaults to ``None``.
     :type named_ref: str, optional
+    :param stack_states: Paths of the states on the stack of the unit that runs
+        the block, outermost first, while the block runs; regions are not
+        states and are left out.  Only a model with regions records it, because
+        only there the position of the machine at that moment is more than the
+        path of one leaf; defaults to ``None`` and is then left out of the
+        canonical form.
+    :type stack_states: Tuple[str, ...], optional
 
     Example::
 
         >>> ActionBlock('state_action', 'leaf_during', 0, 'Root', ()).operations
         ()
+        >>> block = ActionBlock('state_action', 'leaf_during', 0, 'Root', (),
+        ...                     stack_states=('Root', 'Root.A'))
+        >>> block.to_canonical()['stack_states']
+        ['Root', 'Root.A']
     """
 
     block_kind: str
@@ -760,6 +771,7 @@ class ActionBlock:
     active_leaf_path: Optional[str] = None
     execution_state_path: Optional[str] = None
     named_ref: Optional[str] = None
+    stack_states: Optional[Tuple[str, ...]] = None
 
     def __post_init__(self) -> None:
         owner_state_id = _validate_index(self.owner_state_id, "owner_state_id")
@@ -821,6 +833,15 @@ class ActionBlock:
                 "named_ref",
                 _require_non_empty_string(self.named_ref, "named_ref"),
             )
+        if self.stack_states is not None:
+            object.__setattr__(
+                self,
+                "stack_states",
+                tuple(
+                    _require_non_empty_string(item, "stack_states item")
+                    for item in self.stack_states
+                ),
+            )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable action-block dictionary.
@@ -833,7 +854,7 @@ class ActionBlock:
             >>> ActionBlock('state_action', 'leaf_during', 0, 'Root', ()).to_canonical()['block_kind']
             'state_action'
         """
-        return {
+        canonical = {
             "node": "action_block",
             "block_kind": self.block_kind,
             "runtime_role": self.runtime_role,
@@ -847,6 +868,9 @@ class ActionBlock:
             "named_ref": self.named_ref,
             "operations": [_statement_to_canonical(item) for item in self.operations],
         }
+        if self.stack_states is not None:
+            canonical["stack_states"] = list(self.stack_states)
+        return canonical
 
 
 def _expr_to_text(expr: Expr) -> str:
@@ -1166,12 +1190,19 @@ class CycleCase:
     :param domain: Optional domain used for eager validation, defaults to
         ``None``.
     :type domain: BmcDomain, optional
+    :param transitions: Labels of the transitions the path commits, in the order
+        it commits them and in the format the simulator's execution trace uses
+        (``owner::index::source->target``).  They are replay evidence, not part
+        of the canonical form; defaults to ``()``.
+    :type transitions: Tuple[str, ...], optional
 
     Example::
 
         >>> case = CycleCase('transition', 0, 'Root', 0, 'Root', 'Root::transition::Root::0', BoolTemplate.true(), ())
         >>> case.condition.evaluate({})
         True
+        >>> case.transitions
+        ()
     """
 
     kind: str
@@ -1188,6 +1219,7 @@ class CycleCase:
     failed_conditions: Tuple[BoolTemplate, ...] = ()
     consumed_events: Tuple[str, ...] = ()
     domain: Optional[BmcDomain] = field(default=None, repr=False, compare=False)
+    transitions: Tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         kind = _validate_choice(self.kind, _CASE_KINDS, "case kind")

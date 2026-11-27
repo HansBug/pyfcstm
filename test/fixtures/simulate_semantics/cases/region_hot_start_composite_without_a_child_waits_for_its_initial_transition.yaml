@@ -1,0 +1,21 @@
+title: 'A plain composite state written without a child waits for initialization: its enter does not run,
+  its initial transition enters the child'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'W.Job{A: Q{A1: W1, A2: W2}, B: Comp}'
+  vars:
+    seq: 0
+    n: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: W1, A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 5
+      n: 10101

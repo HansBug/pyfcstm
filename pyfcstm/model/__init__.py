@@ -34,6 +34,10 @@ The following public components are re-exported here:
 * :class:`State` - Hierarchical state model
 * :class:`VarDefine` - Variable definition model
 * :class:`StateMachine` - Root state-machine model
+* :class:`Region` - Ordered namespace of child states, events and transitions
+* :class:`Configuration` - Immutable recursive active-state position
+* :class:`ActiveStateQuery` - Authored activity-query expression
+* :class:`ActiveQuery` - Bound target and generated activity-flag metadata
 * :func:`parse_dsl_node_to_state_machine` - Build a model from DSL AST
 * :class:`DetailLevelLiteral` - PlantUML detail level literal type
 * :class:`PlantUMLOptionsInput` - Accepted PlantUML option input type
@@ -67,6 +71,9 @@ Example::
 """
 
 from .base import AstExportable, PlantUMLExportable
+from .region import Region
+from .configuration import Configuration
+from .active import ActiveQuery
 from .expr import (
     Expr,
     Integer,
@@ -78,6 +85,7 @@ from .expr import (
     ConditionalOp,
     UFunc,
     Variable,
+    ActiveStateQuery,
     parse_expr_node_to_expr,
     parse_expr_from_string,
     parse_expr,
@@ -138,6 +146,10 @@ __all__ = [
     "OnStage",
     "OnAspect",
     "State",
+    "Region",
+    "Configuration",
+    "ActiveQuery",
+    "ActiveStateQuery",
     "VarDefine",
     "VariableRole",
     "StateMachine",

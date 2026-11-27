@@ -1,0 +1,15 @@
+state Rig {
+    event Start;
+    region Left {
+        [*] -> Idle;
+        state Idle;
+        state Busy;
+        Idle -> Busy : /Start;
+    }
+    region Right {
+        [*] -> Idle;
+        state Idle;
+        state Busy;
+        Idle -> Busy : /Start;
+    }
+}

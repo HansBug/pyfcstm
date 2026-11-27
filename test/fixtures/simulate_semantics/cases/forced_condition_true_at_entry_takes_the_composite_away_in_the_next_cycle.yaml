@@ -1,0 +1,32 @@
+title: A forced condition that already holds when its source is entered is taken in the next cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The entry cycle ends at the initial leaf, which runs its first during; the forced transition is taken from there in the following cycle.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 3
+  expect:
+    state: Root.Q
+    vars:
+      n: 3

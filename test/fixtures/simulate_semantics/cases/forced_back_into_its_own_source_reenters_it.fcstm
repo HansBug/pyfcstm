@@ -1,0 +1,7 @@
+input int u;
+def int n = 0;
+state Root {
+    [*] -> P;
+    state P { [*] -> a1; state a1 { during { n = n + 1; } } state a2 { during { n = n + 1; } } a1 -> a2 : if [u == 5]; }
+    !P -> P : if [u == 1];
+}

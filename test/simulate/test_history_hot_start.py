@@ -13,6 +13,9 @@ USER_VARS = {
     "fill_entries": 0,
     "agitate_entries": 0,
     "wash_initials": 0,
+    # The hidden variable of the forced ``!Program -> Paused`` of the model: an
+    # ordinary variable, so a hot start supplies it like the others.
+    "__forced_0": 0,
 }
 
 
@@ -35,30 +38,35 @@ class TestHistoryHotStart:
         runtime.cycle([EVENTS["Deep"]])
         assert ".".join(runtime.current_state.path) == "Washer.Program." + leaf
 
-    def test_a_pending_restore_is_rejected(self):
+    @pytest.mark.parametrize(
+        "name,value",
+        [
+            ("__hist_goto", 5),
+            ("__hist_Program", -1),
+            ("__hist_Program", 1),
+            ("__hist_Program", 2),
+            ("__hist_Program", 99),
+        ],
+    )
+    def test_a_value_no_execution_holds_is_taken_like_any_other(self, name, value):
+        """The hidden variables are ordinary variables: nothing is refused, and the
+        machine does exactly what the model loaded from its exported text does."""
         machine = load_state_machine_from_text(WASHER)
-        with pytest.raises(ValueError, match=r"__hist_goto.*must be 0"):
-            _hot_start(machine, __hist_goto=5)
+        expansion = load_state_machine_from_text(str(machine.to_ast_node()))
+        given = {**USER_VARS, **machine.history_variables(), name: value}
+        outcomes = []
+        for model in (machine, expansion):
+            runtime = SimulationRuntime(
+                model, initial_state="Washer.Paused", initial_vars=dict(given)
+            )
+            rows = []
+            for events in ([], [EVENTS["Deep"]], [], []):
+                runtime.cycle(events)
+                rows.append((runtime.current_state.path, sorted(runtime.vars.items())))
+            outcomes.append(rows)
+        assert outcomes[0] == outcomes[1]
 
-    @pytest.mark.parametrize("value", [-1, 1, 2, 99])
-    def test_a_record_that_names_no_stoppable_leaf_is_rejected(self, value):
-        machine = load_state_machine_from_text(WASHER)
-        (owner,) = machine.history_owners
-        assert owner.decode(value) is None
-        with pytest.raises(ValueError) as info:
-            _hot_start(machine, __hist_Program=value)
-        message = str(info.value)
-        assert "__hist_Program" in message and "Washer.Program" in message
-        for leaf in ("Idle", "Wash.Fill", "Wash.Agitate"):
-            assert leaf in message
-        assert "history_variables" in message
-
-    def test_initial_values_without_a_hot_start_are_checked_too(self):
-        machine = load_state_machine_from_text(WASHER)
-        with pytest.raises(ValueError, match="__hist_goto"):
-            SimulationRuntime(machine, initial_vars={"__hist_goto": 3})
-
-    def test_models_without_history_ignore_the_check(self):
+    def test_the_history_variables_of_a_model_without_history_are_plain_variables(self):
         machine = load_state_machine_from_text(
             "def int __hist_goto = 3; state R { state A; [*] -> A; }"
         )
@@ -85,12 +93,9 @@ class TestHistoryInitCommand:
         processor.process("cycle %s" % EVENTS["Deep"])
         assert processor.runtime.current_state.path == ("Washer", "Program", "Wash", "Agitate")
 
-    def test_init_reports_an_invalid_record_readably(self):
+    def test_init_takes_any_value_of_a_history_variable(self):
         _, processor = self._processor()
         user = " ".join("%s=0" % name for name in USER_VARS)
-        before = processor.runtime
         result = processor.process("init Washer.Paused %s __hist_goto=0 __hist_Program=2" % user)
-        assert result.exit_code == 1
-        assert result.output.startswith("Initialization failed:")
-        assert "7 (Wash.Agitate)" in result.output
-        assert processor.runtime is before
+        assert result.exit_code == 0, result.output
+        assert processor.runtime.vars["__hist_Program"] == 2

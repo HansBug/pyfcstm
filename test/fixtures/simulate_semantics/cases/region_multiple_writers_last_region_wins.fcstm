@@ -1,0 +1,19 @@
+def int x = 0;
+def int y = 0;
+state Root {
+    [*] -> P;
+    state P {
+        region R1 {
+            [*] -> A;
+            state A { during { x = 1; y = y + 1; } }
+        }
+        region R2 {
+            [*] -> B;
+            state B { during { x = 2; y = y * 10; } }
+        }
+        region R3 {
+            [*] -> C;
+            state C { during { y = y + 3; } }
+        }
+    }
+}

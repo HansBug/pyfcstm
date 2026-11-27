@@ -20,7 +20,7 @@ DSL 语义解释
 为什么变量在唯一根状态之前
 --------------------------
 
-一个 FCSTM 模型（model）表示一个控制器（controller）、一棵状态树和一条活动状态栈（active-state stack）。持久变量
+一个 FCSTM 模型（model）表示一个控制器（controller）、一棵状态树和一个活动位置：一条活动状态栈（active-state stack），拥有区域的状态下则是一棵由栈组成的树。持久变量
 （persistent variable）放在根状态（root state）前面，是为了让守卫条件（guard）、效果动作（effect）、生命周期动作
 （lifecycle action）、导入映射（import mapping）和诊断（diagnostic）都看到同一份数据表面。
 
@@ -44,9 +44,15 @@ DSL 语义解释
 
 检查命令能验证这一点：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   $ pyfcstm inspect -i docs/source/tutorials/dsl/first_thermostat.fcstm --format human --color never
+   ...
+     root: Thermostat
+     states: 3 total / 2 leaf
+     transitions: 3
+     variables: 1
+   ...
 
 报告中的 ``root``、``states``、``transitions`` 和 ``variables`` 分别对应根状态、状态树、转换边和变量表。
 
@@ -75,6 +81,61 @@ DSL 语义解释
 外层逻辑就会依赖内部实现细节。推荐做法是进入复合状态边界，再由复合状态的初始转换选择子状态，或者把指向子状态的转换放到拥有该叶状态的复合状态内部。
 
 检查输出的 ``transitions[].from_path`` 和 ``transitions[].to_path`` 会展示解析后的路径，可用于确认转换落在边界还是内部子状态。
+
+.. _dsl-region-ownership-zh:
+
+区域：所有权、顺序与名字空间
+----------------------------
+
+写了 ``region`` 块而不是普通子状态的状态是\ **拥有者**\ （owner）。语言在上面的所有权树之外增加三条规则，每一条都是为了让含区域的模型只看文本就能读懂。
+
+**区域是命名容器，不是状态。**\ 区域之下每个状态与每个事件的路径都经过区域名。两个区域可以使用同一个状态名，因为区域把它们分开：
+
+.. literalinclude:: region_namespace.fcstm
+   :language: fcstm
+   :caption: ``region_namespace.fcstm``
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   model = load_state_machine_from_text(open("region_namespace.fcstm").read())
+   print("states:")
+   for state in model.walk_states():
+       print("  " + ".".join(state.path))
+   print("events:")
+   for state in model.walk_states():
+       for event in state.events.values():
+           print("  " + event.path_name)
+   for owner in model.walk_states():
+       for name, region in owner.regions.items():
+           print("region %s of %s has %d transitions" % (name, ".".join(owner.path), len(region.transitions)))
+
+.. testoutput::
+
+   states:
+     Plant
+     Plant.Running
+     Plant.Running.Left.Idle
+     Plant.Running.Left.Busy
+     Plant.Running.Right.Idle
+     Plant.Running.Right.Busy
+   events:
+     Plant.Running.Stop
+     Plant.Running.Left.Idle.Ping
+     Plant.Running.Right.Idle.Ping
+   region Left of Plant.Running has 3 transitions
+   region Right of Plant.Running has 3 transitions
+
+* ``Plant.Running.Left.Idle`` 与 ``Plant.Running.Right.Idle`` 是两个状态；因为区域是路径的一部分，两个名字都没有歧义。
+* 两个 ``Ping`` 是两个事件，每个区域一个，因为 ``:: Ping`` 让源状态拥有这个事件。没有东西把一个 ``Ping`` 广播给两个区域。``Stop`` 属于拥有者 ``Running``\ ，两个区域都通过从根开始的路径（``/Running.Stop``\ ）使用它。
+* 拥有者不替区域保存转换。每个区域各有自己的三条转换（初始转换与两条普通转换）。区域不是转换的源或目标，转换也不能从一个区域跨到另一个区域；进入整组的转换以拥有者为终点，由拥有者启动每个区域。
+
+为什么是容器而不是状态：区域没有 ``enter``\ 、``during`` 或 ``exit``\ ，不能持有变量，也从不单独被“进入”。把它当成状态会招来这些东西，还会让“哪个状态活动”变得含糊。作为容器，它只是给拥有者的一部分起个名字，于是拥有者仍是整组启动、工作和结束的唯一地方。
+
+**顺序属于模型。**\ ``region`` 块按书写顺序执行。顺序属于语言，就像一个状态的多条出边的顺序一样：重新格式化、导出和重新加载都保持它，两个块对调就是另一个模型。周期层面的含义及其轨迹见\ :doc:`/explanations/region_semantics/index_zh`\ ，选择它的理由见\ :doc:`/explanations/region_design/index_zh`\ 。
+
+**哪些属于拥有者。**\ 拥有者可以在区域前后和中间写 ``enter``\ 、``during before``\ 、``during after``\ 、``exit``\ 、事件和 ``>> during`` 切面（它们与区域的相对位置无所谓，区域彼此之间的顺序才有意义）。拥有者不能在区域旁边写子状态、``import`` 或局部转换。区域里可以写初始转换、状态、普通转换与强制转换、事件，以及自己的 ``>> during before`` / ``>> during after`` 切面；不能写 ``enter``\ 、``during``\ 、``exit`` 或变量。一个状态要么含普通子状态，要么含区域，不会两者都有。语法强制其中大部分，模型检查其余的（名字、初始转换、空区域、路径解析）。
 
 .. _dsl-composite-entry-semantics-zh:
 
@@ -324,6 +385,91 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
      - 同一轮内事件、守卫按顺序满足。
      - 多个状态响应同一紧急事件或守卫。
 
+.. _dsl-forced-with-states-inside-zh:
+
+来源内部含有状态时
+~~~~~~~~~~~~~~~~~~
+
+如果 ``!S -> T`` 的来源内部含有状态，事件与条件只在机器停驻的那个状态上判断一次，向上经过的各层不再重判。实际运行的模型用一个隐藏的 ``int`` 变量 ``__forced_<n>`` 记录这个决定。打印实际运行的机器，差别一目了然：
+
+.. literalinclude:: forced_composite.fcstm
+   :language: fcstm
+   :caption: ``forced_composite.fcstm``
+
+.. literalinclude:: forced_regions.fcstm
+   :language: fcstm
+   :caption: ``forced_regions.fcstm``
+
+下面的脚本打印两个模型的 ``to_ast_node()``\ ：
+
+.. testcode::
+
+   from pyfcstm.model import load_state_machine_from_text
+
+   for path in ("forced_composite.fcstm", "forced_regions.fcstm"):
+       model = load_state_machine_from_text(open(path).read())
+       print("==", path, "as the machine that runs")
+       print(model.to_ast_node())
+
+.. testoutput::
+
+   == forced_composite.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           state a;
+           state b;
+           a -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           b -> [*] : if [u == 1] effect {
+               __forced_0 = 1;
+           }
+           [*] -> a;
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
+   == forced_regions.fcstm as the machine that runs
+   input int u;
+   def int __forced_0 = 0;
+   state Root {
+       state P {
+           region L {
+               state a;
+               a -> [*] : if [__forced_0 == 1];
+               a -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> a;
+           }
+           region R {
+               state b;
+               b -> [*] : if [__forced_0 == 1];
+               b -> [*] : if [u == 1] effect {
+                   __forced_0 = 1;
+               }
+               [*] -> b;
+           }
+       }
+       state Q;
+       P -> Q : if [__forced_0 == 1] effect {
+           __forced_0 = 0;
+       }
+       P -> Q : if [u == 1 && __forced_0 == 0];
+       [*] -> P;
+   }
+
+* 在普通复合状态 ``P`` 里，每个停驻的子状态（``a``\ 、``b``\ ）得到一条通往 ``[*]`` 的转换，带声明的条件并置起变量。随后 ``P -> Q`` 在变量被置起时执行并清除它；第二条 ``P -> Q`` 就是声明的那条转换本身，留给控制权回到 ``P`` 而变量并未置起的情形。
+* 在拥有者 ``P`` 里，每个区域得到两条通往 ``[*]`` 的转换：等待变量的\ **跟随者**\ ，以及写在它之后、带声明条件的\ **发起者**\ 。各区域按书写顺序离开，最后一个已完成时拥有者经自己的转换续接。语言里没有一次把整组带走的东西；整组由语言已有的转换结束。
+
+强制声明仍是语法糖，所以模型导出的文本加载出来是同一台机器。周期层面的行为（离开的顺序、区域运行中变为真的条件、进不去的目标）的轨迹见\ :ref:`region-semantics-forced-zh`\ 。图与检查报告按书写的样子显示强制转换。
+
 .. _dsl-history-semantics-zh:
 
 历史的语义与展开
@@ -503,7 +649,42 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
 边界与反例
 ~~~~~~~~~~
 
-* **不是并发。**\ FCSTM 只有一条活动路径，没有正交区域，也就不存在相互影响的多个历史。
+* **不是并发。**\ 区域在一个周期内按书写顺序依次执行，不是并行执行。子树里含区域的历史拥有者会被拒绝，因为一个保存下来的叶子描述不了有多条活动分支的位置；区域内部的历史只记录该区域自己的位置。
+
+  这个拒绝是真实存在的：声明了 ``[H]`` 的状态，其下面某个状态拥有区域，构建模型时就会失败，下面的脚本输出的就是（``Invalid region structure ... (history_boundary)``\ ）。
+
+  .. testcode::
+
+     from pyfcstm.model import load_state_machine_from_text
+     from pyfcstm.utils.validate import ModelValidationError
+
+     text = """
+     state Root {
+         [*] -> H;
+         state H {
+             [*] -> A;
+             [H] -> A;
+             state A {
+                 region R { [*] -> X; state X; }
+             }
+             state B;
+             A -> B :: Go;
+         }
+         state Out;
+         H -> Out :: Leave;
+         Out -> H.[H] :: Back;
+     }
+     """
+     try:
+         load_state_machine_from_text(text)
+     except ModelValidationError as error:
+         print("ModelValidationError:", str(error).splitlines()[0])
+
+  .. testoutput::
+
+     ModelValidationError: Invalid region structure at Root.H (history_boundary). (line 4)
+
+  含区域的拥有者自己也不能声明历史。可行的是：处在某个区域内部、自己声明历史的复合状态；这时记录属于该区域的分支，恢复时其他区域留在原处。
 * **不是持久化。**\ 记录就在状态机的变量里，与其他状态一样；跨进程保存由宿主负责（热启动通过 :meth:`pyfcstm.model.model.StateMachine.history_variables` 恢复它们）。
 * **不恢复业务数据。**\ 恢复不会回滚变量；洗衣机的计数变量每次恢复都会继续累加。
 * **不支持多层目标。**\ ``X -> P.O.[H]``\ 会被拒绝；请进入 ``P``\ ，由 ``P`` 在自己的作用域里进入 ``O.[H]``\ ，或者把历史声明在 ``P`` 上。
@@ -549,7 +730,8 @@ DSL 有意比通用编程语言更窄：
 * 普通转换不把事件语法和守卫语法写成两个后缀；
 * 强制转换没有效果动作，也没有组合链；
 * 组合中继伪状态是纯路由辅助节点；
-* 目标风险诊断必须说明目标配置。
+* 目标风险诊断必须说明目标配置；
+* 区域是逻辑并发：没有线程，周期内没有被引发的事件，没有队列，没有从一个区域进入另一个区域的转换，拥有者上也不能声明历史（见\ :ref:`dsl-region-ownership-zh`\ ）。
 
 事件加守卫边界是有意暴露出来的。下面这种普通转换形式非法：
 

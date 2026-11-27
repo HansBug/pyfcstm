@@ -1,0 +1,12 @@
+state Root {
+    state Start;
+    state Work {
+        state Fast;
+        state Slow;
+        [*] -> Fast;
+        [H] -> Slow;
+        Fast -> Slow :: Ease;
+    }
+    [*] -> Start;
+    Start -> Work.[H] :: Resume;
+}

@@ -554,6 +554,7 @@ describe('diagnostics transition body ranges', () => {
             'state Child {',
             '    state Entry;',
             '    [*] -> Entry;',
+            '    Entry -> [*];',
             '}',
         ].join('\n'));
         const hostText = [

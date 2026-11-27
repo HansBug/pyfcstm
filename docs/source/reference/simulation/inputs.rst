@@ -11,7 +11,7 @@ storage. Initializers remain name-free.
 Constructing a runtime
 ----------------------
 
-.. code-block:: python
+.. testcode::
 
     from pyfcstm.dsl import parse_with_grammar_entry
     from pyfcstm.model import parse_dsl_node_to_state_machine
@@ -34,9 +34,13 @@ Constructing a runtime
     first = runtime.cycle()
     second = runtime.cycle(inputs={'pressure': 75.0})
     third = runtime.cycle()
-    assert [first.inputs['pressure'], second.inputs['pressure'],
-            third.inputs['pressure']] == [70.0, 75.0, 90.0]
-    assert runtime.outputs['reading'] == 270.0
+    print([first.inputs['pressure'], second.inputs['pressure'], third.inputs['pressure']])
+    print(runtime.outputs['reading'])
+
+.. testoutput::
+
+    [70.0, 75.0, 90.0]
+    270.0
 
 Construction checks complete source bindings without calling ``get()`` or
 ``cycle()``. Cold construction uses parameter defaults where not overridden,
@@ -63,7 +67,7 @@ order is normalized by the runtime.
 
 Subclass a caching base when writing new generators:
 
-.. code-block:: python
+.. testcode::
 
     from pyfcstm.simulate import BaseScalarInputPattern
 
@@ -77,9 +81,14 @@ Subclass a caching base when writing new generators:
             return self.start + self.increment * step
 
     source = PressureRamp(70.0, 5.0)
-    assert source.get() == source.get() == 70.0
+    print(source.get(), source.get())
     source.cycle()  # Runtime owns this call when the source is bound.
-    assert source.get() == 75.0
+    print(source.get())
+
+.. testoutput::
+
+    70.0 70.0
+    75.0
 
 ``BaseIntegratedInputPattern(input_names=(...))`` provides the equivalent
 vector hook: ``_sample(step)`` returns a mapping. The base copies and freezes

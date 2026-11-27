@@ -1,0 +1,26 @@
+title: "A region also completes through a composite that hands control back; the last completion is still rejected until the owner can continue"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "R1 completes through L -> [*] and C -> [*]; R2 would be the last completion."
+categories:
+- regions
+- runtime
+- inputs
+steps:
+- cycle: []
+  inputs:
+    go: 0
+  expect:
+    configuration: 'Root.P{R1: C.L, R2: D}'
+- cycle: Root.Fin
+  inputs:
+    go: 0
+  expect:
+    configuration: 'Root.P{R1: [done], R2: D}'
+- cycle: Root.Fin
+  inputs:
+    go: 1
+  expect:
+    configuration: 'Root.Next'

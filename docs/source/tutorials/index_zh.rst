@@ -33,7 +33,8 @@
 4. 想从同一个模型产出代码时读 :doc:`generation/index_zh`。
 5. 想用图向别人解释模型结构时读 :doc:`visualization/index_zh`。
 6. 当复合状态需要从被打断的地方继续、而不是从头开始时，读 :doc:`history/index_zh`。
-7. 最后把 :doc:`bmc/index_zh` 作为高级收官。此时你已经能读懂 FCSTM 模型和一条
+7. 当一个状态里有几个部分要并排工作时（例如安全检查和运动控制并排），读 :doc:`regions/index_zh`。
+8. 最后把 :doc:`bmc/index_zh` 作为高级收官。此时你已经能读懂 FCSTM 模型和一条
    具体运行轨迹，再学习怎样把一组手工事件替换为对有限范围内全部允许事件序列的符号搜索。
 
 有经验用户路径
@@ -45,6 +46,7 @@
 * 模型合法但需要行为证据：跳到 :doc:`simulation/index_zh`，再看 :doc:`/how_to/simulation/index_zh`。
 * 已经理解模型，只需要输出文件：跳到 :doc:`generation/index_zh` 或 :doc:`visualization/index_zh`。
 * 已经会写复合状态，需要让恢复从被打断的地方继续：读 :doc:`history/index_zh`。
+* 已经会写复合状态，需要让同一个状态里的几个部分在同一个周期里一起工作：读 :doc:`regions/index_zh`。
 * 已经理解具体轨迹，需要检查有限边界内的全部行为：最后读 :doc:`bmc/index_zh`。
 * 需要精确语法、命令选项或报告字段：直接从 :doc:`/reference/index_zh` 开始。
 
@@ -164,6 +166,17 @@
 不负责内容：它不列出全部历史写法和诊断，也不推导展开规则和恢复受阻时的语义。
 
 下一步：给自己的模型加历史看 :ref:`dsl-history-task-zh`\ ；查写法看 :ref:`dsl-history-reference-zh`\ ；执行规则看 :ref:`dsl-history-semantics-zh`\ 。
+
+区域教程：:doc:`regions/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：能读懂带复合状态的模型，也会运行批处理仿真，即语言教程和仿真教程教过的内容。
+
+读后能力：你跟着一个联锁控制器走完一遍：它的安全检查和运动控制并排成两个区域。你会仿真它，看到区域的书写顺序为什么决定故障周期里的结果，检查它，证明它的一条安全性质，从它生成运行时，并画出它。
+
+不负责内容：它不列出全部区域写法，不推导执行规则，也不讨论有界搜索的规模。
+
+下一步：重复任务看 :doc:`/how_to/regions/index_zh`；理解规则看 :doc:`/explanations/region_semantics/index_zh`；精确写法查 :doc:`/reference/dsl/index_zh`。
 
 有界模型检查：:doc:`bmc/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

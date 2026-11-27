@@ -336,11 +336,13 @@ def test_duplicate_source_declarations_cannot_bypass_binding_checks(
 @pytest.mark.parametrize(
     "source_name,selector,target",
     [
-        ("value", "value", "var"),
-        ("value", "value", "param"),
-        ("value", "value", "state"),
+        ("prefix_var", "prefix_*", "$1"),
+        ("prefix_param", "prefix_*", "$1"),
+        ("prefix_state", "prefix_*", "$1"),
         ("x_", "x_*", "*$state"),
         ("prefix_input", "prefix_*", "$1"),
+        ("prefix_region", "prefix_*", "$1"),
+        ("prefix_active", "prefix_*", "$1"),
         ("prefix_1", "prefix_*", "$1"),
         ("value", "value*", "$1"),
     ],

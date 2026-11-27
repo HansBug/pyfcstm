@@ -24,8 +24,9 @@ class BmcSemanticFixturePolicy:
     """Expected BMC-core handling for one semantic fixture case.
 
     :param mode: One of ``"hard_pass"``, ``"partial"``, ``"runtime_error"``,
-        ``"expected_unsupported"``, ``"temporary_exclude"``, or
-        ``"long_term_exclude"``.
+        ``"expected_unsupported"``, ``"temporary_exclude"``,
+        ``"long_term_exclude"``, or ``"region_core"`` for a region fixture that
+        the per-region relation is checked against.
     :type mode: str
     :param bucket: Issue-ledger bucket used by the BMC alignment plan.
     :type bucket: str
@@ -160,6 +161,37 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
     "hot_start_rejects_overdeep_leaf_stack",
 }
 
+# Region fixtures that the region relation does not report yet, with the bucket
+# that names why; the YAML ``exclude_runners`` of exactly these cases still
+# lists ``bmc_core``.
+REGION_CORE_EXCLUDE_CASES = {
+    # The runtime raises a search-limit error here, which a bounded relation cannot express.
+    "region_group_that_could_always_stop_one_round_later_is_reported_as_a_loop": "search_limit",
+    "region_loop_is_reported_at_the_owner_when_the_last_region_has_no_other_way": "search_limit",
+    "region_loop_with_nothing_else_to_try_is_reported_and_leaves_the_source_state": "search_limit",
+    "region_unbounded_group_reentry_is_reported_as_a_safety_limit_error": "search_limit",
+    # The macro expander refuses a path that returns to a state while running actions.
+    "region_cycle_that_cannot_settle_a_region_is_a_delta_that_keeps_everything": "action_dependent_loop",
+    "region_forced_transition_back_into_its_own_state_is_not_reported_as_a_loop_when_it_cannot_happen": "action_dependent_loop",
+    "region_forced_transition_back_into_its_own_state_takes_nothing_when_the_state_cannot_be_entered_again": "action_dependent_loop",
+    # The group re-enters itself on changing values past the depth the relation unrolls.
+    "region_start_with_groups_tried_repeatedly_stays_a_delta": "group_reentry_limit",
+    # A hot start of the simulator has to give every variable and refuses an incomplete one.
+    "region_hot_start_hidden_variable_has_to_be_given": "init_variables_given_by_caller",
+    "region_hot_start_missing_variable_is_rejected": "init_variables_given_by_caller",
+    # The simulator refuses a short event name that no leaf has or that two leaves resolve differently.
+    "region_event_name_ambiguous_between_leaves_is_refused": "event_name_resolution",
+    "region_event_name_nobody_has_it_is_refused": "event_name_resolution",
+}
+
+REGION_CORE_EXCLUDE_REASONS = {
+    "search_limit": "The runtime raises a search-limit error here, which a bounded relation cannot express.",
+    "action_dependent_loop": "The macro expander refuses a path that returns to a state while running actions.",
+    "group_reentry_limit": "The group re-enters itself on changing values past the depth the relation unrolls.",
+    "init_variables_given_by_caller": "A hot start of the simulator has to give every variable and refuses an incomplete one; a query takes the declared initializers or havoc, so it has no incomplete start to refuse.",
+    "event_name_resolution": "The simulator refuses a short event name that no active leaf has or that two leaves resolve differently; a query names events by their full path, so it has no such name to refuse.",
+}
+
 BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
     | INITIAL_DELTA_ALIGNMENT_CASES
@@ -191,6 +223,19 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         'hard_pass'
     """
     case = load_semantic_case(case_id)
+    if "regions" in case.data["categories"]:
+        if case_id in REGION_CORE_EXCLUDE_CASES:
+            bucket = REGION_CORE_EXCLUDE_CASES[case_id]
+            return BmcSemanticFixturePolicy(
+                mode="temporary_exclude",
+                bucket="regions_" + bucket,
+                reason=REGION_CORE_EXCLUDE_REASONS[bucket],
+            )
+        return BmcSemanticFixturePolicy(
+            mode="region_core",
+            bucket="regions",
+            reason="Region cases are checked against the per-region trace relation.",
+        )
     if "variable_roles" in case.data["categories"] and is_runner_excluded(
         case, BMC_CORE_RUNNER
     ):

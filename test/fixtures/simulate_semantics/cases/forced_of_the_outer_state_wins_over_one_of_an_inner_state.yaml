@@ -1,0 +1,32 @@
+title: A forced transition of an outer state wins over one declared on a state inside it
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/581
+  notes:
+  - The declaration of the outer state is inherited before the ones written further in, so it comes first at the leaf.
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.G.P.a1
+    vars:
+      n: 1
+- cycle: []
+  inputs:
+    u: 1
+  expect:
+    state: Root.Q
+    vars:
+      n: 2
+- cycle: []
+  inputs:
+    u: 0
+  expect:
+    state: Root.Q
+    vars:
+      n: 3

@@ -1,0 +1,28 @@
+title: "A candidate rejected during the trial run must not consume an ancestor's before aspect for the committed path"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "tick counts how often Root's before aspect ran in the committed history; the trial entry of P must not count."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Idle'
+    vars:
+      tick: 1
+      leak: 0
+- cycle: Root.Idle.Go
+  expect:
+    configuration: 'Root.Fallback'
+    vars:
+      tick: 2
+      leak: 0
+- cycle: []
+  expect:
+    configuration: 'Root.Fallback'
+    vars:
+      tick: 3
+      leak: 0

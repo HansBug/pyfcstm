@@ -15,7 +15,7 @@ What you will run
 
 The input model has three leaf states and three event-triggered transitions:
 
-.. literalinclude:: simple_machine.fcstm
+.. literalinclude:: /_models/simple_machine.fcstm
    :language: fcstm
 
 Generate Python code
@@ -23,9 +23,9 @@ Generate Python code
 
 Render the packaged Python template into a fresh output directory:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
+   $ pyfcstm generate -i simple_machine.fcstm --template python -o generated/python --clear
 
 The important pieces of the command are:
 
@@ -38,8 +38,9 @@ The important pieces of the command are:
 A successful run writes machine-specific files. For this model the output has
 three top-level files:
 
-.. code-block:: text
+.. code-block:: console
 
+   $ LC_ALL=C ls generated/python
    README.md
    README_zh.md
    machine.py
@@ -54,15 +55,34 @@ Run the generated class
 A minimal consumer imports the generated class, constructs it, performs the
 initial cycle, and then submits event paths:
 
-.. literalinclude:: python_runtime.demo.py
-   :language: python
-   :lines: 47-60
+.. testcode::
 
-The checked-in demo prints the generated files, then shows the state and
-``counter`` value after each event:
+   import sys
 
-.. literalinclude:: python_runtime.demo.py.txt
-   :language: text
+   sys.path.insert(0, "generated/python")
+   from machine import SimpleMachineMachine
+
+   machine = SimpleMachineMachine()
+   machine.cycle()
+   print(".".join(machine.current_state_path), machine.vars["counter"])
+
+   for event in [
+       "SimpleMachine.Idle.Start",
+       "SimpleMachine.Running.Stop",
+       "SimpleMachine.Stopped.Reset",
+   ]:
+       machine.cycle(event)
+       print(".".join(machine.current_state_path), machine.vars["counter"])
+
+The script prints the state and ``counter`` value after the initial cycle and
+after each event:
+
+.. testoutput::
+
+   SimpleMachine.Idle 0
+   SimpleMachine.Running 0
+   SimpleMachine.Stopped 1
+   SimpleMachine.Idle 1
 
 This proves only the first-success path: generation succeeded, the generated
 Python file is importable, and a small event sequence runs. It is not a full
@@ -78,3 +98,5 @@ Where to go next
   :doc:`/explanations/template_rendering/index`.
 * Look up built-in template contracts in
   :doc:`/reference/builtin_templates/index`.
+* Generate a runtime for a model with regions and read its position with
+  ``configuration`` in :doc:`/tutorials/regions/index`.

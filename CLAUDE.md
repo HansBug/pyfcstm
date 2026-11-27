@@ -258,6 +258,7 @@ As of 2026-03, the repository is no longer only a generic template experiment. T
 - Dedicated template tests under [test/template/](test/template/), including generated-runtime tests and runtime-alignment tests for the built-in `python` template
 - A render/template tutorial path in [docs/source/tutorials/render/](docs/source/tutorials/render/) that now reflects the current renderer, template packaging, and testing model
 - A bounded model checking kernel under [pyfcstm/bmc/](pyfcstm/bmc/) plus the `pyfcstm bmc` CLI, a stable structured JSON result, mandatory SAT witness replay, and bilingual Tutorial/How-to/Explanation/Reference documentation
+- Ordered parallel regions (`region Name { ... }`) supported end to end: parsing and model, `SimulationRuntime` (cold and hot start, short event names) and `pyfcstm simulate`, `pyfcstm inspect` with two order diagnostics, `pyfcstm.verify`, bounded model checking, all five built-in templates (`python`, `c`, `c_poll`, `cpp`, `cpp_poll`, which declare `features: [region]`), PlantUML, the diagram viewer and the VS Code preview; a template that does not declare the `region` feature refuses a model with regions. Start from [docs/source/tutorials/regions/](docs/source/tutorials/regions/)
 
 When updating repository guidance, do not describe built-in templates, statement rendering, or CLI `--template` support as planned-only features. They are current behavior.
 
@@ -416,6 +417,7 @@ make docs_en / make docs_zh      # Build for specific language
 make docs_pdf                    # Build and validate English and Chinese PDFs
 make docs_pdf_en / make docs_pdf_zh  # Build and validate one language PDF
 make pdocs                       # Production documentation with versioning
+make docs_doctest                # Run the examples written in the documentation pages
 make rst_auto                    # Generate RST from Python source files
 make rst_auto RANGE_DIR=model    # Generate RST for specific directory
 make sha256                      # Update generated SHA-256 sidecar files
@@ -628,6 +630,7 @@ Mandatory completion rule for built-in template work:
 - [expr.py](pyfcstm/model/expr.py): Expression system supporting literals, variables, unary/binary operators, bitwise ops, function calls
 - [base.py](pyfcstm/model/base.py): Base classes `AstExportable` and `PlantUMLExportable`
 - Model methods: `walk_states()` for traversal, `find_state()` for lookups, export capabilities
+- Regions: a state that owns regions has ordered `Region` children; the position of a machine with regions is an immutable tree, the `Configuration` of [configuration.py](pyfcstm/model/configuration.py), with a one-line text form such as `Root.Run{A: X, B: [done]}`
 
 **Rendering Engine** ([pyfcstm/render/](pyfcstm/render/))
 
@@ -649,6 +652,7 @@ Mandatory completion rule for built-in template work:
 
 - [runtime.py](pyfcstm/simulate/runtime.py): `SimulationRuntime` for cycle-based execution
   - Execution stack of active states from root to leaf; speculative validation before transitions
+  - **Regions**: an owner advances its regions one after another in writing order inside one cycle; `runtime.configuration` gives the position as a tree, and hot start takes a configuration text (what is written is put in place, what is not written waits for initialization)
   - **Hot Start**: builds frame stack directly to target state without enter actions
     - Leaf states use `'active'` mode; Composite states use `'init_wait'` mode
     - `initial_vars` must provide all variables; DFS finds stoppable paths
@@ -789,6 +793,10 @@ of them is not a judgement call:
 | `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth |
 | `make resource_ownership_check` | Adding or moving a call that acquires something needing an explicit release: a descriptor, temporary file, temporary directory, subprocess, socket or lock | A handler is opened while a resource is held, which from CPython 3.11 skips the owner's `finally` entirely (rules 6-12 of the Exception Handling Policy) |
 
+A change to a documentation page that carries an example also requires `make docs_doctest` (see
+[Documentation Examples](#documentation-examples)); it is a separate gate from `make doctest` and runs in the Docs Check
+workflow.
+
 `make doctest` is a full peer of the others, not an optional extra. A docstring is a published contract: an example
 that no longer runs is a defect in the same sense as a failing test, and the gate admits no exemptions -- there is no
 known-failure list to add one to. Use `make doctest DOCTEST_SCOPE=<path>` for a fast check while iterating, then the
@@ -821,8 +829,12 @@ no docstring and no gate file.
   enter it with `Owner.[H]` / `Owner.[H*]` (normal, initial and forced forms).
   Model conversion lowers history into `__hist_*` variables, leaf exits and
   guarded initials, so the simulator, templates and BMC see plain FCSTM; it also
-  keeps the machine before lowering, which `pyfcstm inspect` (with or without
-  `--enable-verify`) and the jsfcstm editor judge instead. A blocked restore
+  keeps the machine before lowering, which `pyfcstm inspect`, the drawings and
+  the jsfcstm editor describe instead. The one exception is the findings of the
+  verify pipeline under `--enable-verify`: they say how a machine behaves, so
+  they are judged on the machine that runs, and a model and the text it exports
+  give the same ones. The hidden variables of history, `active()` and forced
+  declarations are ordinary variables in every stage. A blocked restore
   rejects the whole transition instead of falling back to ordinary entry.
 - Arithmetic (`num_expression`) and logical (`cond_expression`) expressions are
   separate. Assignments require arithmetic expressions; guards require boolean
@@ -843,6 +855,24 @@ no docstring and no gate file.
   `during before` / `during after` do not wrap child-to-child transitions.
 - `>> during before` and `>> during after` are aspect actions for descendant
   leaf-state cycles. Plain leaf `during` executes during ordinary active cycles.
+- Regions: `state Owner { region A { ... } region B { ... } }` runs every region
+  in every cycle, in writing order, and the order is part of the meaning. A state
+  holds either ordinary children or regions, never both; a region holds an initial
+  transition, children, transitions, `event` declarations and aspects, and no
+  `enter` / `during` / `exit` and no variable declarations. `region` and `active`
+  are reserved words. A later region sees what an earlier one wrote in the same
+  cycle, and the last write wins. Transitions never cross from one region into
+  another or from outside into a region; enter the owner instead. `X -> [*]` in a
+  region finishes it, and when the last region finishes the owner continues in
+  the same cycle (joint completion). A forced transition on the owner
+  (`!Running -> Idle : /Stop;`) takes the whole group away; it expands into
+  ordinary `-> [*]` transitions. An event declared in a region belongs to that
+  region; share one with a root path such as `/Owner.Region.Event`. Hot start takes
+  a configuration text such as `Controller.Running{Safety: Watching, Motion: On}`;
+  a machine with regions has no `current_state_path`, read `configuration`.
+  `active("State.Path")` is a read-only query usable wherever a condition is; it
+  is syntactic sugar over hidden flag variables that are ordinary variables.
+  Do not write `enter` / `during` / `exit` inside a region.
 
 ## Python Docstring Style Guide
 
@@ -1804,18 +1834,14 @@ Do not use single backticks for inline code in reST. Use double backticks only: 
 | `*.fcstm` | `*.fcstm.puml` → `*.fcstm.puml.{png,svg}` |
 | `*.puml` | `*.puml.{png,svg}` |
 | `*.gv` | `*.gv.{png,svg}` |
-| `*.demo.py` | `*.demo.py.txt` |
-| `*.demox.py` | `*.demox.py.{txt,err,exitcode}` |
 | `*.plot.py` | `*.plot.py.svg` |
-| `*.demo.sh` | `*.demo.sh.txt` |
-| `*.demox.sh` | `*.demox.sh.{txt,err,exitcode}` |
 | `*.ipynb` | `*.result.ipynb` |
 
 #### Build Commands
 
 ```bash
 # From docs/source/
-make -f all.mk build      # Generate all resources (diagrams, demos, notebooks)
+make -f all.mk build      # Generate all resources (diagrams, figures, notebooks)
 make -f all.mk clean      # Clean all generated resources
 make -f all.mk cleanplt   # Clean plot outputs only
 
@@ -1834,6 +1860,10 @@ The equivalent repository-root PDF commands are `make docs_pdf`, `make docs_pdf_
 language-isolated build roots are [docs/build/pdf/en/](docs/build/pdf/en/) and
 [docs/build/pdf/zh/](docs/build/pdf/zh/); each command runs [tools/check_docs_pdf.py](tools/check_docs_pdf.py) before it
 reports success.
+
+#### Docs Check Artifacts
+
+Every Docs Check run uploads two downloadable artifacts for reviewers who cannot build the documentation locally: `docs-pdf-bilingual` (the finished English and Chinese PDFs, `pyfcstm-en.pdf` and `pyfcstm-zh.pdf`) and `docs-html-bilingual` (the English and Chinese HTML trees under one folder; unpack it and open `pyfcstm-docs-html/index.html`, every link is relative so it works offline). Both are kept for 14 days. The older `docs-pdf-evidence` artifact keeps the logs and intermediate files of the PDF build.
 
 #### PDF Build Discipline
 
@@ -1856,8 +1886,7 @@ reports success.
 - `*.fcstm.puml`, `*.fcstm.puml.{png,svg}` (from `.fcstm`)
 - `*.puml.{png,svg}` (from `.puml`)
 - `*.gv.{png,svg}` (from `.gv`)
-- `*.py.txt`, `*.py.err`, `*.py.exitcode`, `*.py.svg` (from demo scripts)
-- `*.sh.txt`, `*.sh.err`, `*.sh.exitcode` (from shell scripts)
+- `*.plot.py.svg` (from `*.plot.py`)
 - `*.result.ipynb` (from `.ipynb`)
 - [docs/source/index.rst](docs/source/index.rst) (generated during build—do not edit directly)
 
@@ -1865,7 +1894,7 @@ reports success.
 - `*.fcstm` for FSM state machines
 - `*.puml` only if no corresponding `*.fcstm` exists
 - `*.gv` for Graphviz diagrams
-- `*.demo.py`, `*.demox.py`, `*.plot.py`, `*.demo.sh`, `*.demox.sh` for demos
+- `*.plot.py` for figures
 - `*.ipynb` for notebooks (with outputs cleared)
 - `*.rst`, `*.md` for documentation text
 
@@ -1881,11 +1910,45 @@ vim docs/source/tutorials/example.fcstm           # Edit source
 make -f docs/source/fcstms.mk SOURCE=docs/source build  # Regenerate
 cd docs && make html                              # Build docs
 
-# Editing a demo script:
-vim docs/source/tutorials/example.demo.py         # Edit source
-make -f docs/source/demos.mk SOURCE=docs/source build   # Regenerate output
+# Editing an example in a page:
+vim docs/source/tutorials/example/index.rst       # Edit the command or script and its output together
+make docs_doctest DOCS_DOCTEST_SCOPE=docs/source/tutorials/example   # Run the examples of that page
 cd docs && make html                              # Build docs
 ```
+
+#### Documentation Examples
+
+An example in a page is written exactly as the reader sees it, and `make docs_doctest` runs it and compares the real
+output with the output written in the page. There are no demo scripts, recorded output files or helper modules next to
+a page: an example that needs one is not simple enough, so shorten the example instead.
+
+- A terminal record is a `.. code-block:: console` block. A line that starts with `$ ` is a command that the reader
+  types, and the lines after it are what it prints. A trailing backslash continues a command. All commands of one block
+  run in one shell in a throwaway copy of the page directory, with standard error merged into standard output.
+- A Python script is a `.. testcode::` block, and the `.. testoutput::` block after it is what it prints. Sphinx shows
+  both as ordinary highlighted blocks, so the reader sees a script and its output and nothing else. A script that prints
+  nothing needs no output block, and a script that ends with a non-zero status fails the check.
+- `...` on its own line, or inside a line, stands for output that is left out. Use it for text that changes from run to
+  run, such as a solver time, and for the long parts a page does not discuss. Do not filter, sort, or reformat output
+  with `sed`, `grep`, `awk` or a helper: an unstable value is left out with `...`, not removed with a pipeline.
+- A command that ends with a non-zero exit status must be followed by `$ echo $?` and the status, so a page cannot show
+  a failing command as if it had succeeded.
+- Use only what a reader can call from the public documentation: the `pyfcstm` command and the public Python API. Do
+  not import a module that sits next to the page and do not reach into private names.
+- A page written for the repository root may read `docs/source/...` paths: the throwaway directory holds `docs/source`
+  as a link to the real directory. A command must not write there. A lone `...` at the end of an output must stand for
+  at least one line.
+- A model that several pages use lives in [docs/source/_models/](docs/source/_models/), is shown with
+  `.. literalinclude:: /_models/name.fcstm`, and is copied into the throwaway directory next to the page's own files. A
+  model that only one page uses stays in that page's directory. Add a model only when the page shows it or a command
+  reads it; every `.fcstm` under `docs/source` also produces a PlantUML text, a PNG and an SVG.
+- The examples need Python 3.8 or later (the documentation CI uses 3.11) and the Sybil version pinned in `requirements-doc.txt`.
+- Both language pages carry the same examples. Each page is run on its own, so an example of the Chinese page is checked
+  as strictly as one of the English page.
+- This gate is separate from `make doctest`, which runs the `>>>` examples in the docstrings under
+  [pyfcstm/](pyfcstm/). Do not merge the two entry points: a docstring example is part of the package contract, and a
+  page example is part of the documentation.
+- Figures drawn by `*.plot.py` are not examples. Keep them out of the pages' command output.
 
 #### Documentation Dependencies
 
@@ -1934,7 +1997,7 @@ If a page needs a terminology reminder, add a compact term list near the beginni
 
 - Root level: `index_en.rst`, `index_zh.rst` (sources); `index.rst` (generated—do not edit directly)
 - Subsections: `index.rst` = English default; `index_zh.rst` = Chinese translation
-- Shared resources (images, demos, code) should be language-agnostic (no duplication per language)
+- Shared resources (images, models, code) should be language-agnostic (no duplication per language)
 - API docs ([api_doc/](docs/source/api_doc/)) typically have no language variants
 
 #### Build for Specific Language
@@ -1959,7 +2022,7 @@ When creating a new section:
     tutorials/dsl/index                # English/default version reference
 ```
 
-When translating: preserve all reST directives, file references, and code blocks; keep images/demos language-agnostic.
+When translating: preserve all reST directives, file references, and code blocks; keep images and models language-agnostic.
 
 #### DO and DO NOT
 
@@ -1972,14 +2035,14 @@ When translating: preserve all reST directives, file references, and code blocks
 **DO NOT**:
 - Edit [docs/source/index.rst](docs/source/index.rst) directly (generated at build time)
 - Create `index_en.rst` for subsections (use `index.rst` as English default)
-- Duplicate shared resources (images, demos) per language
+- Duplicate shared resources (images, models) per language
 - Translate code examples or API documentation (keep language-agnostic)
 
 #### Translation Checklist
 
 - [ ] Create `index_zh.rst` with translated content
 - [ ] Preserve all reST directives (`:maxdepth:`, `.. literalinclude::`, etc.)
-- [ ] Keep file references unchanged (images/demos work for all languages)
+- [ ] Keep file references unchanged (images and models work for all languages)
 - [ ] Update parent index to reference `index_zh` for Chinese builds
 - [ ] Verify shared resources are language-agnostic
 - [ ] Test: `READTHEDOCS_LANGUAGE=zh make html`

@@ -19,31 +19,41 @@
    ├── machine_summary.txt.j2
    └── static_note.txt
 
-空配置是合法的：
+空配置是合法的。第一个渲染文件可以先检查模型对象和状态路径。下面的脚本把上面布局里的三个文件写进当前目录（``{}`` 就是空配置）：
 
-.. code-block:: yaml
+.. testcode::
 
-   {}
+   from pathlib import Path
 
-第一个渲染文件可以先检查模型对象和状态路径：
-
-.. code-block:: jinja
-
+   template = Path("my_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("{}\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    Machine: {{ model.root_state.name }}
    States:
    {%- for state in model.walk_states() %}
    - {{ state.path | join('.') }}
    {%- endfor %}
+   """)
 
-用教程模型渲染：
+请把教程模型 :download:`simple_machine.fcstm </_models/simple_machine.fcstm>` 下载到同一目录，再渲染：
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate \
-       -i docs/source/tutorials/generation/simple_machine.fcstm \
-       -t my_template \
-       -o /tmp/pyfcstm-template-check \
-       --clear
+   $ pyfcstm generate -i simple_machine.fcstm -t my_template -o out --clear
+   $ LC_ALL=C ls out
+   machine_summary.txt
+   static_note.txt
+   $ cat out/machine_summary.txt
+   Machine: SimpleMachine
+   States:
+   - SimpleMachine
+   - SimpleMachine.Idle
+   - SimpleMachine.Running
+   - SimpleMachine.Stopped
+   $ cat out/static_note.txt
+   Copied as is.
 
 成功信号是生成 ``machine_summary.txt``，并复制 ``static_note.txt``。这只证明渲染器可以消费该模板；不证明目标语言运行时语义。
 
@@ -278,27 +288,29 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 可运行微型模板形状
 ------------------
 
-短作者示例应能放在一个屏幕内。把项目特定逻辑留在正文外，并明确写出成功信号：
+短作者示例应能放在一个屏幕内。把项目特定逻辑留在正文外，并明确写出成功信号。这个例子声明一个命名表达式样式，写出模型名并统计状态数；它在第一节模板的旁边运行：
 
-.. code-block:: text
+.. testcode::
 
-   my_template/
-     config.yaml
-     machine_summary.txt.j2
-     static_note.txt
+   from pathlib import Path
 
-.. code-block:: yaml
-
-   expr_styles:
-     py_expr:
-       base_lang: python
-
-.. code-block:: jinja
-
+   template = Path("micro_template")
+   template.mkdir()
+   (template / "config.yaml").write_text("expr_styles:\n  py_expr:\n    base_lang: python\n")
+   (template / "static_note.txt").write_text("Copied as is.\n")
+   (template / "machine_summary.txt.j2").write_text("""\
    model={{ model.root_state.name }}
    states={{ model.walk_states() | list | length }}
+   """)
 
-成功信号是渲染出的 ``machine_summary.txt`` 和复制出的 ``static_note.txt``。这个例子证明文件映射和命名表达式样式可以加载；它不证明生成运行时正确。
+.. code-block:: console
+
+   $ pyfcstm generate -i simple_machine.fcstm -t micro_template -o micro_out --clear
+   $ cat micro_out/machine_summary.txt
+   model=SimpleMachine
+   states=4
+
+成功信号是渲染出的 ``machine_summary.txt`` 和复制出的 ``static_note.txt``。这个例子证明文件映射和配置文件被读取；它声明了样式但没有渲染任何表达式，也不证明生成运行时正确。
 
 辅助对象设计检查表
 ------------------
@@ -333,3 +345,72 @@ C 家族模板会显式导入 ``to_c_identifier``、``to_c_path_identifier``、`
 * 运行时冒烟命令和观测输出片段；
 * 声称语义等价时的模拟器对齐命令；
 * 简短说明 ``operation_stmt_render`` 没有用于可执行运行时代码体。
+
+声明自定义模板支持区域
+----------------------
+
+**起点。** 一个自定义模板目录和一个含区域（region）的模型（:download:`controller.fcstm </_models/controller.fcstm>`，即 :doc:`/tutorials/regions/index_zh` 里的联锁控制器）。请把它和 ``region_listing_template/`` 里的两个文件下载到一个空目录，并在其中运行命令。模板是为某一种执行模型写的。
+``config.yaml`` 里的 ``features: [region]`` 声明该模板能渲染含区域的模型。没有这个声明，``pyfcstm generate`` 在写任何文件之前就拒绝这样的模型；
+不含区域的模型无论声明如何都能渲染，所以现有模板的输出保持不变。``region_listing_template/`` 是一个最小模板，它声明了这个特性，并按书写顺序列出每个拥有者（owner）及其区域：
+
+.. literalinclude:: region_listing_template/config.yaml
+   :language: yaml
+   :caption: region_listing_template/config.yaml
+
+.. literalinclude:: region_listing_template/regions.txt.j2
+   :language: jinja
+   :caption: region_listing_template/regions.txt.j2
+
+**命令或代码。**
+
+.. code-block:: console
+
+   $ pyfcstm generate -i controller.fcstm -t region_listing_template -o out --clear
+   $ cat out/regions.txt
+   owner Controller.Running
+     region 1: Safety (1 states)
+     region 2: Motion (2 states)
+
+.. testcode::
+
+   from pyfcstm.render import StateMachineCodeRenderer
+
+   renderer = StateMachineCodeRenderer("region_listing_template")
+   print(sorted(renderer.features))
+
+.. testoutput::
+
+   ['region']
+
+没有这个声明时，同一个模板会被拒绝。这是负例：
+
+.. code-block:: console
+
+   $ mkdir undeclared
+   $ cp region_listing_template/regions.txt.j2 undeclared/
+   $ printf 'expr_styles: {}\n' > undeclared/config.yaml
+   $ pyfcstm generate -i controller.fcstm -t undeclared -o undeclared_out --clear
+   generate with template directory '.../undeclared' does not support region models yet. (line 12)
+   The model declares 2 regions, the first is 'Controller.Running.Safety'.
+   If you write this template: its config.yaml does not list `region` under `features`. List it (`features: [region]`) only once the template really renders regions, because a template written for a single active path would generate wrong code for them, which is why it is refused. See "Declaring model features" in templates/README.md.
+   If you write the model: use a template that supports regions. Built-in templates that support regions: c, c_poll, cpp, cpp_poll, python.
+     pyfcstm generate -i controller.fcstm --template c -o undeclared_out
+   Or take the regions out of the model.
+   $ echo $?
+   1
+
+退出状态是 1。工具打印的是模板目录的绝对路径，这里用 ``...`` 省略。
+
+**预期信号。** 有声明时，输出按书写顺序列出拥有者和它的两个区域，``StateMachineCodeRenderer.features`` 是 ``['region']``。没有声明时，消息指出区域的个数和第一个区域，
+告诉模板作者该声明什么、何时声明，并列出支持区域的内置模板。
+
+**声明**\ ``region``\ **之后，模板自己要满足什么。** 这个声明是一个承诺，不是开关。模板要接管目标语言里区域的全部语义：拥有者按书写顺序启动每个区域，
+区域在一个周期内依次推进并能看到靠前区域的写入，区域以 ``-> [*]`` 结束后保持已完成，最后一个完成要么在同一周期里让拥有者续接，要么被拒绝。
+声明了这些的模板应当在每个共享的区域场景上与 :class:`pyfcstm.simulate.SimulationRuntime` 一致；内置模板就是参照（见 :doc:`/reference/builtin_templates/index_zh`）。
+通过 ``owner.regions`` 与 ``model.walk_regions()`` 渲染区域，它们保持书写顺序；只沿单一路径遍历的模板不要声明 ``region``。上面的列表模板之所以可以声明，只是因为它不生成任何行为。
+
+**文件副作用。** ``pyfcstm generate`` 把 ``regions.txt`` 写入输出目录；这些命令写入你运行命令的目录下的 ``out/``、``undeclared/`` 和 ``undeclared_out/``。
+
+**失败时先查什么。** 改过的模板仍被拒绝时，读 ``StateMachineCodeRenderer(path).features``：``features`` 里出现未知成员或重复成员，会在构造渲染器时失败；没有这个键的模板集合为空。
+
+**参考链接。** :doc:`/reference/template_config/index_zh`。

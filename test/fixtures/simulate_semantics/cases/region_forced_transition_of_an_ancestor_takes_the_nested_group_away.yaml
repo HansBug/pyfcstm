@@ -1,0 +1,18 @@
+title: A forced transition declared for an ancestor of the owner takes the whole group, regions in declaration order
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.Sys.P{A: A1, B: B1}'
+    vars:
+      seq: 0
+- cycle: Root.Halt
+  expect:
+    configuration: Root.Safe
+    vars:
+      seq: 213

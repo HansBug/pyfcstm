@@ -13,6 +13,8 @@ from pyfcstm.bmc import (
     BmcBuildError,
     BmcEngine,
     BmcOptions,
+    InvalidBmcQuery,
+    REGION_DONE_ID,
     STATE_INIT_ID,
     STATE_TERMINATE_ID,
     UnsupportedBmcQuery,
@@ -23,6 +25,8 @@ from pyfcstm.bmc import (
     replay_bmc_witness,
     solve_bmc_property,
 )
+from pyfcstm.bmc.region_witness import trace_region_step
+from pyfcstm.model import Configuration
 from pyfcstm.simulate import SimulationRuntime
 from pyfcstm.simulate.runtime import SimulationRuntimeExpressionError
 from test.bmc.semantic_fixture_policy import (
@@ -30,6 +34,7 @@ from test.bmc.semantic_fixture_policy import (
     CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES,
     FLOAT_MODULO_ALIGNMENT_CASES,
     NUMERIC_UNSUPPORTED_CASES,
+    REGION_CORE_EXCLUDE_CASES,
     RUNTIME_ERROR_PREFIX_CASES,
     SEARCH_LIMIT_EXCLUDE_CASES,
     TEMPORARY_BMC_CORE_EXCLUDE_CASES,
@@ -63,6 +68,7 @@ _SUPPORTED_POLICY_MODES = {
     "expected_unsupported",
     "temporary_exclude",
     "long_term_exclude",
+    "region_core",
 }
 _SAFE_BARE_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FBMCQ_RESERVED_VAR_NAMES = {
@@ -657,6 +663,201 @@ def _assert_semantic_fixture_raises_in_bmc(case):
         )
 
 
+def _region_configuration_predicate(core, frame_index, node, region_path=None):
+    """Return the predicate that a frame rests exactly in a configuration tree."""
+    symbols = core.symbols
+    state_id = core.context.domain.state_path_to_id(node["state"])
+    position = (
+        symbols.frame_state(frame_index)
+        if region_path is None
+        else symbols.region_position(frame_index, region_path)
+    )
+    parts = [position == z3.IntVal(state_id)]
+    for item in node.get("regions") or []:
+        path = "%s.%s" % (node["state"], item["name"])
+        if item["configuration"] is None:
+            parts.append(
+                symbols.region_position(frame_index, path) == z3.IntVal(REGION_DONE_ID)
+            )
+        else:
+            parts.append(
+                _region_configuration_predicate(
+                    core, frame_index, item["configuration"], path
+                )
+            )
+    return z3.And(*parts)
+
+
+_START_REFUSALS = {
+    "All regions are Done": "invalid_start_position",
+    "Nowhere": "unknown_state",
+}
+
+
+def _hot_start_query(initial):
+    """Return the ``init`` clause that starts a query where a fixture starts."""
+    start = initial["configuration"]
+    given = ["%s == %s" % (name, value) for name, value in initial["vars"].items()]
+    where = " where %s" % " && ".join(given) if given else ""
+    return 'init state("%s") havoc *%s;\n' % (start, where)
+
+
+def _assert_hot_start_refused(case, model, query, raises) -> None:
+    """Check that the query of a refused hot start is refused with the right code."""
+    code = _START_REFUSALS[raises["match"]]
+    with pytest.raises(InvalidBmcQuery) as excinfo:
+        BmcEngine(model).prepare(query)
+    assert excinfo.value.diagnostic.code == code, case.id
+
+
+_REGION_OBSERVED_FIELDS = {
+    "configuration",
+    "vars",
+    "outputs",
+    "delta",
+    "ended",
+    "handler_calls",
+}
+
+
+def _decoded_calls(core, model, cycle_index):
+    """Return the abstract calls of one cycle as the fixture spells them."""
+    return [
+        {
+            "action": call.action_name,
+            "state": call.state,
+            "stage": call.stage,
+            "active_leaf": call.active_leaf,
+            "named_ref": call.named_ref,
+            "vars": dict(call.snapshot),
+            "configuration": call.configuration,
+        }
+        for call in trace_region_step(core, model, cycle_index).calls
+    ]
+
+
+def _expected_calls(items):
+    """Return the handler calls of a fixture with the defaults filled in."""
+    return [
+        {
+            "action": item["action"],
+            "state": item["state"],
+            "stage": item["stage"],
+            "active_leaf": _expected_handler_call_value(item, "active_leaf"),
+            "named_ref": _expected_handler_call_value(item, "named_ref"),
+            "vars": dict(item.get("vars") or {}),
+            "configuration": item["configuration"],
+        }
+        for item in items
+    ]
+
+
+def _assert_region_fixture_matches_bmc_core(case) -> None:
+    """Check the region relation against the observations of a region fixture.
+
+    Every cycle of the fixture is pinned (events, inputs), and the observations
+    after each step (configuration, variables, Delta, end of the run) must be
+    reachable and forced: the pinned trace has no other outcome.  The abstract
+    calls a fixture lists (they accumulate over the run) are decoded from the
+    solved trace and compared one by one, with the configuration of the whole
+    machine at the moment of each call.  A fixture field nothing checks, a step
+    that expects an error and a hot start are refused instead of being passed
+    over.
+    """
+    for index, step in enumerate(case.data["steps"]):
+        expect = step.get("expect") or {}
+        stray = set(expect) - _REGION_OBSERVED_FIELDS
+        assert not stray, "%s steps[%d] expects %r, which nothing checks" % (
+            case.id,
+            index,
+            sorted(stray),
+        )
+    model = build_state_machine_from_case(case)
+    cycles = []
+    for step in case.data["steps"]:
+        count = step.get("cycle_count", 1)
+        for index in range(count):
+            cycles.append((step, index == count - 1))
+    initial = case.data.get("initial")
+    query = "check reach <= %d: terminated();" % max(len(cycles), 1)
+    if initial is not None:
+        query = _hot_start_query(initial) + query
+        raises = (initial.get("expect") or {}).get("raises")
+        if raises is not None:
+            _assert_hot_start_refused(case, model, query, raises)
+            return
+    core = build_bmc_core_formula(BmcEngine(model).prepare(query))
+    symbols = core.symbols
+    domain = core.context.domain
+    pins = []
+    observed = []
+    # A short event name depends on where the machine rests, which only the
+    # simulator-facing side of the fixture knows; a query names the full path.
+    resting = None if initial is None else initial["configuration"]
+    for cycle_index, (step, is_last) in enumerate(cycles):
+        events = step.get("cycle") or []
+        events = {events} if isinstance(events, str) else set(events)
+        if resting is not None and events:
+            configuration = Configuration.parse(model, resting, mode="transient")
+            events = {configuration.resolve_event(name).path_name for name in events}
+        for event in domain.events:
+            literal = symbols.event_input(cycle_index, event.path)
+            pins.append(literal if event.path in events else z3.Not(literal))
+        for name, value in (step.get("inputs") or {}).items():
+            pins.append(symbols.step_inputs[cycle_index][name] == value)
+        expect = step.get("expect") or {}
+        if resting is not None:
+            # Where the machine rests after the cycle, for the names of the next one.
+            resting = expect.get("configuration") if is_last else None
+        if not is_last or not expect:
+            continue
+        frame = cycle_index + 1
+        if "configuration" in expect:
+            try:
+                configuration = Configuration.parse(model, expect["configuration"])
+            except ValueError:
+                # The group was entered but not started: the cold start was a
+                # Delta and the relation stays at the cold-start sentinel.
+                observed.append(symbols.frame_state(frame) == z3.IntVal(STATE_INIT_ID))
+            else:
+                observed.append(
+                    _region_configuration_predicate(
+                        core, frame, configuration.to_dict()
+                    )
+                )
+        for name, value in {
+            **(expect.get("vars") or {}),
+            **(expect.get("outputs") or {}),
+        }.items():
+            observed.append(symbols.frame_var(frame, name) == value)
+        if "delta" in expect:
+            observed.append(symbols.delta_flag(cycle_index) == bool(expect["delta"]))
+        if "ended" in expect:
+            observed.append(
+                (symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID))
+                == bool(expect["ended"])
+            )
+    solver = z3.Solver()
+    solver.add(core.core, *pins)
+    assert solver.check() == z3.sat, case.id
+    solver.push()
+    solver.add(*observed)
+    assert solver.check() == z3.sat, "%s: observations unreachable" % case.id
+    solved = solver.model()
+    solver.pop()
+    solver.add(z3.Not(z3.And(*observed)))
+    assert solver.check() == z3.unsat, "%s: observations not forced" % case.id
+    calls = []
+    for cycle_index, (step, is_last) in enumerate(cycles):
+        calls.extend(_decoded_calls(core, solved, cycle_index))
+        expected = (step.get("expect") or {}).get("handler_calls")
+        if is_last and expected is not None:
+            assert calls == _expected_calls(expected), "%s steps up to cycle %d" % (
+                case.id,
+                cycle_index,
+            )
+
+
 @pytest.mark.unittest
 def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     cases = {case.id: case for case in iter_semantic_cases()}
@@ -678,7 +879,11 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
         }
+        | set(REGION_CORE_EXCLUDE_CASES)
     )
+    assert set(REGION_CORE_EXCLUDE_CASES) <= {
+        case.id for case in cases.values() if "regions" in case.data["categories"]
+    }
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
     assert not (RUNTIME_ERROR_PREFIX_CASES & excluded_in_yaml)
     assert not (FLOAT_MODULO_ALIGNMENT_CASES & excluded_in_yaml)
@@ -689,8 +894,11 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         mode: sum(1 for item in cases.values() if policy_for_case(item.id).mode == mode)
         for mode in _SUPPORTED_POLICY_MODES
     }
+    region_cases = [
+        case for case in cases.values() if "regions" in case.data["categories"]
+    ]
     assert mode_counts == {
-        "hard_pass": 205,
+        "hard_pass": 220,
         "partial": 0,
         "runtime_error": 19,
         "expected_unsupported": 10,
@@ -700,8 +908,10 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
             for case in cases.values()
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
-        ),
+        )
+        + len(REGION_CORE_EXCLUDE_CASES),
         "long_term_exclude": 5,
+        "region_core": len(region_cases) - len(REGION_CORE_EXCLUDE_CASES),
     }
 
     for case_id in BMC_CORE_FIXTURE_LEDGER_CASES:
@@ -724,6 +934,9 @@ def test_bmc_core_matches_semantic_fixture_public_observations(case) -> None:
         return
     if policy.mode == "runtime_error":
         _assert_semantic_fixture_raises_in_bmc(case)
+        return
+    if policy.mode == "region_core":
+        _assert_region_fixture_matches_bmc_core(case)
         return
     _assert_semantic_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
 

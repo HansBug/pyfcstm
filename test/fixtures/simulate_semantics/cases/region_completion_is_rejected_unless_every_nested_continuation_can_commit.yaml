@@ -1,0 +1,35 @@
+title: "A completion whose continuation is itself the last completion of an enclosing group commits only if that group can continue too"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "ok1 enables Inner -> [*], ok2 enables P -> After; the whole chain commits in one cycle only when both hold."
+categories:
+- regions
+- runtime
+- inputs
+steps:
+- cycle: []
+  inputs:
+    ok1: 0
+    ok2: 0
+  expect:
+    configuration: 'Root.P{Outer: Inner{IR: W}}'
+- cycle: Root.Finish
+  inputs:
+    ok1: 1
+    ok2: 0
+  expect:
+    configuration: 'Root.P{Outer: Inner{IR: W}}'
+- cycle: Root.Finish
+  inputs:
+    ok1: 0
+    ok2: 1
+  expect:
+    configuration: 'Root.P{Outer: Inner{IR: W}}'
+- cycle: Root.Finish
+  inputs:
+    ok1: 1
+    ok2: 1
+  expect:
+    configuration: 'Root.After'

@@ -12,6 +12,26 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - Emit tier
      - Capability
      - Span object
+   * - :ref:`E_UNSUPPORTED_FEATURE <diag-code-e-unsupported-feature>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_ACTIVE_QUERY_TARGET <diag-code-e-active-query-target>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`E_REGION_STRUCTURE <diag-code-e-region-structure>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_DUPLICATE_REGION <diag-code-e-duplicate-region>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
    * - :ref:`E_UNDEFINED_VAR <diag-code-e-undefined-var>`
      - ``error``
      - ``static_pipeline``
@@ -437,10 +457,287 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``effect_statement``
+   * - :ref:`I_REGION_BACKWARD_READ <diag-code-i-region-backward-read>`
+     - ``info``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`W_REGION_BLIND_OVERWRITE <diag-code-w-region-blind-overwrite>`
+     - ``warning``
+     - ``partial_static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
 
 
 Names, variables, types, and imports
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-e-unsupported-feature:
+
+E_UNSUPPORTED_FEATURE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_UNSUPPORTED_FEATURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_UNSUPPORTED_FEATURE feature type=str required=true enum=region item_enum=- exact_values=-
+.. diagnostics-ref E_UNSUPPORTED_FEATURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
+
+The chosen consumer cannot preserve a region model. Every consumer in the Python package takes one: model construction, ``SimulationRuntime`` (cold and hot start), ``pyfcstm simulate``, ``pyfcstm inspect`` and the ``pyfcstm.verify`` analyses, bounded model checking and ``pyfcstm bmc``, PlantUML, diagrams, and code generation with a template that lists ``region`` under ``features`` in its ``config.yaml``. The JavaScript frontend (model, semantic analysis, diagram preview) supports regions too. The remaining refusal is code generation with a template that does not list ``region``: ``pyfcstm generate`` stops before it writes a file and names the built-in templates that do. Activity queries are never refused: they are lowered into ordinary variables.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``feature``
+     - ``str``
+     - yes
+     - Unsupported feature. (``region``)
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Originating file, if known.
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
+
+A custom template directory whose ``config.yaml`` has no ``features`` key is refused for a model with regions. The terminal record in :ref:`diag-region-examples` shows the template config, the refusal with its exit status, the missing output directory, and the same model generated with the built-in ``python`` template.
+
+Read the refusal in this order: the first line names the template directory; the second line states how many regions the model declares and where the first one is; ``If you write this template`` says what to declare; ``If you write the model`` lists the built-in templates that declare ``region`` and gives a command that can be copied. No file is written, and an existing output directory is not cleared.
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 2 boundary_only
+
+Declare ``features: [region]`` in the ``config.yaml`` of a custom template only once the template renders regions. A template written for a single active path would generate wrong code for a model with regions, which is why the declaration is opt-in and the default is "not supported". The five built-in templates ``python``, ``c``, ``c_poll``, ``cpp`` and ``cpp_poll`` all declare it. See :doc:`/reference/template_config/index` for the key.
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
+
+Generation refuses the model before clearing or replacing existing output, so a failed run leaves the previous output intact (the terminal record in :ref:`diag-region-examples` shows that the output directory is not created). An ordinary model without regions is unaffected by the missing declaration.
+
+.. _diag-code-e-active-query-target:
+
+E_ACTIVE_QUERY_TARGET
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_ACTIVE_QUERY_TARGET severity=error emit_tier=static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET reason type=str required=true enum=invalid_path|not_found|region|pseudo|initializer item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_ACTIVE_QUERY_TARGET kind=cli_error
+
+An active query must resolve to a non-pseudo State in the same model. Region targets and persistent initializers are invalid.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``state_path``
+     - ``str``
+     - yes
+     - Written target after import rebasing.
+   * - ``reason``
+     - ``str``
+     - yes
+     - Binding failure category. (``invalid_path``, ``not_found``, ``region``, ``pseudo``, ``initializer``)
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 1 cli_error
+
+A path that names no child is rejected with reason ``not_found``. The expression span identifies the query itself.
+
+.. literalinclude:: region_diag_active_not_found.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_not_found.fcstm.txt (negative example, do not copy)
+
+The terminal record and the structured diagnostic in :ref:`diag-region-examples` show the result. The span ``line=2, column=28, end_line=2, end_column=50`` is the ``active("Root.Unknown")`` call on line 2, and ``refs.state_path`` is the path as written after import rebasing.
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
+
+The five reasons, with the CLI result of each (see :ref:`diag-region-examples`):
+
+.. list-table:: ``refs.reason`` values of ``E_ACTIVE_QUERY_TARGET``
+   :header-rows: 1
+   :widths: 18 34 48
+
+   * - ``reason``
+     - Cause
+     - Model file and repair
+   * - ``not_found``
+     - A path segment names no child.
+     - ``region_diag_active_not_found.fcstm.txt``: ``Root.Unknown``. Query an existing state, for example ``Root`` or ``Root.A``.
+   * - ``invalid_path``
+     - A segment is not an identifier, or the first segment is not the root state's name.
+     - ``region_diag_active_invalid_path.fcstm.txt``: ``Other.A`` while the root is ``Root``. A root-relative path starts with ``/`` and omits the root name: ``active("/B")`` in ``region_diag_active_ok.fcstm`` is accepted.
+   * - ``region``
+     - The path names a region.
+     - ``region_diag_active_region.fcstm.txt``: ``Root.P.R``. Query a state inside the region, for example ``Root.P.R.X``.
+   * - ``pseudo``
+     - The path names a pseudo state.
+     - ``region_diag_active_pseudo.fcstm.txt``: ``Root.G``. A pseudo state is never a stable activity flag.
+   * - ``initializer``
+     - The query sits in a persistent variable initializer.
+     - Not reachable from text; see the next example.
+
+Every rejection exits with status 1 and prints no report.
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
+
+A persistent initializer has no active configuration to query, so ``initializer`` is rejected at model construction. In text the grammar already refuses ``active(...)`` there, so the user sees a syntax error rather than this code; the code is reachable only through the public AST classes.
+
+.. literalinclude:: region_diag_active_initializer.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_active_initializer.fcstm.txt (negative example, do not copy)
+
+The terminal record in :ref:`diag-region-examples` shows that syntax error.
+
+Do not turn a region into a query target either; query a state inside it.
+
+.. _diag-code-e-region-structure:
+
+E_REGION_STRUCTURE
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_REGION_STRUCTURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_REGION_STRUCTURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE namespace_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE reason type=str required=true enum=empty_region|mixed_children|owner_statements|history_boundary item_enum=- exact_values=-
+
+.. diagnostics-boundary E_REGION_STRUCTURE kind=cli_error
+
+A region is empty, a state mixes direct states and regions, a parallel owner contains forbidden declarations, or history would have to store a parallel configuration.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+   * - ``namespace_path``
+     - ``str``
+     - yes
+     - Full path of the invalid namespace.
+   * - ``reason``
+     - ``str``
+     - yes
+     - Violated structural rule. (``empty_region``, ``mixed_children``, ``owner_statements``, ``history_boundary``)
+
+.. diagnostics-example E_REGION_STRUCTURE 1 cli_error
+
+A region without any state is rejected with reason ``empty_region``. The terminal record in :ref:`diag-region-examples` runs the CLI on the broken model, on the repaired one, and on the other cases of this code, and a script prints the structured diagnostic that model construction collects.
+
+.. literalinclude:: region_diag_empty_region.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_empty_region.fcstm.txt (negative example, do not copy)
+
+The CLI prints one line, the message with the line number of the offending construct, and exits with status 1 without a report. The structured form carries ``namespace_path`` (the full path of the invalid namespace), ``reason`` and ``source_path``.
+
+.. diagnostics-example E_REGION_STRUCTURE 2 boundary_only
+
+The four reasons, in the priority order in which they are checked on each node (a node reports at most one reason, and the check always continues into every child):
+
+.. list-table:: ``refs.reason`` values of ``E_REGION_STRUCTURE``
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - ``reason``
+     - Cause
+     - How to reach it
+   * - ``empty_region``
+     - A region declares no state.
+     - ``region Empty {}`` in text; the first example above.
+   * - ``mixed_children``
+     - A state has both direct child states and regions.
+     - Not expressible in text: ``region_diag_mixed_children.fcstm.txt`` fails in the parser, as the terminal record shows. Reachable only by building the AST with the public node classes.
+   * - ``owner_statements``
+     - A state that owns regions also has its own transitions, forced transitions, imports or histories.
+     - Not expressible in text: ``region_diag_owner_transition.fcstm.txt`` fails in the parser. Reachable only through the public AST classes.
+   * - ``history_boundary``
+     - A state with a history entry has a region anywhere in its subtree.
+     - ``region_diag_history_boundary.fcstm.txt`` in the terminal record: ``[H]`` on ``Root.P`` while ``Root.P.B`` owns regions.
+
+A valid replacement of the first example is a region with a state and an initial transition (``region_diag_empty_region_fixed.fcstm``, accepted in the terminal record). One direct region is allowed and does not produce a warning.
+
+.. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
+
+History inside an ordinary subtree is permitted, and so are regions elsewhere in the machine: ``region_diag_history_outside.fcstm`` puts ``[H]`` on ``Root.P`` and the regions under the sibling ``Root.Q``, and the terminal record shows it accepted with two regions. A history owner whose subtree contains regions is the only forbidden combination. A region cannot directly contain an import, and a transition declared on the owner is not allowed; move local transitions inside the regions and imports inside ordinary child states.
+
+.. literalinclude:: region_diag_history_outside.fcstm
+   :language: fcstm
+   :caption: region_diag_history_outside.fcstm
+
+.. _diag-code-e-duplicate-region:
+
+E_DUPLICATE_REGION
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DUPLICATE_REGION severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_DUPLICATE_REGION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION region_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION previous_span type=Span required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_DUPLICATE_REGION kind=cli_error
+
+Two direct regions within the same state have the same name, so their namespace paths cannot be distinguished.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+   * - ``region_name``
+     - ``str``
+     - yes
+     - Repeated region identifier.
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Full path of the shared owner state.
+   * - ``previous_span``
+     - ``Span``
+     - no
+     - First declaration position, if known.
+
+.. diagnostics-example E_DUPLICATE_REGION 1 cli_error
+
+Two direct regions of one owner with the same name are rejected. The CLI line carries the line of the repeated declaration; the structured diagnostic adds ``previous_span`` for the first declaration.
+
+.. literalinclude:: region_diag_duplicate.fcstm.txt
+   :language: fcstm
+   :caption: region_diag_duplicate.fcstm.txt (negative example, do not copy)
+
+The terminal record in :ref:`diag-region-examples` shows both. Read the span ``line=3, column=5, end_line=3, end_column=42`` as the second ``region A`` on line 3 and ``previous_span`` ``line=2, column=5, end_line=2, end_column=42`` as the first on line 2.
+
+.. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
+
+Rename the second region (for example to ``B``) and update every path that names it; a path such as ``Root.A.Busy`` and an event path through the region follow the region name.
+
+.. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
+
+Uniqueness is per owner, not global. ``region_diag_same_name_two_owners.fcstm`` declares ``A`` under both ``Root.P`` and ``Root.Q``, and the child state ``Idle`` in both ``Root.P.A`` and ``Root.P.B``; the terminal record in :ref:`diag-region-examples` shows it accepted with three regions.
+
+.. literalinclude:: region_diag_same_name_two_owners.fcstm
+   :language: fcstm
+   :caption: region_diag_same_name_two_owners.fcstm
 
 .. _diag-code-e-undefined-var:
 
@@ -1684,7 +1981,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant|owner_never_completes exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 
@@ -1693,7 +1990,7 @@ W_UNREACHABLE_TRANSITION
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
-**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration.
+**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration. A transition leaving a state that owns regions is reported with ``owner_never_completes`` when some region can never reach its ``[*]`` exit, because the owner's ordinary transitions run only once every region is done.
 
 **LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline. When available, ``verification_source_ids`` lists stable ``algorithm_name@verification_scope`` identifiers for that evidence; these identifiers contain no product or schema version.
 
@@ -1743,7 +2040,11 @@ This diagnostic appears in a successful inspect report. Reproduce it with ``pyfc
 .. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
-A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration.
+A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration. With ``owner_never_completes`` the repair is on the regions, not the transition: give every region of the owner a ``[*]`` exit, or leave the owner with a forced transition. In the terminal record and the script output of :ref:`inspect-report-region-reachability`, ``Monitor`` has no exit, so ``Job -> Next`` is reported and ``Root.Next`` is unreachable; ``region_owner_completes.fcstm`` fixes it.
+
+.. literalinclude:: /reference/inspect_report/region_owner_never_completes.fcstm
+   :language: fcstm
+   :caption: region_owner_never_completes.fcstm (in the inspect report reference directory)
 
 .. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
 
@@ -5344,7 +5645,7 @@ Do not add a self-loop to mask the unreachability.
 .. _diag-code-w-leaf-no-outgoing-transition:
 
 W_LEAF_NO_OUTGOING_TRANSITION
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
 .. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-
@@ -6361,3 +6662,168 @@ Use a control variable for mutable state; keep the parameter fixed within the ru
 .. diagnostics-example E_PARAM_WRITE 3 boundary_only
 
 Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.
+
+
+.. _diag-code-i-region-backward-read:
+
+I_REGION_BACKWARD_READ
+^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta I_REGION_BACKWARD_READ severity=info emit_tier=partial_static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref I_REGION_BACKWARD_READ owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ reader_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target_kind type=str required=true enum=variable|active item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ target type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref I_REGION_BACKWARD_READ writer_regions type=list[str] required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary I_REGION_BACKWARD_READ kind=partial_static_boundary
+
+**Registry facts.** Severity ``info``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``expression``.
+
+**Meaning.** An earlier region reads a variable, or queries with ``active()`` the activity of a state, that a later region of the same owner writes or contains. Regions run in declaration order within one cycle, so the earlier region sees the value from the previous cycle. This is the defined behavior of ordered regions; the message exists so that the order can be confirmed as intended.
+
+**LLM repair summary.** An earlier region reads something a later region produces in the same cycle, so it sees the previous cycle's value. Keep the order when that is intended; declare the producing region first when the current cycle's value is needed.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the state that owns both regions.
+   * - ``reader_region``
+     - ``str``
+     - yes
+     - Dotted path of the earlier region that reads.
+   * - ``target_kind``
+     - ``str``
+     - yes
+     - ``variable`` for a variable read, ``active`` for an ``active()`` query. (enum: ``variable``, ``active``)
+   * - ``target``
+     - ``str``
+     - yes
+     - Variable name, or the dotted path of the queried state.
+   * - ``writer_regions``
+     - ``list[str]``
+     - yes
+     - Dotted paths of the later regions that write the variable or contain the queried state.
+
+.. diagnostics-example I_REGION_BACKWARD_READ 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array. Region ``Reader`` is declared first, so ``seen = level;`` reads the value that ``Writer`` stored in the previous cycle.
+
+.. code-block:: fcstm
+
+   def int level = 0;
+   def int seen = 0;
+   state Root {
+       region Reader {
+           state Idle { during { seen = level; } }
+           [*] -> Idle;
+       }
+       region Writer {
+           state Busy { during { level = level + 1; } }
+           [*] -> Busy;
+       }
+   }
+
+Real inspect output for this model and for its variants that report or stay quiet is in :ref:`inspect-report-region-order`.
+
+.. diagnostics-example I_REGION_BACKWARD_READ 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``I_REGION_BACKWARD_READ``.
+A typical repair is ``reorder_regions`` on ``region``: declare the producing region before the reading region when the current cycle's value is needed. Keep the order and the read as they are when the one-cycle delay is intended.
+
+.. diagnostics-example I_REGION_BACKWARD_READ 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``I_REGION_BACKWARD_READ``.
+Do not treat this as a defect and do not reorder regions only to silence it. A read that goes the other way, from a later region to an earlier one, is the normal case and is never reported.
+
+.. _diag-code-w-region-blind-overwrite:
+
+W_REGION_BLIND_OVERWRITE
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_REGION_BLIND_OVERWRITE severity=warning emit_tier=partial_static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_region type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE variable type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_REGION_BLIND_OVERWRITE previous_write_span type=Span required=true enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_REGION_BLIND_OVERWRITE kind=partial_static_boundary
+
+**Registry facts.** Severity ``warning``; emit tier ``partial_static_pipeline``; capability ``pure_static``; span object ``effect_statement``.
+
+**Meaning.** A later region overwrites, in every cycle and without ever looking at it, a variable that an earlier region of the same owner writes, so the earlier write is lost every cycle. The later region does so when each of its non-pseudo leaf states writes the variable unconditionally at the top level of its ``during`` actions, nothing in the region reads the variable before that write (no guard, effect, ``enter``, ``exit``, right-hand side, ``if`` condition or earlier statement), and the region cannot finish, has no nested parallel owner and no abstract action. The earlier write is lost when no statement running after it in the same cycle reads the variable and no region in between reads it or has an abstract action. The diagnostic points at the overwriting statement and ``previous_write_span`` names the lost write. Several regions writing one variable is otherwise fine, including a default value in front and an override behind that only some states perform.
+
+**LLM repair summary.** A later region overwrites, in every cycle and without looking at it, a variable written by an earlier region, so the earlier write has no effect. Combine with the earlier value, for example ``x = x + y;``, or give each region its own variable.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the state that owns both regions.
+   * - ``region``
+     - ``str``
+     - yes
+     - Dotted path of the later region that overwrites.
+   * - ``previous_region``
+     - ``str``
+     - yes
+     - Dotted path of the nearest earlier region that also writes the variable.
+   * - ``variable``
+     - ``str``
+     - yes
+     - Name of the overwritten variable.
+   * - ``previous_write_span``
+     - ``Span``
+     - yes
+     - Source span of the earlier region's write that is lost.
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array. ``out = y + 2;`` in ``Second`` discards the value that ``First`` stored in the same cycle.
+
+.. code-block:: fcstm
+
+   def int out = 0;
+   def int y = 0;
+   state Root {
+       region First {
+           state A { during { out = 1; } }
+           [*] -> A;
+       }
+       region Second {
+           state B { during { out = y + 2; } }
+           [*] -> B;
+       }
+   }
+
+Real inspect output for this model and for its variants that report or stay quiet is in :ref:`inspect-report-region-order`.
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_REGION_BLIND_OVERWRITE``.
+A typical repair is ``use_previous_value`` on ``statement``: write ``out = out + y + 2;`` when both writes are meant to count, or ``use_separate_variables`` when the two regions are independent.
+
+.. diagnostics-example W_REGION_BLIND_OVERWRITE 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REGION_BLIND_OVERWRITE``.
+Do not report or remove a write that is built on the earlier value (``x = x + y;``), guarded by it (``if [x > 0] { x = 0; }``), or read before it is overwritten (``z = x; x = 0;``). Do not report a default value that a later region overrides only in some states or under a condition, nor an earlier write that its own region reads later in the same cycle.

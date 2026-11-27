@@ -22,9 +22,17 @@ Create ``traffic_light.fcstm``:
 
 Run a few cycles without writing Python code:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   $ pyfcstm simulate -i traffic_light.fcstm -e "cycle; cycle; current"
+   ...
+   ────────────────────────────────────────────────────────────
+   >>> current
+   ────────────────────────────────────────────────────────────
+   Cycle: 2
+   Current State: TrafficLight.Red
+   Variables:
+     timer = 2
 
 The simulator is useful for checking lifecycle actions and transition timing
 before generating target-language code. See :doc:`/tutorials/simulation/index`
@@ -37,9 +45,21 @@ for interactive sessions, hot start, batch mode, and execution semantics.
 want a structured report with states, transitions, metrics, derived graphs, and
 diagnostics:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
+   $ pyfcstm inspect -i traffic_light.fcstm
+   [OK] FCSTM Inspect Report: traffic_light.fcstm
+
+   Summary
+     status: ok
+     root: TrafficLight
+     states: 4 total / 3 leaf
+     transitions: 4
+   ...
+     diagnostics: 0 errors / 0 warnings / 0 infos
+   ...
+   No diagnostics.
+   $ pyfcstm inspect -i traffic_light.fcstm --format json -o traffic_light.inspect.json
 
 The traffic light model is intentionally simple, so diagnostics may be empty.
 The dedicated :doc:`/tutorials/inspect/index` tutorial shows richer diagnostics,
@@ -51,9 +71,13 @@ repairs.
 
 Use ``--template`` for packaged built-in templates:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm generate -i traffic_light.fcstm --template python -o _quick_start_python --clear
+   $ pyfcstm generate -i traffic_light.fcstm --template python -o _quick_start_python --clear
+   $ LC_ALL=C ls _quick_start_python
+   README.md
+   README_zh.md
+   machine.py
 
 The generated directory includes runtime code and generated README files. The
 full :doc:`/tutorials/generation/index` tutorial covers ``python``, ``c``,
@@ -67,9 +91,13 @@ custom template directory.
 
 For a stable, versionable diagram source file, use ``plantuml``:
 
-.. code-block:: bash
+.. code-block:: console
 
-   pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+   $ pyfcstm plantuml -i traffic_light.fcstm -o traffic_light.puml
+   $ cat traffic_light.puml
+   @startuml
+   ...
+   @enduml
 
 When your environment has a PlantUML renderer available, ``visualize`` can
 render a final ``png`` / ``svg`` / ``pdf`` file directly:
@@ -85,20 +113,4 @@ What to expect
 --------------
 
 The commands above are intentionally independent from any external PlantUML
-renderer. A successful quick-start run should look like this in outline:
-
-.. code-block:: text
-
-   Current State: TrafficLight.Red
-   timer = 2
-   states: 4
-   transitions: 4
-   diagnostics: 0
-   _quick_start_python/machine.py
-   _quick_start_python/README.md
-   @startuml
-
-The documentation build also runs ``quick_start.demo.sh`` from this directory to
-keep these examples reproducible. The script is a build-time smoke test rather
-than the recommended way to read the tutorial; for humans, copy the short
-commands in the sections above one at a time.
+renderer. A successful quick-start run prints the output shown in each step above.

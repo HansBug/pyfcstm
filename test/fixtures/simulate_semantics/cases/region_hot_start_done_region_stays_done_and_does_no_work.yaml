@@ -1,0 +1,27 @@
+title: 'A region written as [done] stays done: it does not enter again and does no work, while the other
+  regions work'
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+categories:
+- regions
+- runtime
+- hot_start
+initial:
+  configuration: 'W.Job{A: Q{A1: [done], A2: W2}, B: Comp.In1}'
+  vars:
+    seq: 0
+    n: 0
+steps:
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: [done], A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 0
+      n: 10100
+- cycle: []
+  expect:
+    configuration: 'W.Job{A: Q{A1: [done], A2: W2}, B: Comp.In1}'
+    vars:
+      seq: 0
+      n: 20200

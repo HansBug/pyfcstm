@@ -1,0 +1,29 @@
+title: A forced transition written inside a region takes the group of the nested owner away and leaves the sibling region alone
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "Exit actions in order: nested regions X and Y in declaration order, then the nested owner Q; 9 is the entry of Home. Region B keeps its state."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: Q{X: X1, Y: Y1}, B: B1}'
+    vars:
+      seq: 0
+    delta: false
+- cycle:
+  - Root.Reset
+  expect:
+    configuration: 'Root.P{A: Home, B: B1}'
+    vars:
+      seq: 1249
+    delta: false
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: Home, B: B1}'
+    vars:
+      seq: 1249
+    delta: false

@@ -409,3 +409,5 @@
 4. 建立心智模型后，再用 :doc:`../../how_to/bmc/index_zh` 完成可重复任务。
 5. 精确语法和结果契约查 :doc:`../../reference/bmc_query/index_zh` 与
    :doc:`../../reference/bmc_results/index_zh`。
+6. 在两个含区域的模型上检查同一条性质，并看到只取决于区域顺序的反例，见
+   :doc:`../../tutorials/regions/index_zh`。

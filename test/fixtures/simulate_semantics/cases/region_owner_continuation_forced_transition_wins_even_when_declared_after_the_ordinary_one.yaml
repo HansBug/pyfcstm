@@ -1,0 +1,20 @@
+title: "After every region finished, the owner's forced transition is tried before its ordinary ones, whatever the declaration order"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - "The forced transition is declared after the ordinary one and still wins; its guard becomes true only through the region's exit action."
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{R: W}'
+    vars:
+      a: 1
+- cycle: Root.Finish
+  expect:
+    configuration: 'Root.ViaForced'
+    vars:
+      a: -2

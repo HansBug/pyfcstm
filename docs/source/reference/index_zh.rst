@@ -33,6 +33,7 @@
 
 * 面向命令的行为：:doc:`cli/index_zh`。
 * 语言形式：:doc:`dsl/index_zh`。
+* Region 模型与配置契约: :doc:`region_model/index_zh`.
 * 报告形状：:doc:`inspect_report/index_zh`。
 * 诊断码：:doc:`diagnostics_codes/index_zh`。
 * 运行时执行接口：:doc:`simulation/index_zh`。

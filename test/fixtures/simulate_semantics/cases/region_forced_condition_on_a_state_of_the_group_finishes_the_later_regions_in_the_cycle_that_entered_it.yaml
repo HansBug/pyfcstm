@@ -1,0 +1,35 @@
+title: A forced condition that asks whether a state of the group is active finishes the regions after that state in the cycle that entered it, and the region of the state in the next cycle
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/248
+  notes:
+  - In the cycle that enters Bad, region B runs after region A, sees the condition true and finishes at once. Region A finishes in the next cycle, when its own state sees the raised variable, and then the owner continues to Safe.
+categories:
+- regions
+- runtime
+steps:
+- cycle: []
+  expect:
+    configuration: 'Root.P{A: Run, B: B1}'
+    vars:
+      seq: 1
+    delta: false
+- cycle:
+  - Root.Fault
+  expect:
+    configuration: 'Root.P{A: Bad, B: [done]}'
+    vars:
+      seq: 101
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Safe
+    vars:
+      seq: 101
+    delta: false
+- cycle: []
+  expect:
+    configuration: Root.Safe
+    vars:
+      seq: 101
+    delta: false

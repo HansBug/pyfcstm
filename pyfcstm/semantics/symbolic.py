@@ -45,11 +45,12 @@ import os
 import sys
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 import z3
 
 from . import ir
+from ..utils.cache import BoundedTable
 from .engine import OPERAND, Interpretation, compile_expression
 
 __all__ = [
@@ -324,8 +325,7 @@ def _skips(condition: z3.BoolRef) -> bool:
 # A model has a few hundred distinct integer literals, and every numeral the table
 # keeps stays in the main context for the life of the process, so the table is
 # small and emptied when it is full.
-_INT_TERMS_LIMIT = 4096
-_INT_TERMS: Dict[Tuple[int, int], Tuple[z3.IntNumRef, z3.Context]] = {}
+_INT_TERMS: BoundedTable = BoundedTable(4096)
 
 
 def int_term(value: int) -> z3.IntNumRef:
@@ -355,10 +355,9 @@ def int_term(value: int) -> z3.IntNumRef:
     key = (id(context), value)
     entry = _INT_TERMS.get(key)
     if entry is None:
-        if len(_INT_TERMS) >= _INT_TERMS_LIMIT:
-            _INT_TERMS.clear()
         # The entry holds the context so that its id stays its own.
-        entry = _INT_TERMS[key] = (z3.IntVal(value), context)
+        entry = (z3.IntVal(value), context)
+        _INT_TERMS.put(key, entry)
     return entry[0]
 
 

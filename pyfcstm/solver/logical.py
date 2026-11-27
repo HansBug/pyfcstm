@@ -21,9 +21,8 @@ Example::
 """
 
 import contextlib
-import threading
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, Optional, Tuple, cast
+from typing import Iterable, Iterator, Optional, Tuple, cast
 
 try:
     from typing import Literal
@@ -31,6 +30,8 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
 import z3
+
+from ..utils.cache import ScopedMemo
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,7 @@ def is_sat(
         # decided keeps its answer.
         if not constraints:
             return _SAT
-        memo = getattr(_MEMO, "table", None)
+        memo = _ANSWERS.table
         if memo is not None:
             memo_key = _memo_key(constraints)
             if memo_key is not None:
@@ -158,32 +159,16 @@ def is_sat(
     if result.model is not None:
         return SatResult(kind=result.kind, model=result.model.translate(source))
     if memo_key is not None and result.kind in ("sat", "unsat"):
-        if len(memo) >= _MEMO.limit:
-            memo.clear()
         # The constraints are stored with the answer: a Z3 term id is only
         # unique while its term is alive, so the entry keeps them alive.
-        memo[memo_key] = (result, constraints)
+        memo.put(memo_key, (result, constraints))
     return result
 
 
 _SAT = SatResult(kind="sat")
 
 
-class _MemoSlot(threading.local):
-    """Per-thread table of the definite answers of the open :func:`answer_memo`.
-
-    :ivar table: Answers by query key, or ``None`` when no memo is open.
-    :vartype table: Optional[Dict[tuple, tuple]]
-    :ivar limit: Number of answers after which the table is emptied.
-    :vartype limit: int
-    """
-
-    def __init__(self) -> None:
-        self.table: Optional[Dict[tuple, tuple]] = None
-        self.limit = 0
-
-
-_MEMO = _MemoSlot()
+_ANSWERS = ScopedMemo()
 
 
 @contextlib.contextmanager
@@ -217,15 +202,8 @@ def answer_memo(limit: int = 1024) -> Iterator[None]:
         >>> is_sat([x > 1, x < 3]) is first
         False
     """
-    if _MEMO.table is not None:
+    with _ANSWERS.scope(limit):
         yield
-        return
-    _MEMO.table = {}
-    _MEMO.limit = limit
-    try:
-        yield
-    finally:
-        _MEMO.table = None
 
 
 def _memo_key(constraints: Tuple[z3.ExprRef, ...]) -> Optional[tuple]:

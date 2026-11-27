@@ -15,6 +15,22 @@ Bounded Model Checking
 
 **Upgrade note.** A witness can differ from the one an earlier release returned for the same query. It is another valid witness: the verdict is the same and every witness still replays. Maintainers can run ``make bmc_construction_check`` to compare the construction modes and the solver contexts.
 
+v0.7.1
+------
+
+This patch release changes only how pyfcstm is built and published. The
+package, its command line and its API behave exactly as in 0.7.0.
+
+- A release and its rehearsal now run one shared definition: the same builds,
+  fresh self-checks on Linux, Windows and macOS, bilingual PDFs, VS Code
+  extension and final verification of every release asset. A rehearsal runs for
+  every branch push that touches shipped code and keeps the assets as a build
+  artifact; a release publishes the same assets.
+- The bilingual PDFs and the VS Code extension are attached before the GitHub
+  release becomes public, so a published release always carries all its assets.
+- The standalone archives carry the release tag in their recorded build
+  identity, and a Windows archive is verified like the others before upload.
+
 v0.7.0
 ------
 

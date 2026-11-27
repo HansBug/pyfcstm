@@ -410,6 +410,31 @@ make tpl_clean  # Remove packaged template zip assets and index
 make templates_package  # Alias of make tpl
 ```
 
+### Release Pipeline
+
+A release and its rehearsal run one definition,
+[.github/workflows/release_pipeline.yml](.github/workflows/release_pipeline.yml): build, fresh self-checks on every
+platform, the aggregate gate, the bilingual PDFs, the VS Code extension and the final verify-and-collect of all eight
+release assets. Two thin entry points call it:
+
+- [release.yml](.github/workflows/release.yml) on a `v*` tag push (or a dispatch naming an existing tag), with
+  `publish: true`: the assets go to a draft GitHub release, the distributions to PyPI, and the draft is made public.
+- [release_test.yml](.github/workflows/release_test.yml) on every branch push touching shipped code, with
+  `publish: false`, named after the version in `pyfcstm/config/meta.py`: the same assets are uploaded as the
+  `pyfcstm-release-rehearsal` artifact. A tag push does not trigger it.
+
+The only steps that depend on `publish` are the three publishing steps of `publish_release` and the rehearsal upload
+that replaces them. `make release_pipeline_identity_check` enforces this and every pipeline run executes it first, so
+a release cannot start from files that have drifted apart. Change release behavior only in the pipeline file; never
+add a step to an entry point. The publishing steps themselves (`gh release create/upload/edit`, the PyPI upload) are
+the one part a rehearsal cannot run, so keep them as single commands over files the shared steps prepared.
+
+Change the version only with `python tools/bump_version.py <new>`; `python tools/bump_version.py --check` reports any
+location that disagrees. It owns every place the current version is written (the package metadata, its docstring
+example and the tests that compare it), refuses to write anything when one of them no longer matches, leaves
+historical numbers such as `deprecated_in` or dependency pins alone, and reports when the release notes do not yet
+start with a section for the new version.
+
 ### Documentation
 
 ```bash

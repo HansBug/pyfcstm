@@ -1226,8 +1226,8 @@ jobs:
           grep -F "full_commit=$TARGET_COMMIT" "$identity"
           grep -F "tag=$tag" "$identity"
           archive_name=$(basename "$archive")
-          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
-          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
+          expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' <(tr -d '\r' < "$digest_file"))
+          expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' <(tr -d '\r' < "$digest_file"))
           actual_digest=$(python3 - "$archive" <<'PY'
           import hashlib
           import sys

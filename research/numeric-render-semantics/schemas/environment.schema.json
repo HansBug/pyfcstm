@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/environment.schema.json",
+  "title": "Numeric render probe environment report",
+  "type": "object",
+  "required": ["schema_version", "mode", "native_runner_enabled", "repository", "python", "platform", "resources", "available_commands"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"const": "env"},
+    "native_runner_enabled": {"const": false},
+    "repository": {"type": "object", "required": ["root", "research_path"]},
+    "python": {"type": "object", "required": ["executable", "version", "implementation"]},
+    "platform": {"type": "object"},
+    "resources": {"type": "object"},
+    "available_commands": {"type": "array"}
+  }
+}

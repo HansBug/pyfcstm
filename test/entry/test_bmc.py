@@ -1528,6 +1528,7 @@ def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
     for key in (
         "solver_profile",
         "solver_logic",
+        "solver_context",
         "solver_statistics",
         "incomplete_elapsed_ms",
         "total_elapsed_ms",

@@ -3038,6 +3038,7 @@
         "diagnostics",
         "solver_profile",
         "solver_logic",
+        "solver_context",
         "solver_statistics",
         "runtime_safety"
       ],
@@ -3173,6 +3174,12 @@
             "QF_NIA",
             "QF_NRA",
             "NIRA"
+          ]
+        },
+        "solver_context": {
+          "enum": [
+            "fresh",
+            "shared"
           ]
         },
         "solver_statistics": {

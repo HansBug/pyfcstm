@@ -278,6 +278,7 @@ def _execute_bmc(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     runtime_safety: bool = True,
+    solver_context: str = "fresh",
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -298,6 +299,8 @@ def _execute_bmc(
             options["solver_profile"] = solver_profile
         if runtime_safety is not True:
             options["runtime_safety"] = runtime_safety
+        if solver_context != "fresh":
+            options["solver_context"] = solver_context
         result = _solve_bmc_property(formula, timeout_ms=timeout_ms, **options)
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
@@ -799,6 +802,7 @@ def build_bmc_output(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     runtime_safety: bool = True,
+    solver_context: str = "fresh",
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -829,6 +833,11 @@ def build_bmc_output(
         evaluating the property, defaults to ``True``.  A reachable error
         leaves the property unevaluated and exits with status ``5``.
     :type runtime_safety: bool, optional
+    :param solver_context: ``fresh`` solves linear-arithmetic formulas in a
+        new Z3 context so that witnesses depend only on the model, the query,
+        the options and the Z3 version; ``shared`` solves in the context the
+        formula was built in, defaults to ``'fresh'``.
+    :type solver_context: str, optional
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
@@ -853,6 +862,7 @@ def build_bmc_output(
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
+        **({"solver_context": solver_context} if solver_context != "fresh" else {}),
     )
     return text, exit_code
 
@@ -868,6 +878,7 @@ def _build_bmc_report(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     runtime_safety: bool = True,
+    solver_context: str = "fresh",
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -904,6 +915,11 @@ def _build_bmc_report(
         raise ClickErrorException("cone_slicing must be bool.")
     if not isinstance(runtime_safety, bool):
         raise ClickErrorException("runtime_safety must be bool.")
+    if not isinstance(solver_context, str) or solver_context not in (
+        "fresh",
+        "shared",
+    ):
+        raise ClickErrorException("solver_context must be one of fresh, shared.")
     execution = _execute_bmc(
         input_code_file,
         query_file,
@@ -913,6 +929,7 @@ def _build_bmc_report(
         solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
+        **({"solver_context": solver_context} if solver_context != "fresh" else {}),
     )
     if json_output:
         return (
@@ -1102,6 +1119,7 @@ def _run_bmc_command(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     runtime_safety: bool = True,
+    solver_context: str = "fresh",
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -1114,6 +1132,7 @@ def _run_bmc_command(
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
+        **({"solver_context": solver_context} if solver_context != "fresh" else {}),
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -1221,6 +1240,17 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Select the main solver; explanation and proof checks use default.",
     )
     @click.option(
+        "--solver-context",
+        type=click.Choice(("fresh", "shared"), case_sensitive=True),
+        default="fresh",
+        show_default=True,
+        help=(
+            "Where linear-arithmetic formulas are solved: a new Z3 context "
+            "(witnesses depend only on model, query and options) or the one "
+            "the formula was built in."
+        ),
+    )
+    @click.option(
         "--explain-infeasibility",
         "infeasibility_explanation",
         type=click.Choice(("none", "formal", "proof"), case_sensitive=True),
@@ -1253,6 +1283,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         solver_profile: str,
         cone_slicing: bool,
         runtime_safety: bool,
+        solver_context: str,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -1284,6 +1315,9 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :param runtime_safety: Check runtime-error reachability before the
             property.
         :type runtime_safety: bool
+        :param solver_context: ``fresh`` or ``shared``; where linear-arithmetic
+            formulas are solved.
+        :type solver_context: str
         :return: ``None``.
         :rtype: None
 
@@ -1306,6 +1340,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             solver_profile=solver_profile,
             **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
             **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
+            **({"solver_context": solver_context} if solver_context != "fresh" else {}),
         )
         ctx.exit(exit_code)
 

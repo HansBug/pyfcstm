@@ -43,8 +43,8 @@ def test_default_preserves_staged_assertions_and_scopes(monkeypatch):
     original_solver = z3.Solver
     observed = []
 
-    def recording_solver():
-        solver = original_solver()
+    def recording_solver(ctx=None):
+        solver = original_solver(ctx=ctx)
         original_check = solver.check
 
         def check(*assumptions):

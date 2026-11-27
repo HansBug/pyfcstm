@@ -89,7 +89,9 @@ from .solver import (
     _SolveBudget,
     _check_solver,
     _check_with_budget,
+    _core_fragment,
     _free_symbols,
+    _in_solve_context,
     _solver_for_profile,
 )
 
@@ -544,6 +546,7 @@ def _probe_outcome_reason(what: str, record: "ProbeRecord") -> str:
     return "%s did not start: %s" % (what, record.reason)
 
 
+@_in_solve_context(_core_fragment, own=False)
 def classify_infeasibility(
     core: "BmcCoreFormula", stage: str, budget: _SolveBudget
 ) -> ClassificationOutcome:
@@ -690,6 +693,7 @@ def classify_infeasibility(
     )
 
 
+@_in_solve_context(_core_fragment, own=False)
 def extract_source_core(
     core: "BmcCoreFormula", scope: str, budget: _SolveBudget
 ) -> CoreExtraction:
@@ -873,6 +877,7 @@ def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
     return solver
 
 
+@_in_solve_context(_core_fragment, own=False)
 def minimize_source_core(
     core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
 ) -> MinimizedCore:
@@ -1152,6 +1157,7 @@ class ForcedValue:
     supporting_ids: Tuple[str, ...]
 
 
+@_in_solve_context(_core_fragment, own=False)
 def derive_forced_values(
     core: "BmcCoreFormula",
     items: Sequence["BmcCoreItem"],
@@ -1404,6 +1410,7 @@ _BINDING_ENCODERS = {
 }
 
 
+@_in_solve_context(_core_fragment, own=False)
 def check_core_bindings(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -1670,6 +1677,7 @@ def _entailment_prover(members, budget: _SolveBudget):
     return discharge_target
 
 
+@_in_solve_context(_core_fragment, own=False)
 def check_case_conditions(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -1794,6 +1802,7 @@ def check_case_conditions(
     )
 
 
+@_in_solve_context(_core_fragment, own=False)
 def check_value_carries(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -2359,6 +2368,7 @@ def _symbol_frame(symbol) -> Optional[int]:
         return None
 
 
+@_in_solve_context(_core_fragment, own=False)
 def explain_infeasibility(
     core: "BmcCoreFormula",
     stage: str,

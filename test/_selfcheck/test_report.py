@@ -259,7 +259,7 @@ def test_incremental_human_output_flushes_header_results_and_summary(capsys):
     write_human_result(check, 1, 1, color="never")
     write_human_summary(snapshot, color="never")
     output = capsys.readouterr().out
-    assert output.splitlines()[0].startswith("pyfcstm self-check 0.6.0")
+    assert output.splitlines()[0].startswith("pyfcstm self-check 0.7.0")
     assert "running 1 checks" in output
     assert "revision=abc123  commit=def456" in output
     assert "[1/1] PASS demo (ready)" in output

@@ -47,7 +47,7 @@ def test_bootstrap_emits_human_header_before_supervisor_work(monkeypatch, capsys
     assert observed["start_emitted"] is True
     assert observed["start_color"] == "never"
     assert observed["arguments"] == ("--profile", "full", "--color", "never")
-    assert observed["output"].startswith("pyfcstm self-check 0.6.0")
+    assert observed["output"].startswith("pyfcstm self-check 0.7.0")
     assert "profile=full" in observed["output"]
 
 
@@ -143,7 +143,7 @@ def test_invalid_human_selfcheck_arguments_reuse_the_immediate_header(
         == 2
     )
     output = capsys.readouterr().out
-    assert output.count("pyfcstm self-check 0.6.0") == 1
+    assert output.count("pyfcstm self-check 0.7.0") == 1
     assert "pyfcstm self-check unavailable" not in output
     assert "\x1b[31mERROR\x1b[0m selfcheck.arguments" in output
     assert "unknown self-check arguments: --bad-option" in output

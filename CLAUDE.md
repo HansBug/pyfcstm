@@ -276,6 +276,7 @@ make test_boundary_check                              # Validate pytest boundary
 make resource_ownership_check                         # Report handlers opened while holding a resource
 make semantics_boundary_check                         # Reject operator semantics defined outside pyfcstm.semantics.catalog
 make semantics_check                                  # Differential check: runnable vs Z3 semantics, BMC runtime safety vs simulation
+make bmc_construction_check                           # Differential check: BMC construction modes (lowered / template / verified) and solver contexts (fresh / shared)
 
 # Run a single test file or function directly:
 pytest test/simulate/test_semantic_fixtures.py -v

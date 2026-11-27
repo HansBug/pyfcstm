@@ -1,8 +1,13 @@
 版本说明
 ========
 
-未发布
+v0.7.0
 ------
+
+这个小版本给 FCSTM 增加了\ **有序并行区域**\ ，并把它贯通到仿真、检查报告、有界模型检查、
+图、内置模板和文档。同时新增了带只读输入与参数的变量角色，仿真器、求解器与生成运行时共用的
+运算符语义，执行轨迹，Python 的图快照与交互式查看器，以及更完整的有界模型检查工具。本版本包含
+不兼容变化，更新之前请先阅读本节末尾的“从 0.6.0 升级”。
 
 区域
 ~~~~
@@ -163,6 +168,461 @@ PlantUML、图形查看器和 ``pyfcstm inspect`` 仍然把一条强制转换展
 
 花括号不平衡的 ``init`` 对所有模型都直接报告这一点。报错里的路径现在写成 ``'W.Nowhere'`` 而不是元组；多个叶子之间有歧义的事件名会直接报歧义并列出候选，不再放在“无法解析”的套话之后。
 
+变量角色与只读输入
+~~~~~~~~~~~~~~~~~~
+
+顶层变量现在有一个说明归属的\ **角色**\ （role）。\ ``control``\ （旧写法 ``def``）是模型自己读写的普通变量。\ ``output``\ 由模型写入，供外部使用者读取。\ ``input``\ 由环境在每个周期提供一次，\ ``param``\ 在构造机器时固定；模型对这两种变量只能读。
+
+.. code-block:: fcstm
+
+   input float pressure;
+   param float gain = 2.0;
+   output float reading = 0.0;
+   control int count = 0;
+
+- ``input`` 不能带初始值；\ ``control``、\ ``output`` 和 ``param`` 必须带。在生命周期动作、切面或转换效果里给 ``input`` 或 ``param`` 赋值，包括写在不可达分支里，都是模型错误（``E_INPUT_WRITE`` 与 ``E_PARAM_WRITE``，例如 ``Model operations cannot write input 'a'.``）。初始值规则有各自的诊断码 ``E_INPUT_INITIALIZER`` 和 ``E_VARIABLE_INITIALIZER_REQUIRED``。
+- ``control``、\ ``input``、\ ``param``、\ ``output`` 和 ``var`` 与 ``region``、\ ``active`` 一样是保留字（见\ *区域*\ 一节）。把其中任何一个用作状态名、事件名、动作名或变量名的模型需要改名。全部用 ``def`` 声明变量的模型含义不变：这些变量都是 ``control`` 变量。
+- ``import`` 的映射块以 ``var`` 为标准关键字，``def`` 仍然可用。子模块的 ``input`` 可以绑定到父模块明确声明的 ``param``、\ ``input``、\ ``control`` 或 ``output``，并采用父声明的角色；被禁止的组合及其诊断见 :doc:`/reference/dsl/index_zh` 的导入一节。
+- ``pyfcstm.model.VariableRole`` 与 ``VarDefine.role`` 给出角色。\ ``StateMachine.control_variables``、\ ``inputs``、\ ``parameters``、\ ``output_variables`` 和 ``persistent_variables`` 按声明顺序返回只读映射。把模型导出回 DSL 时保留声明时的写法。
+- ``pyfcstm inspect`` 在每个变量下列出角色和外部供给方式，完整报告还为每个变量增加 ``read_sites`` 与 ``write_sites``。输入、参数和输出不会仅仅因为模型从不写入或从不读取，就被报告为未使用、未写入或只写不读的变量。字段约定见 :doc:`/reference/inspect_report/index_zh`。
+
+模拟中的参数与周期输入
+~~~~~~~~~~~~~~~~~~~~~~
+
+模拟器和生成的运行时都按角色工作。不含 ``input`` 与 ``param`` 的模型行为不变。
+
+- ``SimulationRuntime(model, parameters=..., input_source=...)`` 在构造时固定参数，并给每个输入绑定一个来源。来源可以是一个数、新增的内置生成器（``ConstantIntInput``、\ ``SequenceInput``、\ ``UniformIntInput``、\ ``NormalFloatInput``、\ ``CallableInput``、\ ``ReplayInputPattern`` 以及 :mod:`pyfcstm.simulate` 中的其他类），也可以是遵循 ``ScalarInputPattern`` 或 ``IntegratedInputPattern`` 的自定义对象。每个周期对每个来源读取一次，并把整个向量冻结到周期结束；\ ``runtime.cycle(inputs={...})`` 只对这一次调用覆盖取值。
+- ``CycleResult.inputs``、\ ``runtime.last_inputs``、\ ``runtime.parameters``、\ ``runtime.outputs`` 和 ``runtime.control_variables`` 给出这些值。\ ``runtime.vars`` 只含控制变量和输出变量，含输入的模型的历史记录多一个 ``inputs`` 键。抽象处理器的上下文（``ReadOnlyExecutionContext``）在 ``vars`` 之外单独提供 ``inputs`` 和 ``parameters``。来源读取失败时不会前进，失败表现为带 ``code`` 的 ``SimulationRuntimeInputSourceError``，例如 ``E_INPUT_SOURCE_READ`` 或 ``E_INPUT_SOURCE_MISSING``。
+- ``int`` 类型的变量、输入或参数接受像 ``2.0`` 这样的整数值浮点数，并按整数保存。
+- ``pyfcstm simulate`` 新增 ``--param NAME=VALUE``\ （可重复，整个会话内固定）和 ``cycle --input NAME=VALUE``。每个真实周期都需要完整的输入向量，没有补零，也不沿用上一次的值。可运行的约定见 :doc:`/reference/simulation/inputs_zh`。
+- 内置模板 ``python``、\ ``c``、\ ``c_poll``、\ ``cpp`` 和 ``cpp_poll`` 生成同样的划分：参数是构造参数，输入每个周期通过读取方法获取一次（Python 运行时里是 ``read_<input>()`` 与 ``get_input_<input>()``），C 里则通过输入提供者获取。
+
+文档块
+~~~~~~
+
+写在变量声明、状态（包括根状态和伪状态）、事件、转换或生命周期动作正前方的块注释，现在是该声明的\ **文档块**\ （documentation block）。此前这样的注释是语法错误。文档块只是元数据，不改变执行、模拟、验证、PlantUML 输出或 inspect 报告。
+
+.. code-block:: fcstm
+
+   /* Number of retries allowed before the fault state. */
+   def int retry_limit = 3;
+
+   /* The top-level state. */
+   state Controller {
+       [*] -> Ready;
+       /* A request is being processed. */
+       state Ready;
+   }
+
+- Python 模型把它放在 ``VarDefine``、\ ``State``、\ ``Event``、\ ``Transition``、\ ``OnStage`` 和 ``OnAspect`` 的 ``doc`` 字段里。\ ``to_ast_node()`` 与 DSL 导出把它写回带星号边距的块，并区分 ``None``、空字符串和 ``*``。
+- 抽象动作原有的尾随写法 ``enter abstract Name /* doc */;`` 仍然有效；同一个动作同时写前置块和尾随块会被拒绝。\ ``import`` 声明和导入映射条目不能拥有文档块。
+- 没有闭合的块注释报告为 ``Unterminated multiline comment - missing closing '*/'``。
+- 字段规则见 :doc:`/reference/dsl/index_zh` 的文档块一节。
+
+运算符的求值语义
+~~~~~~~~~~~~~~~~
+
+每个运算符和数学函数的结果类型、取值与运行时错误，现在只在 :mod:`pyfcstm.semantics.catalog` 里定义一次。模拟器、生成的运行时、\ ``inspect``\ （常量折叠与数值诊断）、验证器和 ``pyfcstm bmc`` 都读取它，不再各说各话。运算、结果与错误种类（``division_by_zero``、\ ``modulo_by_zero``、\ ``zero_negative_power``、\ ``complex_result``、\ ``negative_shift_count``、\ ``math_domain``、\ ``writeback_non_integral``、\ ``writeback_non_finite`` 等）的表格在 :doc:`/reference/dsl/index_zh` 的求值语义一节。
+
+模拟器，对所有模型：
+
+- 把结果写回变量时被拒绝，现在是带运算符目录错误种类（``error.kind``）的 ``SimulationRuntimeExpressionError``，不再是裸的 ``ValueError``。包括：把非整数值写给 ``int`` 变量（``x = 7 / 2``）、产生复数的结果如 ``(-8) ** 0.5``\ （错误种类 ``complex_result``），以及构造时无效的 ``initial_vars`` 或初始值。
+- ``cbrt`` 在所有运行时里用同一种算法，对完全立方数精确：\ ``cbrt(1000)`` 是 ``10.0``。上一个版本在平台立方根不是正确舍入的 Linux 构建上返回 ``9.999999999999998``。
+- ``sign`` 作用于 NaN 时，所有运行时都得 ``-1``。
+
+生成的 Python 运行时：\ ``**`` 遵循运算符目录（带符号的字面量底数使 ``-2 ** 2`` 等于 ``4``，复数结果是运行时错误），\ ``cbrt`` 与 ``sign`` 同模拟器一致，数学定义域错误在每个受支持的 Python 版本上都带同一条消息。
+
+生成的 C 族运行时（``c``、\ ``c_poll``、\ ``cpp``、\ ``cpp_poll``）此前与模拟器不一致，现在与之对齐。数值落到下列情形的模型，行为会改变：
+
+- ``round`` 在平局时取偶数邻居，与 Python 一致（\ ``round(2.5)`` 是 ``2``）。C 的 ``round`` 曾在平局时远离零取整。
+- 负的移位次数是运行时错误。此前它在 C 里是未定义行为，会得到任意值。
+- ``%`` 是向下取整的取模，结果与除数同号（\ ``-7 % 2`` 是 ``1``）。此前整数 ``%`` 用 C 的截断运算符，浮点 ``%`` 用 ``fmod``。
+- 指数为非负整数的整数 ``**`` 是精确的，不再经过 ``pow``。
+- 超出定义域的数学函数、负底数的小数次幂，以及把 NaN 或无穷大写给 ``int`` 变量，现在都是带模拟器措辞的运行时错误；此前生成的代码会产生 NaN 或无穷大。\ ``=>`` 的后件只在前件成立时才检查。
+- ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE`` 现在分别说明它的三种输入：负的次数在每个生成运行时里都在运行时失败；不小于 C/C++ 宽度的整数次数是 C/C++ 的可移植性风险；非整数次数由操作数类型检查拒绝。
+
+不兼容变化：一条转换上的事件与守卫
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+一条转换由事件\ **或**\ 守卫触发，同一条边上不能同时有两者（\ `issue #515 <https://github.com/HansBug/pyfcstm/issues/515>`_\ ）。DSL 语法本来就不允许把它们写在一起；现在这条规则对 Python 代码构造的对象同样成立。
+
+- 模型的 ``Transition.event`` 与 ``Transition.guard``，以及 ``TransitionDefinition`` 和 ``ForceTransitionDefinition`` 的 ``event_id`` 与 ``condition_expr``，在构造或赋值会让两者同时不为 ``None`` 时抛出 ``ValueError``\ （消息 ``event and guard are mutually exclusive``）。被拒绝的赋值不会改动对象。两者都为 ``None`` 表示无条件的边。
+- 迁移原来同时设置两者的代码：先清除已有字段再设置另一个，或把两项写成组合触发 ``A -> B :: Go + [x > 0];``，它会展开成分开的边。由 DSL 文本得到的模型不受影响。
+
+执行轨迹与候选决策诊断
+~~~~~~~~~~~~~~~~~~~~~~
+
+对一次 ``SimulationRuntime.cycle`` 调用的两种按需视图。两者都不写文件，也不改变这次调用做了什么。
+
+- ``cycle(trace=True)`` 把已提交的执行过程作为 ``CycleResult.trace`` 返回，它是按执行顺序排列的 ``ExecutionTraceEntry`` 元组。每个条目含 ``kind``\ （``state_enter``、\ ``state_exit``、\ ``transition`` 或 ``action``）、状态路径、当时的持久变量，以及转换标签或动作地址。被拒绝的候选和被回滚的 Delta 尝试不在其中。\ ``print(entry)`` 给出单行摘要，\ ``entry.to_dict()`` 给出可直接转成 JSON 的字典。
+- ``cycle(diagnostics=True)`` 返回 ``CycleResult.diagnostics``，即 ``CycleDiagnostics``，它记录运行时考虑过的每个候选：事件是否出现、守卫结果、后继能否通过验证、被哪个先前的选择挡住、最终是否提交，以及它看到的取值和源码位置。\ ``str(report)`` 用文字解释这个周期，\ ``report.to_text(transition=..., check_id=...)`` 把范围缩小到一条转换，\ ``report.to_dict()`` 是独立的字典。它回答“为什么一条看似可用的转换没有被执行”。
+- ``pyfcstm simulate`` 通过 ``--diagnostics``、\ ``--diagnostics-format text|jsonl``\ （JSONL 需要 ``-e``，每个周期在标准输出上给出一份报告）以及交互命令 ``decisions`` 和 ``why <id|label>`` 提供它。
+- 不兼容变化：``pyfcstm simulate -e`` 批处理里的失败命令（未知事件、错误的 ``init``、运行时失败）现在会终止批处理，并让进程以非零状态退出。此前只打印消息，退出码是 0。候选被拒绝或出现 Delta 不算失败。
+
+字段与命令见 :doc:`/reference/simulation/diagnostics_zh`，任务做法见 :doc:`/how_to/simulation/diagnostics_zh`。
+
+Delta 周期与同周期循环
+~~~~~~~~~~~~~~~~~~~~~~
+
+- 选中的路径到不了可停止状态或终止，但属于稳定的无进展边界时，该周期现在以成功的 **Delta** 周期（无进展步骤）结束，不再是错误：位置和变量保持不变，周期计数和输入来源前进，\ ``CycleResult.delta`` 为 ``True``。历史记录多一个布尔值 ``delta``，导出到 CSV 时在 ``state`` 之后多一列 ``delta``。生成的运行时通过 ``last_cycle_was_delta`` 给出同样的信息。
+- 经由初始转换、伪状态和父状态后续转换、永远到不了可停止状态的循环，不是 Delta 周期。它抛出 ``SimulationRuntimeDfsError``，消息里列出循环经过的状态和打破循环的办法。这类嵌套循环此前会以 Python 的 ``RecursionError`` 结束。只会回到自身起点的候选，在后面还有候选可以停驻时被跳过，所以含 ``[*] -> P; [*] -> Ready; P -> P;`` 的根状态现在启动后停在 ``Ready``。
+- ``pyfcstm inspect`` 把这类封闭的同周期路由分量报告为警告 ``W_INITIAL_LIVELOCK``。
+
+Inspect 与诊断
+~~~~~~~~~~~~~~
+
+- ``W_DEADLOCK_LEAF`` 现在是 ``W_LEAF_NO_OUTGOING_TRANSITION``。旧名称作为已弃用的别名留在 ``CODE_REGISTRY`` 里，不再被发出，计划在 1.0.0 移除。在 JSON 或大语言模型报告里匹配该诊断码的脚本应改匹配新名称，或调用 ``canonicalize_diagnostic_code``。
+- ``pyfcstm inspect --collect-errors`` 报告全部模型错误而不是停在第一个，退出状态仍然非零。加载函数接受 ``load_state_machine_from_text(text, collect=True)`` 和 ``load_state_machine_from_file(path, collect=True)``，\ ``inspect_model(model, model_diagnostics=...)`` 接收收集到的诊断。语法错误仍然逐个报告。
+- 默认的 ``inspect``，以及对正常加载的模型调用 ``inspect_model``，现在包含模型构建产生的警告，例如 ``W_COMBO_RESERVED_PREFIX_STATE_KIND``。这些警告此前只在 ``--collect-errors`` 下出现。
+- inspect 的 JSON 与大语言模型报告以及 BMC 的 JSON 不再带 ``schema_version`` 或 ``schema_status`` 字段，随版本发布的 schema 文件就是约定。从更早的构建里读取这些字段的使用者必须停止读取。
+
+有界模型检查与变量角色
+~~~~~~~~~~~~~~~~~~~~~~
+
+``pyfcstm bmc`` 与 :mod:`pyfcstm.bmc` 现在认识四种变量角色（variable role）：
+``control``\ 、\ ``input``\ 、\ ``param`` 和 ``output``\ 。有界模型检查（bounded
+model checking）还会报告在界内可达的运行时错误，把空场景与性质结论区分开，并能解释场景为什么为空。完整契约见
+:doc:`/reference/bmc_query/index` 与 :doc:`/reference/bmc_results/index`\ ，操作步骤见
+:doc:`/how_to/bmc/index`\ 。
+
+**查询与见证中的变量角色。**
+
+- 查询里引用变量的写法不变，仍是裸名字或 ``var("name")``\ ；角色决定它的值存活多久。
+  ``control`` 与 ``output`` 变量在每个帧 ``0..N`` 上都有值，某个周期不写它就沿用上一个值。
+  ``param`` 在整条轨迹上只有一个值：默认值把它定死，初始 ``havoc`` 允许取另一个值，但该值在所有帧上仍然相同。
+  ``input`` 在每个步 ``0..N-1`` 各采样一次，每步的值相互独立，步与步之间没有隐含的相等关系。
+- 提到输入的 ``assume`` 按步取值范围：\ ``assume at N`` 会被拒绝，因为不存在第 ``N`` 步；\
+  ``assume always`` 覆盖 ``N`` 个步。不涉及输入的 ``assume`` 仍然覆盖帧 ``0..N``\ 。
+  ``havoc`` 与 ``init ... where`` 拒绝输入，性质的帧谓词也不能读取输入；要跨帧比较某次采样，请把它存进
+  ``control`` 或 ``output`` 变量。\ ``havoc *`` 覆盖控制、输出和参数变量。
+- JSON 见证记录求解器的选择：\ ``initial.parameters`` 给出完整的参数值；除吸收步外的每一步都有
+  ``inputs``\ （按声明顺序的完整数值采样，包括没人读取的输入）和 ``input_reads``\ （按顺序列出被守卫或假设读取的输入）。
+  ``frames[*].vars`` 与抽象调用的 ``snapshot`` 现在只含 ``control`` 与 ``output`` 的值。
+  回放把记录的参数和输入原样交给 ``SimulationRuntime``\ ，任何输入或参数不一致都报告为不匹配，缺失的值绝不用零补齐。
+- ``called(...)`` 过滤器对 ``active_leaf`` 与 ``named_ref`` 的匹配规则是：有活动叶子时取叶子路径，否则取动作所在的宿主状态，
+  所以进入或离开复合状态、或运行声明在复合状态上的普通 ``during`` 时，匹配的是宿主路径。\
+  ``named_ref`` 匹配调用点自己的具名 ``ref``\ ；只是途经某个具名动作的调用匹配 ``named_ref=null``\ 。
+
+**界内运行时错误。** ``pyfcstm bmc`` 现在先问一个问题：是否存在某个允许的执行，会碰到运行时拒绝的操作——除以零或对零取模、
+数学定义域错误、\ ``**`` 的结果是复数，或者给 ``int`` 变量赋非整数、非有限的值。每个守卫和每个动作块都算在内，
+顺序与模拟器求值顺序一致。这样的执行存在时，报告标题为 ``RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED``\ ，
+性质不再求值，命令以状态码 ``5`` 退出。见证是执行到出错步之前的前缀，附带错误种类与位置；回放必须在同一步复现同一种错误，
+否则算回放不匹配（状态码 ``4``\ ）。如果预算内无法判定，标题为 ``RUNTIME SAFETY CHECK UNKNOWN`` 或 ``TIMED OUT``\ ，状态码为
+``3``\ 。\ ``--no-runtime-safety`` 跳过这项检查，只在不出错的执行上求值性质；默认是 ``--runtime-safety``\ 。
+这项检查总是在没有启用 ``--cone-slicing`` 的模型上运行。Python 调用方向 :func:`pyfcstm.bmc.solve_bmc_property`
+传 ``runtime_safety=False``\ ，或直接使用 :func:`pyfcstm.bmc.check_runtime_safety`\ 。在 JSON 中，\
+``result.outcome`` 取 ``runtime_error``\ 、\ ``runtime_safety_unknown`` 或 ``runtime_safety_timeout``\ ；
+检查被关闭时 ``result.runtime_safety`` 为 ``null``\ ，否则含 ``status``\ （\ ``safe``\ 、\ ``violated``\ 、\ ``unknown``\ 、\
+``timeout`` 或 ``not_applicable``\ ）、\ ``sites``\ 、\ ``elapsed_ms``\ 、\ ``reason``\ ，违例时还含
+``error``\ （\ ``step``\ 、\ ``kind``\ 、\ ``location``\ ）。错误种类取自运算符目录，例如
+``division_by_zero``\ 、\ ``math_domain`` 与 ``writeback_non_integral``\ 。
+
+**空场景。** 当性质的目标不可满足时，命令现在会检查允许场景本身——模型转移关系、\ ``init`` 子句和 ``assume`` 子句——是否存在任何执行。
+若不存在，结果为 ``scenario_infeasible``\ ：\ ``property_satisfied`` 为 ``null``\ ，不产生见证，标题为
+``SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED``\ ，状态码为 ``3``\ 。以前，空场景在反例搜索里被报告为有界保证，
+在可达搜索里被报告为没有见证。报告会指出场景最先变空的阶段（内核、初始化或假设），\ ``result.feasibility`` 携带同样的证据；
+超时或未能判定的可行性检查按原样报告，绝不当作空场景。现在每个结果的标题都说明证据的种类，例如
+``PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``\ 、\ ``PROPERTY DOES NOT HOLD WITHIN BOUND; COUNTEREXAMPLE FOUND``\ 、\
+``GOAL UNREALIZABLE WITHIN BOUND; NO WITNESS`` 或 ``PROPERTY GUARANTEED WITHIN BOUND; NO COUNTEREXAMPLE``\ ，
+报告还增加 ``Scenario``\ 、\ ``Property verdict``\ 、\ ``Semantic interpretation`` 与 ``Conclusion`` 几行。
+这些都是有界的陈述，不是无界定理。
+
+**解释空场景。** ``--explain-infeasibility none|formal|proof``\ （默认 ``none``\ ，不增加任何求解工作）为空场景的结果附上不可行性解释（infeasibility explanation）。
+``formal`` 对冲突分类，并给出源码核心：足以让场景为空的、作者写下的 FCSTM 与 FBMCQ 约束（带文件位置与源码文本），预算允许时会缩小到子集极小。
+分类是 ``kernel_conflict``\ 、\ ``initialization_self_conflict``\ 、\ ``initialization_domain_conflict``\ 、\
+``initialization_kernel_conflict``\ 、\ ``assumptions_self_conflict``\ 、\ ``assumptions_domain_conflict`` 与
+``assumptions_prefix_conflict`` 之一。\ ``proof`` 还会构造逐步证明，在 ``Why no execution exists`` 下读成带编号的句子，
+并打印 ``Proof strength`` 块。只有每一步都经过检查才会发布证明：输入步对照它所重述的约束，推导步由独立的检查器或求解器检查。
+规则构成封闭的目录，共十二个 ``rule_id``\ （\ ``source_fact``\ 、\ ``case_condition_entailment``\ 、\
+``transition_assignment``\ 、\ ``equality_substitution``\ 、\ ``arithmetic_evaluation``\ 、\ ``interval_intersection``\ 、\
+``state_domain_exhaustion``\ 、\ ``definedness_failure``\ 、\ ``incompatible_equalities``\ 、\ ``boolean_complement``\ 、\
+``excluded_state_selected`` 与 ``preceding_value_entailment``\ ）。没有规则能收口某个核心时，结果退回 ``formal``\ ，
+而不是发布未经检查的证明，报告会写 ``Explanation depth: requested proof, achieved formal``\ ；在 JSON 里比较
+``requested_mode`` 与 ``achieved_mode``\ 。解释从不改变结论。Python 调用方向 :func:`pyfcstm.bmc.solve_bmc_property`
+传 ``infeasibility_explanation='formal'`` 或 ``'proof'``\ 。
+
+**求解选项。**
+
+- ``--cone-slicing``\ （默认关闭）删去查询没有观察到的变量的写入，但只限求值不会失败的整数写入，并保留控制流、初始值以及部分算术所依赖的一切。
+  见证仍然包含全部变量，仍然要通过回放。切片什么也没做时，\ ``result.cone_slicing.skipped_reason`` 会说明
+  （\ ``abstract_actions`` 或 ``no_removable_variables``\ ）；不带该选项时该字段不出现。记录在案的基准里，
+  求解时间的总体影响不到百分之一，个别查询反而变慢，请在自己的模型上测量。Python 调用方使用
+  ``BmcOptions(cone_slicing=True)``\ 。
+- ``--solver-profile default|logic|tactic`` 选择主求解器。\ ``logic`` 根据公式选一种 Z3 逻辑（\ ``QF_LIA``\ 、\
+  ``QF_LRA``\ 、\ ``QF_LIRA``\ 、\ ``QF_NIA``\ 、\ ``QF_NRA`` 或 ``NIRA``\ ），都不匹配时退回通用求解器；\
+  ``tactic`` 依次运行 ``simplify``\ 、\ ``propagate-values``\ 、\ ``solve-eqs`` 与 ``smt``\ 。求解配置（solver profile）不改变结果的含义，
+  但可能改变找到的见证和求解耗时，见证仍须通过回放。解释与证明的检查始终使用默认求解器。
+  在记录在案的对比里，两个可选配置都没有达到采用标准，所以默认值仍是 ``default``\ 。结果会报告
+  ``solver_profile``\ 、\ ``solver_logic`` 与 ``solver_statistics``\ 。Python 调用方使用
+  :func:`pyfcstm.bmc.solve_bmc_property` 的 ``solver_profile=``\ 。
+- ``--timeout-ms`` 现在是整次运行共用的一份预算，由所有求解检查（运行时安全、可行性、解释、主检查与响应后缀检查）共享，
+  以前它对每次检查单独生效。因预算用尽而无法开始的检查，报告为未检查，而不是空场景。
+
+**结果变化。** 与上一版本相比，JSON 结果有以下变化；请对照所用版本随发布附带的模式文件校验。
+
+- ``exit_code`` 可以是 ``5``\ 。进程退出状态为 ``0``\ （性质成立）、\ ``1``\ （性质不成立）、\ ``3``\ （无定论、空场景，
+  或安全性、可行性检查未能判定）、\ ``4``\ （回放不匹配）和 ``5``\ （运行时错误可达）；优先级依次是 ``4``\ 、\ ``5``\ 、\ ``3``\ ，
+  然后才是 ``0`` 或 ``1``\ 。
+- ``result.outcome`` 新增 ``scenario_infeasible``\ 、\ ``feasibility_timeout``\ 、\ ``feasibility_unknown``\ 、\
+  ``runtime_error``\ 、\ ``runtime_safety_unknown`` 与 ``runtime_safety_timeout``\ 。\ ``result`` 新增
+  ``feasibility``\ （内含 ``explanation``\ ）、\ ``available_model_roles``\ 、\ ``total_elapsed_ms``\ 、\
+  ``solver_profile``\ 、\ ``solver_logic``\ 、\ ``solver_statistics``\ 、\ ``runtime_safety``\ ，以及仅在请求切片时出现的
+  ``cone_slicing``\ 。
+- ``witness`` 与 ``replay`` 现在绑定到它们所描述的模型的角色。\ ``witness`` 带 ``model_role``\ （\ ``primary_witness``\ 、\
+  ``primary_counterexample``\ 、\ ``incomplete_suffix`` 或 ``runtime_error_prefix``\ ）和一个 ``verdict`` 对象；
+  ``incomplete_suffix`` 轨迹是有限前缀的证据，绝不构成性质结论。\ ``replay`` 带同一个角色。新增的 Python 函数
+  :func:`pyfcstm.bmc.decode_bmc_result_trace` 按这种形状解码求解结果的模型，而 :func:`pyfcstm.bmc.decode_bmc_witness`
+  保持原来的输出形状。
+- 步新增 ``inputs`` 与 ``input_reads``\ ，初始记录新增 ``parameters``\ ，如上所述。
+
+**迁移。** 读取人类可读报告第一行的脚本必须改用新的标题，更好的做法是读取 ``--json``\ 。
+曾依赖 ``--timeout-ms`` 按单次检查计时的调用方，需要为整次运行调大它。如果模型在某条允许的路径上可能除以零、
+对负数开平方，或把小数写入 ``int`` 变量，现在会以状态码 ``5`` 退出，直到给该操作加上保护或约束输入；
+传 ``--no-runtime-safety`` 可恢复先前的行为。曾按旧模式文件校验 JSON 的使用方，必须改用本版本附带的那一份。
+
+内置模板的实例参数与采样输入
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+模型声明了 ``param`` 或 ``input`` 变量时，五个内置模板现在都会生成带有相应公开接口的运行时，生成的 ``README`` 指南也讲解了它。
+没有这些声明的模型，除前面各节所述的文本变化外，生成的接口与以前相同。\ ``param`` 的值按实例固定；\ ``input`` 的值每个周期采样一次，
+对模型只读，也不会在周期之间保持。\ ``vars`` 与 ``Vars`` 只含 ``control`` 和 ``output`` 变量。手写模板可以通过
+``model.parameters``\ 、\ ``model.inputs``\ 、\ ``model.persistent_variables``\ 、\ ``model.control_variables`` 与
+``model.output_variables`` 读取这些声明。
+
+- ``python``\ ：\ ``Machine(initial_state=None, initial_vars=None, *, parameters=None)`` 校验并复制 ``parameters``\ ；
+  冷启动时省略的参数取 DSL 默认值，热启动则需要给全。实现 ``read_<input>()`` 来提供采样；运行时每个周期对每个输入读取一次，
+  包括所选路径用不到的输入，并在校验与执行期间冻结该采样。\ ``cycle(events=None, *, inputs=None)`` 为部分或全部输入提供显式值，
+  其余输入通过各自的钩子读取。没有实现读取方法时抛出 ``NotImplementedError``\ 。用 ``get_param_<name>()``
+  读参数，周期内用 ``get_input_<name>()`` 读输入；\ ``parameters`` 与 ``last_inputs`` 暴露固定值和最近一次提交的采样，
+  抽象动作的上下文把 ``vars``\ 、\ ``inputs`` 与 ``parameters`` 作为三个独立的只读映射携带。\ ``int`` 输入或参数接受整数值的
+  ``float`` 并按 ``int`` 存储，与模拟器一致。读取失败或周期失败时，持久变量与 ``last_inputs`` 保持不变。
+- ``c`` 与 ``c_poll``\ ：\ ``<Prefix>InitOptions`` 携带 ``vars``\ 、\ ``parameters`` 以及每个值的存在标志（标志为零表示用 DSL 默认值），
+  用 ``<Prefix>_init_with_options(machine, &options)`` 启动机器。输入通过 ``<Prefix>InputProvider`` 提供，每个输入一个
+  ``read_<input>`` 回调，用 ``<Prefix>_set_input_provider`` 注册；也可以把完整的 ``<Prefix>Inputs`` 值交给
+  ``<Prefix>_cycle_with_inputs``\ （\ ``c_poll`` 在这里不传事件编号）。回调写入值后返回 ``1``\ ，返回 ``0`` 则中止该周期；
+  缺少提供者、值非有限或回调失败，都会使周期失败且不提交。用 ``<Prefix>_get_param_<name>``\ 、\
+  ``..._get_input_<name>`` 与 ``<Prefix>_last_inputs`` 读取这些值，用 ``<Prefix>_hot_start_with_parameters`` 恢复完整的参数集合。
+- ``cpp`` 与 ``cpp_poll``\ ：包装类通过 ``MachineWrapper(const InitOptions &)``\ 、\ ``init``\ 、\ ``set_input_provider``\ 、\
+  ``cycle_with_inputs(inputs, ids, count)``\ （\ ``cpp_poll`` 为 ``cycle_with_inputs(inputs)``\ ）、\ ``last_inputs``\ 、\
+  ``get_param_<name>`` 与 ``get_input_<name>`` 暴露同样的能力。回调保持 C 签名。
+
+生成运行时的运算符语义
+~~~~~~~~~~~~~~~~~~~~~~
+
+模拟器、生成的运行时、\ ``inspect``\ 、验证器和 BMC 现在都从同一份运算符目录（operator catalog）\ :mod:`pyfcstm.semantics.catalog`
+求值。\ :doc:`/reference/dsl/index` 中的表 *Evaluation and runtime errors* 列出了每个运算符和函数的结果与错误种类。对生成代码而言，变化是：
+
+- C 族模板（\ ``c``\ 、\ ``c_poll``\ 、\ ``cpp``\ 、\ ``cpp_poll``\ ）曾在某些运算符上与模拟器不同，却没有任何提示。现在它们与模拟器一致：
+  ``%`` 是向下取整的取模，结果与除数同号（\ ``-7 % 2`` 是 ``1``\ ），对整数和浮点数都如此；\ ``int`` 底数加非负 ``int`` 指数的 ``**`` 是精确的整数幂，
+  以前它经过 ``double``\ ，超过 53 位的低位会丢失（\ ``3 ** 34`` 曾差一）；零底数加负指数在求值时失败；\
+  ``cbrt`` 是实数立方根，对完全立方数精确；\ ``floor``\ 、\ ``ceil``\ 、\ ``trunc`` 与 ``round`` 作用于 NaN 或超出 ``int64`` 范围的值时失败，
+  而不是产生类型转换的假结果；给 ``int`` 变量赋 NaN 或无穷时，以 "must be finite" 报错。
+- 生成的 Python 运行时拒绝结果为复数的 ``**``\ ，与模拟器一样把 ``-2 ** 2`` 当作 ``4``\ ，在所有受支持的 Python 版本上对完全立方数精确计算
+  ``cbrt``\ ，对 NaN 的 ``sign`` 返回 ``-1``\ ，并且在所有 Python 版本上以同一条消息报告数学定义域错误，而不是宿主解释器的措辞。
+- 被拒绝的写回（把非整数或非有限的值赋给 ``int`` 变量）现在在模拟器和生成的 Python 运行时里都是 ``SimulationRuntimeExpressionError``\ ，
+  包括 ``initial_vars`` 与默认初始化，而不是裸 ``ValueError``\ 。在模拟器里，该异常带有 ``kind`` 属性，取值为目录中的错误种类，例如
+  ``writeback_non_integral``\ 。
+- 在模拟器和 BMC 中，\ ``=>`` 只在左操作数成立时才对右操作数求值，所以 ``d != 0 => 10 / d > 1`` 绝不会除以零。
+
+命令行
+~~~~~~
+
+- ``pyfcstm bmc`` 新增 ``--cone-slicing``\ 、\ ``--runtime-safety`` / ``--no-runtime-safety``\ 、\ ``--solver-profile`` 与
+  ``--explain-infeasibility``\ ，运行时错误可达时以状态码 ``5`` 退出，详见上文。帮助文本与选项表见 :doc:`/reference/cli/index`\ 。
+- ``pyfcstm simulate`` 新增可重复的 ``--param NAME=VALUE``\ ，用于设置构造参数。在 REPL 和 ``-e`` 批处理里，\ ``cycle`` 可对每个输入各写一次
+  ``--input name=value``\ ，提供该周期的采样；带 ``input`` 变量的模型需要给全每个输入的值。\ ``--diagnostics`` 为每个周期记录被检查并被否决的候选转移；
+  ``decisions [--verbose]`` 与 ``why <id|label> [--verbose]`` 查询最近一份报告。\ ``--diagnostics-format jsonl`` 把每份报告写成标准输出上的一行 JSON，
+  需要同时给出 ``--diagnostics`` 与 ``-e``\ ；此时过程记录和查询输出改走标准错误。Python 调用方向 ``SimulationRuntime.cycle`` 传
+  ``diagnostics=True``\ ，再读取 ``result.diagnostics``\ 。参见 :doc:`/reference/simulation/diagnostics` 与
+  :doc:`/reference/simulation/inputs`\ 。
+- ``pyfcstm inspect`` 新增 ``--collect-errors``\ ，报告全部模型错误而不是停在第一个，对无效模型仍以非零状态退出。对应的 Python 接口是
+  ``load_state_machine_from_file`` 与 ``load_state_machine_from_text`` 的 ``collect=True``\ ，以及 ``inspect_model`` 的
+  ``model_diagnostics`` 参数。能成功构建的模型，其转换过程中产生的警告，例如 ``W_HISTORY_UNUSED``\ 、\ ``W_HISTORY_RESERVED_PREFIX``\ 、\
+  ``W_COMBO_RESERVED_PREFIX_STATE_KIND`` 与 ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS``\ ，现在会出现在默认报告里；以前只有加
+  ``--collect-errors`` 才会出现。
+- ``pyfcstm --self-check`` 对已安装的 wheel 或独立可执行文件运行安装与运行时检查，报告缺失的打包资源、不可用的依赖和平台问题。
+  ``pyfcstm --self-check --help`` 列出它的选项（\ ``--profile``\ 、\ ``--format``\ 、\ ``--report``\ 、\ ``--color``\ 、\
+  ``--timeout-scale``\ 、\ ``--fail-on-warn`` 等）。它是部署诊断，不能代替测试套件。
+
+检查报告
+~~~~~~~~
+
+- 在 LLM 报告的 ``summary.structure_statistics`` 以及完整报告的
+  ``ModelInspect.structure_statistics`` 中新增描述性结构统计。比率以原始小数输出，
+  空分母使用 ``null``，并记录转换密度和不可达总体的保守建议阈值。
+  ``W_UNREACHABLE_TRANSITION`` 会按每条书写的转换聚合不可达原因；这些阈值仍只是元数据，
+  不生成综合健康分数；Python API 和命令行均可覆盖或关闭这些阈值。
+- 在完整 JSON/API 报告中新增 ``ModelInspect.verification`` 执行元数据，使消费者能够区分
+  验证未启用、被策略排除、得到确定结果和无法判定，而不会把这些状态误当成新的模型诊断。
+  命令行的人类可读输出会显示紧凑的覆盖率及不确定原因。
+
+图的快照与查看器
+~~~~~~~~~~~~~~~~
+
+编辑器的预览早已能画出模型；本版本让 Python 包拥有同一套绘制。v0.6.0 中并没有
+``pyfcstm.diagram`` 与 ``pyfcstm diagram``。参考见
+:doc:`/reference/visualization_options/index`\ ，缘由见
+:doc:`/explanations/visualization/index`\ 。
+
+- ``StateMachine.diagram()`` 返回 :class:`pyfcstm.diagram.api.Diagram`\ ，这是一份
+  与模型脱离的不可变快照（snapshot）：之后再修改模型，不会改变已保存视图的内容，
+  给属性赋值也会被拒绝。\ ``with_options()`` 与 ``with_view_state()`` 返回新的快照，
+  不改动原对象。
+- ``to_dict()`` 与 ``to_json()`` 给出确定性的可移植数据，不需要任何可选运行时。
+  ``to_html()`` 写出单个自包含的查看器，内嵌渲染器、布局引擎、光栅化器与中日韩
+  字体，使用严格的内联内容策略，不访问网络。一个查看器约 29 MB（用文本载入
+  ``state Root;`` 时为 29,397,900 字节，数字会随模型变化）。\ ``save(path)`` 按后缀
+  （或 ``format=``\ ）选择 JSON、HTML、SVG、PNG 或 PDF。\ ``show()`` 在基于 Chromium
+  的应用窗口中打开查看器，并像 ``matplotlib.pyplot.show`` 那样阻塞到窗口关闭，随后
+  删除它写下的临时文档，除非你传入了 ``output``\ 。
+- 查看器有三种模式（仅源码、仅图、联动分栏），支持折叠、缩放与平移。模型从文本或
+  文件载入时，源码面板会被嵌入并与图联动；在 Python 中直接构建的模型没有源码范围，
+  查看器会说明这一点，而不是显示一个空面板。
+- :class:`pyfcstm.diagram.api.DiagramOptions` 包含 ``detail_level``\ （\ ``minimal``\ 、
+  ``normal`` 或 ``full``\ ）、\ ``direction``\ （\ ``TB`` 或 ``LR``\ ）、\ ``palette``\ 、
+  ``mode``\ （\ ``light``\ 、\ ``dark`` 或 ``auto``\ ）以及 ``cjk_locale``\ （\ ``sc``\ 、
+  ``tc``\ 、\ ``hk``\ 、\ ``jp`` 或 ``kr``\ ）。
+  :class:`pyfcstm.diagram.api.DiagramViewState` 包含查看器模式、折叠的状态标识、缩放
+  与平移。两者都接受映射，未知的键会被拒绝。
+- 细节级别（detail level）改变的是画出什么，而不是数据里有什么。\ ``minimal`` 只画
+  状态标题与转换，效果写在行内；\ ``normal`` 把效果放进注释框，并按事件给边着色；
+  ``full`` 在叶子状态的标题下再列出它自己的事件与生命周期动作。独立查看器、SVG、
+  PNG 与 PDF 导出以及 VS Code 预览共用同一个渲染器，所以画法一致。
+- ``pyfcstm diagram -i machine.fcstm`` 输出可移植的 JSON。\ ``-o viewer.html`` 写出
+  查看器；\ ``--open`` 在窗口中打开它，只有用 ``-o`` 保留了文档时才打印路径；\ ``-o``
+  带 ``.svg``\ 、\ ``.png`` 或 ``.pdf`` 后缀（或使用 ``--format``\ ）则写出导出文件。
+  ``--scale`` 只用于 PNG。输入与输出方面的问题以命令行错误报告，而不是回溯。命令列表见
+  :doc:`/reference/cli/index`\ 。
+- 安装了渲染运行时时，\ ``Diagram`` 会在笔记本单元格里显示 SVG；未安装时退回普通的
+  文本表示。
+
+图的导出与编辑器预览
+~~~~~~~~~~~~~~~~~~~~
+
+- ``to_svg()``\ 、\ ``to_png(scale=...)`` 与 ``to_pdf()`` 同步导出。它们需要可选的渲染
+  运行时，用 ``pip install pyfcstm[viz]`` 安装（Python 3.8 及以上使用 ``mini-racer``\ ，
+  Python 3.7 使用低于 0.7 的 ``py-mini-racer``\ ）；缺少时抛出
+  :class:`pyfcstm.diagram.engine.DiagramUnavailableError`\ ，并指明依赖。SVG 是展开后的
+  形式：字形与箭头已是路径，因此在没有安装本项目字体的机器上显示也一样。PDF 是单页
+  矢量文档，文字已转为轮廓，所以不能检索文字。
+- 导出有上限，超出时在渲染之前就以
+  :class:`pyfcstm.diagram.engine.DiagramRenderLimitError` 拒绝：PNG 缩放不超过 4，
+  单边不超过 16,384 像素，总像素不超过 16,777,216，PNG 不超过 33,554,432 字节，
+  SVG 或 PDF 不超过 67,108,864 字节。
+- ``pyfcstm expand-svg -i canonical.svg [-o expanded.svg]`` 把一份标准形式的图 SVG
+  （其中指名了字体）转换成自包含的形式；不带 ``-o`` 时输出到标准输出。它的用途是：
+  手里有图却没有字体的宿主，可以直接把文字转为轮廓，而不必按源码重新渲染，因为重新
+  渲染会丢掉用户选定的调色板与颜色模式。
+- VS Code 预览的 SVG 下载用到了它：扩展请已安装的 ``pyfcstm[viz]`` 把文字转为轮廓，
+  因为随扩展捆绑字体与光栅化器，一个中日韩语言区要多出约 17.7 MB，全部语言区约
+  59.4 MB。新设置 ``fcstm.diagram.pyfcstmPath`` 指定要用的命令；留空则依次尝试
+  ``pyfcstm``\ 、\ ``python3 -m pyfcstm`` 与 ``python -m pyfcstm``\ 。没有可用的安装时，
+  导出会如实说明，而不是交出一份依赖读者字体的文件。
+
+自检
+~~~~
+
+``pyfcstm --self-check``\ （也可写作 ``python -m pyfcstm --self-check``\ ）是新增的。它在
+当前运行环境中诊断已安装的包或独立可执行文件：导入、打包资源、运行时依赖、平台兼容性，
+以及可选的可视化服务（Java 与 PlantUML）。它不是第二套测试，失败说明的是部署环境的
+问题，而不是实现的问题。
+
+- 各项检查在隔离的工作进程中运行，其中一项崩溃或挂起会被如实报告，不会拖垮其余各项。
+  ``--profile default|full|visualize`` 选择检查集合；\ ``--network`` 启用远程探测，只能与
+  ``--profile visualize`` 一起使用；\ ``--format human|json`` 选择报告形式；
+  ``--report PATH`` 指定报告文件；\ ``--color auto|always|never`` 与 ``--timeout-scale``
+  调整输出与时间限制；\ ``--no-redact`` 在环境信息里保留本地路径，默认会隐去。
+- 必需的检查失败时退出码为 ``1``\ ，给了 ``--fail-on-warn`` 时必需检查出现警告也是
+  ``1``\ ，其余为 ``0``\ 。缺少可选的 Java 或 PlantUML 只是警告。
+- ``pyfcstm --version`` 现在还会打印构建修订、Python 版本与平台。它在导入命令行框架
+  之前就已应答，所以损坏的可选依赖不会让它失效。解析过 v0.6.0 两行输出的脚本应当只
+  读第一行。
+
+安装与兼容性
+~~~~~~~~~~~~
+
+- 支持的 Python 范围不变：\ ``python_requires`` 仍是 ``>=3.7``\ ，测试矩阵覆盖 CPython
+  3.7 到 3.14。VS Code 的最低版本仍是 ``^1.60.0``\ ，\ ``jsfcstm`` 仍声明 Node ``>=16``\ 。
+- ``requirements.txt`` 抬高或新增了这些运行时依赖：\ ``jinja2>=3.1.6``\ （原为
+  ``>=3``\ ；这是既能获得 Jinja2 安全修复、又仍支持 Python 3.7 的下限）、
+  ``deprecation>=2.1.0`` 与 ``packaging>=21.3``\ （新增）。另外把 ``plantumlcli`` 经
+  ``pyquery`` 引入的 ``lxml`` 在 Python 3.7 与 3.8 上限定为 ``>=4.9,<6.1``\ ，在
+  Python 3.9 及以上限定为 ``>=6.1``\ ，使各个版本在 Windows 上都有预编译包。
+  ``z3-solver<=4.15.4`` 不变。
+- 发布包现在携带 ``pyfcstm/diagram/assets`` 下的图运行时资源：渲染器、查看器脚本、
+  resvg WebAssembly 模块、三个 JetBrains Mono 字重，以及五个中日韩语言区各一套常规与
+  粗体 Noto Sans 字体，并附带许可证文件。已安装的包因此变大。这些资源是构建产物，
+  不在仓库中跟踪：从源码检出安装时，需要先运行 ``make build_assets``\ （其中会执行
+  ``npm ci``\ ），再 ``pip install`` 或 ``python setup.py build``\ ，缺少资源时
+  ``setup.py`` 会停下并给出这条指示。
+- 新增可选依赖组 ``pip install pyfcstm[viz]``\ ，安装 SVG、PNG 与 PDF 导出所需的
+  MiniRacer 运行时。查看器、\ ``to_dict()``\ 、\ ``to_json()`` 与 ``to_html()`` 不需要它。
+- 诊断码注册表现在可以把一个诊断码标记为已弃用的别名，并记录弃用它的版本与移除它的
+  版本；见\ *从 0.6.0 升级*\ 。
+
+文档与大语言模型指南
+~~~~~~~~~~~~~~~~~~~~
+
+- 文档页面上的例子现在把命令或脚本与它的真实输出放在一起，文档检查（\ ``make
+  docs_doctest``\ ）会运行这些例子，并把实际输出与页面所示逐一比对。区域教程已经
+  改写成这种形式。
+- ``pyfcstm`` 包内每个文档字符串里的 ``>>>`` 例子都由 ``make doctest`` 运行，这道
+  检查没有已知失败清单。因此应用程序接口参考中的例子都是能运行的例子。
+- 随包发布的两份大语言模型（LLM）指南跟随语言一起更新。FCSTM 语法指南新增了
+  *Documentation Blocks*\ 、\ *Reserved Identifiers*\ 、\ *Variable Roles*\ 、
+  *Import variable roles*\ 、\ *History* 与 *Regions* 各节；FBMCQ 语言指南新增了
+  *Starting a model with regions*\ 、\ *Variable roles in assumptions* 与
+  *A model with regions*\ 。两份指南仍由各自旁边的 ``.sha256`` 文件保护。
+
+从 0.6.0 升级
+~~~~~~~~~~~~~
+
+把模型、脚本或下游集成从 v0.6.0 迁到 v0.7.0 时，请逐条对照下面的清单。每条都指向
+写有细节的小节。
+
+- **名字。** ``region`` 与 ``active`` 是保留字，\ ``var``\ 、\ ``control``\ 、\ ``input``\ 、
+  ``param`` 与 ``output`` 同样是（后四个用于声明变量角色；FCSTM 语法指南在
+  *Reserved Identifiers* 与 *Variable Roles* 中列出）。把其中任何一个用作状态、事件、
+  动作、变量或导入别名名字的模型，需要改名，例如改成 ``Active`` 或 ``active_flag``\ 。
+  见\ *Regions*\ 。
+- **强制转换。** 源状态内部有状态的 ``!S -> T`` 现在只在停留的状态处判定一次；四处
+  行为变化、隐藏变量 ``__forced_<n>``\ 、伪状态 ``__forced_gate_<n>``\ 、
+  ``walk_states()``\ 、\ ``StateMachine.defines`` 与 ``to_ast_node()`` 输出的变化，以及运行
+  的机器上不再有 ``Transition.is_forced``\ ，都意味着保存下来的期望值需要更新。见
+  *Forced Transitions*\ 。
+- **含历史与 active() 的模型的热启动。** ``__hist_goto`` 与 ``__hist_*`` 记录不再被
+  检查，BMC 约束类别 ``domain.history_variable`` 已不存在。见 *History and active()*\ 。
+- **不支持特性的诊断码。** ``E_UNSUPPORTED_FEATURE`` 不再列出 ``active`` 特性，inspect
+  的原因 ``active_query_unsupported`` 已移除；带区域的模型交给没有声明 ``region`` 特性
+  的模板时，会以 ``E_UNSUPPORTED_FEATURE`` 拒绝。见 *Templates and capability
+  declarations*\ 。
+- **inspect 的可达性。** 子状态都不能离开的复合状态永远不会走它的普通出边；它指向的
+  状态现在由 ``W_UNREACHABLE_STATE`` 报告，该转换的原因是 ``owner_never_completes``\ 。
+  见 *Inspect and verify*\ 。
+- **诊断码改名。** ``W_DEADLOCK_LEAF`` 现在是 ``W_LEAF_NO_OUTGOING_TRANSITION``\ 。旧写法
+  作为已弃用的别名留在 ``CODE_REGISTRY`` 中（0.7.0 起弃用，计划在 1.0.0 移除），可通过
+  ``resolve_diagnostic_code`` 与 ``canonicalize_diagnostic_code`` 解析；新的报告只输出
+  新写法，所以按旧诊断码过滤的地方需要更新。见
+  :doc:`/reference/diagnostics_codes/index`\ 。
+- **转换的字段。** 在 Python 模型与 AST 中，\ ``Transition.event`` 与
+  ``Transition.guard``\ （以及 AST 转换的 ``event_id`` 与 ``condition_expr``\ ）互斥：
+  两者都设置会抛出 ``ValueError``\ ，并保持对象不变。要先清空一个字段再设置另一个。见
+  :doc:`/reference/dsl/index`\ 。
+- **生成的 Python 运行时。** ``vars`` 是只读视图，别名 ``variables`` 已移除，
+  ``ABSTRACT_HOOKS`` 是只读映射，带区域的模型没有 ``current_state_path`` 与
+  ``current_state_name``\ 。请重新生成文件；没有区域的模型生成的文本也会变化。见
+  *Templates and capability declarations*\ 。
+- **生成的 C 与 C++ 运行时。** 机器类型是不透明的，\ ``MAX_STACK_DEPTH`` 与
+  ``MAX_DFS_STEPS`` 由 ``..._ARENA_CAPACITY``\ 、\ ``..._TRAIL_CAPACITY`` 与
+  ``..._STORAGE_BYTES`` 宏取代，带区域的模型没有 ``current_state_id``\ 、
+  ``current_state_path`` 与 ``current_state_name``\ 。请重新生成并重新构建；代码体积、
+  内存与每个周期的耗时都会变化。见 *Templates and capability declarations*\ 。
+- **模拟器命令行。** ``events`` 与 ``cycle`` 的补全只列出能用的短名字，\ ``init`` 会
+  拒绝重复给出的变量。见 *Simulating models with regions*\ 。
+- **安装。** 请升级到 ``jinja2>=3.1.6``\ ；\ ``deprecation`` 与 ``packaging`` 会随包一起
+  安装。从源码检出构建或安装之前，需要先运行 ``make build_assets``\ 。见\ *安装与兼容性*\ 。
+- **版本输出。** ``pyfcstm --version`` 的输出不止两行。见\ *自检*\ 。
+
 v0.6.0
 ------
 
@@ -180,9 +640,9 @@ FBMCQ 与有界模型检查
 - 新增 ``pyfcstm bmc``，每次处理一份 FCSTM 模型和一条 FBMCQ 查询。默认终端报告
   先说明有界性质是否成立，再显示 SAT/UNSAT 求解诊断；支持可选 ANSI 颜色，并要求
   每一条解码后的 SAT 见证都通过结构校验与模拟器重放。
-- 新增稳定的结构化 JSON 结果，供持续集成、工具和大语言模型消费，并在 BMC 结果协议
-  参考中提供可下载模式。输出保留按极性解释的结论、求解耗时、见证与重放记录、诊断
-  及对应进程退出状态。
+- 新增稳定的 ``bmc-cli/v1`` JSON 封装，供持续集成、工具和大语言模型消费，并在 BMC
+  结果协议参考中提供可下载模式。输出保留按极性解释的结论、求解耗时、见证与重放
+  记录、诊断及对应进程退出状态。
 - 新增中英文教程、任务指南、三篇数学解释和两篇完整参考。解释页推导 40 条带标签、
   可追溯到实现的公式，并通过 MathJax HTML 与 XeLaTeX PDF 验证。
 
@@ -192,20 +652,11 @@ FBMCQ 与有界模型检查
 - 将 ``pyfcstm inspect`` 默认输出改为检查器风格的人类报告，提供对齐的源码范围、
   相邻源码上下文、紧凑严重级别标签和 ``--color auto|always|never``。文件、管道和
   机器格式仍不包含 ANSI 转义序列。
-- 通过 ``--format json`` 保留机器报告，并新增 ``--format llm-json`` 与
-  ``--format llm-md``。大语言模型报告使用随当前发布版本提供的模式文件，包含源码上下文、
-  来源、修复指导和明确禁止事项；公开载荷不包含产品级 schema 版本或状态字段。
-- 在 LLM 报告的 ``summary.structure_statistics`` 以及完整报告的
-  ``ModelInspect.structure_statistics`` 中新增描述性结构统计。比率以原始小数输出，
-  空分母使用 ``null``，并记录转换密度和不可达总体的保守建议阈值。超出只记录元数据，
-  ``W_UNREACHABLE_TRANSITION`` 会按 authored transition 聚合不可达原因；这些阈值仍只
-  是元数据，不生成综合健康分数；Python API 和 CLI 均可覆盖或关闭这些阈值。
+- 通过 ``--format json`` 保留稳定的机器报告，并新增使用
+  ``pyfcstm.inspect.llm.v1`` 模式的 ``--format llm-json`` 与
+  ``--format llm-md``。大语言模型报告包含源码上下文、来源、修复指导和明确禁止事项。
 - 扩展静态与验证支持的诊断，包括数值和守卫推理；求解器支持的检查仍受既有显式启用
   与安全门控约束。
-- 在完整 JSON/API 报告中新增 ``ModelInspect.verification`` 执行元数据，使消费者能够区分
-  验证未启用、被策略排除、得到确定结果和无法判定，而不会把这些状态误当成新的模型诊断。
-  human CLI 会显示紧凑的覆盖率及不确定原因；LLM 表达契约包含上述结构统计段。模式文件仍是
-  随发布版本提供的契约，而不是载荷级版本标记。
 - 新增隔离的多提供方修复评测，验证消费者在无法读取隐藏仓库上下文时，是否能定位、
   解释、修复真实诊断并完成重放。
 
@@ -216,18 +667,8 @@ FBMCQ 与有界模型检查
   变量归一化、事件所有权、历史长度调整和终止状态查询。
 - 新增 :class:`pyfcstm.simulate.CycleResult` 事件记账，并强化抽象处理器注册、装饰器
   扫描、执行上下文、命名动作引用、警告元数据和会话复制行为。
-- 将 non-stoppable 热启动和伪状态无进展行为改为成功的 Delta 周期：合法的阻塞目标不再
-  在构造器阶段被拒绝，第一次真实 ``cycle()`` 返回 ``delta=True``，并推进公开周期计数
-  与 history 契约。
 - 扩展共享语义用例语料，使模拟器和生成运行时按周期对齐状态、变量、事件、历史、
   回调与失败行为。
-
-兼容性说明
-~~~~~~~~~~
-
-- 删除 BMC CLI、witness/native 结果中的产品版本字段，并将可下载结果模式改为无版本文件名。
-  下游必须停止读取已删除字段并更新模式下载路径；标准 JSON Schema 的 ``$schema`` 方言 URI
-  保持不变。
 
 内置模板与 DSL
 ~~~~~~~~~~~~~~

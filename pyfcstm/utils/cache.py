@@ -241,6 +241,15 @@ class ScopedMemo:
 
         :return: The table, or ``None`` outside every scope.
         :rtype: Optional[BoundedTable]
+
+        Example::
+
+            >>> memo = ScopedMemo()
+            >>> memo.table is None
+            True
+            >>> with memo.scope(2):
+            ...     memo.table.limit
+            2
         """
         return self._slot.table
 

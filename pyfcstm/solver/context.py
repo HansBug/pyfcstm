@@ -73,7 +73,6 @@ __all__ = [
 ]
 
 
-
 # Linear integer, real and mixed arithmetic, in the form formulas have before
 # any simplification: subtraction, negation, ``abs``, integer/real conversion
 # and division or modulo by a numeral included.  Z3 decides every query of
@@ -107,6 +106,12 @@ class SolveContextOwner:
     :ivar used: Whether any solver of this solve was created in the fresh
         context.
     :vartype used: bool
+
+    Example::
+
+        >>> owner = SolveContextOwner()
+        >>> owner.used, owner.context, owner.linear
+        (False, None, [])
     """
 
     __slots__ = ("context", "linear", "deferred", "translated", "used", "__weakref__")
@@ -139,6 +144,17 @@ def current_owner() -> Optional[SolveContextOwner]:
 
     :return: Owner, or ``None`` outside every wrapped function.
     :rtype: Optional[SolveContextOwner]
+
+    Example::
+
+        >>> current_owner() is None
+        True
+        >>> import z3
+        >>> @in_solve_context(lambda *terms: terms)
+        ... def inside(*terms):
+        ...     return current_owner() is not None
+        >>> inside(z3.Int("x") > 1)
+        True
     """
     reference = _SLOT.owner
     return reference() if reference is not None else None
@@ -300,6 +316,17 @@ def declare(
     :type terms: Sequence[z3.ExprRef]
     :return: Decision and the identities of the formulas.
     :rtype: Tuple[bool, FrozenSet[int]]
+
+    Example::
+
+        >>> import z3
+        >>> x, y = z3.Ints("x y")
+        >>> owner = SolveContextOwner()
+        >>> decision, identities = declare(owner, (x + y > 1,))
+        >>> decision, len(identities)
+        (True, 1)
+        >>> declare(owner, (x * y > 1,))[0]
+        False
     """
     identities = frozenset(term.get_id() for term in terms)
     if owner.context is None:
@@ -467,6 +494,17 @@ class IsolatedSolver:
         :type expressions: z3.BoolRef
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x > 2, x < 5)
+            >>> solver.check()
+            sat
         """
         self._solver.add(*[self._inward(item) for item in expressions])
 
@@ -475,6 +513,19 @@ class IsolatedSolver:
 
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x > 2)
+            >>> solver.push()
+            >>> solver.add(x < 0)
+            >>> solver.check()
+            unsat
         """
         self._solver.push()
 
@@ -483,6 +534,20 @@ class IsolatedSolver:
 
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x > 2)
+            >>> solver.push()
+            >>> solver.add(x < 0)
+            >>> solver.pop()
+            >>> solver.check()
+            sat
         """
         self._solver.pop()
 
@@ -491,6 +556,18 @@ class IsolatedSolver:
 
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.set("timeout", 1000)
+            >>> solver.add(x > 2)
+            >>> solver.check()
+            sat
         """
         self._solver.set(*args, **keys)
 
@@ -501,6 +578,18 @@ class IsolatedSolver:
         :type assumptions: z3.BoolRef
         :return: ``z3.sat``, ``z3.unsat`` or ``z3.unknown``.
         :rtype: z3.CheckSatResult
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> flag = z3.Bool("flag")
+            >>> solver.add(z3.Implies(flag, x > 5), x < 3)
+            >>> solver.check(flag), solver.check()
+            (unsat, sat)
         """
         return self._solver.check(*[self._inward(item) for item in assumptions])
 
@@ -509,6 +598,19 @@ class IsolatedSolver:
 
         :return: Model whose values evaluate terms of the caller's context.
         :rtype: z3.ModelRef
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x == 4)
+            >>> solver.check()
+            sat
+            >>> solver.model().eval(x), solver.model().ctx == z3.main_ctx()
+            (4, True)
         """
         return self._solver.model().translate(self._home)
 
@@ -517,6 +619,20 @@ class IsolatedSolver:
 
         :return: Assumption literals in the order Z3 reported them.
         :rtype: List[z3.BoolRef]
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> flag = z3.Bool("flag")
+            >>> solver.add(z3.Implies(flag, x > 5), x < 3)
+            >>> solver.check(flag)
+            unsat
+            >>> solver.unsat_core()
+            [flag]
         """
         return [literal.translate(self._home) for literal in self._solver.unsat_core()]
 
@@ -525,6 +641,19 @@ class IsolatedSolver:
 
         :return: Reason text.
         :rtype: str
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x > 2)
+            >>> solver.check()
+            sat
+            >>> isinstance(solver.reason_unknown(), str)
+            True
         """
         return self._solver.reason_unknown()
 
@@ -533,5 +662,18 @@ class IsolatedSolver:
 
         :return: Z3 statistics object.
         :rtype: z3.Statistics
+
+        Example::
+
+            >>> import z3
+            >>> x = z3.Int("x")
+            >>> owner = SolveContextOwner()
+            >>> owner.context = z3.Context()
+            >>> solver = IsolatedSolver(z3.Solver(ctx=owner.context), owner)
+            >>> solver.add(x > 2)
+            >>> solver.check()
+            sat
+            >>> len(solver.statistics()) > 0
+            True
         """
         return self._solver.statistics()

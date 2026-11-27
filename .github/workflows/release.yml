@@ -58,6 +58,12 @@ jobs:
     runs-on: ubuntu-22.04
     needs: resolve_release_target
     if: ${{ needs.resolve_release_target.result == 'success' }}
+    env:
+      # A tag checkout is a detached HEAD, which has no branch name. Pass the
+      # identity explicitly so the build records the tag as its ref.
+      PYFCSTM_BUILD_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+      PYFCSTM_BUILD_DIRTY: 'false'
+      PYFCSTM_BUILD_REF: ${{ needs.resolve_release_target.outputs.tag }}
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
     steps:
@@ -611,6 +617,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: resolve_release_target
     if: ${{ needs.resolve_release_target.result == 'success' }}
+    env:
+      # A tag checkout is a detached HEAD, which has no branch name. Pass the
+      # identity explicitly so the build records the tag as its ref.
+      PYFCSTM_BUILD_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
+      PYFCSTM_BUILD_DIRTY: 'false'
+      PYFCSTM_BUILD_REF: ${{ needs.resolve_release_target.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:

@@ -1193,8 +1193,9 @@ jobs:
   release_cli_publish:
     name: Upload verified standalone artifact (${{ matrix.os }})
     runs-on: ubuntu-22.04
-    needs: [resolve_release_target, release_gate, release_cli_stage, release_cli_fresh, release_cli_controlled_linux]
-    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_gate.result == 'success' && needs.release_cli_stage.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
+    # package_publish creates the draft release that the uploads attach to.
+    needs: [resolve_release_target, release_gate, package_publish, release_cli_stage, release_cli_fresh, release_cli_controlled_linux]
+    if: ${{ needs.resolve_release_target.result == 'success' && needs.release_gate.result == 'success' && needs.package_publish.result == 'success' && needs.release_cli_stage.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:

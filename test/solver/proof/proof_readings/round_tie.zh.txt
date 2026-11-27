@@ -1,0 +1,267 @@
+查询：round_tie
+求解结果：UNSAT
+阅读完整度：complete
+
+P1  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((to_int(x) = ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) or ((to_int(x) + (-1 * ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) >= 0))
+
+P2  欧几里得整除恒等式
+  整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。
+  除数为零的分支已保留，或由非零常量除数排除。
+  得到：(false or (((2 * div(to_int(x), 2)) + mod(to_int(x), 2)) = to_int(x)))
+
+P3  逻辑推导
+  得到：true
+
+P4  消解子句
+  根据：P2, P3
+  得到：(((2 * div(to_int(x), 2)) + mod(to_int(x), 2)) = to_int(x))
+
+P5  逻辑推导
+  根据：P4
+  得到：((((2 * div(to_int(x), 2)) + mod(to_int(x), 2)) = to_int(x)) = true)
+
+P6  等式替换
+  根据：P5
+  得到：((to_int(x) = ((2 * div(to_int(x), 2)) + mod(to_int(x), 2))) = true)
+
+P7  消解子句
+  根据：P1, P6
+  得到：((to_int(x) + (-1 * ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) >= 0)
+
+P8  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((to_int(x) = ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) or ((to_int(x) + (-1 * ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) <= 0))
+
+P9  消解子句
+  根据：P8, P6
+  得到：((to_int(x) + (-1 * ((2 * div(to_int(x), 2)) + mod(to_int(x), 2)))) <= 0)
+
+P10  局部假设
+  当前假设：P10
+  得到：((1 + to_int(x)) <= 2)
+
+P11  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((x = 5/2)) or (x >= 5/2))
+
+P12  输入条件
+  输入来源：guard
+  得到：((5/2 = x) and distinct(2, (if (1/2 > (x - to_real(to_int(x)))) then to_int(x) else (if (1/2 < (x - to_real(to_int(x)))) then (to_int(x) + 1) else (if (mod(to_int(x), 2) = 0) then to_int(x) else (to_int(x) + 1))))))
+
+P13  逻辑推导
+  根据：P12
+  得到：(5/2 = x)
+
+P14  消解子句
+  根据：P11, P13
+  得到：(x >= 5/2)
+
+P15  向下取整与原值相差小于一
+  对任意实数 x，to_int(x) <= x < to_int(x) + 1。
+  得到：(false or not (((x + (-1 * to_real(to_int(x)))) >= 1)))
+
+P16  消解子句
+  根据：P15, P3
+  得到：not (((x + (-1 * to_real(to_int(x)))) >= 1))
+
+P17  精确线性组合
+  根据：P10, P14, P16
+  当前假设：P10
+  1 * [to_int(x) + -1 <= 0]
+  1 * [-1 * x + 5/2 <= 0]
+  1 * [x + -1 * to_int(x) + -1 < 0]
+  相加得到：1/2 < 0; 矛盾。
+  得到：false
+
+P18  关闭局部假设
+  根据：P17
+  已关闭：P10
+  得到：not (((1 + to_int(x)) <= 2))
+
+P19  余数小于除数绝对值
+  整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。
+  除数为零的分支已保留，或由非零常量除数排除。
+  得到：(false or (mod(to_int(x), 2) <= 1))
+
+P20  消解子句
+  根据：P19, P3
+  得到：(mod(to_int(x), 2) <= 1)
+
+P21  局部假设
+  当前假设：P21
+  得到：not ((div(to_int(x), 2) >= 1))
+
+P22  精确线性组合
+  根据：P9, P18, P20, P21
+  当前假设：P21
+  1/2 * [-1 * mod(to_int(x), 2) + -2 * div(to_int(x), 2) + to_int(x) <= 0]
+  1/2 * [-1 * to_int(x) + 2 <= 0]
+  1/2 * [mod(to_int(x), 2) + -1 <= 0]
+  1 * [div(to_int(x), 2) <= 0]
+  相加得到：1/2 <= 0; 矛盾。
+  得到：false
+
+P23  关闭局部假设
+  根据：P22
+  已关闭：P21
+  得到：(div(to_int(x), 2) >= 1)
+
+P24  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：((mod(to_int(x), 2) = 0) or not ((mod(to_int(x), 2) <= 0)) or not ((mod(to_int(x), 2) >= 0)))
+
+P25  余数非负
+  整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。
+  除数为零的分支已保留，或由非零常量除数排除。
+  得到：(false or (mod(to_int(x), 2) >= 0))
+
+P26  消解子句
+  根据：P25, P3
+  得到：(mod(to_int(x), 2) >= 0)
+
+P27  内部定义／定义子句
+  得到：(not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))) or not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))
+
+P28  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：((to_int(x) = 2) or not ((to_int(x) <= 2)) or not ((to_int(x) >= 2)))
+
+P29  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((x = 5/2)) or (x <= 5/2))
+
+P30  消解子句
+  根据：P29, P13
+  得到：(x <= 5/2)
+
+P31  局部假设
+  当前假设：P31
+  得到：not ((to_int(x) <= 2))
+
+P32  向下取整不超过原值
+  对任意实数 x，to_int(x) <= x < to_int(x) + 1。
+  得到：(false or ((x + (-1 * to_real(to_int(x)))) >= 0))
+
+P33  消解子句
+  根据：P32, P3
+  得到：((x + (-1 * to_real(to_int(x)))) >= 0)
+
+P34  精确线性组合
+  根据：P30, P31, P33
+  当前假设：P31
+  1 * [x + -5/2 <= 0]
+  1 * [-1 * to_int(x) + 3 <= 0]
+  1 * [-1 * x + to_int(x) <= 0]
+  相加得到：1/2 <= 0; 矛盾。
+  得到：false
+
+P35  关闭局部假设
+  根据：P34
+  已关闭：P31
+  得到：(to_int(x) <= 2)
+
+P36  消解子句
+  根据：P28, P35
+  得到：((to_int(x) = 2) or not ((to_int(x) >= 2)))
+
+P37  逻辑推导
+  根据：P12
+  得到：distinct(2, (if (1/2 > (x - to_real(to_int(x)))) then to_int(x) else (if (1/2 < (x - to_real(to_int(x)))) then (to_int(x) + 1) else (if (mod(to_int(x), 2) = 0) then to_int(x) else (to_int(x) + 1)))))
+
+P38  内部定义／定义子句
+  得到：(not ((not (((x + (-1 * to_real(to_int(x)))) >= 1/2)) or not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))))) or (to_int(x) = (if (not (((x + (-1 * to_real(to_int(x)))) >= 1/2)) or not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))))) then to_int(x) else (1 + to_int(x)))))
+
+P39  内部定义／定义子句
+  得到：((not (((x + (-1 * to_real(to_int(x)))) >= 1/2)) or not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))))) or (not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))))
+
+P40  局部假设
+  当前假设：P40
+  得到：not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))))
+
+P41  消解子句
+  根据：P39, P40
+  当前假设：P40
+  得到：(not (((x + (-1 * to_real(to_int(x)))) >= 1/2)) or not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))))
+
+P42  消解子句
+  根据：P38, P41
+  当前假设：P40
+  得到：(to_int(x) = (if (not (((x + (-1 * to_real(to_int(x)))) >= 1/2)) or not ((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))))) then to_int(x) else (1 + to_int(x))))
+
+P43  消解子句
+  根据：P36, P37, P42
+  当前假设：P40
+  得到：not ((to_int(x) >= 2))
+
+P44  内部定义／定义子句
+  得到：((not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0))) or ((x + (-1 * to_real(to_int(x)))) <= 1/2))
+
+P45  消解子句
+  根据：P44, P40
+  当前假设：P40
+  得到：((x + (-1 * to_real(to_int(x)))) <= 1/2)
+
+P46  精确线性组合
+  根据：P14, P43, P45
+  当前假设：P40
+  1 * [-1 * x + 5/2 <= 0]
+  1 * [to_int(x) + -1 <= 0]
+  1 * [x + -1 * to_int(x) + -1/2 <= 0]
+  相加得到：1 <= 0; 矛盾。
+  得到：false
+
+P47  关闭局部假设
+  根据：P46
+  已关闭：P40
+  得到：(not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))
+
+P48  消解子句
+  根据：P27, P47
+  得到：(not (((x + (-1 * to_real(to_int(x)))) <= 1/2)) or not ((mod(to_int(x), 2) = 0)))
+
+P49  局部假设
+  当前假设：P49
+  得到：not (((x + (-1 * to_real(to_int(x)))) <= 1/2))
+
+P50  局部假设
+  当前假设：P50
+  得到：not (((1 + to_int(x)) <= 2))
+
+P51  精确线性组合
+  根据：P30, P49, P50
+  当前假设：P49, P50
+  1 * [x + -5/2 <= 0]
+  1 * [-1 * x + to_int(x) + 1/2 < 0]
+  1 * [-1 * to_int(x) + 2 <= 0]
+  相加得到：0 < 0; 矛盾。
+  得到：false
+
+P52  关闭局部假设
+  根据：P51
+  已关闭：P49, P50
+  得到：(((1 + to_int(x)) <= 2) or ((x + (-1 * to_real(to_int(x)))) <= 1/2))
+
+P53  消解子句
+  根据：P52, P18
+  得到：((x + (-1 * to_real(to_int(x)))) <= 1/2)
+
+P54  消解子句
+  根据：P48, P53
+  得到：not ((mod(to_int(x), 2) = 0))
+
+P55  消解子句
+  根据：P24, P26, P54
+  得到：not ((mod(to_int(x), 2) <= 0))
+
+P56  精确线性组合
+  根据：P7, P23, P55, P35
+  1 * [mod(to_int(x), 2) + 2 * div(to_int(x), 2) + -1 * to_int(x) <= 0]
+  2 * [-1 * div(to_int(x), 2) + 1 <= 0]
+  1 * [-1 * mod(to_int(x), 2) + 1 <= 0]
+  1 * [to_int(x) + -2 <= 0]
+  相加得到：1 <= 0; 矛盾。
+  得到：false
+
+结论：提交的条件合取不可满足。

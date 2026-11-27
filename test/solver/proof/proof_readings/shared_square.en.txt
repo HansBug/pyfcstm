@@ -1,0 +1,92 @@
+Query: shared_square
+Solver result: UNSAT
+Reading: complete
+
+P1  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((y * y) = 3)) or ((y * y) >= 3))
+
+P2  Input
+  Input origins: guard
+  Therefore: (((to_real(2) = (x * x)) and (to_real(3) = (y * y))) and (x = y))
+
+P3  Logical consequence
+  From: P2
+  Therefore: ((to_real(2) = (x * x)) and (to_real(3) = (y * y)))
+
+P4  Logical consequence
+  From: P3
+  Therefore: (to_real(3) = (y * y))
+
+P5  Resolve the clauses
+  From: P1, P4
+  Therefore: ((y * y) >= 3)
+
+P6  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((y * y) = 3)) or ((y * y) <= 3))
+
+P7  Resolve the clauses
+  From: P6, P4
+  Therefore: ((y * y) <= 3)
+
+P8  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x * x) = 2)) or ((x * x) >= 2))
+
+P9  Logical consequence
+  From: P3
+  Therefore: (to_real(2) = (x * x))
+
+P10  Resolve the clauses
+  From: P8, P9
+  Therefore: ((x * x) >= 2)
+
+P11  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x * x) = 2)) or ((x * x) <= 2))
+
+P12  Resolve the clauses
+  From: P11, P9
+  Therefore: ((x * x) <= 2)
+
+P13  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = y)) or ((x + (-1 * y)) >= 0))
+
+P14  Logical consequence
+  From: P2
+  Therefore: (x = y)
+
+P15  Resolve the clauses
+  From: P13, P14
+  Therefore: ((x + (-1 * y)) >= 0)
+
+P16  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = y)) or ((x + (-1 * y)) <= 0))
+
+P17  Resolve the clauses
+  From: P16, P14
+  Therefore: ((x + (-1 * y)) <= 0)
+
+P18  Exact interval deduction
+  From: P5, P7, P10, P12, P15, P17
+  B1: -1 * (y * y) + 3 <= 0
+  B2: (y * y) + -3 <= 0
+  B3: -1 * (x * x) + 2 <= 0
+  B4: (x * x) + -2 <= 0
+  B5: -1 * x + y <= 0
+  B6: x + -1 * y <= 0
+  I1: (y * y) in [3, +inf); isolate the term; B1
+  I2: (y * y) in (-inf, 3]; isolate the term; B2
+  I3: (y * y) in [3, 3]; intersect ranges; I1, I2
+  I4: (x * x) in [2, +inf); isolate the term; B3
+  I5: (x * x) in (-inf, 2]; isolate the term; B4
+  I6: (x * x) in [2, 2]; intersect ranges; I4, I5
+    x = y; B5, B6
+  I7: (y * y) in [2, 2]; substitute equal terms in the source expression; I6
+  Incompatible ranges: I3, I7; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

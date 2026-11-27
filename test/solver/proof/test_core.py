@@ -1,0 +1,707 @@
+"""Native refutations of exact public queries, independent of BMC."""
+
+import json
+
+import pytest
+import z3
+
+import pyfcstm.solver as solver
+
+
+pytestmark = pytest.mark.unittest
+
+
+def test_native_proof_binds_all_asserted_leaves_to_the_exact_inputs():
+    x, y = z3.Ints('x y')
+    query = solver.UnsatQuery('increment', (
+        solver.UnsatConstraint('initial', (x >= 0,)),
+        solver.UnsatConstraint('update', (y == x + 1,)),
+        solver.UnsatConstraint('goal', (y < 0,)),
+    ))
+    report = solver.explain_unsat(query)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    graph = report.proof
+    assert graph.term(graph.node(graph.root_id).conclusion).value == 'false'
+    leaves = [node for node in graph.nodes if node.rule == 'asserted']
+    assert len(leaves) == 3
+    assert all(node.input_occurrences for node in leaves)
+    assert {item.constraint_id for item in graph.inputs} == {'initial', 'update', 'goal'}
+    by_occurrence = {item.occurrence_id: item for item in graph.inputs}
+    for leaf in leaves:
+        for occurrence in leaf.input_occurrences:
+            assert by_occurrence[occurrence].term_id == leaf.conclusion
+    assert report.input_check == 'passed'
+    assert json.loads(json.dumps(report.to_canonical()))['query_id'] == 'increment'
+
+
+def test_duplicate_formula_origins_remain_alternatives_in_proof_inputs():
+    x = z3.Int('x')
+    query = solver.UnsatQuery('duplicates', (
+        solver.UnsatConstraint('a', (x >= 0,)),
+        solver.UnsatConstraint('b', (x >= 0,)),
+        solver.UnsatConstraint('goal', (x < 0,)),
+    ))
+    graph = solver.explain_unsat(query).proof
+    by_id = {item.constraint_id: item for item in graph.inputs}
+    assert by_id['a'].term_id == by_id['b'].term_id
+    leaf = next(node for node in graph.nodes if node.conclusion == by_id['a'].term_id
+                and node.rule == 'asserted')
+    assert set(leaf.input_occurrences) == {
+        by_id['a'].occurrence_id, by_id['b'].occurrence_id,
+    }
+
+
+def test_native_parameters_keep_the_actual_arithmetic_certificate():
+    x = z3.Real('x')
+    query = solver.UnsatQuery('rational', (
+        solver.UnsatConstraint('lower', (x >= z3.RealVal('1/3'),)),
+        solver.UnsatConstraint('upper', (x < z3.RealVal('1/3'),)),
+    ))
+    graph = solver.explain_unsat(query).proof
+    assert any(term.value == '1/3' for term in graph.terms)
+    # This direct clash may be discharged by unit resolution; the linear chain
+    # below forces an arithmetic lemma with native exact rational parameters.
+    y = z3.Real('y')
+    chain = solver.UnsatQuery('chain', (
+        solver.UnsatConstraint('lower', (x >= 0,)),
+        solver.UnsatConstraint('update', (y == x + 1,)),
+        solver.UnsatConstraint('upper', (y < 0,)),
+    ))
+    graph = solver.explain_unsat(chain).proof
+    arithmetic = [node for node in graph.nodes if node.rule == 'th-lemma']
+    assert arithmetic
+    assert any(parameter.value == 'farkas' for node in arithmetic
+               for parameter in node.parameters)
+    assert all(isinstance(parameter.value, str) for node in arithmetic
+               for parameter in node.parameters)
+
+
+def test_capture_uses_an_isolated_context_and_keeps_the_original_query_usable():
+    context = z3.Context()
+    x = z3.Int('x', ctx=context)
+    query = solver.UnsatQuery('local', (
+        solver.UnsatConstraint('lower', (x > 0,)),
+        solver.UnsatConstraint('upper', (x < 0,)),
+    ))
+    report = solver.explain_unsat(query)
+    assert report.solver_status == 'unsat'
+    original = z3.Solver(ctx=context)
+    original.add(x == 2)
+    assert original.check() == z3.sat
+    assert original.model().eval(x).as_long() == 2
+
+
+@pytest.mark.parametrize('minimize', [False, True])
+@pytest.mark.parametrize('groups', [(), ('true',)])
+def test_satisfiable_query_does_not_claim_a_proof(groups, minimize):
+    query = solver.UnsatQuery('sat', tuple(
+        solver.UnsatConstraint(name, (z3.BoolVal(True),)) for name in groups
+    ))
+    report = solver.explain_unsat(query, minimize=minimize)
+    assert report.solver_status == 'sat'
+    assert report.proof is None
+    assert report.proof_status == 'unavailable'
+
+
+def test_fixed_background_and_group_members_keep_distinct_occurrences():
+    x = z3.Int('x')
+    query = solver.UnsatQuery('groups', (
+        solver.UnsatConstraint('goal', (x < 0, x < 10)),
+    ), (solver.UnsatConstraint('background', (x >= 0,)),))
+    graph = solver.explain_unsat(query).proof
+    assert len(graph.inputs) == 3
+    assert len({item.occurrence_id for item in graph.inputs}) == 3
+    assert [item.constraint_id for item in graph.inputs if item.background] == ['background']
+
+
+def test_native_ite_proof_preserves_shared_typed_terms():
+    x, y = z3.Ints('x y')
+    query = solver.UnsatQuery('branches', (
+        solver.UnsatConstraint('update', (y == z3.If(x >= 0, x + 1, 0),)),
+        solver.UnsatConstraint('goal', (y < 0,)),
+    ))
+    graph = solver.explain_unsat(query).proof
+    assert any(term.operator == 'ite' for term in graph.terms)
+    assert len([term for term in graph.terms if term.kind == 'literal'
+                and term.sort == 'Int' and term.value == '0']) == 1
+    positions = {node.node_id: i for i, node in enumerate(graph.nodes)}
+    assert all(positions[parent] < positions[node.node_id]
+               for node in graph.nodes for parent in node.parents)
+
+
+def test_conditional_arithmetic_propagation_has_checked_local_certificates(monkeypatch):
+    from pyfcstm.solver.proof import rules
+    from pyfcstm.solver.proof.rules import check_arithmetic_certificate
+
+    original = rules._linear_certificate
+    searches = []
+
+    def reconstruct(node, graph, budget):
+        searches.append(node.node_id)
+        return original(node, graph, budget)
+
+    monkeypatch.setattr(rules, '_linear_certificate', reconstruct)
+    values = z3.Ints(' '.join('stage%d' % i for i in range(21)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i + 1] == values[i] + 1) for i in range(20)
+    ] + [values[-1] < 0]
+    report = solver.explain_unsat(solver.UnsatQuery('propagation', tuple(
+        solver.UnsatConstraint('condition%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    arithmetic = [node for node in report.proof.nodes if node.rule == 'th-lemma']
+    assert arithmetic
+    for node in arithmetic:
+        assert node.certificate is not None
+        assert check_arithmetic_certificate(node, report.proof, node.certificate)
+    # Native unit-weight proposals should replay without a coefficient search.
+    assert searches == []
+
+
+@pytest.mark.parametrize('kind,scale', [('int', '2'), ('int', '3'), ('real', '1/3'), ('real', '2/5')])
+def test_scaled_conditional_propagation_and_satisfiable_perturbation(kind, scale):
+    from pyfcstm.solver.proof import UnsatReport
+
+    constructor = z3.Int if kind == 'int' else z3.Real
+    number = z3.IntVal if kind == 'int' else z3.RealVal
+    values = [constructor('scaled%d' % i) for i in range(9)]
+    for offset, expected in ((1, 'unsat'), (-1, 'sat')):
+        formulas = [values[0] == 0] + [
+            z3.Implies(values[i] >= 0, values[i + 1] == number(scale) * values[i] + offset)
+            for i in range(8)
+        ] + [values[-1] < 0]
+        report = solver.explain_unsat(solver.UnsatQuery('scaled-chain', tuple(
+            solver.UnsatConstraint('condition%d' % i, (formula,)) for i, formula in enumerate(formulas)
+        )))
+        assert report.solver_status == expected
+        if expected == 'unsat':
+            assert report.reading_status == 'complete'
+            assert report.gaps == ()
+            assert UnsatReport.from_canonical(report.to_canonical()) == report
+        else:
+            assert report.proof is None
+
+
+@pytest.mark.parametrize('mode', ['formal', '', None])
+def test_invalid_proof_modes_are_rejected(mode):
+    with pytest.raises(ValueError, match='mode'):
+        solver.explain_unsat(solver.UnsatQuery('empty', ()), mode=mode)
+
+
+def test_invalid_query_is_rejected_before_native_work():
+    with pytest.raises(TypeError, match='query'):
+        solver.explain_unsat('not a query')
+
+
+def test_minimization_proves_only_the_selected_groups(monkeypatch):
+    from pyfcstm.solver.proof import _z3_proof
+
+    original = _z3_proof.capture_proof
+    captured = []
+
+    def capture(query, *arguments):
+        captured.append(tuple(group.stable_id for group in query.constraints))
+        return original(query, *arguments)
+
+    monkeypatch.setattr(_z3_proof, 'capture_proof', capture)
+    x, y, unrelated = z3.Ints('x y unrelated')
+    query = solver.UnsatQuery('minimal', (
+        solver.UnsatConstraint('initial', (x >= 0,)),
+        solver.UnsatConstraint('update', (y == x + 1,)),
+        solver.UnsatConstraint('goal', (y < 0,)),
+        solver.UnsatConstraint('unrelated', (unrelated >= 0,)),
+    ))
+    report = solver.explain_unsat(query, minimize=True)
+    assert report.core.core_ids == ('goal', 'initial', 'update')
+    assert report.core.subset_minimality == 'proven'
+    assert report.proof_scope == 'core'
+    assert captured == [('initial', 'update', 'goal')]
+    assert report.full_proof is None
+    assert {item.constraint_id for item in report.proof.inputs} == {'initial', 'update', 'goal'}
+    assert report.reading_status == 'complete'
+    assert report.to_canonical()['core']['subset_minimality'] == 'proven'
+    for removed in report.core.core_ids:
+        native = z3.Solver()
+        native.add(*(expression for group in query.constraints
+                     if group.stable_id in report.core.core_ids and group.stable_id != removed
+                     for expression in group.expressions))
+        assert native.check() == z3.sat
+
+
+def test_minimized_proof_keeps_fixed_background_even_when_the_core_is_empty():
+    query = solver.UnsatQuery('background', (
+        solver.UnsatConstraint('unrelated', (z3.Bool('irrelevant'),)),
+    ), background=(solver.UnsatConstraint('fixed', (z3.BoolVal(False),)),))
+    report = solver.explain_unsat(query, minimize=True)
+    assert report.core.core_ids == ()
+    assert report.core.subset_minimality == 'proven'
+    assert report.proof_scope == 'core'
+    assert [(item.constraint_id, item.background) for item in report.proof.inputs] == [('fixed', True)]
+
+
+def test_core_mode_does_not_claim_a_native_derivation(text_aligner):
+    query = solver.UnsatQuery('false', (solver.UnsatConstraint('false', (z3.BoolVal(False),)),))
+    report = solver.explain_unsat(query, mode='core', minimize=True)
+    assert report.core.core_ids == ('false',)
+    assert report.core.subset_minimality == 'proven'
+    assert report.proof is None
+    assert report.full_proof is None
+    assert report.proof_status == 'not_requested'
+    assert report.proof_scope == 'none'
+    text_aligner.assert_equal('''\
+Query: false
+Solver result: UNSAT
+Reading: not_requested
+
+No refutation is available.
+''', report.reading.to_text(detail='detailed'))
+
+
+@pytest.mark.parametrize('option,value', [('minimize', 1), ('names', {}), ('extensions', {})])
+def test_proof_options_are_checked_even_for_sat_queries(option, value):
+    with pytest.raises(TypeError):
+        solver.explain_unsat(solver.UnsatQuery('empty', ()), **{option: value})
+
+
+def test_unknown_core_extraction_still_attempts_the_original_proof(monkeypatch):
+    native_check = z3.Solver.check
+    calls = []
+
+    def check(native, *assumptions):
+        calls.append(assumptions)
+        if len(calls) == 1:
+            return z3.unknown
+        return native_check(native, *assumptions)
+
+    monkeypatch.setattr(z3.Solver, 'check', check)
+    monkeypatch.setattr(z3.Solver, 'reason_unknown', lambda native: 'injected external solver unknown')
+    report = solver.explain_unsat(solver.UnsatQuery('false', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), minimize=True)
+    assert len(calls) == 2
+    assert report.solver_status == 'unsat'
+    assert report.proof_scope == 'full'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    assert report.core.core_ids is None
+    assert report.core.subset_minimality == 'not_proven'
+    assert report.stop_reason == 'core extraction returned unknown'
+
+
+def test_minimization_keeps_verified_core_when_capture_has_no_budget(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import _z3_proof, UnsatReport
+
+    now = [0.0]
+    original = _z3_proof.capture_proof
+
+    def capture(query, *arguments):
+        now[0] = 1.0
+        return original(query, *arguments)
+
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(_z3_proof, 'capture_proof', capture)
+    report = solver.explain_unsat(solver.UnsatQuery('small-core', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+        solver.UnsatConstraint('irrelevant', (z3.Bool('irrelevant'),)),
+    )), minimize=True, timeout_ms=100)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'unavailable'
+    assert report.proof_scope == 'none'
+    assert report.core.core_ids == ('false',)
+    assert report.core.core_check == 'verified'
+    assert report.core.subset_minimality == 'proven'
+    assert report.stop_reason == 'budget exhausted during proof capture'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_minimization_discards_large_irrelevant_control_flow_before_capture():
+    values = z3.Ints(' '.join('frame%d' % i for i in range(101)))
+    enabled = z3.Bool('enabled')
+    constraints = [solver.UnsatConstraint('init', (values[0] == 0,))] + [
+        solver.UnsatConstraint('update%d' % i, (
+            z3.Implies(values[i] >= 0, values[i + 1] == values[i] + 1),
+        )) for i in range(100)
+    ] + [solver.UnsatConstraint('enabled', (enabled,)),
+         solver.UnsatConstraint('disabled', (z3.Not(enabled),))]
+    report = solver.explain_unsat(solver.UnsatQuery('control-flow', tuple(constraints)),
+                                  minimize=True, timeout_ms=5000)
+    assert report.core.core_ids == ('disabled', 'enabled')
+    assert report.core.subset_minimality == 'proven'
+    assert report.reading_status == 'complete'
+    assert report.full_proof is None
+    assert {item.constraint_id for item in report.proof.inputs} == {'enabled', 'disabled'}
+
+
+@pytest.mark.parametrize('unknown_check,scope,reason', [
+    (2, 'full', 'selected core did not re-check as unsat (unknown)'),
+    (3, 'core', 'deletion trial returned unknown'),
+    (4, 'core', 'acceptance check for false did not return sat'),
+])
+def test_incomplete_core_checks_do_not_claim_minimality(monkeypatch, unknown_check, scope, reason):
+    from pyfcstm.solver.proof import UnsatReport
+
+    original = z3.Solver.check
+    checks = []
+
+    def check(native, *assumptions):
+        checks.append(assumptions)
+        return z3.unknown if len(checks) == unknown_check else original(native, *assumptions)
+
+    monkeypatch.setattr(z3.Solver, 'check', check)
+    monkeypatch.setattr(z3.Solver, 'reason_unknown', lambda native: 'injected core check unknown')
+    report = solver.explain_unsat(solver.UnsatQuery('incomplete-core', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), minimize=True)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.proof_scope == scope
+    assert report.core.subset_minimality == 'not_proven'
+    assert report.core.stop_reason == reason
+    assert report.stop_reason == reason
+    assert report.reading_status == 'complete'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_minimized_duplicate_sources_are_alternatives_not_joint_requirements():
+    from pyfcstm.solver.proof import UnsatReport
+
+    x = z3.Int('x')
+    query = solver.UnsatQuery('duplicate-core', (
+        solver.UnsatConstraint('first', (x >= 0,)),
+        solver.UnsatConstraint('duplicate', (x >= 0,)),
+        solver.UnsatConstraint('equivalent', (x + 1 > 0,)),
+        solver.UnsatConstraint('negative', (x < 0,)),
+    ))
+    report = solver.explain_unsat(query, minimize=True)
+    assert report.core.subset_minimality == 'proven'
+    assert len(report.core.core_ids) == 2
+    assert 'negative' in report.core.core_ids
+    assert {item.constraint_id for item in report.proof.inputs} == set(report.core.core_ids)
+    for removed in report.core.core_ids:
+        native = z3.Solver()
+        native.add(*(expression for group in query.constraints
+                     if group.stable_id in report.core.core_ids and group.stable_id != removed
+                     for expression in group.expressions))
+        assert native.check() == z3.sat
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_slow_rule_extension_exhausts_shared_deadline_without_losing_native_evidence(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import ProofExtensions
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
+
+    now = [0.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+
+    def interpret(node, graph):
+        now[0] = 1.0
+        return RuleAnalysis('logical', 'trusted')
+
+    x = z3.Real('x')
+    report = solver.explain_unsat(solver.UnsatQuery('deadline', (
+        solver.UnsatConstraint('lower', (x >= 2,)), solver.UnsatConstraint('upper', (x < 1,)),
+    )), timeout_ms=60, extensions=ProofExtensions(rule_handlers=(ProofRuleHandler('th-lemma', interpret),)))
+    assert report.solver_status == 'unsat'
+    assert report.proof is not None
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'not_requested'
+    assert report.stop_reason == 'budget exhausted during proof analysis'
+
+
+def test_analysis_deadline_preserves_completed_certificates_and_pending_scope(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import rules, UnsatReport
+
+    now = [0.0]
+    completed = []
+    original = rules._certificate
+
+    def certificate(node, graph):
+        result = original(node, graph)
+        if result[0] is not None:
+            completed.append((node.node_id, result[0]))
+            now[0] = 1.0
+        return result
+
+    # Elapsed time during a completed arithmetic check must not discard it.
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(rules, '_certificate', certificate)
+    x, y = z3.Ints('x y')
+    report = solver.explain_unsat(solver.UnsatQuery('progress', (
+        solver.UnsatConstraint('update', (y == z3.If(x >= 0, x + 1, 0),)),
+        solver.UnsatConstraint('goal', (y < 0,)),
+    )), timeout_ms=100)
+    assert completed
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    for node_id, evidence in completed:
+        node = report.proof.node(node_id)
+        assert node.local_check == 'checked'
+        assert node.certificate == evidence
+    assert report.proof.node(report.proof.root_id).local_check == 'not_run'
+    assert report.scope_check == 'partial'
+    assert report.rule_check == 'partial'
+    assert report.stop_reason == 'budget exhausted during proof analysis'
+    assert any(gap.reason == 'analysis_incomplete' for gap in report.gaps)
+    assert report.reading is None
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_source_description_deadline_preserves_finished_analysis(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import ProofExtensions, SourceAdapter, SourceDescription, UnsatReport
+
+    now = [0.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+
+    class SlowSources(SourceAdapter):
+        def describe(self, handle):
+            now[0] = 1.0
+            return SourceDescription(handle, handle)
+
+    report = solver.explain_unsat(solver.UnsatQuery('source-deadline', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),), source='original'),
+    )), timeout_ms=100, extensions=ProofExtensions(source_adapter=SlowSources()))
+    assert report.proof_status == 'captured'
+    assert report.scope_check == 'passed'
+    assert report.rule_check == 'complete'
+    assert report.reading is None
+    assert report.stop_reason == 'budget exhausted during proof reading'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_invalid_rule_extension_emits_warning_and_retains_diagnostic(text_aligner):
+    from pyfcstm.solver.proof import ProofExtensions, ProofRuleHandler, RuleAnalysis
+
+    x = z3.Real('x')
+    extensions = ProofExtensions(rule_handlers=(ProofRuleHandler(
+        'th-lemma', lambda node, graph: RuleAnalysis('logical', 'invalid'),
+    ),))
+    with pytest.warns(RuntimeWarning, match='invalid_inference.*th-lemma') as captured:
+        report = solver.explain_unsat(solver.UnsatQuery('rejected', (
+            solver.UnsatConstraint('lower', (x >= 2,)),
+            solver.UnsatConstraint('upper', (x < 1,)),
+        )), extensions=extensions)
+    invalid = [gap for gap in report.gaps if gap.reason == 'invalid_inference']
+    assert invalid
+    assert len(captured) == len(invalid)
+    assert all(gap.node_id in str(warning.message) for gap, warning in zip(invalid, captured))
+    assert report.proof_status == 'invalid'
+    assert report.reading_status == 'not_requested'
+    assert report.rule_check == 'failed'
+    text_aligner.assert_equal('''\
+Query: rejected
+Solver result: UNSAT
+Reading: not_requested
+
+No refutation is available.
+Unexplained or invalid evidence:
+  invalid_inference: rule handler rejected the inference
+''', report.reading.to_text(detail='detailed'))
+    text_aligner.assert_equal('''\
+查询：rejected
+求解结果：UNSAT
+阅读完整度：not_requested
+
+没有可用的反证。
+尚未解释或无效的证据：
+  invalid_inference: rule handler rejected the inference
+''', report.reading.to_text(language='zh', detail='detailed'))
+
+
+def test_minimization_and_reproof_share_the_original_deadline(monkeypatch):
+    import time
+
+    native_check = z3.Solver.check
+    checks = []
+    now = [0.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+
+    def check(native, *assumptions):
+        checks.append(assumptions)
+        result = native_check(native, *assumptions)
+        if len(checks) == 2:
+            now[0] = 1.0
+        return result
+
+    monkeypatch.setattr(z3.Solver, 'check', check)
+    report = solver.explain_unsat(solver.UnsatQuery('false', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), minimize=True, timeout_ms=60)
+    assert len(checks) == 2
+    assert report.solver_status == 'unsat'
+    assert report.proof_scope == 'none'
+    assert report.proof_status == 'unavailable'
+    assert report.core.core_ids == ('false',)
+    assert report.core.core_check == 'verified'
+    assert report.core.subset_minimality == 'not_proven'
+    assert report.reading_status == 'not_requested'
+    assert report.reading.blocks == ()
+
+
+def test_deadline_during_native_export_keeps_unsat_but_does_not_publish_a_partial_graph(monkeypatch):
+    import time
+
+    now = [0.0]
+    native_proof = z3.Solver.proof
+
+    def proof(native):
+        result = native_proof(native)
+        now[0] = 1.0
+        return result
+
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(z3.Solver, 'proof', proof)
+    report = solver.explain_unsat(solver.UnsatQuery('false', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), timeout_ms=100)
+    assert report.solver_status == 'unsat'
+    assert report.proof is None
+    assert report.proof_status == 'unavailable'
+    assert report.stop_reason == 'budget exhausted during proof capture'
+
+
+def test_reproof_unknown_preserves_the_verified_core_and_unsat_verdict(monkeypatch):
+    original = z3.Solver.check
+    count = [0]
+
+    def check(native, *assumptions):
+        count[0] += 1
+        return z3.unknown if count[0] == 5 else original(native, *assumptions)
+
+    monkeypatch.setattr(z3.Solver, 'check', check)
+    monkeypatch.setattr(z3.Solver, 'reason_unknown', lambda native: 'injected reproof unknown')
+    report = solver.explain_unsat(solver.UnsatQuery('false', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), minimize=True)
+    assert count[0] == 5
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'unavailable'
+    assert report.proof_scope == 'none'
+    assert report.core.core_ids == ('false',)
+    assert report.core.subset_minimality == 'proven'
+    assert report.stop_reason == 'injected reproof unknown'
+    assert report.reading_status == 'not_requested'
+
+
+def test_quantifier_instantiation_parameters_preserve_the_exact_expression():
+    i = z3.Int('i')
+    f = z3.Function('f', z3.IntSort(), z3.IntSort())
+    report = solver.explain_unsat(solver.UnsatQuery('instantiate-seven', (
+        solver.UnsatConstraint('all', (z3.ForAll(i, f(i) > i),)),
+        solver.UnsatConstraint('seven', (f(7) < 7,)),
+    )))
+    parameters = tuple(parameter.value for node in report.proof.nodes if node.rule == 'quant-inst'
+                       for parameter in node.parameters if parameter.kind == 'expression')
+    assert parameters == ('7',)
+
+
+@pytest.mark.parametrize('decimal', [False, True])
+@pytest.mark.parametrize('precision', [2, 10, 30])
+def test_exact_numeric_capture_is_independent_of_native_display(decimal, precision, text_aligner):
+    import subprocess
+    import sys
+
+    # A separate interpreter isolates process-wide Z3 presentation options.
+    program = '''
+import z3
+import json
+from pyfcstm.solver import UnsatConstraint, UnsatQuery, UnsatReport, explain_unsat
+z3.set_option(rational_to_decimal=%r, precision=%d)
+for lower, upper in [('1/3', '1/4'), ('-1/4', '-1/3'),
+                     ('123456789012345678901234567890', '0')]:
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('exact', (
+        UnsatConstraint('lower', (x >= z3.RealVal(lower),)),
+        UnsatConstraint('upper', (x <= z3.RealVal(upper),)),
+    )))
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    values = {term.value for term in report.proof.terms if term.kind == 'literal'}
+    assert lower in values, values
+    assert upper in values, values
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    assert restored.proof == report.proof
+    if lower == '1/3':
+        print(json.dumps(restored.reading.to_text('en', detail='detailed')))
+i = z3.Int('i')
+r = explain_unsat(UnsatQuery('integer', (
+    UnsatConstraint('lower', (i >= 123456789012345678901234567890,)),
+    UnsatConstraint('upper', (i <= 0,)),
+)))
+assert r.reading_status == 'complete'
+assert any(t.value == '123456789012345678901234567890' for t in r.proof.terms)
+a = z3.Real('a')
+root = z3.simplify(z3.Sqrt(2))
+r = explain_unsat(UnsatQuery('algebraic', (
+    UnsatConstraint('equal', (a == root,)),
+    UnsatConstraint('false', (z3.BoolVal(False),)),
+)))
+assert r.reading_status == 'complete'
+assert {t.value for t in r.proof.terms if t.kind == 'algebraic'} == {
+    '(root-obj (+ (^ x 2) (- 2)) 2)'}
+assert UnsatReport.from_canonical(r.to_canonical()).proof == r.proof
+''' % (decimal, precision)
+    completed = subprocess.run([sys.executable, '-c', program],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               universal_newlines=True, timeout=60)
+    assert completed.returncode == 0, completed.stderr
+    text_aligner.assert_equal("""\
+Query: exact
+Solver result: UNSAT
+Reading: complete
+
+P1  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (x <= 1/4)
+    (x >= 1/3)
+  1 * [x + -1/4 <= 0]
+  1 * [-1 * x + 1/3 <= 0]
+  Sum: 1/12 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((x <= 1/4)) or not ((x >= 1/3)))
+
+P2  Input
+  Input origins: lower
+  Therefore: (1/3 <= x)
+
+P3  Input
+  Input origins: upper
+  Therefore: (1/4 >= x)
+
+P4  Resolve the clauses
+  From: P1, P2, P3
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.
+
+""", json.loads(completed.stdout))
+
+
+def test_native_capture_classifies_each_shared_ast_only_once(monkeypatch):
+    from collections import Counter
+    from pyfcstm.solver.proof import _z3_proof
+
+    calls = Counter()
+    original = _z3_proof._is_proof
+
+    def counted(expression):
+        calls[expression.get_id()] += 1
+        return original(expression)
+
+    monkeypatch.setattr(_z3_proof, '_is_proof', counted)
+    values = z3.Ints(' '.join('x%d' % i for i in range(17)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i+1] == values[i] + 1) for i in range(16)
+    ] + [values[-1] < 0]
+    report = solver.explain_unsat(solver.UnsatQuery('shared_capture', tuple(
+        solver.UnsatConstraint('condition_%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    assert report.reading_status == 'complete'
+    assert calls
+    assert max(calls.values()) == 1

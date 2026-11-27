@@ -1,0 +1,49 @@
+Query: product_order
+Solver result: UNSAT
+Reading: complete
+View: standard
+
+P1  Input
+  Input origins: fact0
+  Therefore: (x >= 0)
+
+P2  Input
+  Input origins: fact1
+  Therefore: (z >= x)
+
+P3  Input
+  Input origins: fact2
+  Therefore: ((x * y) >= 0)
+
+P4  Input
+  Input origins: fact3
+  Therefore: ((z * y) >= 0)
+
+P5  Input
+  Input origins: fact4
+  Therefore: ((x * y) > (z * y))
+
+P6  Exact polynomial deduction
+  From: P1, P2, P3, P4, P5
+  Q1: x >= 0
+    Normalize local premise: (x >= 0)
+  Q2: -1 * x + z >= 0
+    Normalize local premise: (z >= x)
+  Q3: z * y >= 0
+    Normalize local premise: ((z * y) >= 0)
+  Q4: x * y + -1 * z * y > 0
+    Normalize local premise: ((x * y) > (z * y))
+  Q5: x * y > 0
+    Nonnegative linear combination: 1 * Q3 + 1 * Q4
+  Q6: x > 0
+    A nonnegative factor of a nonzero product is positive: Q5, Q1; cofactor: y
+  Q7: y > 0
+    Cancel the strictly positive factor: Q5 / Q6
+  Q8: -1 * x * y + z * y >= 0
+    Multiply nonnegative factors: Q2 * Q7
+  Q9: 0 > 0
+    Nonnegative linear combination: 1/2 * Q4 + 1/2 * Q8
+  The final constant cannot have this sign; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

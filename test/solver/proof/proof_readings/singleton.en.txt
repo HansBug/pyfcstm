@@ -1,0 +1,29 @@
+Query: singleton
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: zero
+  Therefore: (x >= 0)
+
+P2  Input
+  Input origins: zero
+  Therefore: (x <= 0)
+
+P3  Exact interval deduction
+  From: P1, P2
+  B1: -1 * x <= 0
+  B2: x <= 0
+  I1: x in [0, +inf); isolate the term; round integer bounds inward; B1
+  I2: x in (-inf, 0]; isolate the term; round integer bounds inward; B2
+  I3: x in [0, 0]; intersect ranges; I1, I2
+  I4: 0 in [0, 0]; exact constant
+  I5: (x * x) in [0, 0]; square the same value; I3
+  Equal singleton ranges: I5, I4; the equality follows.
+  Therefore: ((x * x) = 0)
+
+P4  Input
+  Input origins: false
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

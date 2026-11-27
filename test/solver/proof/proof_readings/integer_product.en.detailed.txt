@@ -1,0 +1,306 @@
+Query: integer_product
+Solver result: UNSAT
+Reading: complete
+
+P1  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((counter = ((2 * div(counter, 2)) + mod(counter, 2)))) or ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0))
+
+P2  Euclidean division identity
+  For a nonzero integer divisor, dividend = divisor * quotient + remainder, with 0 <= remainder < abs(divisor).
+  The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.
+  Therefore: (false or (counter = ((2 * div(counter, 2)) + mod(counter, 2))))
+
+P3  Logical consequence
+  Therefore: true
+
+P4  Resolve the clauses
+  From: P2, P3
+  Therefore: (counter = ((2 * div(counter, 2)) + mod(counter, 2)))
+
+P5  Resolve the clauses
+  From: P1, P4
+  Therefore: ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)
+
+P6  Exact interval deduction
+  B1: counter + 2 <= 0
+    Temporary negation of a conclusion alternative.
+  B2: -1 * (counter * factor) + -3 <= 0
+    Temporary negation of a conclusion alternative.
+  B3: -1 * factor + 2 <= 0
+    Temporary negation of a conclusion alternative.
+  I1: counter in (-inf, -2]; isolate the term; round integer bounds inward; B1
+  I2: (counter * factor) in [-3, +inf); isolate the term; round integer bounds inward; B2
+  I3: factor in [2, +inf); isolate the term; round integer bounds inward; B3
+  I4: (counter * factor) in (-inf, -4]; multiply operand ranges; I1, I3
+  Incompatible ranges: I2, I4; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((counter >= -1) or not (((counter * factor) >= -3)) or (factor <= 1))
+
+P7  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((counter * factor) = -3)) or ((counter * factor) >= -3))
+
+P8  Input
+  Input origins: product
+  Therefore: ((counter * factor) = -3)
+
+P9  Resolve the clauses
+  From: P7, P8
+  Therefore: ((counter * factor) >= -3)
+
+P10  Assume
+  Under assumptions: P10
+  Therefore: not ((factor <= 1))
+
+P11  Assume
+  Under assumptions: P11
+  Therefore: (counter >= -1)
+
+P12  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((mod(counter, 2) = 0)) or (mod(counter, 2) <= 0))
+
+P13  Input
+  Input origins: multiple
+  Therefore: (mod(counter, 2) = 0)
+
+P14  Resolve the clauses
+  From: P12, P13
+  Therefore: (mod(counter, 2) <= 0)
+
+P15  Nonnegative remainder
+  For a nonzero integer divisor, dividend = divisor * quotient + remainder, with 0 <= remainder < abs(divisor).
+  The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.
+  Therefore: (false or (mod(counter, 2) >= 0))
+
+P16  Resolve the clauses
+  From: P15, P3
+  Therefore: (mod(counter, 2) >= 0)
+
+P17  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: ((counter = 0) or not ((counter <= 0)) or not ((counter >= 0)))
+
+P18  Exact interval deduction
+  B1: (counter * factor) + 3 <= 0
+    Temporary negation of a conclusion alternative.
+  B2: -1 * counter <= 0
+    Temporary negation of a conclusion alternative.
+  B3: counter <= 0
+    Temporary negation of a conclusion alternative.
+  I1: (counter * factor) in (-inf, -3]; isolate the term; round integer bounds inward; B1
+  I2: counter in [0, +inf); isolate the term; round integer bounds inward; B2
+  I3: counter in (-inf, 0]; isolate the term; round integer bounds inward; B3
+  I4: counter in [0, 0]; intersect ranges; I2, I3
+  I5: (counter * factor) in [0, 0]; multiply operand ranges; I4
+  Incompatible ranges: I1, I5; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not (((counter * factor) <= -3)) or not ((counter >= 0)) or not ((counter <= 0)))
+
+P19  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((counter * factor) = -3)) or ((counter * factor) <= -3))
+
+P20  Resolve the clauses
+  From: P19, P8
+  Therefore: ((counter * factor) <= -3)
+
+P21  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((counter = 0)) or (counter <= 0))
+
+P22  Assume
+  Under assumptions: P22
+  Therefore: (counter = 0)
+
+P23  Resolve the clauses
+  From: P21, P22
+  Under assumptions: P22
+  Therefore: (counter <= 0)
+
+P24  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((counter = 0)) or (counter >= 0))
+
+P25  Resolve the clauses
+  From: P24, P22
+  Under assumptions: P22
+  Therefore: (counter >= 0)
+
+P26  Resolve the clauses
+  From: P18, P20, P23, P25
+  Under assumptions: P22
+  Therefore: false
+
+P27  Discharge local assumptions
+  From: P26
+  Closed: P22
+  Therefore: not ((counter = 0))
+
+P28  Resolve the clauses
+  From: P17, P27
+  Therefore: (not ((counter <= 0)) or not ((counter >= 0)))
+
+P29  Exact polynomial deduction
+  Q1: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) >= 0
+    Normalize local premise: not (not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)))
+  Q2: 3 + counter * factor >= 0
+    Normalize local premise: not (not (((counter * factor) >= -3)))
+  Q3: -1 * mod(counter, 2) >= 0
+    Normalize local premise: not (not ((mod(counter, 2) <= 0)))
+  Q4: mod(counter, 2) >= 0
+    Normalize local premise: not (not ((mod(counter, 2) >= 0)))
+  Q5: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) >= 0
+    Normalize local premise: not (not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)))
+  Q6: -3 + -1 * counter * factor >= 0
+    Normalize local premise: not (not (((counter * factor) <= -3)))
+  Q7: -1 * counter * factor + mod(counter, 2) * factor + 2 * factor * div(counter, 2) >= 0
+    Multiply the established equality by -1 * factor; Q1, Q5
+  Q8: -1 * mod(counter, 2) * factor >= 0
+    Multiply the established equality by factor; Q3, Q4
+  Q9: 3 + 2 * factor * div(counter, 2) >= 0
+    Nonnegative linear combination: 1 * Q2 + 1 * Q7 + 1 * Q8
+  Q10: counter * factor + -1 * mod(counter, 2) * factor + -2 * factor * div(counter, 2) >= 0
+    Multiply the established equality by factor; Q1, Q5
+  Q11: mod(counter, 2) * factor >= 0
+    Multiply the established equality by -1 * factor; Q3, Q4
+  Q12: -3 + -2 * factor * div(counter, 2) >= 0
+    Nonnegative linear combination: 1 * Q6 + 1 * Q10 + 1 * Q11
+  Q13: 2 + 2 * factor * div(counter, 2) >= 0
+    Strengthen using the proved value lattice: Q9
+  Q14: -4 + -2 * factor * div(counter, 2) >= 0
+    Strengthen using the proved value lattice: Q12
+  Q15: -2 >= 0
+    Nonnegative linear combination: 1 * Q2 + 1 * Q6 + 1 * Q7 + 1 * Q10 + 1 * Q13 + 1 * Q14
+  The final constant cannot have this sign; contradiction.
+  Therefore: (not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)) or not (((counter * factor) >= -3)) or not ((mod(counter, 2) <= 0)) or (counter <= 0) or not ((mod(counter, 2) >= 0)) or not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)) or not (((counter * factor) <= -3)))
+
+P30  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((counter = ((2 * div(counter, 2)) + mod(counter, 2)))) or ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0))
+
+P31  Resolve the clauses
+  From: P30, P4
+  Therefore: ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)
+
+P32  Assume
+  Under assumptions: P32
+  Therefore: not ((counter <= 0))
+
+P33  Resolve the clauses
+  From: P29, P14, P16, P31, P5, P20, P9, P32
+  Under assumptions: P32
+  Therefore: false
+
+P34  Discharge local assumptions
+  From: P33
+  Closed: P32
+  Therefore: (counter <= 0)
+
+P35  Resolve the clauses
+  From: P28, P34
+  Therefore: not ((counter >= 0))
+
+P36  Exact interval deduction
+  From: P5, P11, P14, P16, P35, P31
+  Under assumptions: P11
+  B1: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) <= 0
+  B2: -1 * counter + -1 <= 0
+  B3: mod(counter, 2) <= 0
+  B4: -1 * mod(counter, 2) <= 0
+  B5: counter + 1 <= 0
+  B6: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) <= 0
+  I1: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) in [0, +inf); isolate the term; round integer bounds inward; B1
+  I2: counter in [-1, +inf); isolate the term; round integer bounds inward; B2
+  I3: mod(counter, 2) in (-inf, 0]; isolate the term; round integer bounds inward; B3
+  I4: mod(counter, 2) in [0, +inf); isolate the term; round integer bounds inward; B4
+  I5: mod(counter, 2) in [0, 0]; intersect ranges; I3, I4
+  I6: counter in (-inf, -1]; isolate the term; round integer bounds inward; B5
+  I7: counter in [-1, -1]; intersect ranges; I2, I6
+  I8: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) in (-inf, 0]; isolate the term; round integer bounds inward; B6
+  I9: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) in [0, 0]; intersect ranges; I1, I8
+  I10: div(counter, 2) in [0, +inf); isolate the term; round integer bounds inward; I7, I5, B6
+  I11: 2 in [2, 2]; exact constant
+  I12: (2 * div(counter, 2)) in [0, +inf); multiply operand ranges; I11, I10
+  I13: ((2 * div(counter, 2)) + mod(counter, 2)) in [0, +inf); add/subtract operand ranges; I12, I5
+  I14: -1 in [-1, -1]; exact constant
+  I15: (-1 * ((2 * div(counter, 2)) + mod(counter, 2))) in (-inf, 0]; multiply operand ranges; I14, I13
+  I16: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) in (-inf, -1]; add/subtract operand ranges; I7, I15
+  Incompatible ranges: I9, I16; contradiction.
+  Therefore: false
+
+P37  Discharge local assumptions
+  From: P36
+  Closed: P11
+  Therefore: not ((counter >= -1))
+
+P38  Resolve the clauses
+  From: P6, P9, P10, P37
+  Under assumptions: P10
+  Therefore: false
+
+P39  Discharge local assumptions
+  From: P38
+  Closed: P10
+  Therefore: (factor <= 1)
+
+P40  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((factor >= 1))
+    not ((factor <= 0))
+  1 * [factor <= 0]
+  1 * [-1 * factor + 1 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((factor >= 1) or (factor <= 0))
+
+P41  Exact interval deduction
+  B1: factor <= 0
+    Temporary negation of a conclusion alternative.
+  B2: counter + 1 <= 0
+    Temporary negation of a conclusion alternative.
+  B3: (counter * factor) + 3 <= 0
+    Temporary negation of a conclusion alternative.
+  I1: factor in (-inf, 0]; isolate the term; round integer bounds inward; B1
+  I2: counter in (-inf, -1]; isolate the term; round integer bounds inward; B2
+  I3: (counter * factor) in (-inf, -3]; isolate the term; round integer bounds inward; B3
+  I4: (counter * factor) in [0, +inf); multiply operand ranges; I2, I1
+  Incompatible ranges: I3, I4; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((factor <= 0)) or (counter >= 0) or not (((counter * factor) <= -3)))
+
+P42  Resolve the clauses
+  From: P41, P20, P35
+  Therefore: not ((factor <= 0))
+
+P43  Resolve the clauses
+  From: P40, P42
+  Therefore: (factor >= 1)
+
+P44  Exact interval deduction
+  From: P5, P39, P43, P20, P9, P14, P16, P31
+  B1: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) <= 0
+  B2: factor + -1 <= 0
+  B3: -1 * factor + 1 <= 0
+  B4: (counter * factor) + 3 <= 0
+  B5: -1 * (counter * factor) + -3 <= 0
+  B6: mod(counter, 2) <= 0
+  B7: -1 * mod(counter, 2) <= 0
+  B8: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) <= 0
+  I1: factor in (-inf, 1]; isolate the term; round integer bounds inward; B2
+  I2: factor in [1, +inf); isolate the term; round integer bounds inward; B3
+  I3: factor in [1, 1]; intersect ranges; I1, I2
+  I4: (counter * factor) in (-inf, -3]; isolate the term; round integer bounds inward; B4
+  I5: (counter * factor) in [-3, +inf); isolate the term; round integer bounds inward; B5
+  I6: (counter * factor) in [-3, -3]; intersect ranges; I4, I5
+  I7: mod(counter, 2) in (-inf, 0]; isolate the term; round integer bounds inward; B6
+  I8: mod(counter, 2) in [0, +inf); isolate the term; round integer bounds inward; B7
+  I9: mod(counter, 2) in [0, 0]; intersect ranges; I7, I8
+  I10: counter in [-3, -3]; divide the product range by a factor range that excludes zero; I6, I3
+  I11: div(counter, 2) in (-inf, -2]; isolate the term; round integer bounds inward; I10, I9, B1
+  I12: counter in (-inf, -4]; isolate the term; round integer bounds inward; I9, I11, B8
+  Incompatible ranges: I10, I12; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

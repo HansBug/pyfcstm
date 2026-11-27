@@ -1,0 +1,315 @@
+Query: power_semantics
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: guard
+  Therefore: ((to_real(0) <= x) and distinct(^(^(^(x, 1/2), 1/2), to_real(4)), x))
+
+P2  Logical consequence
+  From: P1
+  Therefore: distinct(^(^(^(x, 1/2), 1/2), to_real(4)), x)
+
+P3  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) <= 0))
+
+P4  Squaring the principal square root
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not ((x >= 0)) or (x = ^(^(x, 1/2), 2)))
+
+P5  Logical consequence
+  From: P1
+  Therefore: (to_real(0) <= x)
+
+P6  Resolve the clauses
+  From: P4, P5
+  Therefore: (x = ^(^(x, 1/2), 2))
+
+P7  Resolve the clauses
+  From: P3, P6
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) <= 0)
+
+P8  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) >= 0))
+
+P9  Resolve the clauses
+  From: P8, P6
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) >= 0)
+
+P10  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((0 = ^(^(x, 1/2), 1/2))) or (^(^(x, 1/2), 1/2) <= 0))
+
+P11  Principal square root is nonnegative
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not (((x + (-1 * ^(^(x, 1/2), 2))) <= 0)) or ((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0) or not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)) or (^(x, 1/2) <= 0) or (^(^(x, 1/2), 1/2) >= 0))
+
+P12  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: ((0 = (x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2))))) or not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0)) or not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0)))
+
+P13  Resolve the clauses
+  From: P12, P2
+  Therefore: (not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0)) or not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0)))
+
+P14  Exact polynomial deduction
+  Q1: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + -1 * x > 0
+    Normalize local premise: not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0))
+  Q2: x + -1 * ^(x, 1/2) * ^(x, 1/2) >= 0
+    Normalize local premise: not (not (((x + (-1 * ^(^(x, 1/2), 2))) >= 0)))
+  Q3: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + -1 * ^(x, 1/2) >= 0
+    Normalize local premise: not (not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)))
+  Q4: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + ^(x, 1/2) >= 0
+    Normalize local premise: not (not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) >= 0)))
+  Q5: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(x, 1/2) >= 0
+    Multiply the established equality by -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2); Q3, Q4
+  Q6: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(x, 1/2) + ^(x, 1/2) * ^(x, 1/2) >= 0
+    Multiply the established equality by -1 * ^(x, 1/2); Q3, Q4
+  Q7: 0 > 0
+    Nonnegative linear combination: 1 * Q1 + 1 * Q2 + 1 * Q5 + 1 * Q6
+  The final constant cannot have this sign; contradiction.
+  Therefore: (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0) or not (((x + (-1 * ^(^(x, 1/2), 2))) >= 0)) or not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)) or not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) >= 0)))
+
+P15  Assume
+  Under assumptions: P15
+  Therefore: not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0))
+
+P16  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((^(x, 1/2) = ^(^(^(x, 1/2), 1/2), 2))) or ((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0))
+
+P17  Squaring the principal square root
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not ((^(x, 1/2) >= 0)) or (^(x, 1/2) = ^(^(^(x, 1/2), 1/2), 2)))
+
+P18  Input
+  Input origins: domain1
+  Therefore: ((to_real(0) <= x) => (^(x, 1/2) >= 0))
+
+P19  Resolve the clauses
+  From: P18, P5
+  Therefore: (^(x, 1/2) >= 0)
+
+P20  Resolve the clauses
+  From: P17, P19
+  Therefore: (^(x, 1/2) = ^(^(^(x, 1/2), 1/2), 2))
+
+P21  Resolve the clauses
+  From: P16, P20
+  Therefore: ((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)
+
+P22  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((^(x, 1/2) = ^(^(^(x, 1/2), 1/2), 2))) or ((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) >= 0))
+
+P23  Resolve the clauses
+  From: P22, P20
+  Therefore: ((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) >= 0)
+
+P24  Resolve the clauses
+  From: P14, P15, P21, P23, P9
+  Under assumptions: P15
+  Therefore: false
+
+P25  Discharge local assumptions
+  From: P24
+  Closed: P15
+  Therefore: ((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) >= 0)
+
+P26  Resolve the clauses
+  From: P13, P25
+  Therefore: not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0))
+
+P27  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: ((0 = ^(^(x, 1/2), 1/2)) or not ((^(^(x, 1/2), 1/2) <= 0)) or not ((^(^(x, 1/2), 1/2) >= 0)))
+
+P28  Exact polynomial deduction
+  Q1: -1 * x + ^(x, 1/2) * ^(x, 1/2) >= 0
+    Normalize local premise: not (not (((x + (-1 * ^(^(x, 1/2), 2))) <= 0)))
+  Q2: ^(x, 1/2) > 0
+    Normalize local premise: not ((^(x, 1/2) <= 0))
+  Q3: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + -1 * ^(x, 1/2) >= 0
+    Normalize local premise: not (not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)))
+  Q4: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + x > 0
+    Normalize local premise: not (((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0))
+  Q5: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + ^(x, 1/2) >= 0
+    Rational power identity from base domain: ^(^(x, 1/2), 1/2); Q2
+  Q6: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) + -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(x, 1/2) >= 0
+    Multiply the established equality by ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2); Q3, Q5
+  Q7: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(x, 1/2) + -1 * ^(x, 1/2) * ^(x, 1/2) >= 0
+    Multiply the established equality by ^(x, 1/2); Q3, Q5
+  Q8: 0 > 0
+    Nonnegative linear combination: 1 * Q1 + 1 * Q4 + 1 * Q6 + 1 * Q7
+  The final constant cannot have this sign; contradiction.
+  Therefore: (not (((x + (-1 * ^(^(x, 1/2), 2))) <= 0)) or (^(x, 1/2) <= 0) or not (((^(x, 1/2) + (-1 * ^(^(^(x, 1/2), 1/2), 2))) <= 0)) or (^(^(x, 1/2), 1/2) <= 0) or ((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) <= 0))
+
+P29  Assume
+  Under assumptions: P29
+  Therefore: not ((^(^(x, 1/2), 1/2) <= 0))
+
+P30  Assume
+  Under assumptions: P30
+  Therefore: not ((^(x, 1/2) <= 0))
+
+P31  Resolve the clauses
+  From: P28, P26, P21, P7, P29, P30
+  Under assumptions: P29, P30
+  Therefore: false
+
+P32  Discharge local assumptions
+  From: P31
+  Closed: P29, P30
+  Therefore: ((^(x, 1/2) <= 0) or (^(^(x, 1/2), 1/2) <= 0))
+
+P33  Assume
+  Under assumptions: P33
+  Therefore: not ((^(^(x, 1/2), 1/2) = 0))
+
+P34  Assume
+  Under assumptions: P34
+  Therefore: (^(x, 1/2) <= 0)
+
+P35  Exact interval deduction
+  From: P34, P19
+  Under assumptions: P34
+  B1: ^(x, 1/2) <= 0
+  B2: -1 * ^(x, 1/2) <= 0
+  I1: ^(x, 1/2) in (-inf, 0]; isolate the term; B1
+  I2: ^(x, 1/2) in [0, +inf); isolate the term; B2
+  I3: ^(x, 1/2) in [0, 0]; intersect ranges; I1, I2
+  I4: 0 in [0, 0]; exact constant
+  Equal singleton ranges: I4, I3; the equality follows.
+  Therefore: (0 = ^(x, 1/2))
+
+P36  Exact interval deduction
+  From: P7, P9, P19, P34
+  Under assumptions: P34
+  B1: x + -1 * ^(^(x, 1/2), 2) <= 0
+  B2: -1 * x + ^(^(x, 1/2), 2) <= 0
+  B3: -1 * ^(x, 1/2) <= 0
+  B4: ^(x, 1/2) <= 0
+  I1: ^(x, 1/2) in [0, +inf); isolate the term; B3
+  I2: ^(x, 1/2) in (-inf, 0]; isolate the term; B4
+  I3: ^(x, 1/2) in [0, 0]; intersect ranges; I1, I2
+  I4: 0 in [0, 0]; exact constant
+  I5: 2 in [2, 2]; exact constant
+  I6: ^(^(x, 1/2), 2) in [0, 0]; apply the known positive integer exponent; I3, I5
+    x = ^(^(x, 1/2), 2); B1, B2
+  I7: x in [0, 0]; substitute equal terms in the source expression; I6
+  Equal singleton ranges: I7, I4; the equality follows.
+  Therefore: (x = 0)
+
+P37  Equality substitution
+  From: P35, P36
+  Under assumptions: P34
+  Therefore: (^(x, 1/2) = x)
+
+P38  Equality substitution
+  From: P37, P35
+  Under assumptions: P34
+  Therefore: (^(^(x, 1/2), 1/2) = 0)
+
+P39  Resolve the clauses
+  From: P33, P38
+  Under assumptions: P33, P34
+  Therefore: false
+
+P40  Discharge local assumptions
+  From: P39
+  Closed: P33, P34
+  Therefore: (not ((^(x, 1/2) <= 0)) or (^(^(x, 1/2), 1/2) = 0))
+
+P41  Assume
+  Under assumptions: P41
+  Therefore: not ((0 = ^(^(x, 1/2), 1/2)))
+
+P42  Resolve the clauses
+  From: P40, P41
+  Under assumptions: P41
+  Therefore: not ((^(x, 1/2) <= 0))
+
+P43  Resolve the clauses
+  From: P32, P42
+  Under assumptions: P41
+  Therefore: (^(^(x, 1/2), 1/2) <= 0)
+
+P44  Resolve the clauses
+  From: P27, P43, P41
+  Under assumptions: P41
+  Therefore: not ((^(^(x, 1/2), 1/2) >= 0))
+
+P45  Resolve the clauses
+  From: P11, P26, P21, P7, P44, P42
+  Under assumptions: P41
+  Therefore: false
+
+P46  Discharge local assumptions
+  From: P45
+  Closed: P41
+  Therefore: (0 = ^(^(x, 1/2), 1/2))
+
+P47  Resolve the clauses
+  From: P10, P46
+  Therefore: (^(^(x, 1/2), 1/2) <= 0)
+
+P48  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((0 = ^(^(x, 1/2), 1/2))) or (^(^(x, 1/2), 1/2) >= 0))
+
+P49  Resolve the clauses
+  From: P48, P46
+  Therefore: (^(^(x, 1/2), 1/2) >= 0)
+
+P50  Exact polynomial deduction
+  From: P7, P9, P47, P49
+  Q1: -1 * ^(^(x, 1/2), 1/2) >= 0
+    Normalize local premise: (^(^(x, 1/2), 1/2) <= 0)
+  Q2: ^(^(x, 1/2), 1/2) >= 0
+    Normalize local premise: (^(^(x, 1/2), 1/2) >= 0)
+  Q3: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) > 0
+    Normalize local premise: not ((x = (x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2))))))
+  Q4: ^(^(x, 1/2), 1/2) > 0
+    A nonnegative factor of a nonzero product is positive: Q3, Q2; cofactor: ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)
+  Q5: -1 * ^(^(x, 1/2), 1/2) > 0
+    A nonnegative factor of a nonzero product is positive: Q3, Q1; cofactor: -1 * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)
+  Q6: 0 > 0
+    Nonnegative linear combination: 1 * Q4 + 1 * Q5
+  The final constant cannot have this sign; contradiction.
+  Therefore: (x = (x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))))
+
+P51  Exact interval deduction
+  From: P47, P21, P49, P23
+  B1: ^(^(x, 1/2), 1/2) <= 0
+  B2: -1 * ^(^(^(x, 1/2), 1/2), 2) + ^(x, 1/2) <= 0
+  B3: -1 * ^(^(x, 1/2), 1/2) <= 0
+  B4: ^(^(^(x, 1/2), 1/2), 2) + -1 * ^(x, 1/2) <= 0
+  I1: ^(^(x, 1/2), 1/2) in (-inf, 0]; isolate the term; B1
+  I2: ^(^(x, 1/2), 1/2) in [0, +inf); isolate the term; B3
+  I3: ^(^(x, 1/2), 1/2) in [0, 0]; intersect ranges; I1, I2
+  I4: 0 in [0, 0]; exact constant
+  I5: 2 in [2, 2]; exact constant
+  I6: ^(^(^(x, 1/2), 1/2), 2) in [0, 0]; apply the known positive integer exponent; I3, I5
+    ^(^(^(x, 1/2), 1/2), 2) = ^(x, 1/2); B2, B4
+  I7: ^(x, 1/2) in [0, 0]; substitute equal terms in the source expression; I6
+  Equal singleton ranges: I4, I7; the equality follows.
+  Therefore: (0 = ^(x, 1/2))
+
+P52  Equality substitution
+  From: P51, P46
+  Therefore: (^(x, 1/2) = ^(^(x, 1/2), 1/2))
+
+P53  Equality substitution
+  From: P50, P6, P52, P20, P51
+  Therefore: ((x + (-1 * (^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2) * ^(^(x, 1/2), 1/2)))) = 0)
+
+P54  Resolve the clauses
+  From: P2, P53
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

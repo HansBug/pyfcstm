@@ -1,0 +1,62 @@
+查询：conditional
+求解结果：UNSAT
+阅读完整度：complete
+阅读档位：standard
+
+P1  内部定义／定义子句
+  得到：((not (CHOICE) or (VALUE = (1 + x))) and (CHOICE or (VALUE = (2 + x))))
+
+P2  内部定义／定义子句
+  得到：((not (((x + (-1 * VALUE)) >= -2)) or not (((x + (-1 * VALUE)) <= -2))) or ((x + (-1 * VALUE)) <= -2))
+
+P3  精确线性组合
+  为反驳结论的否定，暂时假设：
+    ((x + (-1 * VALUE)) <= -2)
+    not (((x + (-1 * VALUE)) <= -1))
+  1 * [x + -1 * VALUE + 2 <= 0]
+  1 * [-1 * x + VALUE <= 0]
+  相加得到：2 <= 0; 矛盾。
+  关闭上述临时假设。
+  得到：(not (((x + (-1 * VALUE)) <= -2)) or ((x + (-1 * VALUE)) <= -1))
+
+P4  输入条件
+  输入来源：initial
+  得到：(x >= 0)
+
+P5  输入条件
+  输入来源：update
+  得到：((if [[t12]] then (x + 1) else (x + 2)) = 0)
+
+P6  局部假设
+  当前假设：P6
+  得到：((x + (-1 * VALUE)) <= -1)
+
+P7  前提推导；精确线性组合
+  根据：P4, P5, P6
+  当前假设：P6
+  1 * [-1 * x <= 0]
+  1 * [VALUE <= 0]
+  1 * [x + -1 * VALUE + 1 <= 0]
+  相加得到：1 <= 0; 矛盾。
+  得到：false
+  可展开的证明步骤：3
+
+P8  关闭局部假设
+  根据：P7
+  已关闭：P6
+  得到：not (((x + (-1 * VALUE)) <= -1))
+
+P9  内部定义／定义子句
+  得到：((not (((x + (-1 * VALUE)) >= -1)) or not (((x + (-1 * VALUE)) <= -1))) or ((x + (-1 * VALUE)) <= -1))
+
+P10  前提推导；消解子句
+  根据：P1, P2, P3, P8, P9
+  得到：false
+  可展开的证明步骤：7
+
+公式定义：
+  [[t12]] = (condition_00 or condition_01 or condition_02 or condition_03 or
+    condition_04 or condition_05 or condition_06 or condition_07 or condition_08
+    or condition_09 or condition_10 or condition_11)
+
+结论：提交的条件合取不可满足。

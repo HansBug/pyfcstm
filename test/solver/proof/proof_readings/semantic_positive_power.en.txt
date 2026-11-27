@@ -1,0 +1,37 @@
+Query: power_semantics
+Solver result: UNSAT
+Reading: complete
+
+P1  Exact polynomial deduction
+  Q1: x > 0
+    Normalize local premise: not ((x <= 0))
+  Q2: -1 * ^(x, y) >= 0
+    Normalize local premise: not (not ((^(x, y) <= 0)))
+  Q3: ^(x, y) > 0
+    Power sign from base domain: ^(x, y); Q1
+  Q4: 0 > 0
+    Nonnegative linear combination: 1 * Q2 + 1 * Q3
+  The final constant cannot have this sign; contradiction.
+  Therefore: ((x <= 0) or not ((^(x, y) <= 0)))
+
+P2  Input
+  Input origins: guard
+  Therefore: (((to_real(0) < x) and (to_real(0) < y)) and (to_real(0) >= ^(x, y)))
+
+P3  Logical consequence
+  From: P2
+  Therefore: ((to_real(0) < x) and (to_real(0) < y))
+
+P4  Logical consequence
+  From: P3
+  Therefore: (to_real(0) < x)
+
+P5  Logical consequence
+  From: P2
+  Therefore: (to_real(0) >= ^(x, y))
+
+P6  Resolve the clauses
+  From: P1, P4, P5
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

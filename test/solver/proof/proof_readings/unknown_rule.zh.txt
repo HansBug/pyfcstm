@@ -1,0 +1,22 @@
+查询：unknown_rule
+求解结果：UNSAT
+阅读完整度：partial
+
+P1  尚未解释的推导
+  得到：(not ((x <= 0)) or not ((x >= 1)))
+
+P2  输入条件
+  输入来源：lower
+  得到：(x >= 1)
+
+P3  输入条件
+  输入来源：upper
+  得到：(x <= 0)
+
+P4  消解子句
+  根据：P1, P2, P3
+  得到：false
+
+结论：提交的条件合取不可满足。
+尚未解释或无效的证据：
+  unsupported_rule: th-lemma

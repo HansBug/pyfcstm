@@ -1,0 +1,145 @@
+Query: power_square_alias
+Solver result: UNSAT
+Reading: complete
+
+P1  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((0 = ((-1 * ^(x, 2)) + (y * y)))) or (((-1 * ^(x, 2)) + (y * y)) <= 0))
+
+P2  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: ((0 = ((y * y) + (-1 * ^(x, 2)))) or not ((((y * y) + (-1 * ^(x, 2))) <= 0)) or not ((((y * y) + (-1 * ^(x, 2))) >= 0)))
+
+P3  Input
+  Input origins: guard
+  Therefore: ((x = y) and distinct(^(x, to_real(2)), (y * y)))
+
+P4  Logical consequence
+  From: P3
+  Therefore: distinct(^(x, to_real(2)), (y * y))
+
+P5  Resolve the clauses
+  From: P2, P4
+  Therefore: (not ((((y * y) + (-1 * ^(x, 2))) <= 0)) or not ((((y * y) + (-1 * ^(x, 2))) >= 0)))
+
+P6  Assume
+  Under assumptions: P6
+  Therefore: not ((((y * y) + (-1 * ^(x, 2))) >= 0))
+
+P7  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((0 = (^(x, 2) + (-1 * (y * y))))) or ((^(x, 2) + (-1 * (y * y))) <= 0))
+
+P8  Exact interval deduction
+  B1: -1 * x + y <= 0
+    Temporary negation of a conclusion alternative.
+  B2: x + -1 * y <= 0
+    Temporary negation of a conclusion alternative.
+  I1: 0 in [0, 0]; exact constant
+    x = y; B1, B2
+  I2: (^(x, 2) + (-1 * (y * y))) in [0, 0]; substitute equal terms and cancel opposite coefficients
+  Equal singleton ranges: I2, I1; the equality follows.
+  Discharge these temporary assumptions.
+  Therefore: (((^(x, 2) + (-1 * (y * y))) = 0) or not (((x + (-1 * y)) >= 0)) or not (((x + (-1 * y)) <= 0)))
+
+P9  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = y)) or ((x + (-1 * y)) <= 0))
+
+P10  Logical consequence
+  From: P3
+  Therefore: (x = y)
+
+P11  Resolve the clauses
+  From: P9, P10
+  Therefore: ((x + (-1 * y)) <= 0)
+
+P12  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = y)) or ((x + (-1 * y)) >= 0))
+
+P13  Resolve the clauses
+  From: P12, P10
+  Therefore: ((x + (-1 * y)) >= 0)
+
+P14  Resolve the clauses
+  From: P8, P11, P13
+  Therefore: ((^(x, 2) + (-1 * (y * y))) = 0)
+
+P15  Resolve the clauses
+  From: P7, P14
+  Therefore: ((^(x, 2) + (-1 * (y * y))) <= 0)
+
+P16  Exact linear combination
+  From: P6, P15
+  Under assumptions: P6
+  1 * [-1 * ^(x, 2) + (y * y) < 0]
+  1 * [^(x, 2) + -1 * (y * y) <= 0]
+  Sum: 0 < 0; contradiction.
+  Therefore: false
+
+P17  Discharge local assumptions
+  From: P16
+  Closed: P6
+  Therefore: (((y * y) + (-1 * ^(x, 2))) >= 0)
+
+P18  Resolve the clauses
+  From: P5, P17
+  Therefore: not ((((y * y) + (-1 * ^(x, 2))) <= 0))
+
+P19  Assume
+  Under assumptions: P19
+  Therefore: (((-1 * ^(x, 2)) + (y * y)) <= 0)
+
+P20  Exact linear combination
+  From: P18, P19
+  Under assumptions: P19
+  1 * [^(x, 2) + -1 * (y * y) < 0]
+  1 * [-1 * ^(x, 2) + (y * y) <= 0]
+  Sum: 0 < 0; contradiction.
+  Therefore: false
+
+P21  Discharge local assumptions
+  From: P20
+  Closed: P19
+  Therefore: not ((((-1 * ^(x, 2)) + (y * y)) <= 0))
+
+P22  Resolve the clauses
+  From: P1, P21
+  Therefore: not ((0 = ((-1 * ^(x, 2)) + (y * y))))
+
+P23  Assume
+  Under assumptions: P23
+  Therefore: not ((0 = ((-1 * ^(x, 2)) + (y * y))))
+
+P24  Exact interval deduction
+  B1: -1 * x + y <= 0
+    Temporary negation of a conclusion alternative.
+  B2: x + -1 * y <= 0
+    Temporary negation of a conclusion alternative.
+  I1: 0 in [0, 0]; exact constant
+    x = y; B1, B2
+  I2: ((-1 * ^(x, 2)) + (y * y)) in [0, 0]; substitute equal terms and cancel opposite coefficients
+  Equal singleton ranges: I2, I1; the equality follows.
+  Discharge these temporary assumptions.
+  Therefore: ((((-1 * ^(x, 2)) + (y * y)) = 0) or not (((x + (-1 * y)) >= 0)) or not (((x + (-1 * y)) <= 0)))
+
+P25  Resolve the clauses
+  From: P24, P11, P13
+  Therefore: (((-1 * ^(x, 2)) + (y * y)) = 0)
+
+P26  Resolve the clauses
+  From: P23, P25
+  Under assumptions: P23
+  Therefore: false
+
+P27  Discharge local assumptions
+  From: P26
+  Closed: P23
+  Therefore: (0 = ((-1 * ^(x, 2)) + (y * y)))
+
+P28  Resolve the clauses
+  From: P22, P27
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

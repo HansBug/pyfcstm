@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check release_workflow_parity_check test_boundary_check resource_ownership_check semantics_boundary_check semantics_check c_kernel_alignment_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest docs_doctest
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check release_pipeline_identity_check test_boundary_check resource_ownership_check semantics_boundary_check semantics_check c_kernel_alignment_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest docs_doctest
 
 PYTHON := $(shell which python)
 
@@ -128,7 +128,7 @@ help:
 	@echo "  make rst_auto     - Generate RST documentation from Python source"
 	@echo "                      Options: RANGE_DIR=<dir>"
 	@echo "  make docs_terminology_check - Check Chinese documentation terminology"
-	@echo "  make release_workflow_parity_check - Check that Release Test builds like a tag build"
+	@echo "  make release_pipeline_identity_check - Check that Release Test and release run the same pipeline"
 	@echo "  make sha256       - Update generated SHA-256 sidecar files"
 	@echo ""
 	@echo "ANTLR Grammar:"
@@ -382,9 +382,166 @@ docs_terminology_check:
 	$(PYTHON) tools/check_docs_terminology.py --self-check
 	$(PYTHON) tools/check_docs_terminology.py --check
 
-release_workflow_parity_check:
-	$(PYTHON) tools/check_release_workflow_parity.py --self-check
-	$(PYTHON) tools/check_release_workflow_parity.py --check
+# release.yml (publish: true) and release_test.yml (publish: false) must both be
+# a thin call of release_pipeline.yml, whose only mode-dependent steps are the
+# publishing steps of publish_release and the rehearsal upload that replaces them.
+define RELEASE_PIPELINE_IDENTITY_PY
+import copy
+import sys
+
+import yaml
+
+WORKFLOWS = ".github/workflows/"
+PIPELINE = "./.github/workflows/release_pipeline.yml"
+MODE_LEAKS = ("github.event", "github.ref", "github.sha", "GITHUB_REF", "GITHUB_SHA")
+
+
+def load(name):
+    with open(WORKFLOWS + name, encoding="utf-8") as stream:
+        return yaml.safe_load(stream)
+
+
+def dump(value):
+    return yaml.safe_dump(value, sort_keys=True)
+
+
+def check_entry(name, workflow, publish):
+    problems = []
+    jobs = workflow["jobs"]
+    callers = [key for key, job in jobs.items() if "uses" in job]
+    others = [key for key in jobs if key not in callers]
+    if len(callers) != 1 or len(others) != 1:
+        return ["{}: expected one job that names the release and one that calls the pipeline, got {}".format(name, sorted(jobs))]
+    caller, resolver = jobs[callers[0]], jobs[others[0]]
+    if caller["uses"] != PIPELINE:
+        problems.append("{}: calls {} instead of {}".format(name, caller["uses"], PIPELINE))
+    arguments = caller.get("with") or {}
+    if set(arguments) != {"tag", "commit", "publish"} or arguments.get("publish") is not publish:
+        problems.append("{}: must pass only tag, commit and publish: {}".format(name, publish))
+    if set(resolver.get("outputs") or {}) != {"tag", "commit"}:
+        problems.append("{}: job {} must output only tag and commit".format(name, others[0]))
+    for step in resolver.get("steps") or []:
+        if "uses" in step and not step["uses"].startswith("actions/checkout@"):
+            problems.append("{}: job {} may only check out and compute names, not use {}".format(name, others[0], step["uses"]))
+        for word in ("make ", "pip ", "gh ", "upload", "publish"):
+            if word in step.get("run", ""):
+                problems.append("{}: job {} runs {!r}; release work belongs in the pipeline".format(name, others[0], word.strip()))
+    return problems
+
+
+def check_pipeline(pipeline, text):
+    problems = []
+    triggers = pipeline.get(True, pipeline.get("on"))
+    if set(triggers) != {"workflow_call"}:
+        problems.append("release_pipeline.yml: must only be callable, not triggered: {}".format(sorted(triggers)))
+    for leak in MODE_LEAKS:
+        if leak in text:
+            problems.append("release_pipeline.yml: refers to {}; release and rehearsal may only differ through inputs.publish".format(leak))
+    publish_steps, rehearsal_steps = [], []
+    for job_name, job in pipeline["jobs"].items():
+        if "inputs.publish" in dump({key: value for key, value in job.items() if key != "steps"}):
+            problems.append("release_pipeline.yml: job {} depends on inputs.publish".format(job_name))
+        conditional_seen = False
+        for step in job.get("steps") or []:
+            condition = str(step.get("if", ""))
+            if "inputs.publish" in dump({key: value for key, value in step.items() if key != "if"}):
+                problems.append("release_pipeline.yml: step {!r} uses inputs.publish outside its condition".format(step.get("name")))
+            if "inputs.publish" not in condition:
+                if conditional_seen:
+                    problems.append("release_pipeline.yml: shared step {!r} runs after a publishing step".format(step.get("name")))
+                continue
+            conditional_seen = True
+            if job_name != "publish_release":
+                problems.append("release_pipeline.yml: step {!r} of job {} depends on inputs.publish".format(step.get("name"), job_name))
+            normalized = condition.replace(" ", "")
+            if normalized.endswith("{{inputs.publish}}"):
+                publish_steps.append(step)
+            elif normalized.endswith("{{!inputs.publish}}"):
+                rehearsal_steps.append(step)
+            else:
+                problems.append("release_pipeline.yml: step {!r} has condition {!r}".format(step.get("name"), condition))
+    if len(publish_steps) != 3:
+        problems.append("release_pipeline.yml: expected 3 publishing steps, got {}".format(len(publish_steps)))
+    for step in publish_steps:
+        if "uses" in step:
+            if not step["uses"].startswith("pypa/gh-action-pypi-publish@") or (step.get("with") or {}).get("packages-dir") != "pypi-dist":
+                problems.append("release_pipeline.yml: publishing step {!r} may only upload pypi-dist to PyPI".format(step.get("name")))
+            continue
+        for line in step.get("run", "").splitlines():
+            line = line.strip()
+            if line and not line.startswith(("set -euo pipefail", "gh release ", 'test "$$(gh release ')):
+                problems.append("release_pipeline.yml: publishing step {!r} runs {!r}; only gh release commands may differ".format(step.get("name"), line))
+    if not any("gh release upload" in step.get("run", "") and "release-assets/*" in step.get("run", "") for step in publish_steps):
+        problems.append("release_pipeline.yml: no publishing step uploads release-assets/*")
+    if len(rehearsal_steps) != 1:
+        problems.append("release_pipeline.yml: expected 1 rehearsal step, got {}".format(len(rehearsal_steps)))
+    for step in rehearsal_steps:
+        if not step.get("uses", "").startswith("actions/upload-artifact@") or (step.get("with") or {}).get("path") != "release-assets/*":
+            problems.append("release_pipeline.yml: the rehearsal step must upload release-assets/* as an artifact")
+    return problems
+
+
+def find_problems(release, release_test, pipeline, pipeline_text):
+    return (
+        check_entry("release.yml", release, True)
+        + check_entry("release_test.yml", release_test, False)
+        + check_pipeline(pipeline, pipeline_text)
+    )
+
+
+def self_check(release, release_test, pipeline, text):
+    assert find_problems(release, release_test, pipeline, text) == [], find_problems(release, release_test, pipeline, text)
+
+    def expect(fragment, release=release, release_test=release_test, pipeline=pipeline, text=text):
+        found = find_problems(release, release_test, pipeline, text)
+        assert any(fragment in item for item in found), (fragment, found)
+
+    mutated = copy.deepcopy(release_test)
+    mutated["jobs"]["extra"] = {"runs-on": "ubuntu-22.04", "steps": [{"run": "true"}]}
+    expect("release_test.yml: expected one job", release_test=mutated)
+    mutated = copy.deepcopy(release_test)
+    next(job for job in mutated["jobs"].values() if "uses" in job)["with"]["publish"] = True
+    expect("release_test.yml: must pass only", release_test=mutated)
+    mutated = copy.deepcopy(release)
+    next(job for job in mutated["jobs"].values() if "uses" not in job)["steps"].append({"run": "make package"})
+    expect("release.yml: job", release=mutated)
+    mutated = copy.deepcopy(pipeline)
+    mutated["jobs"]["package_stage"]["steps"][0]["if"] = "$${{ inputs.publish }}"
+    expect("of job package_stage depends on inputs.publish", pipeline=mutated)
+    mutated = copy.deepcopy(pipeline)
+    mutated["jobs"]["publish_release"]["steps"] = [s for s in mutated["jobs"]["publish_release"]["steps"] if "!inputs.publish" not in str(s.get("if", ""))]
+    expect("expected 1 rehearsal step", pipeline=mutated)
+    mutated = copy.deepcopy(pipeline)
+    step = next(s for s in mutated["jobs"]["publish_release"]["steps"] if "gh release upload" in s.get("run", ""))
+    step["run"] += "\nmake package\n"
+    expect("only gh release commands may differ", pipeline=mutated)
+    mutated = copy.deepcopy(pipeline)
+    mutated["jobs"]["publish_release"]["steps"].append({"name": "late", "run": "true"})
+    expect("runs after a publishing step", pipeline=mutated)
+    expect("refers to github.event", text=text + "\n# $${{ github.event_name }}\n")
+
+
+def main():
+    release, release_test = load("release.yml"), load("release_test.yml")
+    pipeline = load("release_pipeline.yml")
+    with open(WORKFLOWS + "release_pipeline.yml", encoding="utf-8") as stream:
+        text = stream.read()
+    problems = find_problems(release, release_test, pipeline, text)
+    for item in problems:
+        print("ERROR:", item)
+    if problems:
+        sys.exit(1)
+    # Prove the check can fail: each mutation below is a drift it must report.
+    self_check(release, release_test, pipeline, text)
+    print("release pipeline identity: release.yml and release_test.yml run the same release_pipeline.yml; only its publishing steps differ")
+
+
+main()
+endef
+export RELEASE_PIPELINE_IDENTITY_PY
+
+release_pipeline_identity_check:
+	$(PYTHON) -c "$$RELEASE_PIPELINE_IDENTITY_PY"
 
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py

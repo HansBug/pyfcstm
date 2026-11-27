@@ -16,7 +16,7 @@ import pytest
 import z3
 from click.testing import CliRunner
 
-import pyfcstm.bmc.solver as solver_module
+import pyfcstm.solver.context as context_module
 from pyfcstm.bmc import (
     BmcOptions,
     check_runtime_safety,
@@ -281,7 +281,7 @@ def test_a_failed_call_leaves_later_solves_unaffected() -> None:
         solve_bmc_property(formula, solver_context="bad")
     after = solve_bmc_property(formula)
 
-    assert solver_module._current_owner() is None
+    assert context_module.current_owner() is None
     assert _witness(before) == _witness(after)
 
 
@@ -367,21 +367,21 @@ def _run_with_interrupt(call, target):
     """Run ``call`` raising ``KeyboardInterrupt`` at the ``target``-th line event.
 
     Only line events inside the solve-context bookkeeping of
-    ``pyfcstm/bmc/solver.py`` are counted.  ``target == 0`` injects nothing.
+    ``pyfcstm/solver/context.py`` and ``pyfcstm/bmc/solver.py`` are counted.  ``target == 0`` injects nothing.
     """
     count = [0]
     names = {
         "wrapper",
-        "_declare",
-        "_current_owner",
-        "_isolated_owner",
+        "declare",
+        "current_owner",
+        "isolated_owner",
         "__init__",
-        "_is_linear",
+        "is_linear",
         "_core_fragment",
         "_property_fragment",
         "_without_cardinality",
         "_resolving_unsliced",
-        "_solver_context_in_use",
+        "solver_context_in_use",
     }
 
     def local(frame, event, arg):
@@ -393,7 +393,10 @@ def _run_with_interrupt(call, target):
 
     def tracer(frame, event, arg):
         code = frame.f_code
-        if code.co_filename.endswith("solver.py") and code.co_name in names:
+        filename = code.co_filename.replace("\\", "/")
+        if code.co_name in names and filename.endswith(
+            ("pyfcstm/solver/context.py", "pyfcstm/bmc/solver.py")
+        ):
             return local
         return None
 
@@ -426,7 +429,7 @@ def test_an_interrupt_at_any_bookkeeping_line_leaves_no_state_behind() -> None:
         assert interrupted, "target %d was not reached" % target
         # No owner survives the interrupted solve, and the next solve is
         # exactly the one an untouched process would have made.
-        assert solver_module._current_owner() is None
+        assert context_module.current_owner() is None
         again = solve_bmc_property(formula, infeasibility_explanation="proof")
         assert again.solver_context == "fresh"
         assert _without_timing(again.to_canonical()["feasibility"]) == (
@@ -464,7 +467,7 @@ def test_malformed_arguments_are_rejected_without_solving() -> None:
         solve_bmc_property(object())
     with pytest.raises(BmcBuildError):
         check_runtime_safety(object())
-    assert solver_module._current_owner() is None
+    assert context_module.current_owner() is None
 
 
 def test_a_hand_built_result_rejects_an_invalid_solver_context() -> None:

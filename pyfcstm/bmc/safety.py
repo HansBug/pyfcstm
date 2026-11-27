@@ -46,11 +46,11 @@ import z3
 
 from .errors import BmcBuildError
 from .relation import BmcCoreFormula, BmcRuntimeErrorSite
+from ..solver.context import in_solve_context
 from .solver import (
     SOLVER_CONTEXTS,
     _check_with_budget,
     _core_fragment,
-    _in_solve_context,
     _resolving_unsliced,
     _solver_for_profile,
     _SolveBudget,
@@ -268,7 +268,7 @@ def _stages(
     return stages
 
 
-@_in_solve_context(_core_fragment)
+@in_solve_context(_core_fragment)
 def check_runtime_safety(
     core: BmcCoreFormula,
     *,

@@ -9,6 +9,7 @@ pyfcstm.solver
 .. toctree::
     :maxdepth: 3
 
+    context
     domain
     expr
     logical

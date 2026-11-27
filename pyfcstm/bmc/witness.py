@@ -101,11 +101,10 @@ from .solver import (
     _SolveBudget,
     _check_with_budget,
     _free_symbols,
-    _in_solve_context,
     _property_fragment,
-    _solver_context_in_use,
     _solver_for_profile,
 )
+from ..solver.context import in_solve_context, solver_context_in_use
 from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine
 from pyfcstm.model.region import Region, walk_namespaces
@@ -5532,7 +5531,7 @@ def _make_solve_result(
     )
 
 
-@_in_solve_context(_property_fragment)
+@in_solve_context(_property_fragment)
 def solve_bmc_property(
     formula: BmcPropertyFormula,
     *,
@@ -5631,7 +5630,7 @@ def solve_bmc_property(
                 total_elapsed_ms=safety.elapsed_ms,
                 feasibility=_not_checked_feasibility(),
                 solver_profile=solver_profile,
-                solver_context=_solver_context_in_use(),
+                solver_context=solver_context_in_use(),
                 runtime_safety=safety,
             )
     if cone is None or not cone.dropped_variables:
@@ -5696,7 +5695,7 @@ def solve_bmc_property(
 def _with_runtime_safety(
     result: BmcSolveResult, safety: Optional[BmcRuntimeSafetyResult]
 ) -> BmcSolveResult:
-    context = _solver_context_in_use()
+    context = solver_context_in_use()
     if safety is None:
         return replace(result, solver_context=context)
     total = result.total_elapsed_ms

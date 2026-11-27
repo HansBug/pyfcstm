@@ -31,6 +31,14 @@ Module map:
    * - :mod:`pyfcstm.solver.logical`
      - ``is_sat`` and related query helpers
      - Wrap small satisfiability, validity, and overlap checks.
+   * - :mod:`pyfcstm.solver.term`
+     - ``and_terms``, ``eq_term``, ``ite_term`` and related builders
+     - Build common Z3 terms through the C API when the operands are plain
+       terms of one context, and defer to the ``z3`` operators otherwise.
+   * - :mod:`pyfcstm.solver.context`
+     - ``in_solve_context``, ``IsolatedSolver``, ``is_linear``
+     - Solve linear-arithmetic formulas in a fresh Z3 context so the result
+       follows from the formulas alone.
    * - :mod:`pyfcstm.solver.safety`
      - Optional safety classifiers
      - Provide advisory classification for downstream policy layers; raw

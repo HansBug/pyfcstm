@@ -110,7 +110,30 @@ class TransitionDecision:
         )
 
     def to_dict(self) -> dict:
-        """Return independent JSON-compatible data, including unevaluated checks."""
+        """
+        Return independent JSON-compatible data, including unevaluated checks.
+
+        Read-only mappings become plain dictionaries, tuples become lists, and
+        every field of the check appears, so a skipped edge is as visible as a
+        selected one. Changing the result does not change the check.
+
+        :return: One dictionary with the fields of this check.
+        :rtype: dict
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { event Go; [*] -> A; state A; state B; A -> B :: Go; }'
+            ... )
+            >>> runtime = SimulationRuntime(model)
+            >>> _ = runtime.cycle()
+            >>> result = runtime.cycle(['Root.A.Go'], diagnostics=True)
+            >>> data = result.diagnostics.decisions[0].to_dict()
+            >>> data['outcome'], data['state_path']
+            ('selected', ['Root', 'A'])
+        """
         data = {item.name: getattr(self, item.name) for item in fields(self)}
         for name in ("vars", "inputs", "parameters", "location"):
             data[name] = dict(data[name])

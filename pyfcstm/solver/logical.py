@@ -20,8 +20,10 @@ Example::
     'sat'
 """
 
+import contextlib
+import threading
 from dataclasses import dataclass
-from typing import Iterable, Optional, cast
+from typing import Dict, Iterable, Iterator, Optional, Tuple, cast
 
 try:
     from typing import Literal
@@ -124,6 +126,23 @@ def is_sat(
         'sat'
     """
     constraints = tuple(constraints)
+    memo = None
+    memo_key = None
+    if timeout_ms is None and not get_model:
+        # Without a timeout and without a model the answer is a function of
+        # the constraints alone, which is exactly what the private context
+        # below guarantees.  Nothing constrains an empty conjunction, and,
+        # while :func:`answer_memo` is open, a conjunction that was already
+        # decided keeps its answer.
+        if not constraints:
+            return _SAT
+        memo = getattr(_MEMO, "table", None)
+        if memo is not None:
+            memo_key = _memo_key(constraints)
+            if memo_key is not None:
+                known = memo.get(memo_key)
+                if known is not None:
+                    return known[0]
     # Z3 keeps state in the context it works in, and for a non-linear query
     # that state decides whether the answer is ``sat`` or ``unknown``: one
     # model extracted earlier in the process, from any solver of the shared
@@ -138,7 +157,110 @@ def is_sat(
     result = _check_solver(solver, get_model=get_model)
     if result.model is not None:
         return SatResult(kind=result.kind, model=result.model.translate(source))
+    if memo_key is not None and result.kind in ("sat", "unsat"):
+        if len(memo) >= _MEMO.limit:
+            memo.clear()
+        # The constraints are stored with the answer: a Z3 term id is only
+        # unique while its term is alive, so the entry keeps them alive.
+        memo[memo_key] = (result, constraints)
     return result
+
+
+_SAT = SatResult(kind="sat")
+
+
+class _MemoSlot(threading.local):
+    """Per-thread table of the definite answers of the open :func:`answer_memo`.
+
+    :ivar table: Answers by query key, or ``None`` when no memo is open.
+    :vartype table: Optional[Dict[tuple, tuple]]
+    :ivar limit: Number of answers after which the table is emptied.
+    :vartype limit: int
+    """
+
+    def __init__(self) -> None:
+        self.table: Optional[Dict[tuple, tuple]] = None
+        self.limit = 0
+
+
+_MEMO = _MemoSlot()
+
+
+@contextlib.contextmanager
+def answer_memo(limit: int = 16384) -> Iterator[None]:
+    """Remember the definite answers of :func:`is_sat` while the block runs.
+
+    A caller that asks the same question again and again, as building a
+    bounded-model-checking formula does for every step, can open a memo around
+    that work.  Inside it, a query without timeout and without a model is
+    solved once per distinct sequence of constraint terms; ``unknown`` and
+    ``timeout`` answers are never kept.  The table is dropped when the
+    outermost block exits, and a block opened inside another one joins it and
+    keeps the limit of the outer one.  Answers keep their constraint terms
+    alive, so the table is emptied whenever it holds ``limit`` of them.
+
+    :param limit: Number of remembered answers after which the table is
+        emptied, defaults to ``16384``.
+    :type limit: int, optional
+    :return: A context manager yielding ``None``.
+    :rtype: Iterator[None]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> with answer_memo():
+        ...     first = is_sat([x > 1, x < 3])
+        ...     second = is_sat([x > 1, x < 3])
+        >>> first.kind, second is first
+        ('sat', True)
+        >>> is_sat([x > 1, x < 3]) is first
+        False
+    """
+    if _MEMO.table is not None:
+        yield
+        return
+    _MEMO.table = {}
+    _MEMO.limit = limit
+    try:
+        yield
+    finally:
+        _MEMO.table = None
+
+
+def _memo_key(constraints: Tuple[z3.ExprRef, ...]) -> Optional[tuple]:
+    """Return a key naming a constraint sequence by the identity of its terms.
+
+    Terms of one context are hash-consed, so two structurally equal terms share
+    one id for as long as either is alive.  A sequence mixing contexts has no
+    key and is always solved.
+
+    :param constraints: Constraints of one satisfiability query.
+    :type constraints: Tuple[z3.ExprRef, ...]
+    :return: Hashable key, or ``None`` when the query must not be memoised.
+    :rtype: Optional[tuple]
+
+    Example::
+
+        >>> import z3
+        >>> x = z3.Int("x")
+        >>> low, high = x > 0, x < 2
+        >>> _memo_key((low, high)) == _memo_key((x > 0, x < 2))
+        True
+        >>> _memo_key((low,)) == _memo_key((high,))
+        False
+    """
+    context = constraints[0].ctx
+    context_ref = context.ref()
+    ids = []
+    for item in constraints:
+        if item.ctx is not context:
+            return None
+        ids.append(_ast_id(context_ref, item.as_ast()))
+    return (id(context), tuple(ids))
+
+
+_ast_id = z3.Z3_get_ast_id
 
 
 def is_valid(formula: z3.ExprRef, *, timeout_ms: Optional[int] = None) -> SatResult:

@@ -7,7 +7,13 @@ import pytest
 import z3
 
 from pyfcstm.solver import logical
-from pyfcstm.solver.logical import SatResult, is_overlap, is_sat, is_valid
+from pyfcstm.solver.logical import (
+    SatResult,
+    answer_memo,
+    is_overlap,
+    is_sat,
+    is_valid,
+)
 
 
 def exprs(*items) -> List[z3.ExprRef]:
@@ -342,3 +348,95 @@ class TestIsOverlap:
 
         assert result.kind == "sat"
         assert timeouts == [None]
+
+
+@pytest.mark.unittest
+class TestAnswerMemo:
+    """``answer_memo`` shares definite answers only while its block is open."""
+
+    def test_the_same_query_is_solved_once_inside_the_block(self) -> None:
+        x = z3.Int("x")
+        with answer_memo():
+            first = is_sat([x > 1, x < 3])
+            second = is_sat([x > 1, x < 3])
+
+        assert first.kind == "sat"
+        assert second is first
+
+    def test_nothing_is_shared_outside_the_block(self) -> None:
+        x = z3.Int("x")
+        with answer_memo():
+            first = is_sat([x > 1, x < 3])
+
+        assert is_sat([x > 1, x < 3]) is not first
+        assert is_sat([x > 1, x < 3]).kind == "sat"
+
+    def test_unsat_is_remembered_and_queries_are_told_apart(self) -> None:
+        x = z3.Int("x")
+        with answer_memo():
+            low = is_sat([x > 1, x < 1])
+            high = is_sat([x > 1, x < 3])
+            again = is_sat([x > 1, x < 1])
+
+        assert (low.kind, high.kind) == ("unsat", "sat")
+        assert again is low
+
+    def test_a_timeout_or_a_model_request_is_never_remembered(self) -> None:
+        x = z3.Int("x")
+        with answer_memo():
+            with_model = is_sat([x > 1], get_model=True)
+            bounded = is_sat([x > 1], timeout_ms=1000)
+            plain = is_sat([x > 1])
+
+        assert with_model.model is not None
+        assert bounded is not plain
+        assert is_sat([x > 1]) is not None
+
+    def test_an_undecided_answer_is_not_remembered(self) -> None:
+        x, y = z3.Ints("x y")
+        hard = [x * x * x + y * y * y == 33, x > 100, y < -100]
+        with answer_memo():
+            first = is_sat(hard, timeout_ms=1)
+            assert first.kind in ("sat", "unsat", "unknown", "timeout")
+            assert is_sat(hard, timeout_ms=1) is not first
+
+    def test_constraints_of_mixed_contexts_are_solved_each_time(self) -> None:
+        other = z3.Context()
+        with answer_memo():
+            first = is_sat([z3.Bool("a"), z3.Bool("b", other)])
+            second = is_sat([z3.Bool("a"), z3.Bool("b", other)])
+
+        assert first is not second
+
+    def test_blocks_nest_and_the_inner_one_joins_the_outer(self) -> None:
+        x = z3.Int("x")
+        with answer_memo():
+            with answer_memo():
+                first = is_sat([x > 1])
+            assert is_sat([x > 1]) is first
+
+        assert is_sat([x > 1]) is not first
+
+    def test_the_table_is_emptied_when_it_is_full(self) -> None:
+        x = z3.Int("x")
+        with answer_memo(limit=3):
+            first = is_sat([x > 0])
+            for value in range(1, 4):
+                is_sat([x > value])
+            assert is_sat([x > 0]) is not first
+            latest = is_sat([x > 9])
+            assert is_sat([x > 9]) is latest
+
+    def test_an_exception_still_closes_the_block(self) -> None:
+        x = z3.Int("x")
+        with pytest.raises(RuntimeError):
+            with answer_memo():
+                first = is_sat([x > 1])
+                raise RuntimeError("stop")
+
+        assert is_sat([x > 1]) is not first
+
+    def test_an_empty_query_is_satisfiable_without_a_solver(self) -> None:
+        assert is_sat([]).kind == "sat"
+        assert is_sat([]).model is None
+        assert is_sat([], get_model=True).model is not None

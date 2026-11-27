@@ -36,6 +36,7 @@ Example::
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 import re
@@ -118,6 +119,7 @@ from pyfcstm.semantics.symbolic import (
     translate,
 )
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
+from pyfcstm.solver.logical import answer_memo
 from pyfcstm.solver.operation import execute_operations_domain
 
 _CanonicalDict = Dict[str, Any]
@@ -3073,6 +3075,24 @@ def _build_environment_formula(
     return _and(constraints)
 
 
+def _remembering_answers(function):
+    """Open :func:`pyfcstm.solver.logical.answer_memo` around a construction.
+
+    :param function: Construction function to wrap.
+    :type function: Callable[..., Any]
+    :return: Wrapper with the signature and documentation of ``function``.
+    :rtype: Callable[..., Any]
+    """
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        with answer_memo():
+            return function(*args, **kwargs)
+
+    return wrapper
+
+
+@_remembering_answers
 def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     """Build ``Core_N`` for a prepared BMC context.
 

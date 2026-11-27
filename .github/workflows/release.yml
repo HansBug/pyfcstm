@@ -16,6 +16,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # The publishing jobs have no checkout, so gh cannot discover the repository.
+  GH_REPO: ${{ github.repository }}
+
 concurrency:
   group: pyfcstm-release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -1223,7 +1227,7 @@ jobs:
           archive_name=$(basename "$archive")
           expected_digest=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
           expected_size=$(awk -v file="$archive_name" '$3 == "dist/" file || $3 == file {print $2}' "$digest_file")
-          actual_digest=$(python - "$archive" <<'PY'
+          actual_digest=$(python3 - "$archive" <<'PY'
           import hashlib
           import sys
           digest = hashlib.sha256()

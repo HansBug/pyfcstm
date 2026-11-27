@@ -133,6 +133,15 @@ def _validate_choice(value: object, choices: Set[str], field_name: str) -> str:
 
 
 def _canonical_key(item: Any) -> str:
+    if type(item) is BoolTemplate:
+        # A template never changes, and reduction asks for the key of the same
+        # operand once per conjunction or disjunction it joins, so the text is
+        # kept on the instance.
+        key = item.__dict__.get("_canonical_key_text")
+        if key is None:
+            key = json.dumps(item.to_canonical(), sort_keys=True, separators=(",", ":"))
+            item.__dict__["_canonical_key_text"] = key
+        return key
     if hasattr(item, "to_canonical"):
         value = item.to_canonical()
     else:

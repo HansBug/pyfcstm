@@ -40,6 +40,7 @@ from .domain import (
     translate_expr_domain,
 )
 from .logical import is_sat
+from .term import and_terms, implies_term, ite_term, not_term
 from ..dsl.parse import parse_with_grammar_entry
 from ..dsl import node as dsl_nodes
 from ..model.expr import parse_expr_node_to_expr
@@ -563,7 +564,7 @@ def _and_expr(items: Sequence[z3.ExprRef]) -> z3.ExprRef:
         return _true_expr()
     if len(items) == 1:
         return items[0]
-    return z3.And(*items)
+    return and_terms(items)
 
 
 def _path_guard(
@@ -595,7 +596,7 @@ def _path_guard(
     guard = _and_expr(tuple(path_conditions))
     return tuple(
         DomainConstraint(
-            z3.Implies(guard, item.constraint),
+            implies_term(guard, item.constraint),
             source=item.source,
             kind=item.kind,
         )
@@ -906,7 +907,7 @@ def _merge_branch_env(
     for name in merge_names:
         merged_value = base_env[name]
         for selector, result_env in reversed(branch_results):
-            merged_value = z3.If(selector, result_env[name], merged_value)
+            merged_value = ite_term(selector, result_env[name], merged_value)
         merged_env[name] = merged_value
     return merged_env
 
@@ -1200,7 +1201,7 @@ def _execute_if_block_domain(
                         )
                     )
                     if condition_expr is not None:
-                        prefix_selectors.append(z3.Not(condition_expr))
+                        prefix_selectors.append(not_term(condition_expr))
                     continue
 
             condition_result = _translate_operation_expr(
@@ -1247,7 +1248,7 @@ def _execute_if_block_domain(
             selector = (
                 condition_expr
                 if not prefix_selectors
-                else z3.And(*prefix_selectors, condition_expr)
+                else and_terms((*prefix_selectors, condition_expr))
             )
 
         status = _branch_status(
@@ -1322,7 +1323,7 @@ def _execute_if_block_domain(
                 )
 
         if branch.condition is not None:
-            prefix_selectors.append(z3.Not(condition_expr))
+            prefix_selectors.append(not_term(condition_expr))
 
     merged_env = _merge_branch_env(base_env, merge_names, branch_results)
 

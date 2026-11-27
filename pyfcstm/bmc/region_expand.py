@@ -54,7 +54,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import FrozenSet, Iterable, Optional, Tuple
 
-from .domain import REGION_DONE_ID, STATE_INIT_ID, BmcDomain
+from .domain import REGION_DONE_ID, STATE_INIT_ID, BmcDomain, model_state_index
 from .errors import InvalidBmcDomain, InvalidBmcEncoding
 from .expand import (
     _CASE_KIND_INITIAL,
@@ -76,7 +76,7 @@ from .macro import (
 )
 from .source import INIT_CASE_PATH, TERMINATE_CASE_PATH
 from pyfcstm.model import State, Transition
-from pyfcstm.model.region import Region, walk_namespaces
+from pyfcstm.model.region import Region
 
 ATOM_REGION_DONE = "region:done"
 ATOM_REGION_ENTER = "region:enter"
@@ -259,14 +259,12 @@ class _RegionExpander(_MacroExpander):
         :param options: Expansion safety options.
         """
         super().__init__(source, options)  # type: ignore[arg-type]
-        self._region_paths = {region.path: region for region in self.domain.regions}
-        self._owner_by_region_path = {
-            region.path: region.owner_path for region in self.domain.regions
-        }
-        self._aspect_scopes = {}
-        for namespace in walk_namespaces(self.model.root_state):
-            if namespace.list_on_during_aspects(aspect=None):
-                self._aspect_scopes[".".join(namespace.path)] = namespace
+        # The tables of the domain are shared by every expander and only read:
+        # one expander is made per unit, and a walk over the regions and the
+        # namespaces for each of them grows with the square of the model.
+        index = self.domain._index
+        self._region_paths = index.region_by_path
+        self._aspect_scopes = index.aspect_namespaces
         self._ledger_by_label = {}
 
     # ------------------------------------------------------------------
@@ -274,7 +272,7 @@ class _RegionExpander(_MacroExpander):
     # ------------------------------------------------------------------
     def region_of(self, path: str) -> Region:
         """Return the model region at ``path``."""
-        owner_path = self._owner_by_region_path[path]
+        owner_path = self._region_paths[path].owner_path
         owner = self.states_by_path[owner_path]
         return owner.regions[path.rsplit(".", 1)[1]]
 
@@ -443,11 +441,11 @@ class _RegionExpander(_MacroExpander):
 
     def _state_id(self, path: str) -> int:
         """Return the domain id of a state path; a region path stands for the state that owns it."""
-        owner_path = self._owner_by_region_path.get(path)
-        if owner_path is not None:
+        region = self._region_paths.get(path)
+        if region is not None:
             # A region has no state id; blocks that belong to a region name its
             # owner, which is the closest state the domain knows.
-            return super()._state_id(owner_path)
+            return super()._state_id(region.owner_path)
         return super()._state_id(path)
 
     @staticmethod
@@ -756,7 +754,7 @@ def _leaf_state(domain: BmcDomain, path: str) -> State:
         raise InvalidBmcEncoding(str(err)) from err
     if not entry.is_stoppable:
         raise InvalidBmcEncoding("a work unit starts at a stoppable leaf.")
-    return {".".join(state.path): state for state in domain.model.walk_states()}[path]
+    return model_state_index(domain).states_by_path[path]
 
 
 def _enclosing_region(domain: BmcDomain, state_path: str) -> Optional[str]:
@@ -765,10 +763,8 @@ def _enclosing_region(domain: BmcDomain, state_path: str) -> Optional[str]:
     ``StateDomainEntry.region_path`` is only set for a state that sits directly in
     a region; a state below a composite state of the region has to climb to it.
     """
-    entry = domain.state_by_path(state_path)
-    while entry.region_path is None and entry.parent_path is not None:
-        entry = domain.state_by_path(entry.parent_path)
-    return entry.region_path
+    domain.state_by_path(state_path)
+    return domain._index.nearest_region(state_path)
 
 
 def expand_leaf_unit(
@@ -883,7 +879,7 @@ def expand_init_unit(
     """
     if not isinstance(domain, BmcDomain):
         raise InvalidBmcEncoding("domain must be BmcDomain.")
-    entries = {region.path: region for region in domain.regions}
+    entries = domain._index.region_by_path
     if region_path not in entries:
         raise InvalidBmcEncoding("region %r is not in the domain." % region_path)
     done = frozenset(before_done)

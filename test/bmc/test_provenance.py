@@ -3680,3 +3680,61 @@ def test_without_the_event_paths_the_identity_falls_back_to_the_symbol_body() ->
     assert resolved["identity"] == "Root.A.Go@0"
     assert fallback["identity"] == "Root_A_Go@0"
     assert resolved["holds"] == fallback["holds"] is True
+
+
+def _step_group() -> BmcTrackedConstraint:
+    return BmcTrackedConstraint(
+        "transition.step.0001",
+        "kernel",
+        "transition.step",
+        (z3.BoolVal(True),),
+        BmcSourceRef("generated", None, None),
+        {"step": 1, "kind": "x"},
+    )
+
+
+def test_restamping_a_group_changes_only_identifier_step_and_expressions() -> None:
+    group = _step_group()
+    later = group.restamped("transition.step.0002", (z3.BoolVal(False),), 2)
+
+    assert later.stable_id == "transition.step.0002"
+    assert later.refs["step"] == 2 and later.refs["kind"] == "x"
+    assert later.expressions[0].eq(z3.BoolVal(False))
+    assert (later.stage, later.category, later.source_ref) == (
+        group.stage,
+        group.category,
+        group.source_ref,
+    )
+    assert group.stable_id == "transition.step.0001" and group.refs["step"] == 1
+
+
+@pytest.mark.parametrize(
+    ("stable_id", "expressions", "step", "message"),
+    [
+        ("", (z3.BoolVal(True),), 2, "stable_id"),
+        (None, (z3.BoolVal(True),), 2, "stable_id"),
+        ("transition.step.0002", (z3.BoolVal(True),), -1, "step"),
+        ("transition.step.0002", (z3.BoolVal(True),), True, "step"),
+        ("transition.step.0002", (z3.BoolVal(True),), 2.0, "step"),
+        ("transition.step.0002", (), 2, "expressions"),
+    ],
+)
+def test_restamping_rejects_malformed_arguments(
+    stable_id, expressions, step, message
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _step_group().restamped(stable_id, expressions, step)
+
+
+def test_a_group_that_names_no_step_cannot_be_restamped() -> None:
+    group = BmcTrackedConstraint(
+        "initial.target",
+        "initialization",
+        "initial.target",
+        (z3.BoolVal(True),),
+        BmcSourceRef("generated", None, None),
+        {"frame": 0},
+    )
+
+    with pytest.raises(ValueError, match="names no step"):
+        group.restamped("initial.target.0002", (z3.BoolVal(True),), 2)

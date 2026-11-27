@@ -15,6 +15,7 @@ pyfcstm.solver
     operation
     safety
     solve
+    term
 
 \_\_all\_\_
 -----------------------------------------------------

@@ -73,6 +73,18 @@ SymbolicInterpretation
     :members: literal,symbol,apply,unknown_operation,host_atom,truth,negate,decide,enter,constant,no_branch
 
 
+int\_term
+-----------------------------------------------------
+
+.. autofunction:: int_term
+
+
+power\_warning\_count
+-----------------------------------------------------
+
+.. autofunction:: power_warning_count
+
+
 translate
 -----------------------------------------------------
 

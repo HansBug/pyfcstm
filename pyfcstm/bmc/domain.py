@@ -809,6 +809,179 @@ class EventInputRef:
         }
 
 
+class _DomainIndex:
+    """Lookup tables of one domain, built once and shared by everything that reads it.
+
+    A domain is an immutable snapshot whose entries have unique ids and paths, so
+    each table answers exactly what a scan over the entry tuples answers.  The
+    tables that read the model back-reference describe the model as it is when
+    they are first asked for; the domain was built from that model, and a model
+    edited afterwards no longer matches the domain in any case.  Callers must
+    treat every table as read-only.
+
+    :param domain: Domain to index.
+    :type domain: BmcDomain
+
+    :ivar state_by_path: State entry of every state path, sentinels included.
+    :vartype state_by_path: Dict[str, StateDomainEntry]
+    :ivar state_by_id: State entry of every state id, sentinels included.
+    :vartype state_by_id: Dict[int, StateDomainEntry]
+    :ivar region_by_path: Region entry of every region path.
+    :vartype region_by_path: Dict[str, RegionDomainEntry]
+    :ivar regions_by_owner: Regions of every owner path, in declaration order.
+    :vartype regions_by_owner: Dict[str, Tuple[RegionDomainEntry, ...]]
+    """
+
+    def __init__(self, domain: "BmcDomain") -> None:
+        self._domain = domain
+        self.state_by_path: Dict[str, StateDomainEntry] = {
+            entry.path: entry for entry in domain.states
+        }
+        self.state_by_id: Dict[int, StateDomainEntry] = {
+            entry.id: entry for entry in domain.states
+        }
+        self.region_by_path: Dict[str, RegionDomainEntry] = {
+            region.path: region for region in domain.regions
+        }
+        owned: Dict[str, list] = {}
+        for region in domain.regions:
+            owned.setdefault(region.owner_path, []).append(region)
+        self.regions_by_owner: Dict[str, Tuple[RegionDomainEntry, ...]] = {
+            owner: tuple(sorted(items, key=lambda item: item.ordinal))
+            for owner, items in owned.items()
+        }
+        # The first region of every owner in the order of ``BmcDomain.regions``.
+        self.first_region_by_owner: Dict[str, RegionDomainEntry] = {
+            owner: items[0] for owner, items in owned.items()
+        }
+        # Filled by :mod:`pyfcstm.bmc.region_pattern`: the pattern of every
+        # ``active(...)`` text that was read, and where each state is looked for.
+        self.active_patterns: Dict[str, Any] = {}
+        self.active_places: Dict[str, Any] = {}
+        self._state_positions: Optional[Dict[str, int]] = None
+        self._children: Optional[Dict[str, list]] = None
+        self._nearest_regions: Dict[str, Optional[str]] = {}
+        self._model_states: Optional["ModelStateIndex"] = None
+        self._model_state_ids: Optional[Dict[str, int]] = None
+        self._aspect_namespaces: Optional[Dict[str, Any]] = None
+
+    def state_position(self, entry: StateDomainEntry) -> int:
+        """Return the index of a state entry in ``BmcDomain.states``.
+
+        :param entry: A state entry of the domain.
+        :type entry: StateDomainEntry
+        :return: Its index.
+        :rtype: int
+        """
+        if self._state_positions is None:
+            self._state_positions = {
+                item.path: index for index, item in enumerate(self._domain.states)
+            }
+        return self._state_positions[entry.path]
+
+    def subtree(self, path: str) -> Tuple[StateDomainEntry, ...]:
+        """Return the state at ``path`` and every state below it, in entry order.
+
+        A state in a region has the state that owns the region as its parent, so
+        the states of the regions of an owner are below the owner.
+
+        :param path: Path of a state that is not a sentinel.
+        :type path: str
+        :return: The entries of the subtree, ordered as in ``BmcDomain.states``.
+        :rtype: Tuple[StateDomainEntry, ...]
+        """
+        if self._children is None:
+            children: Dict[str, list] = {}
+            for entry in self._domain.states:
+                if entry.parent_path is not None:
+                    children.setdefault(entry.parent_path, []).append(entry)
+            self._children = children
+        collected = []
+        pending = [self.state_by_path[path]]
+        while pending:
+            entry = pending.pop()
+            collected.append(entry)
+            pending.extend(self._children.get(entry.path, ()))
+        collected.sort(key=self.state_position)
+        return tuple(collected)
+
+    def nearest_region(self, path: str) -> Optional[str]:
+        """Return the path of the nearest region around a state, at any depth.
+
+        ``StateDomainEntry.region_path`` is only set for a state that sits
+        directly in a region; a state below a composite state of the region has
+        to climb to it.
+
+        :param path: Path of a state of the domain.
+        :type path: str
+        :return: The region path, or ``None`` for a state outside every region.
+        :rtype: Optional[str]
+        """
+        if path not in self._nearest_regions:
+            climbed = []
+            entry = self.state_by_path[path]
+            while (
+                entry.path not in self._nearest_regions
+                and entry.region_path is None
+                and entry.parent_path is not None
+            ):
+                climbed.append(entry.path)
+                entry = self.state_by_path[entry.parent_path]
+            found = self._nearest_regions.get(entry.path, entry.region_path)
+            self._nearest_regions[entry.path] = found
+            for item in climbed:
+                self._nearest_regions[item] = found
+        return self._nearest_regions[path]
+
+    @property
+    def model_states(self) -> "ModelStateIndex":
+        """Return the index over the states of the back-referenced model.
+
+        It is the one table of model states by path, and of the transitions
+        that leave each state, for everything that reads the domain; see
+        :func:`model_state_index`.
+
+        :return: Index over the states of the domain's model.
+        :rtype: ModelStateIndex
+        """
+        index = self._model_states
+        if index is None or index.model is not self._domain.model:
+            index = ModelStateIndex(self._domain.model)
+            self._model_states = index
+        return index
+
+    @property
+    def model_state_ids(self) -> Dict[str, int]:
+        """Return the id of every state path that is not a sentinel.
+
+        :return: State ids keyed by dot-separated path.
+        :rtype: Dict[str, int]
+        """
+        if self._model_state_ids is None:
+            self._model_state_ids = {
+                entry.path: entry.id
+                for entry in self._domain.states
+                if not entry.is_sentinel
+            }
+        return self._model_state_ids
+
+    @property
+    def aspect_namespaces(self) -> Dict[str, Any]:
+        """Return every state and region of the model that declares ``>> during`` aspects.
+
+        :return: The declaring states and regions keyed by dot-separated path, in
+            the order the model is walked.
+        :rtype: Dict[str, Any]
+        """
+        if self._aspect_namespaces is None:
+            found: Dict[str, Any] = {}
+            for namespace in walk_namespaces(self._domain.model.root_state):
+                if namespace.list_on_during_aspects(aspect=None):
+                    found[_path_name(namespace.path)] = namespace
+            self._aspect_namespaces = found
+        return self._aspect_namespaces
+
+
 @dataclass(frozen=True)
 class BmcDomain:
     """Complete bounded model checking domain snapshot.
@@ -886,6 +1059,24 @@ class BmcDomain:
         self._validate_regions()
         if self.model is not None and not isinstance(self.model, StateMachine):
             raise InvalidBmcDomain("model must be StateMachine when provided.")
+
+    @property
+    def _index(self) -> _DomainIndex:
+        """Return the lookup tables of this domain, building them on first use.
+
+        The tables are derived from the fields and are not a field themselves:
+        they take no part in equality, hashing, ``repr`` or
+        :func:`dataclasses.replace`.
+
+        :return: Lookup tables of this domain.
+        :rtype: _DomainIndex
+        """
+        index = self.__dict__.get("_lookup_index")
+        if index is None:
+            index = _DomainIndex(self)
+            # The dataclass is frozen, and the tables are derived state.
+            object.__setattr__(self, "_lookup_index", index)
+        return index
 
     @property
     def frame0_state_ids(self) -> Tuple[int, ...]:
@@ -1290,10 +1481,10 @@ class BmcDomain:
             'Root'
         """
         _validate_index(state_id, "state_id")
-        for entry in self.states:
-            if entry.id == state_id:
-                return entry
-        raise InvalidBmcDomain("Unknown state id: %r." % (state_id,))
+        entry = self._index.state_by_id.get(state_id)
+        if entry is None:
+            raise InvalidBmcDomain("Unknown state id: %r." % (state_id,))
+        return entry
 
     def state_by_path(self, path: str) -> StateDomainEntry:
         """Return the state entry with ``path``.
@@ -1313,10 +1504,10 @@ class BmcDomain:
             'STATE_TERMINATE'
         """
         _require_non_empty_string(path, "state path")
-        for entry in self.states:
-            if entry.path == path:
-                return entry
-        raise InvalidBmcDomain("Unknown state path: %r." % (path,))
+        entry = self._index.state_by_path.get(path)
+        if entry is None:
+            raise InvalidBmcDomain("Unknown state path: %r." % (path,))
+        return entry
 
     def state_path_to_id(self, path: str) -> int:
         """Return the id for a state path.
@@ -1583,6 +1774,99 @@ class BmcDomain:
         if self.regions:
             canonical["regions"] = [entry.to_canonical() for entry in self.regions]
         return canonical
+
+
+class ModelStateIndex:
+    """Lookup tables over the states of one model, built once per domain.
+
+    Finding a state by its path and collecting the transitions that leave a
+    state are both linear scans on the model objects.  A relation builder asks
+    for them once per case, so the index answers both from tables instead.
+
+    :param model: Model whose states are indexed.
+    :type model: pyfcstm.model.StateMachine
+
+    :ivar model: The indexed model.
+    :vartype model: pyfcstm.model.StateMachine
+    :ivar states_by_path: Model states by dot-separated path.  Read-only.
+    :vartype states_by_path: Dict[str, pyfcstm.model.State]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { [*] -> A; state A; state B; A -> B; }')
+        >>> index = ModelStateIndex(model)
+        >>> state = index.states_by_path['Root.A']
+        >>> [str(item.to_state) for item in index.transitions_from(state)]
+        ['B']
+    """
+
+    def __init__(self, model: StateMachine) -> None:
+        self.model = model
+        states_by_path: Dict[str, State] = {}
+        for state in model.walk_states():
+            # The first state of a path wins, as a linear search would find it.
+            states_by_path.setdefault(".".join(state.path), state)
+        self.states_by_path = states_by_path
+        self._outgoing: Dict[int, Tuple[Any, Dict[str, list]]] = {}
+
+    def transitions_from(self, state: State) -> Sequence[Any]:
+        """Return the transitions leaving ``state``, in declaration order.
+
+        The result equals :attr:`pyfcstm.model.State.transitions_from` and must
+        not be modified.
+
+        :param state: State of the indexed model.
+        :type state: pyfcstm.model.State
+        :return: Transitions whose source is ``state``.
+        :rtype: Sequence[pyfcstm.model.Transition]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root;')
+            >>> index = ModelStateIndex(model)
+            >>> len(index.transitions_from(model.root_state))
+            1
+        """
+        parent = state.parent
+        if parent is None:
+            # The root state answers with a synthetic transition of its own.
+            return state.transitions_from
+        entry = self._outgoing.get(id(parent))
+        if entry is None or entry[0] is not parent:
+            by_name: Dict[str, list] = {}
+            for transition in parent.transitions:
+                source = transition.from_state
+                # A marker source such as the initial pseudo state never equals
+                # the name of a state, so only named sources are indexed.
+                if type(source) is str:
+                    by_name.setdefault(source, []).append(transition)
+            entry = (parent, by_name)
+            self._outgoing[id(parent)] = entry
+        return entry[1].get(state.name, ())
+
+
+def model_state_index(domain: "BmcDomain") -> ModelStateIndex:
+    """Return the state index of the model behind ``domain``.
+
+    The index is built on first use and kept with the other lookup tables of
+    the domain, which is a snapshot of that model already.
+
+    :param domain: Domain with a model back-reference.
+    :type domain: BmcDomain
+    :return: Index over the states of ``domain.model``.
+    :rtype: ModelStateIndex
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> domain = build_bmc_domain(load_state_machine_from_text('state Root;'), 1)
+        >>> model_state_index(domain) is model_state_index(domain)
+        True
+    """
+    return domain._index.model_states
 
 
 def _sentinel_entries() -> Tuple[StateDomainEntry, StateDomainEntry]:

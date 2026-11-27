@@ -41,7 +41,7 @@ BmcTrackedConstraint
 -----------------------------------------------------
 
 .. autoclass:: BmcTrackedConstraint
-    :members: __post_init__,stable_id,stage,category,expressions,source_ref,refs
+    :members: __post_init__,restamped,stable_id,stage,category,expressions,source_ref,refs
 
 
 SourceDocumentRegistry

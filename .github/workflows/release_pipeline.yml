@@ -1661,7 +1661,7 @@ jobs:
           gh release upload "$TARGET_TAG" release-assets/* --clobber
       - name: Publish the Python distributions to PyPI
         if: ${{ inputs.publish }}
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@v1.14.3
         with:
           password: ${{ secrets.PYPI_PASSWORD }}
           packages-dir: pypi-dist

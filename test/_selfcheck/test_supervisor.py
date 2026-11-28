@@ -116,7 +116,7 @@ def test_human_header_is_flushed_before_registry_discovery(monkeypatch):
     def observe_registry(profile, **kwargs):
         del profile, kwargs
         assert output.getvalue().splitlines()[0].startswith(
-            "pyfcstm self-check 0.7.1"
+            "pyfcstm self-check 0.8.0"
         )
         return (spec,)
 

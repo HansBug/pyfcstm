@@ -19,7 +19,7 @@ Example::
     >>> meta.__TITLE__
     'pyfcstm'
     >>> meta.__VERSION__
-    '0.7.1'
+    '0.8.0'
 
 .. note::
    These values are intended to be constants and should not be modified at
@@ -31,7 +31,7 @@ Example::
 __TITLE__: str = 'pyfcstm'
 
 #: Version of this project.
-__VERSION__: str = '0.7.1'
+__VERSION__: str = '0.8.0'
 
 #: Short description of the project, will be included in ``setup.py``.
 __DESCRIPTION__: str = (

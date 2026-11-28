@@ -1,8 +1,10 @@
 Release Notes
 =============
 
-Unreleased
-----------
+v0.8.0
+------
+
+This minor release makes building the formula of a bounded model checking query much faster, makes the witnesses of ``pyfcstm bmc`` reproducible, and refreshes the dependencies of the diagram viewer. Read the upgrade note under *Bounded Model Checking*: a witness can differ from the one 0.7.x returned for the same query.
 
 Bounded Model Checking
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -14,6 +16,11 @@ Bounded Model Checking
 **A time budget no longer raises.** When the budget ended inside Z3's non-linear arithmetic engine, ``solve_bmc_property`` raised ``z3.Z3Exception: canceled``. A budgeted check that Z3 cancels this way now reports the undecided result Z3 reports elsewhere, with the reason ``canceled``.
 
 **Upgrade note.** A witness can differ from the one an earlier release returned for the same query. It is another valid witness: the verdict is the same and every witness still replays. Maintainers can run ``make bmc_construction_check`` to compare the construction modes and the solver contexts.
+
+Diagram Viewer and Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The assets that ship inside the package for the diagram viewer are built from updated locked sources: ``elkjs`` 0.12.0 (the layout engine, now offered under ``EPL-2.0 OR GPL-3.0-or-later``; the package continues to use it under the Eclipse Public License 2.0) and ``@xmldom/xmldom`` 0.9.12. ``pyfcstm/diagram/assets/NOTICE.txt`` records the new versions and their sources. The Python requirements and the supported Python versions are unchanged. The editor and extension dependencies and the GitHub Actions used by the workflows are updated as well.
 
 v0.7.1
 ------

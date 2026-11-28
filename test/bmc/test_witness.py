@@ -1090,7 +1090,7 @@ def test_solver_staged_check_count_baseline(
     """Lock primary, initialization, and assumptions staged check counts."""
     _, formula = _compile(dsl_text, query_text)
     spy = _SolverSpy(statuses, model=_empty_sat_model())
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
 
@@ -1103,7 +1103,7 @@ def test_solver_staged_checks_stop_after_primary_unknown(monkeypatch) -> None:
     formula = _verdict_formula("reach")
     model = _empty_sat_model()
     spy = _SolverSpy([z3.unknown], model=model, reason="canceled")
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=20)
 
@@ -1119,7 +1119,7 @@ def test_solver_primary_timeout_preserves_public_timeout_semantics(monkeypatch) 
     """A started Z3 timeout remains distinct from a pre-check deadline timeout."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.unknown], model=_empty_sat_model(), reason="timeout")
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=20)
 
@@ -1136,7 +1136,7 @@ def test_solver_staged_checks_localize_kernel(monkeypatch) -> None:
     """A staged UNSAT sequence exposes the kernel localization branch."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.unsat, z3.unsat, z3.unsat, z3.unsat])
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
 
@@ -1153,7 +1153,7 @@ def test_solve_property_case_n_shared_deadline_check_order_and_remaining_budget(
     """Case N locks the monotonic shared budget and staged call order."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.unsat, z3.unsat, z3.unsat, z3.unsat])
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
 
@@ -1168,7 +1168,7 @@ def test_solver_none_timeout_never_configures_solver(monkeypatch) -> None:
     model = _empty_sat_model()
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.sat], model=model)
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=None)
 
@@ -1181,7 +1181,7 @@ def test_solver_budget_exhaustion_does_not_call_z3(monkeypatch) -> None:
     """A deadline exhausted before the first check yields a synthetic timeout."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.sat], model=_empty_sat_model())
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
     clock_values = iter((0.0, 0.0, 0.002, 0.002))
     monkeypatch.setattr(witness_module.time, "monotonic", lambda: next(clock_values))
 
@@ -1199,7 +1199,7 @@ def test_solver_budget_exhaustion_before_assumptions_is_not_checked(
     """A primary UNSAT cannot turn an unstarted assumptions check into timeout."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.unsat])
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
     remaining = iter((100, None))
     monkeypatch.setattr(
         witness_module._SolveBudget,
@@ -1255,7 +1255,7 @@ def test_solver_budget_localizes_inconclusive_staged_checks(
     formula = _verdict_formula("reach")
     spy = _SolverSpy(statuses, reason="canceled")
     remaining = iter(remaining_values)
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
     monkeypatch.setattr(
         witness_module._SolveBudget,
         "remaining_ms",
@@ -1295,7 +1295,7 @@ def test_solver_budget_exhaustion_before_suffix_is_not_checked(monkeypatch) -> N
             self.remaining_calls += 1
             return 100 if self.remaining_calls <= 2 else None
 
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
     monkeypatch.setattr(witness_module, "_SolveBudget", _Budget)
 
     result = solve_bmc_property(formula, timeout_ms=100)
@@ -1449,7 +1449,7 @@ def test_solve_property_case_l_feasibility_inconclusive(
     """Case L distinguishes a real feasibility unknown from a timeout."""
     formula = _verdict_formula("reach")
     spy = _SolverSpy([z3.unsat, z3.unknown], reason=reason)
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: spy)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: spy)
 
     result = solve_bmc_property(formula, timeout_ms=100, check_incomplete=False)
 
@@ -2468,7 +2468,7 @@ def test_solver_unknown_and_timeout_paths_are_structured(monkeypatch) -> None:
             return self.reason
 
     timeout_solver = FakeSolver(z3.unknown, "timeout")
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: timeout_solver)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: timeout_solver)
     assert witness_module._solve(z3.BoolVal(True), timeout_ms=5)[:3] == (
         "timeout",
         None,
@@ -2477,7 +2477,7 @@ def test_solver_unknown_and_timeout_paths_are_structured(monkeypatch) -> None:
     assert 1 <= timeout_solver.timeout <= 5
 
     unknown_solver = FakeSolver(z3.unknown, "canceled")
-    monkeypatch.setattr(witness_module.z3, "Solver", lambda: unknown_solver)
+    monkeypatch.setattr(witness_module.z3, "Solver", lambda ctx=None: unknown_solver)
     assert witness_module._solve(z3.BoolVal(True), timeout_ms=None)[:3] == (
         "unknown",
         None,

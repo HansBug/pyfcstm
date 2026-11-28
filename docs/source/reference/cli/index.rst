@@ -1479,6 +1479,10 @@ counterexample, and the evidence that should be inspected after the run.
      - ``default`` keeps the generic solver; ``logic`` detects arithmetic fragments; ``tactic`` uses the fixed simplification pipeline. Default: ``default``.
      - ``--solver-profile fast`` is a usage error (exit ``2``); explanations and proofs always use the default solver.
      - JSON ``result.solver_profile``, ``result.solver_logic`` and ``result.solver_statistics``; SAT witnesses must pass replay.
+   * - ``--solver-context``
+     - ``fresh`` solves linear-arithmetic formulas in a new Z3 context, so the witness depends only on the model, the query, the options and the Z3 version; ``shared`` solves in the context the formula was built in. Default: ``fresh``.
+     - ``--solver-context other`` is a usage error (exit ``2``). Queries outside linear arithmetic (variable products, division or modulo by a variable, powers, roots) are solved in the shared context under both settings, because Z3 may answer ``unknown`` for them and whether it does depends on its term numbering. The choice never changes a verdict, only which valid witness is returned.
+     - JSON ``result.solver_context`` records where the solvers ran, which can be ``shared`` although ``fresh`` was requested. The human report does not print it.
    * - ``--explain-infeasibility``
      - ``none`` for the mandatory verdict alone; ``formal`` for the classification and a source core; ``proof`` for a checked step-by-step proof.
      - The depth never changes the verdict, so it cannot turn an inconclusive run into a conclusive one. ``proof`` degrades to ``formal`` when no catalog rule closes the core; a caller that treats a missing ``proof`` key as an error will misread that.

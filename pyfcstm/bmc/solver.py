@@ -28,12 +28,30 @@ Example::
 
 from __future__ import annotations
 
+import functools
 import math
 import time
-from typing import List, Optional, Sequence, Tuple, cast
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import z3
 
+from ..solver.context import (
+    Deferred,
+    IsolatedSolver,
+    current_owner,
+    declare,
+    isolated_owner,
+)
 from .errors import BmcBuildError
 
 try:
@@ -44,6 +62,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
 
 SOLVER_PROFILES = ("default", "logic", "tactic")
+SOLVER_CONTEXTS = ("fresh", "shared")
 _LOGIC_PROBES = (
     ("QF_LIA", "is-qflia"),
     ("QF_LRA", "is-qflra"),
@@ -53,11 +72,125 @@ _LOGIC_PROBES = (
     ("NIRA", "is-nira"),
 )
 
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _core_parts(core: Any) -> Tuple[z3.BoolRef, ...]:
+    """Return the four formulas of a core, or ``()`` for anything else.
+
+    :param core: Candidate :class:`pyfcstm.bmc.relation.BmcCoreFormula`.
+    :type core: Any
+    :return: Domain, transition, initial and environment formulas.
+    :rtype: Tuple[z3.BoolRef, ...]
+    """
+    parts = tuple(
+        getattr(core, name, None)
+        for name in (
+            "domain_formula",
+            "transition_formula",
+            "initial_formula",
+            "environment_formula",
+        )
+    )
+    return parts if all(isinstance(part, z3.BoolRef) for part in parts) else ()
+
+
+def _resolving_unsliced(function: _F) -> _F:
+    """Complete a waiting declaration once the unsliced core is known.
+
+    Wraps the function that turns a sliced core into the unsliced one.  When
+    the solve in progress is waiting on a sliced core, the declaration is
+    made from the sliced and the unsliced formulas together, before any
+    solver exists.
+
+    :param function: Function mapping a core to its unsliced core.
+    :type function: Callable[..., Any]
+    :return: Wrapper with the same signature.
+    :rtype: Callable[..., Any]
+    """
+
+    @functools.wraps(function)
+    def wrapper(core: Any) -> Any:
+        full = function(core)
+        owner = current_owner()
+        if (
+            full is not core
+            and owner is not None
+            and owner.linear
+            and owner.linear[-1][0] is None
+        ):
+            terms = tuple(owner.deferred) + _core_parts(full)
+            del owner.linear[-1]
+            owner.deferred = ()
+            owner.linear.append(declare(owner, terms))
+        return full
+
+    return cast(_F, wrapper)
+
+
+def _core_fragment(
+    core: Any = None, *args: Any, **kwargs: Any
+) -> Union[bool, Tuple[z3.BoolRef, ...]]:
+    """Return the formulas a solve over a core formula may assert.
+
+    A core that cone slicing actually shortened is answered with a
+    :class:`Deferred` tuple: such a solve also reaches the unsliced formula,
+    which is not known here.
+
+    :param core: First argument of the wrapped function, expected to be a
+        :class:`pyfcstm.bmc.relation.BmcCoreFormula`.
+    :type core: Any
+    :return: Domain, transition, initial and environment formulas, as a
+        :class:`Deferred` tuple for a sliced core; ``False`` when the caller
+        asked for ``solver_context="shared"``; ``()`` when the argument is
+        something else and the function will reject it.
+    :rtype: Union[bool, Tuple[z3.BoolRef, ...]]
+    """
+    if kwargs.get("solver_context") == "shared":
+        return False
+    parts = _core_parts(core)
+    if parts and getattr(getattr(core, "cone_slice", None), "dropped_variables", None):
+        return Deferred(parts)
+    return parts
+
+
+def _property_fragment(
+    formula: Any = None, *args: Any, **kwargs: Any
+) -> Union[bool, Tuple[z3.BoolRef, ...]]:
+    """Return the formulas a solve of a property formula may assert.
+
+    :param formula: First argument of the wrapped function, expected to be a
+        :class:`pyfcstm.bmc.properties.BmcPropertyFormula`.
+    :type formula: Any
+    :return: Core formulas, objective and response suffix, as a
+        :class:`Deferred` tuple when the core was sliced; ``False`` when the
+        caller asked for ``solver_context="shared"``; ``()`` when the
+        argument is something else and the function will reject it.
+    :rtype: Union[bool, Tuple[z3.BoolRef, ...]]
+    """
+    if kwargs.get("solver_context") == "shared":
+        return False
+    core = _core_fragment(getattr(formula, "core", None))
+    rest = (
+        getattr(formula, "objective_formula", None),
+        getattr(formula, "incomplete_formula", None),
+    )
+    if not core or not all(isinstance(part, z3.BoolRef) for part in rest):
+        return ()
+    if isinstance(core, Deferred):
+        return Deferred(tuple(core) + cast(Tuple[z3.BoolRef, ...], rest))
+    return cast(Tuple[z3.BoolRef, ...], core) + cast(Tuple[z3.BoolRef, ...], rest)
+
 
 def _solver_for_profile(
     profile: str, expressions: Sequence[z3.ExprRef] = ()
-) -> Tuple[z3.Solver, Optional[str]]:
+) -> Tuple[Union[z3.Solver, "IsolatedSolver"], Optional[str]]:
     """Build a solver without asserting or rewriting the supplied expressions.
+
+    During a solve declared linear (:func:`in_solve_context`) the solver
+    lives in the fresh context of that solve and is returned wrapped in an
+    :class:`IsolatedSolver`.  Otherwise it is the plain Z3 solver, created
+    with exactly the calls used before isolation existed.
 
     :param profile: ``default``, ``logic`` or ``tactic``. Explanation callers
         deliberately pass ``default``: their assumption cores and proof
@@ -68,17 +201,35 @@ def _solver_for_profile(
     :type expressions: Sequence[z3.ExprRef]
     :return: Empty solver and selected logic, or ``None`` for default/tactic
         and for an unrecognized fragment that falls back to default.
-    :rtype: Tuple[z3.Solver, Optional[str]]
+    :rtype: Tuple[Union[z3.Solver, IsolatedSolver], Optional[str]]
     :raises BmcBuildError: If the requested profile is unsupported.
     """
     if isinstance(profile, bool) or profile not in SOLVER_PROFILES:
         raise BmcBuildError("solver_profile must be one of default, logic, or tactic.")
+    owner = isolated_owner()
+    if owner is not None and expressions:
+        declared = owner.linear[-1][1]
+        if not frozenset(term.get_id() for term in expressions) <= declared:
+            # Formulas the declaration did not cover: classify them as well,
+            # and solve where they were built unless they are linear too.
+            if not declare(owner, tuple(expressions))[0]:
+                owner = None
+    context = owner.context if owner is not None else None
     if profile == "default":
-        return z3.Solver(), None
+        if owner is None:
+            return z3.Solver(), None
+        return IsolatedSolver(z3.Solver(ctx=context), owner), None
     if profile == "tactic":
-        return z3.Then(
-            "simplify", "propagate-values", "solve-eqs", "smt"
-        ).solver(), None
+        if owner is None:
+            return z3.Then(
+                "simplify", "propagate-values", "solve-eqs", "smt"
+            ).solver(), None
+        return IsolatedSolver(
+            z3.Then(
+                "simplify", "propagate-values", "solve-eqs", "smt", ctx=context
+            ).solver(),
+            owner,
+        ), None
     goal = z3.Goal()
     # Goal.add(False) erases other assertions. Guard each root for this
     # syntactic probe so an impossible objective cannot hide nonlinear terms
@@ -91,9 +242,13 @@ def _solver_for_profile(
         if z3.Probe(probe_name)(goal) > 0.5:
             selected = logic
             break
+    if owner is None:
+        if selected is None:
+            return z3.Solver(), None
+        return z3.SolverFor(selected), selected
     if selected is None:
-        return z3.Solver(), None
-    return z3.SolverFor(selected), selected
+        return IsolatedSolver(z3.Solver(ctx=context), owner), None
+    return IsolatedSolver(z3.SolverFor(selected, ctx=context), owner), selected
 
 
 class _SolveBudget:
@@ -162,6 +317,48 @@ class _SolveBudget:
         return min(cast(int, self.timeout_ms), remaining_ms)
 
 
+def _check_solver(
+    solver: z3.Solver, assumptions: Sequence[z3.BoolRef], budgeted: bool
+) -> Optional[z3.CheckSatResult]:
+    """Run one solver check and report a budget cancellation as ``None``.
+
+    When a timeout fires inside some Z3 engines (observed in the non-linear
+    arithmetic engine), ``check`` raises ``Z3Exception('canceled')`` instead of
+    returning ``unknown``.  A budgeted check treats exactly that exception as an
+    undecided result; every other Z3 error, and a cancellation while no timeout
+    is set, still propagates.
+
+    :param solver: Solver to check.
+    :type solver: z3.Solver
+    :param assumptions: Assumption literals handed to ``check``.
+    :type assumptions: Sequence[z3.BoolRef]
+    :param budgeted: Whether a solver timeout was set for this check.
+    :type budgeted: bool
+    :return: The Z3 result, or ``None`` when the budget cancelled the check.
+    :rtype: Optional[z3.CheckSatResult]
+    :raises z3.Z3Exception: For any Z3 error other than a budget cancellation.
+
+    Example::
+
+        >>> import z3
+        >>> _check_solver(z3.Solver(), (), True)
+        sat
+    """
+    try:
+        return solver.check(*assumptions)
+    except z3.Z3Exception as err:
+        # Z3Exception: raised by ``check`` when the timeout cancels the search
+        # inside an engine that signals it by exception; only the message
+        # ``canceled`` under a set timeout is a budget cut, anything else is a
+        # real Z3 error.
+        message = err.value
+        if isinstance(message, bytes):
+            message = message.decode("utf-8", "replace")
+        if budgeted and message == "canceled":
+            return None
+        raise
+
+
 def _check_with_budget(
     solver: z3.Solver, budget: _SolveBudget
 ) -> Tuple[
@@ -196,8 +393,10 @@ def _check_with_budget(
     if remaining is not None:
         solver.set(timeout=remaining)
     start = time.monotonic()
-    status = solver.check()
+    status = _check_solver(solver, (), remaining is not None)
     elapsed_ms = (time.monotonic() - start) * 1000.0
+    if status is None:
+        return "unknown", None, "canceled", elapsed_ms, True
     if status == z3.sat:
         return "sat", solver.model(), None, elapsed_ms, True
     if status == z3.unsat:

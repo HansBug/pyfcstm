@@ -85,9 +85,12 @@ from .provenance import (
     SourceDocumentRegistry,
     normalized_fact_for,
 )
+from ..solver.context import in_solve_context
 from .solver import (
     _SolveBudget,
+    _check_solver,
     _check_with_budget,
+    _core_fragment,
     _free_symbols,
     _solver_for_profile,
 )
@@ -468,8 +471,10 @@ def _run_probe(
     if remaining is not None:
         solver.set(timeout=remaining)
     start = time.monotonic()
-    status = solver.check(*assumptions)
+    status = _check_solver(solver, assumptions, remaining is not None)
     elapsed = (time.monotonic() - start) * 1000.0
+    if status is None:
+        return "unknown", ProbeRecord(name, "unknown", True, elapsed, "canceled")
     if status == z3.unsat:
         return "unsat", ProbeRecord(name, "unsat", True, elapsed)
     if status == z3.sat:
@@ -541,6 +546,7 @@ def _probe_outcome_reason(what: str, record: "ProbeRecord") -> str:
     return "%s did not start: %s" % (what, record.reason)
 
 
+@in_solve_context(_core_fragment, own=False)
 def classify_infeasibility(
     core: "BmcCoreFormula", stage: str, budget: _SolveBudget
 ) -> ClassificationOutcome:
@@ -687,6 +693,7 @@ def classify_infeasibility(
     )
 
 
+@in_solve_context(_core_fragment, own=False)
 def extract_source_core(
     core: "BmcCoreFormula", scope: str, budget: _SolveBudget
 ) -> CoreExtraction:
@@ -870,6 +877,7 @@ def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
     return solver
 
 
+@in_solve_context(_core_fragment, own=False)
 def minimize_source_core(
     core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
 ) -> MinimizedCore:
@@ -1149,6 +1157,7 @@ class ForcedValue:
     supporting_ids: Tuple[str, ...]
 
 
+@in_solve_context(_core_fragment, own=False)
 def derive_forced_values(
     core: "BmcCoreFormula",
     items: Sequence["BmcCoreItem"],
@@ -1401,6 +1410,7 @@ _BINDING_ENCODERS = {
 }
 
 
+@in_solve_context(_core_fragment, own=False)
 def check_core_bindings(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -1667,6 +1677,7 @@ def _entailment_prover(members, budget: _SolveBudget):
     return discharge_target
 
 
+@in_solve_context(_core_fragment, own=False)
 def check_case_conditions(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -1791,6 +1802,7 @@ def check_case_conditions(
     )
 
 
+@in_solve_context(_core_fragment, own=False)
 def check_value_carries(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -2356,6 +2368,7 @@ def _symbol_frame(symbol) -> Optional[int]:
         return None
 
 
+@in_solve_context(_core_fragment, own=False)
 def explain_infeasibility(
     core: "BmcCoreFormula",
     stage: str,

@@ -36,6 +36,8 @@ The package exposes the following main components:
 * :class:`ValidationError` - Base validation error exception
 * :class:`ModelValidationError` - Aggregated validation error exception
 * :class:`IValidatable` - Interface for objects with validation rules
+* :class:`BoundedTable` - Table with an entry limit that is emptied when it is full
+* :class:`ScopedMemo` - Per-thread table that exists only while a block runs
 
 .. note::
    This package re-exports utilities from internal modules to provide a unified
@@ -52,6 +54,7 @@ Example::
 """
 
 from .binary import is_binary_file
+from .cache import BoundedTable, ScopedMemo
 from .decode import auto_decode
 from .doc import (
     aggregate_documentation,

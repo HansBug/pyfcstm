@@ -10,6 +10,7 @@ pyfcstm.utils
     :maxdepth: 3
 
     binary
+    cache
     decode
     doc
     fixed

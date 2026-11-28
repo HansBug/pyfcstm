@@ -1119,6 +1119,12 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
      - ``QF_LIA``、``QF_LRA``、``QF_LIRA``、``QF_NIA``、``QF_NRA``、``NIRA`` 或 null
      - ``logic`` 实际选中的片段。未识别片段时回退默认求解器并记录 null；
        ``default`` 和 ``tactic`` 始终为 null。
+   * - ``solver_context``
+     - ``fresh`` 或 ``shared``
+     - 本次调用的求解器实际运行的位置：``fresh`` 是本次调用的所有求解器共用的
+       全新 Z3 上下文，``shared`` 是构造公式的上下文。线性算术之外的查询即使
+       请求了 ``fresh`` 也记录 ``shared``。``fresh`` 让返回的见证和 Z3 搜索计数
+       只由模型、查询、选项和 Z3 版本决定。
    * - ``solver_statistics``
      - 非空字符串键到有限非负数的对象
      - 主检查刚完成时读取的 Z3 统计；未开始检查时为空对象。键随 Z3 版本与配置变化，

@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
-from .domain import STATE_TERMINATE_ID, BmcDomain
+from .domain import STATE_TERMINATE_ID, BmcDomain, model_state_index
 from .errors import BmcBuildError, InvalidBmcDomain, InvalidBmcEncoding
 from .macro import (
     ActionBlock,
@@ -235,14 +235,13 @@ class _MacroExpander:
         self.domain = domain
         self.model = model
         self.options = options
-        self.states_by_path: Dict[str, State] = {
-            ".".join(state.path): state for state in self.model.walk_states()
-        }
-        self.state_ids: Dict[str, int] = {
-            entry.path: entry.id
-            for entry in self.domain.states
-            if not entry.is_sentinel
-        }
+        # The tables are the domain's own, shared by every expander of the
+        # domain and only read here: one expander is made per source, so tables
+        # of its own would cost a walk over the whole model for each of them.
+        # The model index also answers which transitions leave a state.
+        self._index = model_state_index(domain)
+        self.states_by_path: Dict[str, State] = self._index.states_by_path
+        self.state_ids: Dict[str, int] = domain._index.model_state_ids
         self._case_counters: Dict[str, int] = {}
         self._failed_guard_requirements: Dict[str, GuardRequirement] = {}
         self._guard_counter = 0
@@ -434,7 +433,7 @@ class _MacroExpander:
         )
 
     def _expand_leaf_active(self, frontier: _MacroFrontier) -> _Expansion:
-        transitions = frontier.stack[-1].state.transitions_from
+        transitions = self._index.transitions_from(frontier.stack[-1].state)
         expanded = self._expand_ordered_candidates(
             frontier, transitions, is_initial=False
         )
@@ -470,7 +469,7 @@ class _MacroExpander:
         )
 
     def _expand_parent_continuation(self, frontier: _MacroFrontier) -> _Expansion:
-        transitions = frontier.stack[-1].state.transitions_from
+        transitions = self._index.transitions_from(frontier.stack[-1].state)
         expanded = self._expand_ordered_candidates(
             frontier, transitions, is_initial=False
         )
@@ -754,7 +753,11 @@ class _MacroExpander:
             frontier,
             stack=frontier.stack + (_FormalStackFrame(state, "active"),),
         )
-        if state.is_pseudo and not state.transitions_from and not state.init_transitions:
+        if (
+            state.is_pseudo
+            and not self._index.transitions_from(state)
+            and not state.init_transitions
+        ):
             # A pseudo state with no outgoing transition is a dead end, and
             # the runtime enters it without running any lifecycle action.
             return (current,)

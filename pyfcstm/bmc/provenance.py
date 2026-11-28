@@ -43,6 +43,7 @@ Example::
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 import os
@@ -177,6 +178,26 @@ def exact_str(value: Any, where: str) -> str:
         raise TypeError("%s must be a string, got %r." % (where, value)) from err
 
 
+@functools.lru_cache(maxsize=None)
+def _digit_bound(limit: int) -> int:
+    """Return ``10 ** limit``, computed once per digit limit.
+
+    The power has thousands of digits, and :func:`exact_int` needs it for every
+    number it checks.
+
+    :param limit: Number of decimal digits.
+    :type limit: int
+    :return: The smallest number with more than ``limit`` digits.
+    :rtype: int
+
+    Example::
+
+        >>> _digit_bound(3)
+        1000
+    """
+    return 10**limit
+
+
 def exact_int(value: Any, where: str) -> int:
     """Return the plain ``int`` a value actually is.
 
@@ -205,7 +226,8 @@ def exact_int(value: Any, where: str) -> int:
         # Same reasoning as exact_str: the descriptor refuses a non-int.
         raise TypeError("%s must be an integer, got %r." % (where, value)) from err
     limit = _effective_int_digit_limit()
-    if not -(10**limit) < plain < 10**limit:
+    bound = _digit_bound(limit)
+    if not -bound < plain < bound:
         raise ValueError(
             "%s exceeds the %d decimal digits this interpreter can render."
             % (where, limit)
@@ -1863,6 +1885,62 @@ class BmcTrackedConstraint:
         object.__setattr__(
             self, "refs", MappingProxyType(_require_json_mapping(self.refs, "refs"))
         )
+
+    def restamped(
+        self, stable_id: str, expressions: Tuple[Any, ...], step: int
+    ) -> "BmcTrackedConstraint":
+        """Return the group of the same fact as it is registered for another step.
+
+        A bounded trace repeats one step relation over the symbols of other
+        frames, so the groups of two such steps differ in their identifier, in
+        the step their metadata names and in their expressions, and in nothing
+        else.  Everything this group validated when it was built is taken over
+        as it is instead of being validated again.
+
+        :param stable_id: Identifier of the new group; printable ASCII, as
+            produced by the format that produced this group's identifier.
+        :type stable_id: str
+        :param expressions: Generated expressions of the new group.
+        :type expressions: Tuple[object, ...]
+        :param step: Step the new group belongs to.
+        :type step: int
+        :return: The group of the other step.
+        :rtype: BmcTrackedConstraint
+        :raises ValueError: If this group names no step, the identifier or the
+            expressions are empty, or ``step`` is not a plain non-negative
+            ``int``.
+
+        Example::
+
+            >>> group = BmcTrackedConstraint(
+            ...     "transition.step.0001", "kernel", "transition.step", (True,),
+            ...     BmcSourceRef("generated", None, None), {"step": 1},
+            ... )
+            >>> later = group.restamped("transition.step.0002", (False,), 2)
+            >>> later.stable_id, later.refs["step"], later.expressions
+            ('transition.step.0002', 2, (False,))
+            >>> group.refs["step"]
+            1
+        """
+        if "step" not in self.refs:
+            raise ValueError("tracked constraint %s names no step." % self.stable_id)
+        if type(stable_id) is not str or not stable_id:
+            raise ValueError("tracked constraint stable_id must be non-empty.")
+        if type(step) is not int or step < 0:
+            raise ValueError("tracked constraint step must be a non-negative int.")
+        values = tuple(expressions)
+        if not values:
+            raise ValueError("tracked constraint expressions must be non-empty.")
+        refs = dict(self.refs)
+        refs["step"] = step
+        clone = object.__new__(type(self))
+        object.__setattr__(clone, "stable_id", stable_id)
+        object.__setattr__(clone, "stage", self.stage)
+        object.__setattr__(clone, "category", self.category)
+        object.__setattr__(clone, "expressions", values)
+        object.__setattr__(clone, "source_ref", self.source_ref)
+        object.__setattr__(clone, "refs", MappingProxyType(refs))
+        return clone
 
 
 @dataclass(frozen=True)

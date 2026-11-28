@@ -50,6 +50,7 @@ from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 import z3
 
 from . import ir
+from ..utils.cache import BoundedTable
 from .engine import OPERAND, Interpretation, compile_expression
 
 __all__ = [
@@ -61,6 +62,7 @@ __all__ = [
     "SymbolicContext",
     "SymbolicInterpretation",
     "SYMBOLIC",
+    "int_term",
     "translate",
 ]
 
@@ -320,6 +322,45 @@ def _skips(condition: z3.BoolRef) -> bool:
     return z3.is_false(condition) or (z3.is_not(condition) and z3.is_true(condition.arg(0)))
 
 
+# A model has a few hundred distinct integer literals, and every numeral the table
+# keeps stays in the main context for the life of the process, so the table is
+# small and emptied when it is full.
+_INT_TERMS: BoundedTable = BoundedTable(4096)
+
+
+def int_term(value: int) -> z3.IntNumRef:
+    """Return ``z3.IntVal(value)`` for a plain ``int``.
+
+    A numeral of the main context is one term however often it is asked for,
+    and its wrapper carries no state, so one wrapper per value is kept and
+    handed out again.  Anything that is not exactly an ``int`` goes to
+    :func:`z3.IntVal`.
+
+    :param value: Integer value.
+    :type value: int
+    :return: The integer numeral of the main context.
+    :rtype: z3.IntNumRef
+
+    Example::
+
+        >>> import z3
+        >>> z3.eq(int_term(7), z3.IntVal(7))
+        True
+        >>> int_term(7) is int_term(7)
+        True
+    """
+    if type(value) is not int:
+        return z3.IntVal(value)
+    context = z3.main_ctx()
+    key = (id(context), value)
+    entry = _INT_TERMS.get(key)
+    if entry is None:
+        # The entry holds the context so that its id stays its own.
+        entry = (z3.IntVal(value), context)
+        _INT_TERMS.put(key, entry)
+    return entry[0]
+
+
 class SymbolicInterpretation(Interpretation):
     """
     Symbolic interpretation: Z3 terms and the formal reference.
@@ -340,11 +381,34 @@ class SymbolicInterpretation(Interpretation):
     """
 
     def literal(self, node: ir.Literal) -> z3.ExprRef:
+        """
+        Translate a literal to a Z3 constant.
+
+        A ``bool`` becomes a Boolean constant, an ``int`` the shared integer
+        numeral of :func:`int_term`, anything else a real constant.
+
+        :param node: Literal of the expression tree.
+        :type node: pyfcstm.semantics.ir.Literal
+        :return: The constant of the literal's sort.
+        :rtype: z3.ExprRef
+
+        Example::
+
+            >>> import z3
+            >>> from pyfcstm.semantics import ir
+            >>> from pyfcstm.semantics.symbolic import SYMBOLIC
+            >>> SYMBOLIC.literal(ir.Literal("e", None, 3))
+            3
+            >>> SYMBOLIC.literal(ir.Literal("e", None, True))
+            True
+            >>> SYMBOLIC.literal(ir.Literal("e", None, 2.5)).sort()
+            Real
+        """
         value = node.value
         if isinstance(value, bool):
             return z3.BoolVal(value)
         if isinstance(value, int):
-            return z3.IntVal(value)
+            return int_term(value)
         return z3.RealVal(value)
 
     def symbol(self, node: ir.Symbol, env: Mapping[str, z3.ExprRef], ctx: SymbolicContext) -> z3.ExprRef:
@@ -480,7 +544,30 @@ def _warn_power(node: ir.Expr) -> None:
         )
     else:
         return
+    _POWER_WARNINGS[0] += 1
     warnings.warn(message, UserWarning, stacklevel=_caller_stacklevel())
+
+
+#: Number of power warnings issued so far.  A caller that would reuse an
+#: earlier translation reads it before and after translating: a translation
+#: that warned has to run again each time so that it warns each time.
+_POWER_WARNINGS = [0]
+
+
+def power_warning_count() -> int:
+    """
+    Return how many power-operation warnings translation has issued.
+
+    :return: Running count for this process.
+    :rtype: int
+
+    Example::
+
+        >>> from pyfcstm.semantics.symbolic import power_warning_count
+        >>> power_warning_count() >= 0
+        True
+    """
+    return _POWER_WARNINGS[0]
 
 
 #: Shared symbolic interpretation instance.

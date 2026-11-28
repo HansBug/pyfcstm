@@ -94,14 +94,17 @@ from .relation import BmcCaseRelation, _assumption_input_names
 from .safety import BmcRuntimeSafetyResult, _check_runtime_safety
 from .slicing import ConeSlice
 from .solver import (
+    SOLVER_CONTEXTS,
     SOLVER_PROFILES,
     _LOGIC_PROBES,
     BmcSolveStatus,
     _SolveBudget,
     _check_with_budget,
     _free_symbols,
+    _property_fragment,
     _solver_for_profile,
 )
+from ..solver.context import in_solve_context, solver_context_in_use
 from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine
 from pyfcstm.model.region import Region, walk_namespaces
@@ -1335,6 +1338,7 @@ def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
         # Detailed statistics belong in the machine report, not the verdict
         # table. Preserve the established default human-readable output.
         result.pop("solver_statistics")
+        result.pop("solver_context")
         if obj.solver_profile == "default":
             result.pop("solver_profile")
             result.pop("solver_logic")
@@ -3102,6 +3106,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :param solver_logic: Selected logic, or ``None`` for default/tactic and
         when logic classification fell back to the default solver.
     :type solver_logic: str, optional
+    :param solver_context: Where the solvers of the call ran: ``fresh`` when
+        they lived in a new Z3 context, ``shared`` when they ran in the
+        context the formula was built in.  This records what happened, not
+        what was requested: a query outside linear arithmetic reports
+        ``shared`` even when ``fresh`` was requested, defaults to ``fresh``.
+    :type solver_context: str, optional
     :param solver_statistics: Z3 statistics captured immediately after the
         primary check, defaults to an empty mapping for manually built results.
         Keys vary with Z3 and the selected solver. ``rlimit count`` and
@@ -3145,6 +3155,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
     feasibility: Optional[BmcFeasibilityResult] = None
     solver_profile: str = "default"
     solver_logic: Optional[str] = None
+    solver_context: str = "fresh"
     solver_statistics: Mapping[str, Any] = field(default_factory=dict)
     runtime_safety: Optional[BmcRuntimeSafetyResult] = None
     _attempted_slice: Optional[ConeSlice] = field(
@@ -3162,6 +3173,11 @@ class BmcSolveResult(_PrettyPrintableMixin):
             or self.solver_profile not in SOLVER_PROFILES
         ):
             raise BmcBuildError("solver_profile must be default, logic, or tactic.")
+        if (
+            not isinstance(self.solver_context, str)
+            or self.solver_context not in SOLVER_CONTEXTS
+        ):
+            raise BmcBuildError("solver_context must be fresh or shared.")
         if self.solver_logic is not None and (
             self.solver_profile != "logic"
             or self.solver_logic not in tuple(logic for logic, _ in _LOGIC_PROBES)
@@ -3655,6 +3671,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "reason": self.reason,
             "solver_profile": self.solver_profile,
             "solver_logic": self.solver_logic,
+            "solver_context": self.solver_context,
             "solver_statistics": dict(self.solver_statistics),
             **self._cone_metadata(),
             "elapsed_ms": self.elapsed_ms,
@@ -5514,6 +5531,7 @@ def _make_solve_result(
     )
 
 
+@in_solve_context(_property_fragment)
 def solve_bmc_property(
     formula: BmcPropertyFormula,
     *,
@@ -5522,6 +5540,7 @@ def solve_bmc_property(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     runtime_safety: bool = True,
+    solver_context: str = "fresh",
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -5566,10 +5585,21 @@ def solve_bmc_property(
     :param runtime_safety: Whether to run the runtime-safety check before the
         business property, defaults to ``True``.
     :type runtime_safety: bool, optional
+    :param solver_context: ``fresh`` solves linear-arithmetic formulas in a new
+        Z3 context, so the search path and the returned witness depend only on
+        the formula, the options and the Z3 version, not on how the formula was
+        constructed or on what the process solved before.  ``shared`` always
+        solves in the context the formula was built in.  Formulas outside
+        linear arithmetic are solved there under both settings, because Z3 may
+        answer ``unknown`` for them and whether it does depends on the term
+        numbering.  The result's :attr:`BmcSolveResult.solver_context` reports
+        what was done, defaults to ``'fresh'``.
+    :type solver_context: str, optional
     :return: Structured solve result.
     :rtype: BmcSolveResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed, or
-        if ``infeasibility_explanation`` is not one of the three modes.
+        if ``infeasibility_explanation`` is not one of the three modes, or
+        ``solver_context`` is not ``fresh`` or ``shared``.
 
     Example::
 
@@ -5585,6 +5615,8 @@ def solve_bmc_property(
         raise BmcBuildError("runtime_safety must be a bool.")
     if solver_profile not in SOLVER_PROFILES:
         raise BmcBuildError("solver_profile must be one of default, logic, or tactic.")
+    if isinstance(solver_context, bool) or solver_context not in SOLVER_CONTEXTS:
+        raise BmcBuildError("solver_context must be one of fresh, shared.")
     budget = None
     safety = None
     if runtime_safety:
@@ -5598,6 +5630,7 @@ def solve_bmc_property(
                 total_elapsed_ms=safety.elapsed_ms,
                 feasibility=_not_checked_feasibility(),
                 solver_profile=solver_profile,
+                solver_context=solver_context_in_use(),
                 runtime_safety=safety,
             )
     if cone is None or not cone.dropped_variables:
@@ -5662,11 +5695,13 @@ def solve_bmc_property(
 def _with_runtime_safety(
     result: BmcSolveResult, safety: Optional[BmcRuntimeSafetyResult]
 ) -> BmcSolveResult:
+    context = solver_context_in_use()
     if safety is None:
-        return result
+        return replace(result, solver_context=context)
     total = result.total_elapsed_ms
     return replace(
         result,
+        solver_context=context,
         runtime_safety=safety,
         total_elapsed_ms=None if total is None else total + safety.elapsed_ms,
     )

@@ -1,6 +1,20 @@
 Release Notes
 =============
 
+Unreleased
+----------
+
+Bounded Model Checking
+~~~~~~~~~~~~~~~~~~~~~~
+
+**Building the formula of a bounded query is much faster.** Every step of a trace after the first starts from the same sources, so the formula builder used to lower it again from scratch. It now lowers one step, keeps the result as a template and renames its symbols for the other steps, asks the reachability questions of a build once, and builds common terms through the Z3 C API. The formula, the provenance ledgers and the warnings are the ones lowering every step produces. On the repository's 75 benchmark queries, building the formulas takes 7 s instead of 130 s at each query's own bound, and 12 s instead of 750 s with every bound raised to 50; the models and queries of the synthetic benchmarks build 4 to 155 times faster. The solve itself is not faster.
+
+**Witnesses are reproducible.** ``solve_bmc_property`` and ``check_runtime_safety`` take ``solver_context``, and ``pyfcstm bmc`` takes ``--solver-context``. With the default ``fresh``, a query in linear arithmetic is solved in a new Z3 context, where the order of Z3's search follows from the formula alone, so the same model, query and options give the same witness whatever else the process built or solved before. ``shared`` solves in the context the formula was built in, as earlier releases did. Queries outside linear arithmetic (products of variables, division or modulo by a variable, powers, roots) are solved there under both settings, because Z3 may answer ``unknown`` for them and whether it does depends on its term numbering. The setting never changes a verdict. ``result.solver_context`` in the JSON result records where the solvers actually ran, and the JSON Schema lists it.
+
+**A time budget no longer raises.** When the budget ended inside Z3's non-linear arithmetic engine, ``solve_bmc_property`` raised ``z3.Z3Exception: canceled``. A budgeted check that Z3 cancels this way now reports the undecided result Z3 reports elsewhere, with the reason ``canceled``.
+
+**Upgrade note.** A witness can differ from the one an earlier release returned for the same query. It is another valid witness: the verdict is the same and every witness still replays. Maintainers can run ``make bmc_construction_check`` to compare the construction modes and the solver contexts.
+
 v0.7.1
 ------
 

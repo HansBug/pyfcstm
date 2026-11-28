@@ -866,6 +866,13 @@ jobs:
         run: |
           make template_packaging_check
           make template_source_install_check
+      - name: Run BMC construction check
+        shell: bash
+        # Compares how a formula is built (lowered step by step, instantiated
+        # from a template, instantiated and verified) and where it is solved,
+        # on every supported Python and platform of the matrix.
+        run: |
+          make bmc_construction_check BMC_CONSTRUCTION_ARGS="--bounds 4 --limit 2"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:

@@ -38,6 +38,7 @@ pyfcstm.bmc
     slicing
     solver
     source
+    step_template
     witness
 
 \_\_all\_\_

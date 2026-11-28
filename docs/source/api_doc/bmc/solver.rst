@@ -18,6 +18,12 @@ SOLVER\_PROFILES
 .. autodata:: SOLVER_PROFILES
 
 
+SOLVER\_CONTEXTS
+-----------------------------------------------------
+
+.. autodata:: SOLVER_CONTEXTS
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

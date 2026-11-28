@@ -1364,6 +1364,10 @@ BMC 步骤用到的两个查询：
      - ``default`` 保留通用求解器；``logic`` 识别算术片段；``tactic`` 使用固定化简组合。默认是 ``default``。
      - ``--solver-profile fast`` 是用法错误，退出 ``2``；不可行解释和证明始终使用默认求解器。
      - JSON 的 ``result.solver_profile``、``result.solver_logic`` 和 ``result.solver_statistics``；SAT 见证必须重放通过。
+   * - ``--solver-context``
+     - ``fresh`` 把线性算术公式放进全新的 Z3 上下文求解，见证只由模型、查询、选项和 Z3 版本决定；``shared`` 在构造公式的上下文里求解。默认是 ``fresh``。
+     - ``--solver-context other`` 是用法错误，退出 ``2``。线性算术之外的查询（变量相乘、除以或模以变量、乘方、开方）在两种设置下都在共享上下文里求解，因为 Z3 对它们可能答 ``unknown``，答不答得出还取决于项的内部编号。这个选项从不改变判定，只改变返回的是哪一条有效见证。
+     - JSON 的 ``result.solver_context`` 记录求解器实际运行的位置，请求 ``fresh`` 时它也可能是 ``shared``。人类可读报告不打印它。
    * - ``--explain-infeasibility``
      - ``none`` 只要强制判定；``formal`` 要分类与源组冲突核；``proof`` 要逐步核验过的证明。
      - 该深度从不改变判定，所以它无法把不确定的运行变成确定的。规则目录中没有规则能闭合冲突核时，``proof`` 会降级为 ``formal``；把缺失的 ``proof`` 键当成错误处理的调用方会误读这一点。

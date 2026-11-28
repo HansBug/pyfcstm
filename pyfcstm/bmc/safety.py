@@ -46,7 +46,15 @@ import z3
 
 from .errors import BmcBuildError
 from .relation import BmcCoreFormula, BmcRuntimeErrorSite
-from .solver import _check_with_budget, _solver_for_profile, _SolveBudget
+from ..solver.context import in_solve_context
+from .solver import (
+    SOLVER_CONTEXTS,
+    _check_with_budget,
+    _core_fragment,
+    _resolving_unsliced,
+    _solver_for_profile,
+    _SolveBudget,
+)
 
 __all__ = [
     "BmcRuntimeSafetyResult",
@@ -260,11 +268,13 @@ def _stages(
     return stages
 
 
+@in_solve_context(_core_fragment)
 def check_runtime_safety(
     core: BmcCoreFormula,
     *,
     timeout_ms: Optional[int] = None,
     solver_profile: str = "default",
+    solver_context: str = "fresh",
 ) -> BmcRuntimeSafetyResult:
     """
     Check whether a runtime error is reachable within the bound.
@@ -277,10 +287,14 @@ def check_runtime_safety(
     :param solver_profile: ``"default"``, ``"logic"`` or ``"tactic"``,
         defaults to ``"default"``.
     :type solver_profile: str, optional
+    :param solver_context: ``"fresh"`` or ``"shared"``, with the meaning given
+        for :func:`pyfcstm.bmc.witness.solve_bmc_property`, defaults to
+        ``"fresh"``.
+    :type solver_context: str, optional
     :return: The check result.
     :rtype: BmcRuntimeSafetyResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If ``core`` is not a core
-        formula, or the timeout or profile is invalid.
+        formula, or the timeout, profile or solver context is invalid.
 
     Example::
 
@@ -311,9 +325,12 @@ def check_runtime_safety(
     """
     if not isinstance(core, BmcCoreFormula):
         raise BmcBuildError("core must be BmcCoreFormula.")
+    if isinstance(solver_context, bool) or solver_context not in SOLVER_CONTEXTS:
+        raise BmcBuildError("solver_context must be one of fresh, shared.")
     return _check_runtime_safety(core, timeout_ms, solver_profile)[0]
 
 
+@_resolving_unsliced
 def _unsliced(core: BmcCoreFormula) -> BmcCoreFormula:
     # Cone slicing drops operations the query cannot observe, but any of them
     # can still raise, so the check runs on the core built without slicing.

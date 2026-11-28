@@ -1620,6 +1620,16 @@ one faster invocation is not enough to change a default. The repository's
 ``benchmarks/bmc/solving/`` supplies four comparison arms, immutable raw
 records and pre-registered performance thresholds.
 
+Witnesses are reproducible by default. ``--solver-context fresh`` solves
+linear-arithmetic formulas in a new Z3 context, where Z3's internal term
+numbering, and with it the search path and the returned witness, follows from
+the formula alone. The same model, query and options then give the same
+witness however the formula was constructed and whatever the process solved
+before. ``--solver-context shared`` solves in the context the formula was built
+in, which can return a different valid witness after any unrelated change.
+Queries outside linear arithmetic are solved in the shared context either way;
+``result.solver_context`` tells which one a run used.
+
 ``--solver-profile fast`` exits ``2``; use one of the three lowercase
 choices:
 

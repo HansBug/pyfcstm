@@ -1286,6 +1286,14 @@ is a positive integer for response and null for other kinds.
      - ``QF_LIA``, ``QF_LRA``, ``QF_LIRA``, ``QF_NIA``, ``QF_NRA``, ``NIRA``, or null
      - Fragment selected by ``logic``. Null means fallback to default when
        no probe matches; always null for ``default`` and ``tactic``.
+   * - ``solver_context``
+     - ``fresh`` or ``shared``
+     - Where the solvers of this call actually ran: ``fresh`` is a new Z3
+       context shared by the call's solvers, ``shared`` is the context the
+       formula was built in. A query outside linear arithmetic reports
+       ``shared`` even when ``fresh`` was requested. ``fresh`` makes the
+       returned witness and Z3 search counters depend only on the model,
+       query, options and Z3 version.
    * - ``solver_statistics``
      - Object from non-empty string keys to finite non-negative numbers
      - Z3 statistics immediately after the primary check; empty if it did

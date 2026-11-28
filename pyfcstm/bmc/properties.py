@@ -62,7 +62,12 @@ from .ast import (
 )
 from .errors import BmcBuildError, InvalidBmcQuery, UnsupportedBmcQuery
 from .query import BmcProperty
-from .region_pattern import ActivePattern, parse_active_pattern, pattern_predicate
+from .region_pattern import (
+    ActivePattern,
+    _TermMemo,
+    parse_active_pattern,
+    pattern_predicate,
+)
 from .region_relation import (
     PositionSnapshot,
     region_occurrences,
@@ -618,7 +623,10 @@ def _reported_state(core: BmcCoreFormula, record) -> Tuple[str, str]:
 
 
 def _call_time_active(
-    core: BmcCoreFormula, record, position: Optional[PositionSnapshot]
+    core: BmcCoreFormula,
+    record,
+    position: Optional[PositionSnapshot],
+    memo: Optional[_TermMemo] = None,
 ) -> Callable[[str], z3.BoolRef]:
     """Return ``active(...)`` as the handler of one call experiences it.
 
@@ -641,7 +649,7 @@ def _call_time_active(
             parse_active_pattern(domain, text) if "{" in text else ActivePattern(text)
         )
         return pattern_predicate(
-            domain, pattern, position.main, position.regions.__getitem__
+            domain, pattern, position.main, position.regions.__getitem__, memo
         )
 
     return over_positions
@@ -656,6 +664,7 @@ def _call_match_expr(
     reported: Tuple[str, str],
     core: Optional[BmcCoreFormula] = None,
     position: Optional[PositionSnapshot] = None,
+    memo: Optional[_TermMemo] = None,
 ) -> z3.BoolRef:
     terms = [relation.selector]
     if filter_node.action is not None:
@@ -681,7 +690,7 @@ def _call_match_expr(
                 step_index,
                 parameters,
                 core.context.domain,
-                _call_time_active(core, record, position),
+                _call_time_active(core, record, position, memo),
             )
         )
     return _and(terms)
@@ -697,7 +706,27 @@ def _lower_call_count(
     selected_steps = _effective_call_steps(
         expr.filter.effective_step, anchor, core.context.bound
     )
+    # The count only depends on the atom and on the steps it selects, and a
+    # selector such as ``step=*`` or an absolute range selects the same steps
+    # from every frame the predicate is lowered at: the term is kept with the
+    # core formula it was built from, under the atom and its steps.
+    counted = vars(core).setdefault("_call_count_terms", {})
+    known = counted.get((id(expr), selected_steps))
+    if known is not None and known[0] is expr:
+        return known[1]
+    result = _count_calls(core, expr, selected_steps)
+    counted[(id(expr), selected_steps)] = (expr, result)
+    return result
+
+
+def _count_calls(
+    core: BmcCoreFormula, expr: CallCount, selected_steps: Tuple[int, ...]
+) -> z3.ArithRef:
+    """Return the number of calls an atom counts in the given steps, as a term."""
     items = []
+    # From one call to the next nearly every region is where it was, so the
+    # predicates over the positions of the calls share most of their terms.
+    memo = _TermMemo()
     for selected_step in selected_steps:
         if core.region_steps:
             # The calls of a cycle of a model with regions are the calls of every
@@ -724,6 +753,7 @@ def _lower_call_count(
                             _reported_state(core, record),
                             core,
                             positions[index] if positions else None,
+                            memo,
                         ),
                         z3.IntVal(1),
                         z3.IntVal(0),

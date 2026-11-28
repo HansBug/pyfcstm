@@ -133,7 +133,7 @@
       "patchedSourceArchiveUrl": "https://codeload.github.com/zimond/resvg/tar.gz/3495d8705b302d6d266748516973606ca9657906",
       "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
       "patchedSourceRepository": "https://github.com/zimond/resvg",
-      "resolved": "https://registry.npmjs.org/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
+      "resolved": "https://registry.npmmirror.com/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
       "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
       "sourceArchiveUrl": "https://codeload.github.com/thx/resvg-js/tar.gz/9ca058462ac529120c8cc84ddcd6fef644cc5406",
       "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",

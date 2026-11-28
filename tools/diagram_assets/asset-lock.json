@@ -112,14 +112,14 @@
   },
   "renderer": {
     "elkjs": {
-      "integrity": "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==",
-      "license": "EPL-2.0",
+      "integrity": "sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==",
+      "license": "EPL-2.0 OR GPL-3.0-or-later",
       "name": "elkjs",
       "repository": "https://github.com/kieler/elkjs",
-      "resolved": "https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz",
-      "sourceUrl": "https://github.com/kieler/elkjs/tree/v0.11.1",
-      "treeSha256": "feec04077159fd1c2cee9ba09d51b687d3b011c2886f2e61b761a8f8a930fc77",
-      "version": "0.11.1"
+      "resolved": "https://registry.npmmirror.com/elkjs/-/elkjs-0.12.0.tgz",
+      "sourceUrl": "https://github.com/kieler/elkjs/tree/v0.12.0",
+      "treeSha256": "1db4aa1a396126b7f12581f795954620362171811b2305b644631e3f5a63a313",
+      "version": "0.12.0"
     },
     "esbuildVersion": "0.28.2",
     "format": "iife",
@@ -133,7 +133,7 @@
       "patchedSourceArchiveUrl": "https://codeload.github.com/zimond/resvg/tar.gz/3495d8705b302d6d266748516973606ca9657906",
       "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
       "patchedSourceRepository": "https://github.com/zimond/resvg",
-      "resolved": "https://registry.npmjs.org/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
+      "resolved": "https://registry.npmmirror.com/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
       "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
       "sourceArchiveUrl": "https://codeload.github.com/thx/resvg-js/tar.gz/9ca058462ac529120c8cc84ddcd6fef644cc5406",
       "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",
@@ -187,11 +187,11 @@
     },
     "target": "es2019",
     "xmldom": {
-      "integrity": "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==",
+      "integrity": "sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==",
       "license": "MIT",
       "name": "@xmldom/xmldom",
-      "resolved": "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.8.15.tgz",
-      "version": "0.8.15"
+      "resolved": "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.9.12.tgz",
+      "version": "0.9.12"
     }
   }
 }
